@@ -4,6 +4,17 @@
 
 **Lösung:** Der manuell gestartete Workflow `.github/workflows/android-debug.yml` verlangt künftig eine *einmalig* erzeugte, dauerhafte Test-Signatur. Vier Repository-Secrets müssen vor dem nächsten APK-Build eingerichtet sein. Eine fehlende Signatur führt bewusst zum Abbruch des Builds, statt unbemerkt eine neue inkompatible APK auszugeben.
 
+## Einfacher Weg (empfohlen)
+
+Auf einem vertrauenswürdigen Windows-PC **Java 21 / keytool** und **GitHub CLI (gh)** installieren. Einmalig `gh auth login` ausführen, falls noch nicht angemeldet. Danach das geprüfte MiniNex-Skript verwenden:
+
+```powershell
+Invoke-WebRequest 'https://raw.githubusercontent.com/Quantumpepe/MiniNex/main/scripts/setup-android-signing.ps1' -OutFile "$HOME\\setup-mininex-signing.ps1"
+& "$HOME\\setup-mininex-signing.ps1"
+```
+
+Das Skript erzeugt den Testschlüssel nur, wenn noch keiner existiert, und hinterlegt die vier benötigten GitHub-Secrets. **Nie den Schlüssel oder das Kennwort im Chat senden.** Bitte vor Ausführung die Skriptdatei ansehen. Der Workflow bleibt absichtlich gesperrt, bis diese einmalige Einrichtung erfolgt.
+
 ## Einmalig auf einem vertrauenswürdigen Windows-PC
 
 PowerShell mit installiertem Java 21 / `keytool`:
