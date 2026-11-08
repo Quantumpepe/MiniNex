@@ -77,7 +77,7 @@ class PaperRules:
     # A steady uptrend is an entry opportunity even without a single
     # unusually large one-minute breakout. These are PAPER signal filters,
     # not promises of profitability or an instruction to force a buy.
-    min_trend_60s_pct: float = 0.06
+    min_trend_60s_pct: float = 0.05
     min_trend_180s_pct: float = 0.12
     min_trend_near_high_fraction: float = 0.997
     profit_trailing_arm_net_pct: float = 0.30
