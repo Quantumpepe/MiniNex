@@ -19,7 +19,7 @@ from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_ye
 from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
-from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper
+from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .treasury import treasury_status
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
@@ -395,7 +395,8 @@ def user_paper_status(asset: str, authorization: str | None = Header(default=Non
     """Authenticated, owner-isolated, persistent simulation status and fills."""
     _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
-    return JSONResponse(read_user_paper(did,asset),headers={"Cache-Control":"private, no-store"})
+    return JSONResponse(add_paper_mark_to_market(read_user_paper(did,asset),market),
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/user-paper/{asset}/start")
