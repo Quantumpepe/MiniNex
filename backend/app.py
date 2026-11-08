@@ -13,6 +13,7 @@ from .auto_engine import PaperAutoEngine
 from .auth import verify_privy_bearer
 from .storage import get_account_summary
 from .budgets import get_budget_preferences, save_budget_preference
+from .trade_preferences import get_trade_preferences, save_trade_preference
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -204,5 +205,41 @@ def budgets_update(
         raise HTTPException(422, "Invalid budget preference")
     return JSONResponse(
         save_budget_preference(did, asset, body.percent, body.expected_revision),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+class TradePreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: str
+    stable: str
+    horizon: str
+    expected_revision: StrictInt
+
+
+@app.get("/api/trade-preferences")
+def trade_preferences_status(authorization: str | None = Header(default=None)):
+    """Persisted per-user options; never grants live order or wallet permissions."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_trade_preferences(did), headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/trade-preferences/{asset}")
+def trade_preferences_update(
+    asset: str, body: TradePreferenceRequest,
+    authorization: str | None = Header(default=None),
+):
+    did = verify_privy_bearer(authorization)["user_id"]
+    if asset not in ("BTC", "ETH"):
+        raise HTTPException(404, "Only BTC and ETH are supported")
+    if (body.mode not in ("LONG", "SPOT_SHORT")
+            or body.stable not in ("USDC", "USDT")
+            or body.horizon not in ("5m", "15m", "1h", "24h")
+            or not 0 <= body.expected_revision < 2_000_000_000):
+        raise HTTPException(422, "Invalid trade preferences")
+    return JSONResponse(
+        save_trade_preference(
+            did, asset, body.mode, body.stable, body.horizon, body.expected_revision
+        ),
         headers={"Cache-Control": "no-store"},
     )
