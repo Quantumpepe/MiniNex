@@ -60,7 +60,7 @@ const isNativeBtcAddress = (address) =>
 
 function findNativeBtcWallet(user) {
   return (user?.linkedAccounts || []).find(account =>
-    account?.type === 'wallet' && account?.chainType === 'bitcoin' &&
+    account?.type === 'wallet' && account?.chainType === 'bitcoin-segwit' &&
     isNativeBtcAddress(account.address)
   );
 }
@@ -90,10 +90,10 @@ function NativeBtcWallet({user, t}) {
     (async()=>{
       try {
         // No signer or server authorization is granted here.
-        const result = await createWallet({chainType: 'bitcoin'});
+        const result = await createWallet({chainType: 'bitcoin-segwit'});
         if (!active) return;
         const wallet = result?.wallet;
-        if (!wallet || wallet.chainType !== 'bitcoin' || !isNativeBtcAddress(wallet.address)) {
+        if (!wallet || wallet.chainType !== 'bitcoin-segwit' || !isNativeBtcAddress(wallet.address)) {
           setState('failed');
           return;
         }
