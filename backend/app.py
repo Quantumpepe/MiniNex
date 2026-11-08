@@ -17,6 +17,7 @@ from .trade_preferences import get_trade_preferences, save_trade_preference
 from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_year
 from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
+from .verified_sync import synchronize_one_page
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -53,7 +54,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(dict.fromkeys(_allowed_origins)),
     allow_credentials=False,
-    allow_methods=["GET", "PUT"],
+    allow_methods=["GET", "PUT", "POST"],
     allow_headers=["Accept", "Content-Type", "Authorization"],
 )
 
@@ -310,5 +311,19 @@ async def blockchain_history(
     validate_request(asset,address,cursor)
     return JSONResponse(
         await fetch_history(asset,address,cursor),
+        headers={"Cache-Control":"private, no-store"},
+    )
+
+
+@app.post("/api/blockchain/sync/{asset}")
+async def blockchain_import_verified_page(
+    asset: str, address: str, cursor: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Explicit opt-in archive; server independently verifies address at Privy."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    validate_request(asset,address,cursor)
+    return JSONResponse(
+        await synchronize_one_page(did,asset,address,cursor),
         headers={"Cache-Control":"private, no-store"},
     )
