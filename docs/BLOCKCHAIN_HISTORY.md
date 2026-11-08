@@ -27,5 +27,5 @@ Set the secret only in the **Render backend** environment settings. Do not inser
 - Stablecoins currently refer only to Ethereum mainnet USDC and USDT, not other chains or bridged alternatives.
 - The ETH explorer's normal transaction view does not include all internal contract value flows. Token transfer view filters a canonical contract, but full DeFi accounting needs further reconciliation.
 - BTC UTXO change and internal transfers can appear as net flows; they are not automatically taxable events. Deposits/withdrawals are transaction descriptions, not tax classifications.
-- Missing original acquisition prices, CHF valuation rates, year-end balances and transfers on external wallets are *never invented*. PDF/CSV exports are supporting documents, **not complete Swiss tax returns**.
+- Missing original acquisition prices, country-specific tax-currency valuation rates, year-end balances and transfers on external wallets are *never invented*. PDF/CSV exports are supporting documents, **not complete tax returns for any jurisdiction**.
 - Repeated synchronization needs rate limiting, scheduled jobs and monitoring before a public multi-user launch.
