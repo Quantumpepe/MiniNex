@@ -242,20 +242,18 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                 engine.portfolios={asset:p}
                 feed=market.snapshot(now=now)["markets"][asset]
                 from .auto_engine import PaperRules
-                # Match the evaluation history to the selected horizon; no
-                # 24h history is available in the current in-memory feed.
-                # Horizon is the maximum rolling lookback, NOT a mandatory
-                # startup wait. 180s momentum needs roughly 3 minutes of
-                # actual observed data; never fabricate missing history.
-                windows={"5m":(190.0,300.0),"15m":(190.0,900.0),
-                         "1h":(190.0,3600.0)}
-                if row["horizon"]=="24h":
-                    p.last_decision,p.last_reason="WAIT","24H_HISTORY_NOT_AVAILABLE"
-                else:
-                    warmup,window=windows[row["horizon"]]
-                    engine.rules=PaperRules(warmup_seconds=warmup,
-                                            price_window_seconds=window)
-                    engine.process_asset(asset,feed,now)
+                from .auto_engine import PaperRules
+                # The selected period is a lookback, never a mandatory wait.
+                # Real closed exchange candles are loaded asynchronously on
+                # startup. No simulated history and no artificial buy trigger.
+                windows={"5m":300.0,"15m":900.0,"1h":3600.0,
+                         "24h":86400.0}
+                engine.rules=PaperRules(
+                    warmup_seconds=0.0,
+                    min_history_samples=4,
+                    price_window_seconds=windows[row["horizon"]],
+                )
+                engine.process_asset(asset,feed,now)
                 p.last_evaluated_at=now
                 history=list(p.trade_history)
                 for event in history:
