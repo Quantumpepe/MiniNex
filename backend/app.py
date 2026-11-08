@@ -118,6 +118,14 @@ def market_status():
         "version": snap["version"],
         "trading_enabled": False,
         "primary_ws_connected": snap["primary_ws_connected"],
+        "rest_backup_active":snap["rest_backup_active"],
+        "rest_backup_error":market.last_rest_error,
+        "primary_sources":{k:v["primary_source"] for k,v in snap["markets"].items()},
+        "primary_sample_ages_sec":{
+            k:round(max(0.0,time.time()-market._primary[k]["received_at"]),1)
+              if k in market._primary else None
+            for k in snap["markets"]
+        },
         "market_data_valid": {k: v["market_data_valid"] for k, v in snap["markets"].items()},
         "market_reasons": {k: v["reason"] for k, v in snap["markets"].items()},
         "primary_error": market.last_primary_error,
