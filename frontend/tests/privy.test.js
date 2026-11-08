@@ -42,7 +42,7 @@ test('native BTC placeholder cannot be mistaken for an EVM receiving address',()
 test('verified account automatically provisions a separate BTC wallet with no signing rights',()=>{
   assert.match(auth, /useCreateWallet as useCreateExtendedWallet/);
   assert.match(auth, /@privy-io\/react-auth\/extended-chains/);
-  assert.match(auth, /createWallet\(\{chainType: 'bitcoin'\}\)/);
+  assert.match(auth, /createWallet\(\{chainType: 'bitcoin-segwit'\}\)/);
   assert.match(auth, /identityStatus==='verified' && databaseStatus==='stored'/);
   assert.match(auth, /findNativeBtcWallet\(user\)/);
   assert.match(auth, /isNativeBtcAddress\(wallet.address\)/);
@@ -65,4 +65,11 @@ test('full wallet addresses can be revealed per network without signing or sendi
   assert.match(auth,/overflowWrap:'anywhere'/);
   assert.match(auth,/network==='BTC' \? t\.privyBtcNetwork : t\.privyEthNetwork/);
   assert.doesNotMatch(auth,/sendTransaction\s*\(|sendBitcoin\s*\(|delegateWallet\s*\(/);
+});
+
+test('native BTC uses Privy bitcoin-segwit consistently for create and recovery',()=>{
+  assert.match(auth,/account\?\.chainType === 'bitcoin-segwit'/);
+  assert.match(auth,/wallet\.chainType !== 'bitcoin-segwit'/);
+  assert.match(auth,/createWallet\(\{chainType: 'bitcoin-segwit'\}\)/);
+  assert.doesNotMatch(auth,/chainType: 'bitcoin'|chainType === 'bitcoin'/);
 });
