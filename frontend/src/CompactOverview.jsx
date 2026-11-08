@@ -53,30 +53,13 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
   const changeText=change==null?'—':(Number(change)>0?'+':'')+formatNumber(change,lang)+' %';
   return <section className="compact-home" aria-label={t.overview}>
     <div className="compact-welcome">
-      <div><span className="compact-eyebrow">{t.subhead}</span><h1>{t.headline}</h1></div>
-      <span className="compact-demo-tag"><ShieldCheck size={12}/>{t.compactDemo}</span>
+      <div><h1>MiniNex</h1></div>
+
     </div>
-    <section className="compact-portfolio" aria-label={t.portfolioValue}>
-      <div className="compact-portfolio-main">
-        <span className="compact-muted">{t.compactPortfolio} · {asset}</span>
-        <strong className="compact-total">{formatMoney(value,lang)}</strong>
-        <span className="compact-portfolio-foot">{t.afterExitCosts}</span>
-      </div>
-      <div className="compact-portfolio-side">
-        <span>{t.compactEstNet}</span>
-        <strong className={net==null?'':net>=0?'text-positive':'text-negative'}>{formatSigned(net,lang)}</strong>
-        <span className="compact-tiny">{t.compactDemoFunds}</span>
-      </div>
-    </section>
     <div className="compact-asset-switch" role="tablist" aria-label={t.compactChooseAsset}>
       {['BTC','ETH'].map(a=><button key={a} type="button" role="tab" aria-selected={asset===a} className={asset===a?'active':''} onClick={()=>{setAsset(a);setPeriod('m15');}}>
         <TokenIcon asset={a}/><span>{a==='BTC'?'Bitcoin':'Ethereum'}</span><small>{a}</small>
       </button>)}
-    </div>
-    <div className="compact-modebar" aria-label={t.compactMode}>
-      <span className="compact-mode-auto"><Zap size={12}/>{t.compactAuto}</span>
-      <span className="compact-mode-paper"><CheckCircle2 size={12}/>{t.compactDemo}</span>
-      <span className="compact-mode-locked" title={t.safeMode}><ShieldCheck size={12}/>{t.compactLiveDisabled}</span>
     </div>
     <section className="compact-market" aria-label={t.market}>
       <div className="compact-market-primary">
@@ -91,21 +74,10 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
         </div>
         <PriceMini history={history} trades={trades} period={period} valid={valid} t={t}/>
       </div>
-      <div className="compact-market-footer">
-        <span><span className="compact-status-dot"/>{t.position}: <b>{portfolio?(portfolio.position==='COIN'?asset:settlement):'—'}</b></span>
-        <span>{t.compactSignal}: <b>{signal}</b></span>
-        <span>{t.compactAuto}: <b className={workerOnline?'text-positive':'text-negative'}>{workerOnline?t.compactOnline:t.compactOffline}</b></span>
-      </div>
     </section>
-    <div className="compact-stats" aria-label={t.compactDetails}>
-      <SmallMetric label={t.held} icon={Coins} value={formatCoin(portfolio?.coin_quantity,lang)+' '+asset} details={t.cash+': '+formatMoney(portfolio?.stable_cash,lang)+' '+settlement}/>
-      <SmallMetric label={t.compactSignal} icon={Activity} value={signal} details={t['reason_'+portfolio?.last_reason]||t.compactSignalNote}/>
-      <SmallMetric label={t.compactAutoStatus} icon={Zap} value={workerOnline?t.compactOnline:t.compactOffline} details={t.compactPaperOnly} positive={workerOnline}/>
-      <SmallMetric label={t.compactEstNet} icon={TrendingUp} value={formatSigned(net,lang)} details={t.moves+': '+(portfolio?.trade_count??'—')} positive={net==null?undefined:net>=0}/>
-    </div>
     <div className="compact-actions">
-      <button type="button" onClick={()=>goTo('activity')}><Activity size={17}/>{t.compactSeeTrades}<ArrowRight size={14}/></button>
-      <button type="button" onClick={()=>goTo('wallet')}><Wallet size={17}/>{t.demoWallet}</button>
+
+      <button type="button" onClick={()=>goTo('wallet')}><Wallet size={17}/>{t.wallet}</button>
     </div>
   </section>;
 }
