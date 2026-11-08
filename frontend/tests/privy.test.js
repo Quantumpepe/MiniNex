@@ -36,7 +36,7 @@ test('frontend CI only validates; never publishes an APK',()=>{
 test('native BTC placeholder cannot be mistaken for an EVM receiving address',()=>{
   assert.match(auth,/privyBtcTitle/);
   assert.match(auth,/privyBtcPending/);
-  assert.match(auth,/privyBtcSafety/);
+  assert.match(read('../src/HelpCenter.jsx'),/helpSecurityText/);
   assert.doesNotMatch(auth,/bc1[a-z0-9]{20,}/i);
   assert.doesNotMatch(auth,/sendBitcoin\s*\(/);
 });
@@ -65,7 +65,7 @@ test('full wallet addresses can be revealed per network without signing or sendi
   assert.match(auth,/setShowFull\(v=>!v\)/);
   assert.match(auth,/aria-expanded=\{showFull\}/);
   assert.match(auth,/overflowWrap:'anywhere'/);
-  assert.match(auth,/network==='BTC' \? t\.privyBtcNetwork : t\.privyEthNetwork/);
+  assert.match(auth,/<strong className="privy-wallet-network">\{network\}<\/strong>/);
   assert.doesNotMatch(auth,/sendTransaction\s*\(|sendBitcoin\s*\(|delegateWallet\s*\(/);
 });
 
