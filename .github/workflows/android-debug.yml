@@ -37,16 +37,66 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: https://mininex-backend.onrender.com
-          VITE_PRIVY_APP_ID: ${{ vars.MININEX_PRIVY_APP_ID }}
+          # Public app ID must match backend JWT audience and existing user wallets.
+          VITE_PRIVY_APP_ID: cmw7sb7ty013o0gl55aqyzi3y
       - name: Create native Android project
         run: npx cap add android
       - name: Sync bundled assets
         run: npx cap sync android
-      - name: Build debug APK for installation and testing
+      - name: Validate stable APK signing key
+        env:
+          MININEX_APK_KEYSTORE_B64: ${{ secrets.MININEX_APK_KEYSTORE_B64 }}
+          MININEX_APK_KEYSTORE_PASSWORD: ${{ secrets.MININEX_APK_KEYSTORE_PASSWORD }}
+          MININEX_APK_KEY_ALIAS: ${{ secrets.MININEX_APK_KEY_ALIAS }}
+          MININEX_APK_KEY_PASSWORD: ${{ secrets.MININEX_APK_KEY_PASSWORD }}
+        run: |
+          if [ -z "$MININEX_APK_KEYSTORE_B64" ] || [ -z "$MININEX_APK_KEYSTORE_PASSWORD" ] || [ -z "$MININEX_APK_KEY_ALIAS" ] || [ -z "$MININEX_APK_KEY_PASSWORD" ]; then
+            echo "::error::Stable APK signing secrets are required. See docs/ANDROID_TEST_SIGNING.md"
+            exit 1
+          fi
+          printf '%s' "$MININEX_APK_KEYSTORE_B64" | base64 -d > android/mininex-test.jks
+          chmod 600 android/mininex-test.jks
+          keytool -list -keystore android/mininex-test.jks -storepass "$MININEX_APK_KEYSTORE_PASSWORD" -alias "$MININEX_APK_KEY_ALIAS" > /dev/null
+      - name: Build signed debug APK for installation and future updates
+        env:
+          MININEX_APK_KEYSTORE_PASSWORD: ${{ secrets.MININEX_APK_KEYSTORE_PASSWORD }}
+          MININEX_APK_KEY_ALIAS: ${{ secrets.MININEX_APK_KEY_ALIAS }}
+          MININEX_APK_KEY_PASSWORD: ${{ secrets.MININEX_APK_KEY_PASSWORD }}
+          MININEX_BUILD_NUMBER: ${{ github.run_number }}
         run: |
           chmod +x android/gradlew
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle')
+          s = p.read_text()
+          marker = 'android {'
+          if marker not in s:
+              raise SystemExit('Android Gradle config layout changed; cannot safely configure signing')
+          signing = """
+              signingConfigs {
+                  mininexTest {
+                      storeFile file('../mininex-test.jks')
+                      storePassword System.getenv('MININEX_APK_KEYSTORE_PASSWORD')
+                      keyAlias System.getenv('MININEX_APK_KEY_ALIAS')
+                      keyPassword System.getenv('MININEX_APK_KEY_PASSWORD')
+                  }
+              }
+          """
+          s = s.replace(marker, marker + '\\n' + signing, 1)
+          debug = 'buildTypes {'
+          if debug not in s:
+              raise SystemExit('Android build types missing')
+          s = s.replace(debug, debug + "\\n        debug { signingConfig signingConfigs.mininexTest }", 1)
+          import re, os
+          run = int(os.environ['MININEX_BUILD_NUMBER'])
+          s,n = re.subn(r'versionCode\\s+\\d+', 'versionCode ' + str(10000 + run), s, count=1)
+          if n != 1:
+              raise SystemExit('Android versionCode not found')
+          p.write_text(s)
+          PY
           cd android
           ./gradlew --no-daemon assembleDebug
+          keytool -list -v -keystore mininex-test.jks -storepass "$MININEX_APK_KEYSTORE_PASSWORD" -alias "$MININEX_APK_KEY_ALIAS" | grep 'SHA256:'
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
