@@ -75,3 +75,20 @@ def test_paper_last_evaluation_persists_but_not_real_funds():
     recovered=_restore("ETH","USDC",_state_of(p),400)
     assert recovered.last_evaluated_at==1700000000
     assert recovered.coin_quantity==0.0
+
+
+def test_live_cutover_blocks_public_and_private_paper_endpoints(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend import app as api
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    client=TestClient(api.app)
+    availability=client.get("/api/user-paper/availability")
+    assert availability.status_code==200
+    assert availability.json()=={"paper_available":False,"live_trading_enabled":False}
+    assert client.get("/api/paper/status").status_code==404
+    assert client.get("/api/paper/status/BTC").status_code==404
+    assert client.get("/api/paper/trades/ETH").status_code==404
+    assert client.get("/api/user-paper/BTC").status_code==404
+    assert client.post("/api/user-paper/BTC/start").status_code==404
+    assert client.post("/api/user-paper/BTC/evaluate").status_code==404
+    assert client.post("/api/user-paper/BTC/pause").status_code==404
