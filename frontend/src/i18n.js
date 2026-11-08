@@ -1,5 +1,9 @@
 export const DICTIONARY = {
   en: {
+    chainArchivePage: 'Save verified page for tax report',
+    chainArchiving: 'Checking wallet ownership and saving confirmed transactions…',
+    chainArchived: '{count} new confirmed transactions saved for the annual report.',
+    chainArchiveUnavailable: 'Not saved. Server-side Privy verification may not be configured; contact the app operator.',
     chainLoadMore: 'Load older transactions',
     chainPreviewTitle: 'Blockchain transactions',
     chainPreviewNote: 'Read-only public blockchain preview for the wallet shown in MiniNex. Paginated BTC, ETH, USDC and USDT transfers are displayed; it is not a complete tax record until account ownership and historical sync are verified.',
@@ -179,6 +183,10 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    chainArchivePage: 'Bestätigte Transaktionen für Steuern speichern',
+    chainArchiving: 'Wallet-Zuordnung prüfen und bestätigte Transaktionen speichern…',
+    chainArchived: '{count} neue bestätigte Transaktionen für den Jahresbericht gespeichert.',
+    chainArchiveUnavailable: 'Nicht gespeichert. Die serverseitige Privy-Verifizierung ist eventuell noch nicht eingerichtet.',
     chainLoadMore: 'Ältere Transaktionen laden',
     chainPreviewTitle: 'Blockchain-Transaktionen',
     chainPreviewNote: 'Nur lesende Blockchain-Vorschau für die in MiniNex angezeigte Wallet. BTC-, ETH-, USDC- und USDT-Transfers mit älteren Seiten; noch keine vollständigen Steuerbelege, bis Wallet-Zuordnung und Historie geprüft sind.',
