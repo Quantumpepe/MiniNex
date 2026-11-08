@@ -2,24 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
-const setup=readFileSync(new URL('../src/TradingSetupPreview.jsx',import.meta.url),'utf8');
-const panel=readFileSync(new URL('../src/PrivyWalletPanel.jsx',import.meta.url),'utf8');
-const strings=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
+const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
+const setup=read('../src/TradingSetupPreview.jsx');
+const panel=read('../src/PrivyWalletPanel.jsx');
+const strings=read('../src/i18n.js');
+const help=read('../src/HelpCenter.jsx');
 
-test('BTC and ETH each keep independent local trade setup defaults',()=>{
+test('BTC and ETH have separately persisted mode, stablecoin and horizon',()=>{
   assert.match(setup,/BTC: \{mode:'LONG', stable:'USDC', horizon:'15m'\}/);
   assert.match(setup,/ETH: \{mode:'LONG', stable:'USDC', horizon:'15m'\}/);
   assert.match(setup,/setSettings\(old=>\(\{\.\.\.old,\[asset\]:\{\.\.\.old\[asset\],\[field\]:value\}\}\)\)/);
-  assert.match(panel,/<TradingSetupPreview t=\{t\}\/>/);
+  assert.match(setup,/\/api\/trade-preferences/);
+  assert.match(setup,/expected_revision:saved\[asset\]\.revision/);
+  assert.match(panel,/<TradingSetupPreview t=\{t\} getAccessToken=\{getAccessToken\}/);
 });
 
-test('spot long and held-coin downtrend are explicitly separated from leverage',()=>{
+test('spot downtrend is not leveraged shorting',()=>{
   assert.match(setup,/const MODES = \['LONG','SPOT_SHORT'\]/);
   assert.match(strings,/Spot downtrend is NOT leveraged shorting/);
   assert.match(strings,/kein gehebelter Short/);
 });
 
-test('USDC, USDT and 5m, 15m, 1h, 24h are per-asset choices',()=>{
+test('each asset allows USDC, USDT and 5m 15m 1h 24h',()=>{
   assert.match(setup,/const STABLES = \['USDC','USDT'\]/);
   assert.match(setup,/const HORIZONS = \['5m','15m','1h','24h'\]/);
   assert.match(setup,/onChange=\{event=>change\(asset,'mode',event.target.value\)\}/);
@@ -27,11 +31,13 @@ test('USDC, USDT and 5m, 15m, 1h, 24h are per-asset choices',()=>{
   assert.match(setup,/onChange=\{event=>change\(asset,'horizon',event.target.value\)\}/);
 });
 
-test('trade preview never touches signed wallets, backend, persistence or live orders',()=>{
-  assert.doesNotMatch(setup,/fetch\(|localStorage|sessionStorage|sendTransaction|sendBitcoin|signTransaction|delegateWallet|privateKey|approve\(/);
+test('stored preferences have no signer and cannot enable real trades',()=>{
+  assert.match(setup,/data\?\.trading_enabled===false/);
+  assert.match(setup,/data\?\.signing_authorized===false/);
+  assert.match(setup,/authorized===false/);
+  assert.doesNotMatch(setup,/localStorage|sessionStorage|sendTransaction|sendBitcoin|signTransaction|delegateWallet|privateKey|approve\(/);
   assert.match(strings,/echte Handelswege und Wallet-Signaturen bleiben gesperrt/);
   assert.doesNotMatch(setup,/<InfoTip/);
-  const help=readFileSync(new URL('../src/HelpCenter.jsx',import.meta.url),'utf8');
   assert.match(help,/helpModesText/);
   assert.match(help,/helpHorizonText/);
 });
