@@ -30,6 +30,8 @@ test('USDC, USDT and 5m, 15m, 1h, 24h are per-asset choices',()=>{
 test('trade preview never touches signed wallets, backend, persistence or live orders',()=>{
   assert.doesNotMatch(setup,/fetch\(|localStorage|sessionStorage|sendTransaction|sendBitcoin|signTransaction|delegateWallet|privateKey|approve\(/);
   assert.match(strings,/echte Handelswege und Wallet-Signaturen bleiben gesperrt/);
-  assert.match(setup,/<InfoTip/);
-  assert.match(setup,/privySetupSafety/);
+  assert.doesNotMatch(setup,/<InfoTip/);
+  const help=readFileSync(new URL('../src/HelpCenter.jsx',import.meta.url),'utf8');
+  assert.match(help,/helpModesText/);
+  assert.match(help,/helpHorizonText/);
 });
