@@ -43,7 +43,7 @@ jobs:
         run: npx cap add android
       - name: Sync bundled assets
         run: npx cap sync android
-      - name: Install approved MiniNex Android launcher artwork
+      - name: Install full-bleed MiniNex adaptive launcher icon
         run: |
           python3 -m venv /tmp/mininex-icon-env
           /tmp/mininex-icon-env/bin/pip install --quiet Pillow
@@ -52,20 +52,44 @@ jobs:
           from base64 import b64decode
           from io import BytesIO
           from PIL import Image
-          logo = Image.open(BytesIO(b64decode(Path('branding/mininex-logo.webp.b64').read_text().strip()))).convert('RGB')
+          logo = Image.open(BytesIO(b64decode(Path('branding/mininex-logo.webp.b64').read_text().strip()))).convert('RGBA')
+          width, height = logo.size
+          # Crop the original wide background away: keep only the circular Nexus artwork.
+          artwork = logo.crop((round(width * .145), round(height * .145), round(width * .855), round(height * .855)))
           resources = Path('android/app/src/main/res')
           for bucket, pixels in [('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)]:
               folder = resources / ('mipmap-' + bucket)
-              folder.mkdir(parents=True,exist_ok=True)
-              icon = logo.resize((pixels,pixels),Image.Resampling.LANCZOS)
-              icon.save(folder / 'ic_launcher.png')
-              icon.save(folder / 'ic_launcher_round.png')
-          # Android's adaptive launcher XML otherwise overrides the PNG icons on Android 8+.
+              folder.mkdir(parents=True, exist_ok=True)
+              legacy = artwork.resize((pixels,pixels),Image.Resampling.LANCZOS).convert('RGB')
+              legacy.save(folder / 'ic_launcher.png')
+              legacy.save(folder / 'ic_launcher_round.png')
+
+              # Adaptive icons use a 108dp canvas, of which only the central 72dp
+              # is guaranteed visible. Fill the entire mask with dark teal, and
+              # put the MiniNex circle within the safe area at a legible scale.
+              side = round(pixels * 108 / 48)
+              foreground = Image.new('RGBA',(side,side),(0,0,0,0))
+              diameter = round(side * .66)
+              art = artwork.resize((diameter,diameter),Image.Resampling.LANCZOS)
+              foreground.alpha_composite(art,((side-diameter)//2,(side-diameter)//2))
+              foreground.save(folder / 'ic_launcher_foreground.png')
+
           adaptive = resources / 'mipmap-anydpi-v26'
-          if adaptive.exists():
-              for filename in ('ic_launcher.xml','ic_launcher_round.xml'):
-                  (adaptive / filename).unlink(missing_ok=True)
-          print('MiniNex circular launcher icons installed in five Android densities')
+          adaptive.mkdir(parents=True, exist_ok=True)
+          drawable = resources / 'drawable'
+          drawable.mkdir(parents=True, exist_ok=True)
+          (drawable / 'mininex_icon_background.xml').write_text(
+              '<?xml version="1.0" encoding="utf-8"?>\\n'
+              '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">'
+              '<solid android:color="#001B19"/></shape>\\n')
+          adaptive_xml = ('<?xml version="1.0" encoding="utf-8"?>\\n'
+              '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\\n'
+              '    <background android:drawable="@drawable/mininex_icon_background"/>\\n'
+              '    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\\n'
+              '</adaptive-icon>\\n')
+          for filename in ('ic_launcher.xml','ic_launcher_round.xml'):
+              (adaptive / filename).write_text(adaptive_xml)
+          print('Installed full-bleed dark MiniNex launcher icon with adaptive background (no white circle)')
           PY
       - name: Validate stable APK signing key
         env:
