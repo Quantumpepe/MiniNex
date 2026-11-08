@@ -277,7 +277,7 @@ function ConnectedPrivyWallet({t}) {
           <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button>
         </> : <>
           <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
-          {address&&<><div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div><CopyWalletAddress address={address} t={t}/></>}
+          {address&&<><div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div><CopyWalletAddress address={address} network="ETH" t={t}/></>}
           {identityStatus==='verified' && databaseStatus==='stored'
             ? <NativeBtcWallet user={user} t={t}/>
             : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
