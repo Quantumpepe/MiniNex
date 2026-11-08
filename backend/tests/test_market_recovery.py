@@ -82,13 +82,18 @@ def test_backup_with_kraken_price_divergence_fails_closed():
     assert state["ETH"]["market_data_valid"] is True
 
 
-def test_binance_multi_symbol_query_contains_no_spaces():
-    # Binance rejects percent-encoded JSON arrays with a whitespace separator
-    # on some deployments. Keep the symbols argument canonical and compact.
+def test_rest_backup_uses_single_symbol_queries():
+    # Avoid Binance's combined symbols parameter, which generated HTTP 400.
     from inspect import getsource
     from backend.market_data import MarketDataService
-    source=getsource(MarketDataService._rest_backup_loop)
-    assert 'json.dumps(list(SYMBOL_TO_ASSET),separators=(",",":"))' in source
-    import json
-    value=json.dumps(["BTCUSDT","ETHUSDT"],separators=(",",":"))
-    assert value=='["BTCUSDT","ETHUSDT"]'
+    src=getsource(MarketDataService._rest_backup_loop)
+    assert 'params={"symbol":symbol}' in src
+    assert 'params={"symbols"' not in src
+    assert 'for symbol in SYMBOL_TO_ASSET' in src
+
+
+def test_history_error_diagnostics_per_asset():
+    m=MarketDataService(clock=lambda:1000)
+    snapshot=m.snapshot(now=1000)
+    assert snapshot["history_errors"]=={"BTC":None,"ETH":None}
+    assert snapshot["historical_samples"]=={"BTC":0,"ETH":0}
