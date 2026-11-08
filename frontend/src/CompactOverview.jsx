@@ -76,6 +76,7 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
       </div>
     </section>
     <div className="compact-actions">
+      <button type="button" onClick={()=>goTo('activity')}><Activity size={17}/>{t.activity}<ArrowRight size={14}/></button>
 
       <button type="button" onClick={()=>goTo('wallet')}><Wallet size={17}/>{t.wallet}</button>
     </div>
