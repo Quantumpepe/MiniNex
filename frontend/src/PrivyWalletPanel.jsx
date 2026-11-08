@@ -311,7 +311,7 @@ function ConnectedPrivyWallet({t}) {
           disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
 
       </div>}
-      {authenticated && <TradingSetupPreview t={t}/>}
+      {authenticated && <TradingSetupPreview t={t} getAccessToken={getAccessToken} enabled={identityStatus==='verified' && databaseStatus==='stored'}/>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
         <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong></div>
       </div>}
