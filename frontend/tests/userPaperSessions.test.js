@@ -15,16 +15,17 @@ test('wallet provides identity-scoped BTC and ETH personal paper sessions',()=>{
   assert.match(ui,/wallet_funds_used!==false/);
   assert.match(ui,/real_trading_enabled!==false/);
 });
-test('explicit paper start pause resume evaluate never calls wallet signer',()=>{
+test('automatic paper start pause resume never calls wallet signer',()=>{
   assert.match(ui,/command\('start'\)/);
-  assert.match(ui,/command\('evaluate'\)/);
+  assert.doesNotMatch(ui,/command\('evaluate'\)/);
+  assert.match(ui,/setInterval\(refresh,20000\)/);
   assert.match(ui,/command\('pause'\)/);
   assert.match(ui,/command\('resume'\)/);
   assert.doesNotMatch(ui,/sendTransaction|signTransaction|requestWallet|approve\(/);
 });
-test('demo-only limits and manual cadence disclosed in both languages',()=>{
-  assert.match(dict,/Only virtual funds are used/);
-  assert.match(dict,/Marktprüfungen erfolgen vorerst manuell/);
+test('automatic server cadence and simulated funds disclosed in both languages',()=>{
+  assert.match(dict,/Real wallet funds are never used/);
+  assert.match(dict,/prüft der Server den Markt automatisch/);
   assert.match(dict,/1,000 virtual USD/);
   assert.match(dict,/1’000 virtuellen USD/);
 });
