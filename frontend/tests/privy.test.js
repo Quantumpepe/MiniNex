@@ -30,3 +30,11 @@ test('frontend CI only validates; never publishes an APK',()=>{
   assert.match(workflow,/npm run build/);
   assert.doesNotMatch(workflow,/gh release|upload-artifact|assembleDebug/);
 });
+
+test('native BTC placeholder cannot be mistaken for an EVM receiving address',()=>{
+  assert.match(auth,/privyBtcTitle/);
+  assert.match(auth,/privyBtcPending/);
+  assert.match(auth,/privyBtcSafety/);
+  assert.doesNotMatch(auth,/bc1[a-z0-9]{20,}/i);
+  assert.doesNotMatch(auth,/sendBitcoin\s*\(/);
+});
