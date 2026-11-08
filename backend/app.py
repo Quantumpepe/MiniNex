@@ -4,6 +4,7 @@ import asyncio
 import os
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, ConfigDict, StrictInt
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +12,7 @@ from .market_data import MarketDataService
 from .auto_engine import PaperAutoEngine
 from .auth import verify_privy_bearer
 from .storage import get_account_summary
+from .budgets import get_budget_preferences, save_budget_preference
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -27,7 +29,7 @@ async def lifespan(app: FastAPI):
         await market.stop()
 
 
-app = FastAPI(title="MiniNex API", version="0.8.0", lifespan=lifespan)
+app = FastAPI(title="MiniNex API", version="0.8.6", lifespan=lifespan)
 
 # Only known public browser origins can access read-only market/paper API.
 # Extra frontends: MININEX_ALLOWED_ORIGINS=https://my-mininex.example
@@ -47,14 +49,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(dict.fromkeys(_allowed_origins)),
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "PUT"],
     allow_headers=["Accept", "Content-Type", "Authorization"],
 )
 
 
 @app.get("/")
 def home():
-    return {"app": "MiniNex", "version": "0.8.0", "status": "online",
+    return {"app": "MiniNex", "version": "0.8.6", "status": "online",
             "trading": "disabled", "paper_auto": "enabled", "real_orders": False}
 
 
@@ -174,3 +176,33 @@ def trading_capabilities(authorization: str | None = Header(default=None)):
             }
         }
     }, headers={"Cache-Control": "no-store"})
+
+
+class BudgetPreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    percent: StrictInt
+    expected_revision: StrictInt
+
+
+@app.get("/api/budgets")
+def budgets_status(authorization: str | None = Header(default=None)):
+    """User-owned preferences. Never grant signer or trading permissions."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_budget_preferences(did), headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/budgets/{asset}")
+def budgets_update(
+    asset: str, body: BudgetPreferenceRequest,
+    authorization: str | None = Header(default=None)
+):
+    """Save a setting for the authenticated DID, not a trade authorization."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    if asset not in ("BTC", "ETH"):
+        raise HTTPException(404, "Only BTC and ETH are supported")
+    if not 0 <= body.percent <= 100 or not 0 <= body.expected_revision < 2_000_000_000:
+        raise HTTPException(422, "Invalid budget preference")
+    return JSONResponse(
+        save_budget_preference(did, asset, body.percent, body.expected_revision),
+        headers={"Cache-Control": "no-store"},
+    )
