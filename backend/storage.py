@@ -57,6 +57,27 @@ SCHEMA = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (privy_did,asset)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_verified_activity (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        source TEXT NOT NULL CHECK (source IN ('BLOCKCHAIN','MININEX_TRADE')),
+        record_id TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH','USDC','USDT')),
+        activity_type TEXT NOT NULL CHECK (activity_type IN ('DEPOSIT','WITHDRAWAL','BUY','SELL','FEE','TRANSFER')),
+        occurred_at TIMESTAMPTZ NOT NULL,
+        quantity NUMERIC(36,18) NOT NULL CHECK (quantity >= 0),
+        amount_usd NUMERIC(36,12),
+        fee_usd NUMERIC(36,12),
+        realized_net_usd NUMERIC(36,12),
+        tx_hash TEXT,
+        network TEXT,
+        verification TEXT NOT NULL CHECK (verification='CONFIRMED'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,source,record_id),
+        CHECK (amount_usd IS NULL OR amount_usd >= 0),
+        CHECK (fee_usd IS NULL OR fee_usd >= 0)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_activity_by_user_year
+       ON mininex_verified_activity(privy_did,occurred_at DESC)""",
     """CREATE TABLE IF NOT EXISTS mininex_fee_events (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL,
