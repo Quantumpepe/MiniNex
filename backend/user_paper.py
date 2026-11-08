@@ -102,6 +102,57 @@ def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
     }
 
 
+
+def add_paper_mark_to_market(result: dict, market: Any) -> dict:
+    """Read-only estimated liquidation value, never a live executable quote.
+
+    Keep all user positions private. A missing or unverified current price
+    produces no valuation rather than a misleading PnL or phantom balance.
+    """
+    if result.get("paper_only") is not True:
+        raise ValueError("Not a simulation")
+    position=result.get("position")
+    if not isinstance(position,dict) or result.get("asset") not in ASSETS:
+        return result
+    result=dict(result)
+    result["position"]=dict(position)
+    asset=result["asset"]
+    empty={"quote_valid":False,"price_usdt":None,"estimated_exit_net_usd":None,
+           "unrealized_net_pnl_usd":None,"unrealized_net_pct":None,
+           "estimated_total_equity_usd":None,
+           "pricing_basis":"PAPER_ESTIMATE_ONLY"}
+    result["position"]["valuation"]=empty
+    try:
+        feed=market.snapshot()["markets"][asset]
+        if not feed.get("market_data_valid"):
+            return result
+        price=float(feed["price_usdt"])
+        coin=float(position.get("coin_quantity") or 0)
+        cash=float(position.get("stable_cash") or 0)
+        basis=float(position.get("cost_basis") or 0)
+        if not all(math.isfinite(x) for x in (price,coin,cash,basis)):
+            return result
+        if price<=0 or coin<0 or cash<0 or basis<0:
+            return result
+        engine=PaperAutoEngine(market)
+        sale=engine._sell_quote(asset,coin,price) if coin>engine.rules.min_coin_units else None
+        if coin>engine.rules.min_coin_units and not sale:
+            return result
+        net=sale["net_proceeds"] if sale else 0.0
+        unrealized=net-basis if sale else 0.0
+        empty.update({
+            "quote_valid":True,
+            "price_usdt":round(price,8),
+            "estimated_exit_net_usd":round(net,6),
+            "unrealized_net_pnl_usd":round(unrealized,6),
+            "unrealized_net_pct":round(unrealized/basis*100,4) if basis>0 else 0.0,
+            "estimated_total_equity_usd":round(cash+net,6),
+        })
+    except (TypeError,ValueError,KeyError,OverflowError,AttributeError):
+        pass
+    return result
+
+
 def _session_row(cur,did: str,asset: str,lock: bool=False):
     cur.execute(
         """SELECT * FROM mininex_user_paper_sessions
