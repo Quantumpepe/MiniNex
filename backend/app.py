@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import os
+import time
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, StrictInt
@@ -18,6 +19,7 @@ from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_ye
 from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
+from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -327,3 +329,34 @@ async def blockchain_import_verified_page(
         await synchronize_one_page(did,asset,address,cursor),
         headers={"Cache-Control":"private, no-store"},
     )
+
+
+@app.get("/api/user-paper/{asset}")
+def user_paper_status(asset: str, authorization: str | None = Header(default=None)):
+    """Authenticated, owner-isolated, persistent simulation status and fills."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(read_user_paper(did,asset),headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/user-paper/{asset}/start")
+def user_paper_start(asset: str, authorization: str | None = Header(default=None)):
+    """Explicitly start a demo session; saved percent applies to virtual 1000 USD."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(start_user_paper(did,asset),headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/user-paper/{asset}/{action}")
+def user_paper_action(asset: str, action: str,
+                      authorization: str | None = Header(default=None)):
+    """Only pause or resume an existing simulation; never wallet execution."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(set_user_paper_status(did,asset,action),
+                        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/user-paper/{asset}/evaluate")
+def user_paper_evaluate(asset: str, authorization: str | None = Header(default=None)):
+    """Single manual evaluation against verified shared market data, not background live trading."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(step_user_paper(did,asset,market,time.time()),
+                        headers={"Cache-Control":"private, no-store"})
