@@ -9,6 +9,12 @@ function VerifiedActivity({t}) {
   const [state,setState]=useState('idle');
   const [activity,setActivity]=useState(null);
   const [busy,setBusy]=useState('');
+  const [revision,setRevision]=useState(0);
+  useEffect(()=>{
+    const refresh=()=>setRevision(n=>n+1);
+    window.addEventListener('mininex-activity-updated',refresh);
+    return()=>window.removeEventListener('mininex-activity-updated',refresh);
+  },[]);
   const years=Array.from({length:Math.max(1,new Date().getFullYear()-2020+1)},(_,i)=>new Date().getFullYear()-i);
 
   useEffect(()=>{
@@ -32,7 +38,7 @@ function VerifiedActivity({t}) {
       }catch{if(active){setActivity(null);setState('failed');}}
     })();
     return()=>{active=false;};
-  },[year,ready,authenticated,getAccessToken]);
+  },[year,ready,authenticated,getAccessToken,revision]);
 
   const exportYear=async format=>{
     if(busy||!authenticated||state!=='ready'||!['csv','pdf'].includes(format))return;
