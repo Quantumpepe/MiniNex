@@ -20,7 +20,9 @@ test('wallet uses embedded EVM address, not the demo wallet',()=>{
   assert.match(auth,/walletClientType==='privy'/);
   assert.match(auth,/wallet\.address/);
   assert.match(app,/<PrivyWalletPanel t=\{t\}/);
-  assert.match(app,/privyPaperSeparation/);
+  assert.match(app,/ensurePaperOnly/);
+  assert.doesNotMatch(app,/<MoneyInfo portfolio=|<FeeDetails paper=/);
+  assert.match(app,/<PrivyWalletPanel t=\{t\}/);
 });
 test('no transfers/delegations or private credentials in client wallet',()=>{
   assert.doesNotMatch(auth,/sendTransaction\s*\(|transfer\s*\(|privateKey|appSecret|delegateWallet|signMessage\s*\(/);
