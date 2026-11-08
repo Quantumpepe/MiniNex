@@ -217,3 +217,13 @@
   .compact-home--market .compact-actions button{font-size:14px;border-radius:13px}
 }
 @media(max-width:365px){.compact-quote-card{padding:12px 8px}.compact-quote-heading strong{font-size:12px}.compact-quote-price{font-size:16px}}
+
+/* The sole MiniNex help control lives in Settings. */
+.settings-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.settings-info-button{display:flex;align-items:center;justify-content:center;min-width:42px;min-height:42px;border-radius:50%;background:#123b38;border:1px solid #49dcae;color:#66f2c0;cursor:pointer}
+.settings-info-button:focus-visible{outline:2px solid #c0ffdf;outline-offset:3px}
+.settings-help-panel{display:grid;gap:0;border-radius:16px;padding:12px 17px;background:linear-gradient(145deg,#103733,#0b2429);border:1px solid #2b6760;margin-bottom:14px}
+.settings-help-panel h2{font-size:17px;margin:6px 0 10px}
+.settings-help-item{padding:12px 0;border-top:1px solid #2b514c}
+.settings-help-item h3{font-size:14px;font-weight:760;margin:0 0 6px;color:#9cf4d0}
+.settings-help-item p{font-size:13px;line-height:1.6;color:#c5dbd8;margin:0}
