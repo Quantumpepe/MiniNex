@@ -1,6 +1,6 @@
-# MiniNex V0.3 — fast BTC/ETH market monitoring + AUTO paper strategy
+# MiniNex V0.4 — BTC/ETH paper AUTO + mobile DE/EN preview
 
-MiniNex is an independent BTC/ETH trading application **under development**. V0.3
+MiniNex is an independent BTC/ETH trading application **under development**. V0.4
 contains **no real-money trading, wallets, private keys, orders or signatures**.
 It is a simulation with imaginary balances, and is *not* a profitable strategy
 or evidence that real fills, fees, execution quality or availability are assured.
@@ -60,9 +60,26 @@ authentication, and audited risk handling.
 
 ## DE / EN
 
-The planned Android/iOS interface will provide **Deutsch (DE)** and
-**English (EN)** with a switch in settings. Backend reason codes are language
-neutral. The mobile UI/i18n is **not implemented in V0.3**.
+The mobile-first web interface now provides **Deutsch (DE)** and **English (EN)**,
+with a visible switch and locally saved preference. It is a web preview and not
+yet a native Android/iOS package. Backend reason codes are language-neutral.
+
+## Frontend / Render static site
+
+The React/Vite interface lives in `frontend/`, separate from the Python web
+service. To deploy, use Render **New → Static Site**, repository
+`Quantumpepe/MiniNex`, root directory `frontend`, build command
+`npm install && npm run build`, publish directory `dist`, optionally
+`VITE_API_BASE_URL=https://mininex-backend.onrender.com`.
+
+The default static-site name `mininex-ui` is allowed in the backend CORS
+configuration. If another domain is chosen, set `MININEX_ALLOWED_ORIGINS` in the
+**backend** Render environment to its full HTTPS origin (no trailing slash).
+Do not use secrets in `VITE_` variables. The frontend shows actual public
+market data and demo engine values, never real wallet holdings. Charts show
+15-minute or 1-hour history only; 24 hours is disabled pending storage support.
+
+See `frontend/README.md` for details.
 
 ## Tests
 

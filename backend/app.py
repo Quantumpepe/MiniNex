@@ -1,9 +1,11 @@
 """MiniNex FastAPI V0.3 -- verified prices and PAPER-only AUTO strategy."""
 from contextlib import asynccontextmanager
 import asyncio
+import os
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .market_data import MarketDataService
 from .auto_engine import PaperAutoEngine
@@ -23,12 +25,32 @@ async def lifespan(app: FastAPI):
         await market.stop()
 
 
-app = FastAPI(title="MiniNex API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="MiniNex API", version="0.4.0", lifespan=lifespan)
+
+# Only known public browser origins can access read-only market/paper API.
+# Extra frontends: MININEX_ALLOWED_ORIGINS=https://my-mininex.example
+_allowed_origins = [
+    "https://mininex-ui.onrender.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+_allowed_origins.extend(
+    origin.strip().rstrip("/")
+    for origin in os.getenv("MININEX_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip().startswith(("https://", "http://"))
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(dict.fromkeys(_allowed_origins)),
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Accept", "Content-Type"],
+)
 
 
 @app.get("/")
 def home():
-    return {"app": "MiniNex", "version": "0.3.0", "status": "online",
+    return {"app": "MiniNex", "version": "0.4.0", "status": "online",
             "trading": "disabled", "paper_auto": "enabled", "real_orders": False}
 
 
