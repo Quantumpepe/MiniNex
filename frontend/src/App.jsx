@@ -272,13 +272,14 @@ export default function App() {
 
     <div className="content-column">
       <header className="topbar">
-        <div className="mobile-brand"><MiniNexMark size={34}/><b>mini<span>nex</span></b></div>
+        <button className="mobile-brand" type="button" onClick={()=>setPage('overview')} aria-label={t.overview} title={t.overview}><MiniNexMark size={34}/><b>mini<span>nex</span></b></button>
         <div className="topbar-status"><span className="live-circle"/><span>{t.simulated}</span></div>
         <div className="header-actions">
           <div className="lang-switch" role="group" aria-label={t.language}>
             <button type="button" className={language==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={language==='de'}>DE</button>
             <button type="button" className={language==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={language==='en'}>EN</button>
           </div>
+          <button className="icon-btn mobile-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>setPage('settings')}><Settings2 size={17}/></button>
           <button className="icon-btn refresh-btn" type="button" aria-label={t.refresh} title={t.refresh} onClick={()=>setRefreshNonce(n=>n+1)}><RefreshCcw size={17}/></button>
         </div>
       </header>
@@ -357,6 +358,6 @@ export default function App() {
       </main>
       <footer className="app-footer"><span>{t.version}</span><span><span className={`foot-dot ${connected?'online':''}`}/>{connected?t.streamOnline:t.streamOffline}</span></footer>
     </div>
-    <Navigation page={page} setPage={setPage} t={t} mobile/>
+    
   </div>;
 }

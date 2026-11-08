@@ -65,3 +65,8 @@ versioned dependency lockfile, and code-signing setup before public release.
 ## Compact no-scroll phone Home (V0.6)
 
 The phone overview fits within one viewport with no vertical Home scrolling. Detailed Trade, Wallet and Settings tabs can scroll. No synthetic profit or trade controls were introduced. The displayed market price is quoted in USDT independently of the paper portfolio settlement token. Existing API data and paper-only constraints remain unchanged.
+
+
+## V0.6.1 Mobile Navigation
+
+Mobile Home uses two prominent buttons (Trade history / Wallet) instead of the duplicate fixed bottom navigation. Tap the MiniNex logo to return Home; tap the header gear to open Settings and switch DE/EN. The Desktop sidebar and paper-only trading engine are unchanged.
