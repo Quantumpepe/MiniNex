@@ -261,3 +261,9 @@
 .tax-activity-row>div:last-child{text-align:right}
 .tax-activity-row strong{font-size:13px;overflow-wrap:anywhere}
 .tax-activity-row small{font-size:11px;color:#a1c7c0}
+
+/* Four compact blockchain asset tabs without squeezing the activity heading. */
+.activity-report-heading{flex-wrap:wrap}
+.activity-report-heading .tax-export-actions{width:100%;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.activity-report-heading .tax-export-actions button{padding:9px 4px;font-size:12px;min-width:0}
+.activity-report-heading .tax-export-actions button.chain-tab-selected{background:#2a8064;border-color:#76d5aa;color:#ffffff}
