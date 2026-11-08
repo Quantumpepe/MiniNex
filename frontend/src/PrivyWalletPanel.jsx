@@ -81,6 +81,10 @@ function ConnectedPrivyWallet({t}) {
         </> : <>
           <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
           {address&&<div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div>}
+          <div className="privy-wallet-description" aria-label={t.privyBtcTitle}>
+            <strong>{t.privyBtcTitle}</strong> · {t.privyBtcPending}
+          </div>
+          <div className="privy-wallet-note">{t.privyBtcSafety}</div>
           <div className={'privy-wallet-description '+(identityStatus==='verified'?'text-positive':'')} aria-live="polite">
             {identityStatus==='verified'?t.privyBackendVerified:
              identityStatus==='checking'?t.privyBackendChecking:
