@@ -1,4 +1,6 @@
 import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
+import {App as CapacitorApp} from '@capacitor/app';
+import {Capacitor} from '@capacitor/core';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin,
@@ -245,9 +247,52 @@ export default function App() {
   const [language,setLanguage]=useState(getLanguage);
   const [asset,setAsset]=useState('BTC');
   const [page,setPage]=useState('overview');
+  const pageRef=useRef('overview');
+  const previousPages=useRef([]);
+  const helpRef=useRef(false);
+  const backRef=useRef(null);
+  const navigate=next=>{
+    if(!['overview','activity','wallet','settings'].includes(next) || next===pageRef.current)return;
+    previousPages.current.push(pageRef.current);
+    pageRef.current=next;
+    setPage(next);
+  };
+  const back=()=>{
+    if(helpRef.current){
+      helpRef.current=false;
+      setHelpOpen(false);
+      return;
+    }
+    const previous=previousPages.current.pop();
+    const target=previous||'overview';
+    if(target!==pageRef.current){
+      pageRef.current=target;
+      setPage(target);
+    }
+    // On Home, avoid accidentally closing the entire Android application.
+  };
+  backRef.current=back;
+  useEffect(()=>{
+    let disposed=false;
+    let listener=null;
+    if(Capacitor.isNativePlatform()){
+      CapacitorApp.addListener('backButton',()=>backRef.current()).then(handle=>{
+        if(disposed)handle.remove();
+        else listener=handle;
+      }).catch(()=>{});
+    }
+    const onPop=()=>backRef.current();
+    window.addEventListener('popstate',onPop);
+    return()=>{
+      disposed=true;
+      listener?.remove();
+      window.removeEventListener('popstate',onPop);
+    };
+  },[]);
   const [period,setPeriod]=useState('m15');
   const [costsOpen,setCostsOpen]=useState(false);
   const [helpOpen,setHelpOpen]=useState(false);
+  helpRef.current=helpOpen;
   const [refreshNonce,setRefreshNonce]=useState(0);
   const {market,paper,history,trades,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
   const t=DICTIONARY[language];
@@ -266,25 +311,25 @@ export default function App() {
   const name=asset==='BTC'?'Bitcoin':'Ethereum';
 
   useEffect(()=>{document.documentElement.lang=language;document.title=`MiniNex · ${asset} & ETH/BTC`;},[language,asset]);
-  const tabKey=(name)=>()=>setPage(name);
+  const tabKey=(name)=>()=>navigate(name);
 
   return <div className={`app-shell ${page==='overview' ? 'app-shell--home' : ''}`}>
     <aside className="sidebar">
       <div className="sidebar-brand"><MiniNexMark/><div><b>mini<span>nex</span></b><small>TRADING INTELLIGENCE</small></div></div>
-      <Navigation page={page} setPage={setPage} t={t}/>
+      <Navigation page={page} setPage={navigate} t={t}/>
       
     </aside>
 
     <div className="content-column">
       <header className="topbar">
-        <button className="mobile-brand" type="button" onClick={()=>setPage('overview')} aria-label={t.overview} title={t.overview}><MiniNexMark size={34}/><b>mini<span>nex</span></b></button>
+        <button className="mobile-brand" type="button" onClick={()=>navigate('overview')} aria-label={t.overview} title={t.overview}><MiniNexMark size={34}/><b>mini<span>nex</span></b></button>
         
         <div className="header-actions">
           <div className="lang-switch" role="group" aria-label={t.language}>
             <button type="button" className={language==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={language==='de'}>DE</button>
             <button type="button" className={language==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={language==='en'}>EN</button>
           </div>
-          <button className="icon-btn mobile-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>setPage('settings')}><Settings2 size={17}/></button>
+          <button className="icon-btn mobile-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>navigate('settings')}><Settings2 size={17}/></button>
           <button className="icon-btn refresh-btn" type="button" aria-label={t.refresh} title={t.refresh} onClick={()=>setRefreshNonce(n=>n+1)}><RefreshCcw size={17}/></button>
         </div>
       </header>
@@ -294,7 +339,7 @@ export default function App() {
           <CompactOverview
             t={t} lang={language} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
             history={history} trades={trades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio}
-            paper={paper} workerOnline={workerOnline} goTo={setPage}
+            paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
           <section className="welcome-head"><h1>MiniNex</h1></section>
