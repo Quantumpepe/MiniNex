@@ -185,7 +185,7 @@ class MarketDataService:
             # Do not overwrite working, fresh WebSocket data.
             if (self.primary_connected and existing
                 and existing.get("source")=="Binance Spot WebSocket"
-                and 0<=at-existing["received_at"]<=self.max_primary_age_seconds):
+                and 0<=at-existing["received_at"]<=6.0):
                 continue
             # Avoid losing an already collected primary history or
             # overwriting a more recent WS sample during a REST request.
