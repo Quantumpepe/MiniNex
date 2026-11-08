@@ -241,8 +241,8 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                 from .auto_engine import PaperRules
                 # Match the evaluation history to the selected horizon; no
                 # 24h history is available in the current in-memory feed.
-                windows={"5m":(190.0,300.0),"15m":(900.0,900.0),
-                         "1h":(3600.0,3600.0)}
+                windows={"5m":(190.0,300.0),"15m":(780.0,900.0),
+                         "1h":(3300.0,3600.0)}
                 if row["horizon"]=="24h":
                     p.last_decision,p.last_reason="WAIT","24H_HISTORY_NOT_AVAILABLE"
                 else:
