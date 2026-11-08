@@ -22,6 +22,7 @@ from .verified_sync import synchronize_one_page
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper
 from .personal_paper_worker import PersonalPaperWorker
 from .treasury import treasury_status
+from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -135,6 +136,17 @@ def market_status():
         "primary_error": market.last_primary_error,
         "reference_error": market.last_reference_error,
     }
+
+
+@app.get("/api/strategy/replay/{asset}")
+def historical_strategy_replay(asset: str, mode: str = "LONG", horizon: str = "15m"):
+    """Non-executing historical replay, separate from all user accounts."""
+    asset=asset.upper()
+    if asset not in ("BTC","ETH") or mode not in REPLAY_MODES or horizon not in REPLAY_WINDOWS:
+        raise HTTPException(422,"Invalid replay selection")
+    samples=market.history(asset,limit=3600)
+    result=replay_strategy(asset,mode,horizon,samples)
+    return JSONResponse(result,headers={"Cache-Control":"no-store"})
 
 
 @app.get("/api/market/history/{asset}")
