@@ -1,6 +1,6 @@
 import React, {useCallback,useEffect,useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
-import {API_BASE} from './data.js';
+import {API_BASE,formatTimestamp} from './data.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
 
 const ASSETS=['BTC','ETH'];
@@ -103,7 +103,7 @@ function PersonalDemo({t}) {
       </p>
       {current.status!=='NOT_STARTED'&&<p className="privy-wallet-description">
         {t.personalDemoLastCheck}: {position.last_evaluated_at?
-          position.last_evaluated_at.slice(0,19).replace('T',' ')+' UTC':'—'} · {position.last_reason||'WAIT'}
+          formatTimestamp(position.last_evaluated_at,undefined,{year:'numeric',month:'2-digit',day:'2-digit'}):'—'} · {position.last_reason||'WAIT'}
       </p>}
       {current.status!=='NOT_STARTED'&&<div className="balance-grid">
         <div className="balance-line"><span>{t.personalDemoCash}</span><b>{position.stable_cash||'0'} {current.settlement}</b></div>
@@ -130,7 +130,7 @@ function PersonalDemo({t}) {
         {current.trades.slice(-8).reverse().map((trade,i)=><div className="tax-activity-row"
           key={trade.at+'-'+trade.kind+'-'+i}>
           <div><strong>{trade.kind?.replace('PAPER_','')||'TRADE'}</strong>
-            <small>{trade.at?.slice(0,16).replace('T',' ')||''} UTC</small></div>
+            <small>{formatTimestamp(trade.at,undefined,{year:'numeric',month:'2-digit',day:'2-digit'})}</small></div>
           <div><strong>{trade.quantity} {asset}</strong><small>{t.simulatedTradeLabel}</small></div>
         </div>)}
       </div>}
