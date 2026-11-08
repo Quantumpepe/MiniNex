@@ -88,6 +88,9 @@ def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
             "realized_net_profit":str(state.get("realized_profit",0)),
             "last_decision":state.get("last_decision","NOT_STARTED"),
             "last_reason":state.get("last_reason","NOT_STARTED"),
+            "last_evaluated_at":(datetime.fromtimestamp(state["last_evaluated_at"],tz=timezone.utc).isoformat()
+                                 if isinstance(state.get("last_evaluated_at"),(int,float))
+                                 and state["last_evaluated_at"]>0 else None),
             "trade_count":state.get("trade_count",0),
         },
         "trades":trades or [],
