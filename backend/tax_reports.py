@@ -1,7 +1,7 @@
 """Read-only annual exports of CONFIRMED real activity owned by a Privy DID.
 
 No public insertion route exists. Simulation data must never enter this ledger.
-All values stay in their recorded units; no invented CHF valuations or tax totals.
+All values stay in their recorded units; no invented local-currency valuations or tax totals.
 """
 from __future__ import annotations
 
@@ -123,7 +123,7 @@ def make_pdf(rows: list[dict], year: int) -> bytes:
         Paragraph("Confirmed blockchain transfers and MiniNex trades, if available. "
                   "All timestamps UTC; figures are in recorded asset units or USD. "
                   "Missing market values are intentionally left blank.", styles["MiniSmall"]),
-        Paragraph("Not a complete tax return. CHF tax valuations, year-end holdings, "
+        Paragraph("Not a complete tax return. Country-specific tax currency valuations, year-end holdings, "
                   "cost-basis verification and external wallet activity must be reconciled "
                   "before filing.", styles["MiniSmall"]),
         Spacer(1, 5*mm),
