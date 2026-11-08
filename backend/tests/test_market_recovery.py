@@ -89,7 +89,9 @@ def test_rest_backup_uses_single_symbol_queries():
     src=getsource(MarketDataService._rest_backup_loop)
     assert 'params={"symbol":symbol}' in src
     assert 'params={"symbols"' not in src
-    assert 'for symbol in SYMBOL_TO_ASSET' in src
+    assert 'for symbol, asset in SYMBOL_TO_ASSET.items()' in src
+    assert 'asyncio.gather(' in src
+    assert 'timeout=httpx.Timeout(3.5)' in src
 
 
 def test_history_error_diagnostics_per_asset():
@@ -97,3 +99,51 @@ def test_history_error_diagnostics_per_asset():
     snapshot=m.snapshot(now=1000)
     assert snapshot["history_errors"]=={"BTC":None,"ETH":None}
     assert snapshot["historical_samples"]=={"BTC":0,"ETH":0}
+
+
+def test_primary_rest_recovers_btc_when_eth_endpoint_fails():
+    m = MarketDataService(clock=lambda:1000.0)
+    assert m.ingest_reference(reference(),now=1000)
+    assert m.ingest_primary_rest_asset({"symbol":"BTCUSDT","price":"70000"},now=1000)
+    assert not m.ingest_primary_rest_asset({"symbol":"ETHUSDT","price":"INVALID"},now=1000)
+    snap = m.snapshot(now=1000)["markets"]
+    assert snap["BTC"]["market_data_valid"] is True
+    assert snap["BTC"]["primary_source"] == "Binance Spot REST"
+    assert snap["ETH"]["market_data_valid"] is False
+    assert snap["ETH"]["reason"] == "PRIMARY_MISSING_OR_STALE"
+
+
+def test_rest_recovers_stale_ws_before_ten_second_deadline():
+    m = MarketDataService(clock=lambda:1005.0)
+    m.primary_connected = True
+    assert m.ingest_primary({"data":{"e":"24hrMiniTicker",
+        "s":"BTCUSDT","c":"70000","o":"69950","E":1000000}},now=1000)
+    assert m.ingest_reference(reference(),now=1000)
+    assert m.ingest_primary_rest_asset(
+        {"symbol":"BTCUSDT","price":"70001"},now=1005)
+    snap = m.snapshot(now=1006)["markets"]["BTC"]
+    assert snap["market_data_valid"] is True
+    assert snap["primary_source"] == "Binance Spot REST"
+    assert snap["reason"] == "OK"
+
+
+def test_rest_preserves_fresh_websocket_sample():
+    m = MarketDataService(clock=lambda:1002.0)
+    m.primary_connected = True
+    assert m.ingest_primary({"data":{"e":"24hrMiniTicker",
+        "s":"BTCUSDT","c":"70000","o":"69950","E":1000000}},now=1000)
+    assert m.ingest_primary_rest_asset(
+        {"symbol":"BTCUSDT","price":"71000"},now=1002)
+    assert m._primary["BTC"]["source"] == "Binance Spot WebSocket"
+    assert m._primary["BTC"]["price"] == 70000
+
+
+def test_fallback_loses_authority_after_price_expires():
+    m = MarketDataService(clock=lambda:1000.0)
+    assert m.ingest_reference(reference(),now=1000)
+    assert m.ingest_primary_rest_asset(
+        {"symbol":"BTCUSDT","price":"70000"},now=1000)
+    assert m.snapshot(now=1009)["markets"]["BTC"]["market_data_valid"]
+    expired = m.snapshot(now=1011)["markets"]["BTC"]
+    assert expired["reason"] == "PRIMARY_MISSING_OR_STALE"
+    assert expired["market_data_valid"] is False
