@@ -8,7 +8,7 @@ const INITIAL = Object.freeze({
 });
 const MODES = ['LONG','SPOT_SHORT'];
 const STABLES = ['USDC','USDT'];
-const HORIZONS = ['15m','1h','24h'];
+const HORIZONS = ['5m','15m','1h','24h'];
 
 export default function TradingSetupPreview({t}) {
   const [settings,setSettings]=useState(INITIAL);
@@ -44,7 +44,7 @@ export default function TradingSetupPreview({t}) {
         <span>{t.privySetupHorizon}</span>
         <select value={settings[asset].horizon}
           onChange={event=>change(asset,'horizon',event.target.value)}>
-          <option value="15m">15m</option><option value="1h">1h</option>
+          <option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option>
           <option value="24h">24h</option>
         </select>
       </label>
