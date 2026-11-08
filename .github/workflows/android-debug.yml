@@ -82,14 +82,14 @@ jobs:
                   }
               }
           """
-          s = s.replace(marker, marker + '\\n' + signing, 1)
+          s = s.replace(marker, marker + '\n' + signing, 1)
           debug = 'buildTypes {'
           if debug not in s:
               raise SystemExit('Android build types missing')
-          s = s.replace(debug, debug + "\\n        debug { signingConfig signingConfigs.mininexTest }", 1)
+          s = s.replace(debug, debug + "\n        debug { signingConfig signingConfigs.mininexTest }", 1)
           import re, os
           run = int(os.environ['MININEX_BUILD_NUMBER'])
-          s,n = re.subn(r'versionCode\\s+\\d+', 'versionCode ' + str(10000 + run), s, count=1)
+          s,n = re.subn(r'versionCode\s+\d+', 'versionCode ' + str(10000 + run), s, count=1)
           if n != 1:
               raise SystemExit('Android versionCode not found')
           p.write_text(s)
