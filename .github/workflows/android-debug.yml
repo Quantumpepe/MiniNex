@@ -2,9 +2,6 @@ name: MiniNex Android validation (manual only)
 
 on:
   workflow_dispatch:
-  # One-off test APK for the requested release candidate; main remains manual.
-  push:
-    branches: [apk-test-v0.8.9]
 
 permissions:
   contents: read
