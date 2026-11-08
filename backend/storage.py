@@ -47,6 +47,16 @@ SCHEMA = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (privy_did,asset)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_trade_preferences (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        mode TEXT NOT NULL DEFAULT 'LONG' CHECK (mode IN ('LONG','SPOT_SHORT')),
+        stable TEXT NOT NULL DEFAULT 'USDC' CHECK (stable IN ('USDC','USDT')),
+        horizon TEXT NOT NULL DEFAULT '15m' CHECK (horizon IN ('5m','15m','1h','24h')),
+        revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_fee_events (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL,
@@ -112,6 +122,13 @@ def _prepare_rows(cur, did: str) -> None:
         cur.execute(
             """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
                VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
             (did,asset),
         )
 
