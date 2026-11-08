@@ -106,6 +106,7 @@ class PaperPortfolio:
     post_exit_low: float | None = None
     initial_valuation_pending: bool = False
     last_trade_at: float | None = None
+    last_evaluated_at: float | None = None
     last_decision: str = "INITIALIZING"
     last_reason: str = "WAITING_FOR_VERIFIED_DATA"
     realized_profit: float = 0.0
