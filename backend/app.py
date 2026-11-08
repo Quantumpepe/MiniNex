@@ -16,6 +16,7 @@ from .budgets import get_budget_preferences, save_budget_preference
 from .trade_preferences import get_trade_preferences, save_trade_preference
 from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_year
 from .blockchain_preview import fetch_preview, check_address
+from .blockchain_history import fetch_history, validate_request
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -296,4 +297,18 @@ async def blockchain_preview(
     return JSONResponse(
         await fetch_preview(asset, address),
         headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@app.get("/api/blockchain/history/{asset}")
+async def blockchain_history(
+    asset: str, address: str, cursor: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Paginated public read-only activity; wallet ownership remains UNVERIFIED."""
+    verify_privy_bearer(authorization)
+    validate_request(asset,address,cursor)
+    return JSONResponse(
+        await fetch_history(asset,address,cursor),
+        headers={"Cache-Control":"private, no-store"},
     )
