@@ -20,18 +20,22 @@ from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper
+from .personal_paper_worker import PersonalPaperWorker
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
+personal_paper = PersonalPaperWorker(market)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await market.start()
     await paper.start()
+    await personal_paper.start()
     try:
         yield
     finally:
+        await personal_paper.stop()
         await paper.stop()
         await market.stop()
 
@@ -342,7 +346,7 @@ def user_paper_status(asset: str, authorization: str | None = Header(default=Non
 def user_paper_start(asset: str, authorization: str | None = Header(default=None)):
     """Explicitly start a demo session; saved percent applies to virtual 1000 USD."""
     did=verify_privy_bearer(authorization)["user_id"]
-    return JSONResponse(start_user_paper(did,asset),headers={"Cache-Control":"private, no-store"})
+    return JSONResponse(start_user_paper(did,asset,market),headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/user-paper/{asset}/evaluate")
