@@ -20,6 +20,7 @@ from fastapi import HTTPException
 
 from .auth import verify_privy_bearer
 from .storage import _db_url, get_account_summary
+from .budgets import get_budget_preferences
 
 
 def test_public_key() -> None:
@@ -62,7 +63,13 @@ def test_temporary_db_account() -> None:
         assert set(first["ledger"]) == {"BTC", "ETH"}
         assert all(v["high_water_mark_usd"] == "0E-12" or
                    v["high_water_mark_usd"] == "0" for v in first["ledger"].values())
-        print("PostgreSQL: Verbindung, Kontoanlage und BTC/ETH-HWM OK")
+        budgets = get_budget_preferences(did)
+        assert budgets["trading_enabled"] is False
+        assert budgets["signing_authorized"] is False
+        assert set(budgets["budgets"]) == {"BTC", "ETH"}
+        assert all(v["percent"] == 0 and v["authorized"] is False
+                   for v in budgets["budgets"].values())
+        print("PostgreSQL: Konto, BTC/ETH-HWM und gesperrte Budgets OK")
 
         # Fresh database connection, not an in-memory cache.
         with psycopg.connect(url, connect_timeout=6) as conn:
@@ -81,6 +88,9 @@ def test_temporary_db_account() -> None:
             # Only delete the uniquely generated test DID, never a real user.
             with psycopg.connect(url, connect_timeout=6) as conn:
                 with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM mininex_budget_preferences WHERE privy_did=%s", (did,)
+                    )
                     cur.execute(
                         "DELETE FROM mininex_asset_hwm WHERE privy_did=%s", (did,)
                     )
@@ -104,7 +114,7 @@ def main() -> int:
             print("TEST NICHT BESTANDEN: Backend-Datenbank oder Testdaten inkonsistent.")
         return 1
     print("SYSTEMTEST: ALLE PRUEFUNGEN OK")
-    print("Echte Privy-Anmeldung am Endgeraet: NOCH NICHT GETESTET")
+    print("Echte Privy-Anmeldung am Endgeraet: separat testen")
     print("Live-Handel und Gebuehreneinzug: AUSGESCHALTET")
     return 0
 
