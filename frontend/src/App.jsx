@@ -13,6 +13,7 @@ import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
+import BlockchainPreview from './BlockchainPreview.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
 import {
   API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
@@ -375,6 +376,7 @@ export default function App() {
 
         {page==='activity'&&<>
           <section className="page-heading"><h1>{t.activity}</h1></section>
+          <BlockchainPreview t={t}/>
           <ActivityReport t={t}/>
         </>}
 
