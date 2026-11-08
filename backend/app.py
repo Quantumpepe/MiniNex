@@ -117,6 +117,9 @@ def market_status():
     return {
         "version": snap["version"],
         "trading_enabled": False,
+        "historical_samples":snap["historical_samples"],
+        "history_loaded_at":snap["history_loaded_at"],
+        "history_preload_error":market.last_history_error,
         "primary_ws_connected": snap["primary_ws_connected"],
         "rest_backup_active":snap["rest_backup_active"],
         "rest_backup_error":market.last_rest_error,
