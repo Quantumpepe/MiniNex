@@ -302,12 +302,19 @@ class MarketDataService:
                 for asset in ASSETS:
                     try:
                         symbol=f"{asset}USDT"
+                        # Request only CLOSED candles. Binance otherwise
+                        # includes the currently forming, untrustworthy bar.
+                        clock_now=self._clock()
+                        one_end=(int(clock_now)//60*60-1)*1000
+                        five_end=(int(clock_now)//300*300-1)*1000
                         one=await client.get(DEFAULT_CANDLES_URL,params={
-                            "symbol":symbol,"interval":"1m","limit":240
+                            "symbol":symbol,"interval":"1m","limit":240,
+                            "endTime":one_end,
                         })
                         one.raise_for_status()
                         five=await client.get(DEFAULT_CANDLES_URL,params={
-                            "symbol":symbol,"interval":"5m","limit":300
+                            "symbol":symbol,"interval":"5m","limit":300,
+                            "endTime":five_end,
                         })
                         five.raise_for_status()
                         count=self.ingest_historical_candles(
