@@ -1,3 +1,4 @@
+import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin,
@@ -32,7 +33,7 @@ async function getJson(path) {
 }
 
 function MiniNexMark({size=38}) {
-  return <div className="brand-mark" style={{width:size,height:size}} aria-hidden="true"><Zap size={Math.round(size*.50)} fill="currentColor" strokeWidth={2.4}/></div>;
+  return <div className="brand-mark" style={{width:size,height:size,borderRadius:'50%',background:'transparent',boxShadow:'none',overflow:'hidden',padding:0}} aria-hidden="true"><img src={`data:image/webp;base64,${miniNexLogoData.trim()}`} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}} /></div>;
 }
 
 function AssetSymbol({asset,size='md'}) {
