@@ -296,6 +296,14 @@ export default function App() {
   const [helpOpen,setHelpOpen]=useState(false);
   helpRef.current=helpOpen;
   const [refreshNonce,setRefreshNonce]=useState(0);
+  const [paperVisible,setPaperVisible]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    getJson('/api/user-paper/availability')
+      .then(data=>{if(active)setPaperVisible(data?.paper_available===true&&data?.live_trading_enabled===false);})
+      .catch(()=>{if(active)setPaperVisible(false);});
+    return()=>{active=false;};
+  },[]);
   const {market,paper,history,trades,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
@@ -340,7 +348,7 @@ export default function App() {
         {page==='overview'&&<>
           <CompactOverview
             t={t} lang={language} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
-            history={history} trades={trades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio}
+            history={history} trades={trades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
@@ -361,10 +369,10 @@ export default function App() {
                 <PriceChart history={history} asset={asset} period={period} market={mk} trades={[]} t={t} lang={language}/>
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
-              <section className="panel recent-panel" aria-label={t.recentTrades}>
+              {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
                 <div className="panel-top"><h2>{t.recentTrades} · {asset}</h2><span className="muted-description">{t.simulatedTradeLabel}</span></div>
                 <ActivityList trades={trades} t={t} lang={language} asset={asset} compact/>
-              </section>
+              </section>}
             </div>
           </div>
           </div>
