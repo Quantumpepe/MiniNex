@@ -76,7 +76,16 @@ class PaperRules:
     min_breakout_180s_pct: float = 0.45
     profit_trailing_arm_net_pct: float = 0.30
     trailing_pullback_pct: float = 0.20
+    # In strong upward momentum, do not prematurely take profit on tiny pullbacks.
+    strong_trend_60s_pct: float = 0.22
+    strong_trend_180s_pct: float = 0.50
+    strong_trend_trailing_multiplier: float = 2.0
+    volatility_trailing_multiplier: float = 0.25
+    max_trailing_pullback_pct: float = 1.50
     min_exit_net_profit_pct: float = 0.15
+    # After an exit, watch a meaningful decline and confirmation of recovery.
+    reentry_drop_pct: float = 0.70
+    reentry_rebound_pct: float = 0.20
     risk_exit_loss_pct: float = 2.50
     cooldown_seconds: float = 90.0
     min_buy_budget_usd: float = 30.0
@@ -93,6 +102,8 @@ class PaperPortfolio:
     initial_equity: float | None = None
     entry_price: float | None = None
     peak_price: float | None = None
+    last_exit_price: float | None = None
+    post_exit_low: float | None = None
     initial_valuation_pending: bool = False
     last_trade_at: float | None = None
     last_decision: str = "INITIALIZING"
@@ -261,6 +272,10 @@ class PaperAutoEngine:
                 else:
                     p.last_decision, p.last_reason = "WAIT", "RISK_EXIT_QUOTE_UNECONOMIC"
                 return
+        # Record the actual lowest post-exit price independently of the rolling
+        # window so a rebound cannot be manufactured by shifting window bounds.
+        if p.coin_quantity <= self.rules.min_coin_units and p.last_exit_price is not None:
+            p.post_exit_low = min(price, p.post_exit_low if p.post_exit_low is not None else price)
         if not sig["ready"]:
             p.last_decision, p.last_reason = "WAIT", sig["reason"]
             return
@@ -276,9 +291,25 @@ class PaperAutoEngine:
             gain_pct = net_gain / p.cost_basis * 100 if p.cost_basis > 0 else -math.inf
             peak_drop_pct = (1 - price / (p.peak_price or price)) * 100
             enough_gain = gain_pct >= self.rules.min_exit_net_profit_pct
-            trailing_armed = (self._sell_quote(asset, p.coin_quantity, p.peak_price or price) or {}).get("net_proceeds", 0) >= p.cost_basis * (1 + self.rules.profit_trailing_arm_net_pct / 100)
-            if trailing_armed and enough_gain and peak_drop_pct >= self.rules.trailing_pullback_pct:
-                self._paper_sell(p, sale, now, price, "NET_PROFIT_TRAILING")
+            peak_quote = self._sell_quote(asset, p.coin_quantity, p.peak_price or price)
+            peak_net_pct = ((peak_quote["net_proceeds"] / p.cost_basis - 1) * 100
+                            if peak_quote and p.cost_basis > 0 else -math.inf)
+            trailing_armed = peak_net_pct >= self.rules.profit_trailing_arm_net_pct
+            # Require a wider retracement in a strong uptrend and in a volatile
+            # market. Do not use fixed profit targets that cut winning runs short.
+            volatility_pct = ((sig["window_high"] / sig["window_low"] - 1) * 100
+                              if sig["window_low"] > 0 else 0)
+            strong_trend = (sig["momentum_60s_pct"] >= self.rules.strong_trend_60s_pct
+                            and sig["momentum_180s_pct"] >= self.rules.strong_trend_180s_pct)
+            pullback_trigger = min(
+                self.rules.max_trailing_pullback_pct,
+                max(self.rules.trailing_pullback_pct,
+                    volatility_pct * self.rules.volatility_trailing_multiplier)
+                * (self.rules.strong_trend_trailing_multiplier if strong_trend else 1.0)
+            )
+            reversal_confirmed = sig["momentum_60s_pct"] <= 0 or not strong_trend
+            if trailing_armed and enough_gain and reversal_confirmed and peak_drop_pct >= pullback_trigger:
+                self._paper_sell(p, sale, now, price, "DYNAMIC_NET_PROFIT_TRAILING")
             else:
                 p.last_decision, p.last_reason = "HOLD", "TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"
         else:
@@ -289,7 +320,21 @@ class PaperAutoEngine:
             breakout = (sig["momentum_60s_pct"] >= self.rules.min_breakout_60s_pct
                         and sig["momentum_180s_pct"] >= self.rules.min_breakout_180s_pct
                         and price >= sig["window_high"] * 0.999)
-            if not (rebound or breakout):
+            if p.last_exit_price is not None:
+                # After selling into stablecoins, buying on a falling candle is
+                # prohibited: first observe a decline, then a positive rebound.
+                discount = ((1 - (p.post_exit_low or price) / p.last_exit_price) * 100
+                            if p.last_exit_price > 0 else 0)
+                recovered = ((price / (p.post_exit_low or price) - 1) * 100
+                             if (p.post_exit_low or price) > 0 else 0)
+                rebound = (discount >= self.rules.reentry_drop_pct
+                           and recovered >= self.rules.reentry_rebound_pct
+                           and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct)
+                breakout = False
+                if not rebound:
+                    p.last_decision, p.last_reason = "WAIT", "AWAITING_POST_EXIT_REBOUND"
+                    return
+            elif not (rebound or breakout):
                 p.last_decision, p.last_reason = "WAIT", "NO_CONFIRMED_REBOUND_OR_BREAKOUT"
                 return
             buy = self._buy_quote(asset, p.stable_cash, price)
@@ -308,6 +353,8 @@ class PaperAutoEngine:
         p.cost_basis = quote["total_spent"]
         p.entry_price = price
         p.peak_price = price
+        p.last_exit_price = None
+        p.post_exit_low = None
         p.last_trade_at = at
         p.trade_count += 1
         p.accumulated_buy_costs += quote["venue_fee"] + quote["network_fee"] + quote["spread_and_slippage_cost"]
@@ -327,6 +374,8 @@ class PaperAutoEngine:
         p.cost_basis = 0.0
         p.entry_price = None
         p.peak_price = None
+        p.last_exit_price = price
+        p.post_exit_low = price
         p.last_trade_at = at
         p.realized_profit += profit
         p.accumulated_sell_costs += quote["venue_fee"] + quote["network_fee"] + quote["spread_and_slippage_cost"]
@@ -363,6 +412,8 @@ class PaperAutoEngine:
                 "coin_quantity": clean(p.coin_quantity, 12), "cost_basis": clean(p.cost_basis),
                 "entry_reference_price": clean(p.entry_price) if p.entry_price else None,
                 "peak_price": clean(p.peak_price) if p.peak_price else None,
+                "last_exit_price": clean(p.last_exit_price) if p.last_exit_price else None,
+                "post_exit_low": clean(p.post_exit_low) if p.post_exit_low else None,
                 "mark_price": price, "market_data_valid": feed["market_data_valid"],
                 "mark_after_estimated_exit_costs": clean(value_after_exit) if value_after_exit is not None else None,
                 "estimated_unrealized_net_pnl": clean(unrealized) if unrealized is not None else None,
