@@ -115,11 +115,11 @@ function PersonalDemo({t}) {
         <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{position.realized_net_profit||'0'}</b></div>
         {position.valuation?.quote_valid===true&&Number(position.coin_quantity)>0&&<>
           <div className="balance-line">
-            <span>{t.language==='de'?'Geschätzter Netto-Verkaufswert':'Estimated net sale value'}</span>
+            <span>{t.personalDemoExitNet}</span>
             <b>{Number(position.valuation.estimated_exit_net_usd).toFixed(2)} {current.settlement}</b>
           </div>
           <div className="balance-line">
-            <span>{t.language==='de'?'Offenes Netto-Ergebnis':'Unrealized net result'}</span>
+            <span>{t.personalDemoUnrealized}</span>
             <b>{Number(position.valuation.unrealized_net_pnl_usd).toFixed(2)} {current.settlement}
               {' ('+Number(position.valuation.unrealized_net_pct).toFixed(2)+' %)'}
             </b>
