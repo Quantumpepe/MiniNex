@@ -173,3 +173,13 @@
 .privy-hwm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#a1baba;font-variant-numeric:tabular-nums}
 .privy-hwm-row b{color:#e1f6ee}
 .privy-hwm-disclaimer{font-size:10px;color:#d8bb82}
+
+/* V0.8.9: compact touch-friendly safe trading-setup preview. */
+.privy-setup-asset{border-top:1px solid #2a5655;padding-top:12px}
+.privy-setup-asset label{min-width:0;color:#bbd7d3;font-size:12px}
+.privy-setup-asset select{appearance:auto;min-width:0;max-width:65%;width:65%;padding:9px 8px;border:1px solid #376462;border-radius:9px;background:#0e2c35;color:#e7fff6;font-size:12px}
+.privy-setup-asset select:focus-visible{outline:2px solid #62e8ba;outline-offset:2px}
+@media(max-width:400px){
+  .privy-setup-asset label{flex-direction:column;align-items:stretch!important;gap:4px!important}
+  .privy-setup-asset select{max-width:100%;width:100%}
+}
