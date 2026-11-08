@@ -120,6 +120,10 @@ def add_paper_mark_to_market(result: dict, market: Any) -> dict:
     empty={"quote_valid":False,"price_usdt":None,"estimated_exit_net_usd":None,
            "unrealized_net_pnl_usd":None,"unrealized_net_pct":None,
            "estimated_total_equity_usd":None,
+           "estimated_sale_gross_usd":None,"estimated_sale_costs_usd":None,
+           "estimated_sale_fee_usd":None,"estimated_sale_spread_slippage_usd":None,
+           "estimated_sale_network_fee_usd":None,
+           "last_buy_costs_usd":None,
            "pricing_basis":"PAPER_ESTIMATE_ONLY"}
     result["position"]["valuation"]=empty
     try:
@@ -140,9 +144,33 @@ def add_paper_mark_to_market(result: dict, market: Any) -> dict:
             return result
         net=sale["net_proceeds"] if sale else 0.0
         unrealized=net-basis if sale else 0.0
+        # The buy fill was already included in cost_basis; never deduct
+        # the displayed entry costs again from unrealized PnL.
+        last_buy_costs=None
+        if sale:
+            for trade in reversed(result.get("trades") or []):
+                if isinstance(trade,dict) and trade.get("kind")=="PAPER_BUY":
+                    costs=trade.get("estimated_costs")
+                    if isinstance(costs,dict):
+                        try:
+                            amounts=[float(costs[key]) for key in (
+                                "venue_fee","network_fee","spread_and_slippage_cost")]
+                            if all(math.isfinite(v) and v>=0 for v in amounts):
+                                last_buy_costs=round(sum(amounts),6)
+                        except (KeyError,ValueError,TypeError,OverflowError):
+                            pass
+                    break
+        sale_costs=(sale["venue_fee"]+sale["network_fee"]
+                    +sale["spread_and_slippage_cost"]) if sale else 0.0
         empty.update({
             "quote_valid":True,
             "price_usdt":round(price,8),
+            "estimated_sale_gross_usd":round(sale["market_value"],6) if sale else 0.0,
+            "estimated_sale_costs_usd":round(sale_costs,6),
+            "estimated_sale_fee_usd":round(sale["venue_fee"],6) if sale else 0.0,
+            "estimated_sale_spread_slippage_usd":round(sale["spread_and_slippage_cost"],6) if sale else 0.0,
+            "estimated_sale_network_fee_usd":round(sale["network_fee"],6) if sale else 0.0,
+            "last_buy_costs_usd":last_buy_costs,
             "estimated_exit_net_usd":round(net,6),
             "unrealized_net_pnl_usd":round(unrealized,6),
             "unrealized_net_pct":round(unrealized/basis*100,4) if basis>0 else 0.0,
