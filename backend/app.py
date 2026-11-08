@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .market_data import MarketDataService
 from .auto_engine import PaperAutoEngine
 from .auth import verify_privy_bearer
+from .storage import get_account_summary
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
         await market.stop()
 
 
-app = FastAPI(title="MiniNex API", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="MiniNex API", version="0.8.0", lifespan=lifespan)
 
 # Only known public browser origins can access read-only market/paper API.
 # Extra frontends: MININEX_ALLOWED_ORIGINS=https://my-mininex.example
@@ -53,7 +54,7 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"app": "MiniNex", "version": "0.5.0", "status": "online",
+    return {"app": "MiniNex", "version": "0.8.0", "status": "online",
             "trading": "disabled", "paper_auto": "enabled", "real_orders": False}
 
 
@@ -74,6 +75,13 @@ def authenticated_identity(authorization: str | None = Header(default=None)):
         "trading_enabled": False,
         "mode": "IDENTITY_ONLY",
     }, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/account")
+def account_status(authorization: str | None = Header(default=None)):
+    """Create/read only the account proven by a Privy token; no wallet authority."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_account_summary(did), headers={"Cache-Control":"no-store"})
 
 
 @app.get("/api/market/prices")

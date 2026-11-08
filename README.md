@@ -21,3 +21,10 @@ The Home screen is designed to fit a phone viewport without vertical scrolling: 
 
 ## V0.7.1 Privy identity verification
 MiniNex now includes a fail-closed identity-only GET /api/auth/me endpoint. It requires a valid Privy JWT signed by the configured MiniNex public verification key; no real wallets, funds, trades or positions are enabled by this endpoint. Deployment requires setting MININEX_PRIVY_VERIFICATION_KEY in Render. See frontend/README.md.
+
+## MiniNex V0.8 PostgreSQL persistence (identity-only)
+- Configure `DATABASE_URL` in the Render MiniNex backend service with the Render Postgres **Internal Database URL**. Never paste the URL or credentials into GitHub, frontend, screenshots or chat.
+- `GET /api/account` requires the valid MiniNex Privy JWT, registers that user's DID, and initializes private BTC/ETH fee ledgers without enabling deposits or live trading. A missing/unreachable database returns HTTP 503 and existing public paper-market endpoints remain separate.
+- The ledger is backed by PostgreSQL and uses transaction-locked, idempotent event IDs to prevent double charging. Fee rate is fixed at 5% of cumulative realized net USD gains exceeding the previous HWM after loss recovery. Results are *assessed only*; no payout or collection exists.
+- No public endpoint can append trade events. That write path must only be connected to a future fully verified live settlement engine. Paper engine balances/trades remain ephemeral and do **not** enter the live fee ledger.
+- The HWM rules require correct verified realized-cost accounting and fiat normalization before future live use. Additional equity-HWM checks, deposits/withdrawals, trading authorization, native BTC handling and audit checks are still required.
