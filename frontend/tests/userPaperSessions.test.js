@@ -29,3 +29,11 @@ test('automatic server cadence and simulated funds disclosed in both languages',
   assert.match(dict,/1,000 virtual USD/);
   assert.match(dict,/1’000 virtuellen USD/);
 });
+
+test('backend live mode hides all simulation cards and the old public trade preview',()=>{
+  const compact=read('../src/CompactOverview.jsx');
+  assert.match(ui,/\/api\/user-paper\/availability/);
+  assert.match(ui,/if\(!paperVisible\)return null/);
+  assert.match(app,/paperVisible&&<section className="panel recent-panel"/);
+  assert.match(compact,/showSimulatedTrades&&<section className="compact-recent-trades"/);
+});
