@@ -245,3 +245,19 @@
 .compact-trade-value small.text-positive{color:#63f3be}
 .compact-trade-value small.text-negative{color:#ff9b8e}
 .compact-trade-empty{margin:0;color:#9ebdb8;font-size:13px}
+
+/* Verified account activity and annual tax download controls. */
+.activity-report{display:flex;flex-direction:column;gap:15px;padding:18px}
+.activity-report-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.activity-report-heading h2{font-size:17px}
+.activity-report-heading select{padding:9px 12px;background:#0b2c32;color:#ddf8ef;border:1px solid #3c7868;border-radius:10px;font-size:14px}
+.activity-report>p{font-size:13px;color:#a8c5c0;line-height:1.55}
+.tax-export-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tax-export-actions button{border:1px solid #328469;border-radius:11px;background:#215f4e;color:#dcfff2;padding:11px 7px;font-size:13px;font-weight:760}
+.tax-export-actions button:last-child{background:#102d34;border-color:#477477}
+.tax-activity-list{border-top:1px solid #315451}
+.tax-activity-row{display:flex;justify-content:space-between;gap:10px;padding:12px 2px;border-bottom:1px solid #315451}
+.tax-activity-row>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.tax-activity-row>div:last-child{text-align:right}
+.tax-activity-row strong{font-size:13px;overflow-wrap:anywhere}
+.tax-activity-row small{font-size:11px;color:#a1c7c0}
