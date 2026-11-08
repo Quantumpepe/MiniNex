@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {usePrivy,useWallets} from '@privy-io/react-auth';
-import {API_BASE} from './data.js';
+import {API_BASE,formatTimestamp} from './data.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
 
 const BTC_ADDRESS=/^(?:bc1q[ac-hj-np-z02-9]{38,59}|bc1p[ac-hj-np-z02-9]{58}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/;
@@ -100,7 +100,7 @@ function ExplorerView({t}) {
           {items.map(tx=><div key={tx.id} className="tax-activity-row">
             <div>
               <strong>{tx.direction==='IN'?t.chainIncoming:t.chainOutgoing} · {tx.asset}</strong>
-              <small>{tx.timestamp?tx.timestamp.slice(0,16).replace('T',' ')+' UTC':t.chainPending}</small>
+              <small>{tx.timestamp?formatTimestamp(tx.timestamp,undefined,{year:'numeric',month:'2-digit',day:'2-digit'}):t.chainPending}</small>
               <small>{tx.confirmed?t.chainConfirmed:t.chainPending}</small>
             </div>
             <div>
