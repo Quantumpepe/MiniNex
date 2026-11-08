@@ -269,7 +269,7 @@ function ConnectedPrivyWallet({t}) {
   };
 
   return <section className="panel privy-panel">
-    <div className="privy-panel-header"><h2>{t.privyTitle}</h2><ShieldCheck size={19} color="#54eabb"/></div>
+    <div className="privy-panel-header"><h2>{t.privyTitle}</h2><InfoTip title={t.privyTitle} label={t.infoLabel}><p>{t.privyNoDeposits}</p><p>{t.privyBtcSafety}</p></InfoTip></div>
     <div className="privy-panel-body">
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
         !authenticated ? <>
