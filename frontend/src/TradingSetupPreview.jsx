@@ -1,3 +1,4 @@
+import InfoTip from './InfoTip.jsx';
 import React, {useState} from 'react';
 
 // Safe local preview only: these selections never become a signer authorization,
@@ -20,7 +21,7 @@ export default function TradingSetupPreview({t}) {
   };
   return <section className="privy-hwm-box" aria-label={t.privySetupTitle}>
     <div className="privy-hwm-title">
-      <strong>{t.privySetupTitle}</strong><span>{t.privySetupPreview}</span>
+      <strong>{t.privySetupTitle}</strong><InfoTip title={t.privySetupTitle} label={t.infoLabel}><span>{t.privySetupShortNote}</span><p>{t.privySetupSafety}</p></InfoTip>
     </div>
     {['BTC','ETH'].map(asset=><div key={asset} className="privy-setup-asset"
       style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
@@ -49,7 +50,5 @@ export default function TradingSetupPreview({t}) {
         </select>
       </label>
     </div>)}
-    <div className="privy-wallet-note">{t.privySetupShortNote}</div>
-    <div className="privy-hwm-disclaimer">{t.privySetupSafety}</div>
   </section>;
 }
