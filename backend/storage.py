@@ -78,6 +78,38 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_activity_by_user_year
        ON mininex_verified_activity(privy_did,occurred_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_user_paper_sessions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        status TEXT NOT NULL DEFAULT 'NOT_STARTED'
+            CHECK (status IN ('NOT_STARTED','ACTIVE','PAUSED')),
+        settlement TEXT NOT NULL DEFAULT 'USDC'
+            CHECK (settlement IN ('USDC','USDT')),
+        strategy_mode TEXT NOT NULL DEFAULT 'LONG'
+            CHECK (strategy_mode IN ('LONG','SPOT_SHORT')),
+        horizon TEXT NOT NULL DEFAULT '15m'
+            CHECK (horizon IN ('5m','15m','1h','24h')),
+        budget_percent SMALLINT NOT NULL DEFAULT 0
+            CHECK (budget_percent BETWEEN 0 AND 100),
+        initial_demo_cash NUMERIC(28,8) NOT NULL DEFAULT 0
+            CHECK (initial_demo_cash >= 0),
+        state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+        revision BIGINT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_user_paper_trades (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        event_id BIGINT NOT NULL,
+        occurred_at TIMESTAMPTZ NOT NULL,
+        event_json JSONB NOT NULL,
+        PRIMARY KEY (privy_did,asset,event_id),
+        FOREIGN KEY (privy_did,asset) REFERENCES
+            mininex_user_paper_sessions(privy_did,asset)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
+       ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
     """CREATE TABLE IF NOT EXISTS mininex_fee_events (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL,
