@@ -1,5 +1,9 @@
 export const DICTIONARY = {
   en: {
+    infoLabel: 'Information',
+    noRealTrades: 'No transactions yet',
+    tradingUnavailable: 'Trading not enabled',
+    privyConnectionIssue: 'Wallet connection unavailable. Please retry.',
     privySetupTitle: 'BTC / ETH trading setup',
     privySetupPreview: 'LOCAL PREVIEW',
     privySetupMode: 'Market mode',
@@ -124,6 +128,10 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    infoLabel: 'Information',
+    noRealTrades: 'Noch keine Transaktionen',
+    tradingUnavailable: 'Handel noch nicht aktiviert',
+    privyConnectionIssue: 'Wallet-Verbindung nicht verfügbar. Bitte erneut versuchen.',
     privySetupTitle: 'BTC / ETH Handelseinstellungen',
     privySetupPreview: 'LOKALE VORSCHAU',
     privySetupMode: 'Marktmodus',
