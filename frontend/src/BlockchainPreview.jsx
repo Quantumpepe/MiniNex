@@ -10,6 +10,9 @@ function ExplorerView({t}) {
   const {ready,authenticated,user,getAccessToken}=usePrivy();
   const {wallets}=useWallets();
   const [asset,setAsset]=useState('BTC');
+  const [cursor,setCursor]=useState(null);
+  const [nextCursor,setNextCursor]=useState(null);
+  const [loadingMore,setLoadingMore]=useState(false);
   const [reload,setReload]=useState(0);
   const [state,setState]=useState('idle');
   const [items,setItems]=useState([]);
@@ -19,20 +22,21 @@ function ExplorerView({t}) {
   const eth=wallets.find(wallet=>
     wallet?.walletClientType==='privy' && ETH_ADDRESS.test(wallet?.address||''))?.address;
   const address=asset==='BTC'?btc:eth;
+  const changeAsset=next=>{setAsset(next);setCursor(null);setNextCursor(null);setItems([]);};
 
   useEffect(()=>{
     if(!ready || !authenticated || !address){
       setItems([]);setState('idle');return;
     }
     let active=true;
-    setItems([]);
+    if(!cursor)setItems([]);
     setState('loading');
     (async()=>{
       try {
         const token=await getAccessToken();
         if(!token)throw new Error('Login missing');
-        const response=await fetch(API_BASE+'/api/blockchain/preview/'+asset+
-          '?address='+encodeURIComponent(address),{
+        const response=await fetch(API_BASE+'/api/blockchain/history/'+asset+
+          '?address='+encodeURIComponent(address)+(cursor?'&cursor='+encodeURIComponent(cursor):''),{
           headers:{Authorization:'Bearer '+token,Accept:'application/json'},
           cache:'no-store',
         });
@@ -42,19 +46,19 @@ function ExplorerView({t}) {
            data.tax_complete!==false || data.asset!==asset ||
            data.address!==address || !Array.isArray(data.items))
           throw new Error('Unexpected explorer response');
-        if(active){setItems(data.items);setState('ready');}
+        if(active){setItems(old=>cursor?[...old,...data.items.filter(x=>!old.some(y=>y.id===x.id && y.asset===x.asset))]:data.items);setNextCursor(data.next_cursor||null);setState('ready');}
       }catch{if(active){setItems([]);setState('failed');}}
     })();
     return()=>{active=false;};
-  },[ready,authenticated,asset,address,getAccessToken,reload]);
+  },[ready,authenticated,asset,address,getAccessToken,reload,cursor]);
 
   return <section className="panel activity-report">
     <div className="activity-report-heading">
       <h2>{t.chainPreviewTitle}</h2>
       <div className="tax-export-actions">
-        {['BTC','ETH'].map(coin=><button key={coin} type="button" aria-pressed={asset===coin}
+        {['BTC','ETH','USDC','USDT'].map(coin=><button key={coin} type="button" aria-pressed={asset===coin}
           className={asset===coin?'chain-tab-selected':''}
-          onClick={()=>setAsset(coin)}>{coin}</button>)}
+          onClick={()=>changeAsset(coin)}>{coin}</button>)}
       </div>
     </div>
     <p>{t.chainPreviewNote}</p>
@@ -62,13 +66,13 @@ function ExplorerView({t}) {
       !authenticated?<p>{t.taxLoginRequired}</p>:
       !address?<p>{t.chainWalletMissing}</p>:<>
         <button className="privy-wallet-action privy-wallet-action--secondary"
-          type="button" disabled={state==='loading'} onClick={()=>setReload(n=>n+1)}>
+          type="button" disabled={state==='loading'} onClick={()=>{setCursor(null);setNextCursor(null);setReload(n=>n+1);}}>
           {t.chainRefresh}
         </button>
         {state==='loading'&&<p>{t.taxLoading}</p>}
         {state==='failed'&&<p role="alert">{t.chainPreviewUnavailable}</p>}
         {state==='ready'&&!items.length&&<p>{t.chainNoTransfers}</p>}
-        {state==='ready'&&items.length>0&&<div className="tax-activity-list">
+        {items.length>0&&<div className="tax-activity-list">
           {items.map(tx=><div key={tx.id} className="tax-activity-row">
             <div>
               <strong>{tx.direction==='IN'?t.chainIncoming:t.chainOutgoing} · {tx.asset}</strong>
@@ -83,6 +87,8 @@ function ExplorerView({t}) {
             </div>
           </div>)}
         </div>}
+        {state==='ready'&&nextCursor&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          onClick={()=>setCursor(nextCursor)}>{t.chainLoadMore}</button>}
       </>}
   </section>;
 }
