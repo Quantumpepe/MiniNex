@@ -27,7 +27,7 @@ PAPER_START_USD=Decimal("1000.00")
 _STATE_FIELDS=(
     "stable_cash","coin_quantity","cost_basis","initial_equity","entry_price",
     "peak_price","last_exit_price","post_exit_low","last_trade_at","last_evaluated_at","last_decision",
-    "last_reason","realized_profit","accumulated_buy_costs",
+    "last_reason","last_signal_summary","realized_profit","accumulated_buy_costs",
     "accumulated_sell_costs","trade_count",
 )
 
@@ -48,7 +48,7 @@ def _restore(asset: str, settlement: str, state: dict, initial: Decimal) -> Pape
     # Do not accept arbitrary/unknown keys from a database blob as object attrs.
     values={name:state[name] for name in _STATE_FIELDS if name in state}
     for key,value in values.items():
-        if key in ("last_decision","last_reason"):
+        if key in ("last_decision","last_reason","last_signal_summary"):
             if type(value) is not str or len(value)>160:
                 raise ValueError("Invalid stored decision")
         elif key=="trade_count":
@@ -88,6 +88,7 @@ def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
             "realized_net_profit":str(state.get("realized_profit",0)),
             "last_decision":state.get("last_decision","NOT_STARTED"),
             "last_reason":state.get("last_reason","NOT_STARTED"),
+            "last_signal_summary":state.get("last_signal_summary",""),
             "last_evaluated_at":(datetime.fromtimestamp(state["last_evaluated_at"],tz=timezone.utc).isoformat()
                                  if isinstance(state.get("last_evaluated_at"),(int,float))
                                  and state["last_evaluated_at"]>0 else None),
@@ -97,7 +98,7 @@ def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
         "paper_only":True,"real_trading_enabled":False,"wallet_funds_used":False,
         "execution_cadence":"SERVER_AUTOMATIC_15_SECONDS",
         "warning":"Simulation only; saved settings do not authorize live trading. "
-                  "Only simulation. 24h requires long-term verified price history and will not open positions until available.",
+                  "Only simulation. Signals use actual loaded historical market data.",
     }
 
 
@@ -241,7 +242,6 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                     return _session_data(row,_trades(cur,did,asset))
                 engine.portfolios={asset:p}
                 feed=market.snapshot(now=now)["markets"][asset]
-                from .auto_engine import PaperRules
                 from .auto_engine import PaperRules
                 # The selected period is a lookback, never a mandatory wait.
                 # Real closed exchange candles are loaded asynchronously on
