@@ -120,6 +120,7 @@ class MarketDataService:
         self._historical: dict[str, list[dict]] = {asset: [] for asset in ASSETS}
         self.history_loaded_at: dict[str,float|None] = {asset: None for asset in ASSETS}
         self.last_history_error: str | None = None
+        self.history_errors: dict[str,str|None] = {asset: None for asset in ASSETS}
         self.primary_connected = False
         self.last_primary_error: str | None = None
         self.last_rest_error: str | None = None
@@ -227,11 +228,21 @@ class MarketDataService:
                     )
                     if required:
                         # Fixed Binance spot API; no user-input URLs or pairs.
-                        response=await client.get(self.primary_rest_url,params={
-                            "symbols":json.dumps(list(SYMBOL_TO_ASSET),separators=(",",":"))
-                        })
-                        response.raise_for_status()
-                        if not self.ingest_primary_rest(response.json()):
+                        # Request the two fixed symbols separately: Binance
+                        # can reject the combined symbols parameter with 400.
+                        # Each response must confirm exactly its requested pair.
+                        packets=[]
+                        for symbol in SYMBOL_TO_ASSET:
+                            response=await client.get(self.primary_rest_url,
+                                                      params={"symbol":symbol})
+                            response.raise_for_status()
+                            packet=response.json()
+                            if (not isinstance(packet,dict)
+                                or packet.get("symbol")!=symbol
+                                or positive_price(packet.get("price")) is None):
+                                raise ValueError("Invalid spot price for "+symbol)
+                            packets.append(packet)
+                        if not self.ingest_primary_rest(packets):
                             raise ValueError("Invalid Binance spot REST backup prices")
                         self.last_rest_error=None
                 except asyncio.CancelledError:
@@ -321,11 +332,13 @@ class MarketDataService:
                             asset,one.json(),five.json()
                         )
                         self.last_history_error=None
+                        self.history_errors[asset]=None
                         LOGGER.info("Loaded %d real historical %s spot samples",count,asset)
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
                         self.last_history_error=f"{type(exc).__name__}: {str(exc)[:160]}"
+                        self.history_errors[asset]=self.last_history_error
                         LOGGER.warning("Spot history preload unavailable for %s: %s",
                                        asset,self.last_history_error)
                 await asyncio.sleep(300.0)
@@ -387,6 +400,7 @@ class MarketDataService:
             "rest_backup_active": any(v.get("primary_source")=="Binance Spot REST" and v.get("market_data_valid") for v in markets.values()),
             "historical_samples":{a:len(self._historical[a]) for a in ASSETS},
             "history_loaded_at":{a:utc_iso(self.history_loaded_at[a]) for a in ASSETS},
+            "history_errors":dict(self.history_errors),
             "markets": markets,
         }
 
