@@ -110,7 +110,7 @@ def test_schema_separates_user_assets_and_never_grants_access():
     assert "mininex_budget_preferences" in ddl
     assert "PRIMARY KEY (privy_did,asset)" in ddl
     assert "DEFAULT 0 CHECK (percent BETWEEN 0 AND 100)" in ddl
-    assert "ON CONFLICT (privy_did,asset) DO NOTHING" in storage._prepare_rows.__code__.co_consts
+    assert "ON CONFLICT (privy_did,asset) DO NOTHING" in " ".join(\n        x for x in storage._prepare_rows.__code__.co_consts if isinstance(x, str)\n    )
     assert not any(token in ddl.lower() for token in ("private_key", "signer_secret", "delegation_token"))
     assert budgets.validate_percent(0) == 0
     assert budgets.validate_percent(100) == 100
