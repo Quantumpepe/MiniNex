@@ -11,14 +11,15 @@ test('Blockchain preview only uses linked native BTC and embedded ETH wallet',()
   assert.match(component,/BTC_ADDRESS\.test/);
   assert.match(component,/ETH_ADDRESS\.test/);
   assert.match(component,/getAccessToken/);
-  assert.match(component,/\/api\/blockchain\/preview\//);
+  assert.match(component,/\\/api\\/blockchain\\/history\\//);
   assert.match(component,/Authorization:'Bearer '\+token/);
   assert.match(app,/<BlockchainPreview t=\{t\}\/>/);
 });
 test('Blockchain preview cannot write to tax ledger or authorize trading',()=>{
   assert.match(component,/wallet_ownership_verified!==false/);
   assert.match(component,/tax_complete!==false/);
-  assert.doesNotMatch(component,/sendTransaction|signTransaction|POST|PUT|\/api\/activity\/.*export/);
-  assert.match(strings,/not yet part of the tax export/);
-  assert.match(strings,/noch nicht im Steuerexport enthalten/);
+  assert.doesNotMatch(component,/sendTransaction|signTransaction|\/api\/activity\/.*export/);
+  assert.match(component,/\/api\/blockchain\/sync\//);
+  assert.match(strings,/not a complete tax record/);
+  assert.match(strings,/noch keine vollständigen Steuerbelege/);
 });
