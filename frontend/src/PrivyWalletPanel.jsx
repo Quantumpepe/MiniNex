@@ -112,7 +112,7 @@ function NativeBtcWallet({user, t}) {
       state==='creating' ? t.privyBtcCreating :
       state==='failed' ? t.privyBtcFailed : t.privyBtcPending
     }</div>
-    {address && <><div className="privy-wallet-address" title={t.privyBtcTitle}>{address.slice(0,12)}…{address.slice(-10)}</div><CopyWalletAddress address={address} network="BTC" t={t}/></>}
+    {address && <CopyWalletAddress address={address} network="BTC" t={t}/> }
     {state==='failed' && !address && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       onClick={()=>setRetry(n=>n+1)}>{t.privyBtcRetry}</button>}
     <div className="privy-wallet-note">{t.privyBtcSafety}</div>
@@ -278,7 +278,7 @@ function ConnectedPrivyWallet({t}) {
           <div className="privy-wallet-note">{t.privyOtpHelp}</div>
         </> : <>
           <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
-          {address&&<><div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div><CopyWalletAddress address={address} network="ETH" t={t}/></>}
+          {address && <CopyWalletAddress address={address} network="ETH" t={t}/> }
           {identityStatus==='verified' && databaseStatus==='stored'
             ? <NativeBtcWallet user={user} t={t}/>
             : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
