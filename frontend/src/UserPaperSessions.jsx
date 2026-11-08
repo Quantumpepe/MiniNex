@@ -118,6 +118,20 @@ function PersonalDemo({t}) {
             <span>{t.personalDemoExitNet}</span>
             <b>{Number(position.valuation.estimated_exit_net_usd).toFixed(2)} {current.settlement}</b>
           </div>
+          {position.valuation.last_buy_costs_usd!=null&&
+            <div className="balance-line">
+              <span>{t.personalDemoBuyCosts}</span>
+              <b>{Number(position.valuation.last_buy_costs_usd).toFixed(2)} {current.settlement}</b>
+            </div>}
+          <div className="balance-line">
+            <span>{t.personalDemoSaleCosts}</span>
+            <b>{Number(position.valuation.estimated_sale_costs_usd).toFixed(2)} {current.settlement}</b>
+          </div>
+          <p className="privy-wallet-description">
+            {t.personalDemoSaleDetails}: {Number(position.valuation.estimated_sale_fee_usd).toFixed(2)}
+            {' / '}{Number(position.valuation.estimated_sale_spread_slippage_usd).toFixed(2)}
+            {' / '}{Number(position.valuation.estimated_sale_network_fee_usd).toFixed(2)} {current.settlement}
+          </p>
           <div className="balance-line">
             <span>{t.personalDemoUnrealized}</span>
             <b>{Number(position.valuation.unrealized_net_pnl_usd).toFixed(2)} {current.settlement}
