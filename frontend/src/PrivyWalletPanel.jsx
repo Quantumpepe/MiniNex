@@ -1,9 +1,38 @@
 import React, {useEffect, useState} from 'react';
 import {usePrivy, useWallets} from '@privy-io/react-auth';
 import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
-import {LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
+import {Copy, LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
 import {API_BASE} from './data.js';
+
+
+// Copies the complete public address. It never invokes a wallet signer or
+// enables deposits; a copy failure is explicitly shown to the user.
+function CopyWalletAddress({address, t}) {
+  const [copyStatus,setCopyStatus] = useState('idle');
+  useEffect(()=>setCopyStatus('idle'),[address]);
+  if(!address) return null;
+  const copyAddress = async () => {
+    try {
+      if (!navigator?.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(address);
+      setCopyStatus('copied');
+    } catch {
+      setCopyStatus('failed');
+    }
+  };
+  return <div className="privy-copy-address">
+    <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+      onClick={copyAddress} aria-label={t.privyCopyAddress}>
+      <Copy size={15} style={{verticalAlign:'middle',marginRight:6}}/>
+      {t.privyCopyAddress}
+    </button>
+    <div className="privy-wallet-description" role="status" aria-live="polite">
+      {copyStatus==='copied' ? t.privyAddressCopied :
+       copyStatus==='failed' ? t.privyCopyFailed : ''}
+    </div>
+  </div>;
+}
 
 function formatHwmUsd(value) {
   if (value === null || value === undefined || value === '') return '—';
@@ -72,7 +101,7 @@ function NativeBtcWallet({user, t}) {
       state==='creating' ? t.privyBtcCreating :
       state==='failed' ? t.privyBtcFailed : t.privyBtcPending
     }</div>
-    {address && <div className="privy-wallet-address" title={t.privyBtcTitle}>{address.slice(0,12)}…{address.slice(-10)}</div>}
+    {address && <><div className="privy-wallet-address" title={t.privyBtcTitle}>{address.slice(0,12)}…{address.slice(-10)}</div><CopyWalletAddress address={address} t={t}/></>}
     {state==='failed' && !address && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       onClick={()=>setRetry(n=>n+1)}>{t.privyBtcRetry}</button>}
     <div className="privy-wallet-note">{t.privyBtcSafety}</div>
@@ -237,7 +266,7 @@ function ConnectedPrivyWallet({t}) {
           <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button>
         </> : <>
           <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
-          {address&&<div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div>}
+          {address&&<><div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div><CopyWalletAddress address={address} t={t}/></>}
           {identityStatus==='verified' && databaseStatus==='stored'
             ? <NativeBtcWallet user={user} t={t}/>
             : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
