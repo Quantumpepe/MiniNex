@@ -48,3 +48,12 @@ test('verified account automatically provisions a separate BTC wallet with no si
   assert.match(auth, /isNativeBtcAddress\(wallet.address\)/);
   assert.doesNotMatch(auth, /sendBitcoin\s*\(|signRaw\s*\(|sendTransaction\s*\(/);
 });
+
+test('ETH and native BTC can copy their full public address without signing',()=>{
+  assert.match(auth,/function CopyWalletAddress\(\{address, t\}\)/);
+  assert.match(auth,/navigator\.clipboard\.writeText\(address\)/);
+  assert.equal((auth.match(/<CopyWalletAddress address=\{address\} t=\{t\}\/>/g)||[]).length,2);
+  assert.match(auth,/privyAddressCopied/);
+  assert.match(auth,/privyCopyFailed/);
+  assert.doesNotMatch(auth,/sendTransaction\s*\(|sendBitcoin\s*\(|signMessage\s*\(/);
+});
