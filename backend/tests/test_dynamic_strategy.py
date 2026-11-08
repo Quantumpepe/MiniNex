@@ -228,3 +228,87 @@ def test_post_exit_waits_for_rebound_instead_of_gradual_trend():
     engine.process_asset("BTC",verified(69980),now=1000)
     assert engine.portfolios["BTC"].trade_count==0
     assert engine.portfolios["BTC"].last_reason=="AWAITING_POST_EXIT_REBOUND"
+
+
+def test_spot_downtrend_sells_owned_coin_without_leverage():
+    engine=PaperAutoEngine(Market())
+    engine.portfolios["BTC"]=PaperPortfolio(
+        asset="BTC",settlement="USDC",strategy_mode="SPOT_SHORT",
+        coin_quantity=0.01,cost_basis=700.0,entry_price=70000,
+        peak_price=70000)
+    engine._signal=lambda asset,now,price:{
+        **signal(),"momentum_60s_pct":-0.13,
+        "momentum_180s_pct":-0.25,"recent_mean_price":69900,
+    }
+    engine.process_asset("BTC",verified(69850),1000)
+    p=engine.portfolios["BTC"]
+    assert p.coin_quantity==0.0
+    assert p.last_sold_quantity==0.01
+    assert p.stable_cash>0
+    assert p.last_reason=="SPOT_DOWNTREND_EXIT"
+    assert p.trade_count==1
+
+
+def test_spot_downtrend_does_not_sell_on_uptrend():
+    engine=PaperAutoEngine(Market())
+    engine.portfolios["ETH"]=PaperPortfolio(
+        asset="ETH",settlement="USDC",strategy_mode="SPOT_SHORT",
+        coin_quantity=0.5,cost_basis=1000.0,entry_price=2000)
+    engine._signal=lambda asset,now,price:{
+        **signal(strong=True),"recent_mean_price":2000,
+    }
+    engine.process_asset("ETH",verified(2010),1000)
+    assert engine.portfolios["ETH"].coin_quantity==0.5
+    assert engine.portfolios["ETH"].last_reason=="SPOT_AWAITING_DOWNTREND"
+
+
+def test_spot_downtrend_rebuy_requires_more_coins_after_costs():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="ETH",settlement="USDT",
+        strategy_mode="SPOT_SHORT",stable_cash=980.0,
+        last_exit_price=2000.0,post_exit_low=1980.0,
+        last_sold_quantity=0.5,last_trade_at=0.0)
+    engine.portfolios["ETH"]=p
+    engine._signal=lambda asset,now,price:{
+        **signal(),"momentum_60s_pct":0.15,
+    }
+    engine.process_asset("ETH",verified(1990),1000)
+    assert p.coin_quantity==0
+    assert p.last_reason=="AWAITING_POST_EXIT_REBOUND"
+    # With a larger genuine discount the budget buys MORE coin after fees.
+    p.stable_cash=1010.0
+    p.post_exit_low=1970.0
+    engine.process_asset("ETH",verified(1980),1100)
+    assert p.last_reason=="REBOUND"
+    assert p.coin_quantity>0.5
+    assert p.last_sold_quantity is None
+
+
+def test_early_rebound_long_uses_recent_local_low():
+    engine=PaperAutoEngine(Market())
+    engine.portfolios["BTC"]=PaperPortfolio(
+        asset="BTC",settlement="USDC",stable_cash=500.0)
+    engine._signal=lambda asset,now,price:{
+        "ready":True,"window_high":71000,"window_low":69500,
+        "short_window_high":70100,"short_window_low":69700,
+        "momentum_60s_pct":0.06,"momentum_180s_pct":-0.01,
+        "momentum_600s_pct":-0.1,"fall_from_window_high_pct":1.6,
+        "prior_max_drawdown_pct":1.2,"rebound_from_window_low_pct":0.3,
+        "recent_mean_price":69790,
+    }
+    engine.process_asset("BTC",verified(69800),1000)
+    assert engine.portfolios["BTC"].last_reason=="REBOUND"
+
+
+def test_spot_short_does_not_sell_on_unverified_feed():
+    engine=PaperAutoEngine(Market())
+    engine.portfolios["BTC"]=PaperPortfolio(
+        asset="BTC",settlement="USDC",strategy_mode="SPOT_SHORT",
+        coin_quantity=0.01,cost_basis=700.0,entry_price=70000)
+    engine._signal=lambda asset,now,price:{
+        **signal(),"momentum_60s_pct":-0.2,
+        "momentum_180s_pct":-0.3,"recent_mean_price":70500,
+    }
+    engine.process_asset("BTC",{"market_data_valid":False,
+        "price_usdt":70000,"reason":"PRIMARY_MISSING_OR_STALE"},1000)
+    assert engine.portfolios["BTC"].trade_count==0
