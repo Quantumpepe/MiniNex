@@ -45,17 +45,35 @@ if ([string]::IsNullOrEmpty($password)) {
     throw 'Leeres Kennwort ist unzulaessig.'
 }
 
+# StandardInput.Write sends exact bytes (without a trailing newline).
+# PowerShell's pipeline would append a newline to passwords.
+function Set-RepoSecret([string]$name, [string]$value) {
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = 'gh'
+    $info.Arguments = "secret set $name --repo $repository"
+    $info.UseShellExecute = $false
+    $info.RedirectStandardInput = $true
+    $info.CreateNoWindow = $true
+    $process = [System.Diagnostics.Process]::Start($info)
+    try {
+        $process.StandardInput.Write($value)
+        $process.StandardInput.Close()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "GitHub Secret '$name' konnte nicht gespeichert werden."
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 try {
     # GitHub CLI encrypts action secrets for the selected repository.
     $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($keystore))
-    $b64 | & gh secret set MININEX_APK_KEYSTORE_B64 --repo $repository
-    if ($LASTEXITCODE -ne 0) { throw 'Keystore-Upload fehlgeschlagen.' }
-    $password | & gh secret set MININEX_APK_KEYSTORE_PASSWORD --repo $repository
-    if ($LASTEXITCODE -ne 0) { throw 'Keystore-Kennwort konnte nicht hinterlegt werden.' }
-    $alias | & gh secret set MININEX_APK_KEY_ALIAS --repo $repository
-    if ($LASTEXITCODE -ne 0) { throw 'Alias konnte nicht hinterlegt werden.' }
-    $password | & gh secret set MININEX_APK_KEY_PASSWORD --repo $repository
-    if ($LASTEXITCODE -ne 0) { throw 'Schluessel-Kennwort konnte nicht hinterlegt werden.' }
+    Set-RepoSecret 'MININEX_APK_KEYSTORE_B64' $b64
+    Set-RepoSecret 'MININEX_APK_KEYSTORE_PASSWORD' $password
+    Set-RepoSecret 'MININEX_APK_KEY_ALIAS' $alias
+    Set-RepoSecret 'MININEX_APK_KEY_PASSWORD' $password
     Write-Host 'OK: Alle vier Signing-Secrets sind im GitHub-Repository hinterlegt.'
     Write-Host "Der private Keystore liegt nur auf diesem PC: $keystore"
     Write-Host 'Sichere die JKS-Datei und das Kennwort auf einem privaten, sicheren Backup.'
