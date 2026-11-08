@@ -116,6 +116,7 @@ class PaperPortfolio:
     last_evaluated_at: float | None = None
     last_decision: str = "INITIALIZING"
     last_reason: str = "WAITING_FOR_VERIFIED_DATA"
+    last_signal_summary: str = ""
     realized_profit: float = 0.0
     accumulated_buy_costs: float = 0.0
     accumulated_sell_costs: float = 0.0
@@ -292,6 +293,19 @@ class PaperAutoEngine:
             p.peak_price = price
             p.initial_valuation_pending = False
         sig = self._signal(asset, now, price)
+        # Durable, compact reason diagnostics for the user's OWN session.
+        # Never claim an entry was possible without actual momentum inputs.
+        if sig.get("ready"):
+            def show(value: Any) -> str:
+                return f"{value:+.3f}%" if type(value) in (float,int) else "n/a"
+            p.last_signal_summary=(
+                "1m "+show(sig.get("momentum_60s_pct"))
+                +" | 3m "+show(sig.get("momentum_180s_pct"))
+                +" | 10m "+show(sig.get("momentum_600s_pct"))
+                +" | rebound "+show(sig.get("rebound_from_window_low_pct"))
+            )
+        else:
+            p.last_signal_summary=str(sig.get("reason","UNAVAILABLE"))
         if p.coin_quantity > self.rules.min_coin_units:
             p.peak_price = max(price, p.peak_price or price)
             # Emergency loss protection must NOT wait for warmup, cooldown or momentum data.
