@@ -1,7 +1,7 @@
 export const DICTIONARY = {
   en: {
     privyBtcNetwork: 'Network: Bitcoin mainnet (BTC only)',
-    privyEthNetwork: 'Network: Ethereum mainnet (ETH / ERC-20 only)',
+    privyEthNetwork: 'Wallet type: Ethereum (EVM). Network-specific deposits disabled',
     privyShowAddress: 'Show full address',
     privyHideAddress: 'Hide full address',
     privyFullAddress: 'Full wallet address',
@@ -115,7 +115,7 @@ export const DICTIONARY = {
   },
   de: {
     privyBtcNetwork: 'Netzwerk: Bitcoin Mainnet (nur BTC)',
-    privyEthNetwork: 'Netzwerk: Ethereum Mainnet (ETH / ERC-20)',
+    privyEthNetwork: 'Wallet-Typ: Ethereum (EVM). Einzahlungen je Netzwerk gesperrt',
     privyShowAddress: 'Ganze Adresse anzeigen',
     privyHideAddress: 'Adresse verbergen',
     privyFullAddress: 'Vollständige Wallet-Adresse',
