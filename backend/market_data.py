@@ -148,8 +148,8 @@ class MarketDataService:
             return False
         asset = tick["asset"]
         old = self._primary.get(asset)
-        if old and tick["event_at"] < old["event_at"]:
-            return False  # ignore out-of-order packets
+        if old and old.get("source")=="Binance Spot WebSocket" and tick["event_at"] < old["event_at"]:
+            return False  # ignore out-of-order WebSocket packets
         tick["source"] = "Binance Spot WebSocket"
         self._primary[asset] = tick
         history = self._history[asset]
