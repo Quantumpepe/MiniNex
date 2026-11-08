@@ -28,6 +28,6 @@ test('exports disclose incomplete blockchain sync and tax valuation status in bo
   assert.match(i18n,/taxDownloadCsv: 'Download CSV'/);
   assert.match(i18n,/taxDownloadPdf: 'PDF herunterladen'/);
   assert.match(i18n,/taxDownloadCsv: 'CSV herunterladen'/);
-  assert.match(i18n,/Blockchain synchronization and CHF year-end valuations are not yet available/);
-  assert.match(i18n,/Blockchain-Synchronisierung und CHF-Jahresendbewertungen fehlen noch/);
+  assert.match(i18n,/Only pages archived after server-side Privy wallet verification appear here/);
+  assert.match(i18n,/Nur nach serverseitiger Privy-Prüfung archivierte Seiten erscheinen hier/);
 });
