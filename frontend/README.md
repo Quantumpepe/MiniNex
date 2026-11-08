@@ -70,3 +70,14 @@ The phone overview fits within one viewport with no vertical Home scrolling. Det
 ## V0.6.1 Mobile Navigation
 
 Mobile Home uses two prominent buttons (Trade history / Wallet) instead of the duplicate fixed bottom navigation. Tap the MiniNex logo to return Home; tap the header gear to open Settings and switch DE/EN. The Desktop sidebar and paper-only trading engine are unchanged.
+
+
+## V0.7 Privy wallet integration (safe staged rollout)
+- The mobile Wallet screen shows a **real Privy login and embedded EVM wallet** only when the public `VITE_PRIVY_APP_ID` is configured. Without it, a clear setup message is shown (no simulated wallet address).
+- Sign-in uses the official Privy React SDK with email login and automatic EVM wallet provisioning. A Privy App ID is a **public identifier**, not an app secret. Never put the Privy app secret or authorization keys in the frontend or GitHub repository.
+- Register appropriate authentication origins in the Privy dashboard and configure the public App ID at build time, e.g. `VITE_PRIVY_APP_ID=your-app-id npm run build`. GitHub Android builds may read the **Actions Variable** `MININEX_PRIVY_APP_ID`; they never read a private secret.
+- Privy officially documents the React web SDK and the Expo/React Native mobile SDK. **Capacitor WebView compatibility has not yet been validated on physical Android and iOS devices.** Do not advertise native wallet login as production-ready before that testing.
+- The EVM address shown is **not a native Bitcoin receiving address**. No native BTC wallet, deposits, withdrawals, transaction signing, delegation, trading or backend identity linking are enabled. Wallet addresses cannot currently be used as MiniNex funding destinations.
+- The existing backend API remains independent anonymous **PAPER_AUTO_DEMO**. Its `wallet_connected:false` is expected and distinct from a user's Privy authentication in the client. Never send real funds to an address displayed in this preview.
+- Before real assets: server-side verification of Privy access tokens and wallet ownership, separate persistent per-user accounting, independent BTC wallet integration, budget/policy enforcement, secure signers and real-world security review are required.
+- The GitHub **frontend-check** workflow runs tests and Vite builds only and does **not** create or publish an APK.

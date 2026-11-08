@@ -1,4 +1,4 @@
-name: MiniNex Frontend checks
+name: MiniNex frontend checks
 
 on:
   push:
@@ -12,9 +12,9 @@ permissions:
   contents: read
 
 jobs:
-  frontend:
+  frontend-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     defaults:
       run:
         working-directory: frontend
@@ -23,18 +23,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install
+      - name: Install dependencies (no private credentials)
         run: npm install --no-audit --no-fund
-      - name: Test
+      - name: Unit tests
         run: npm test
-      - name: Build React/Capacitor UI
+      - name: Validate production bundle
         run: npm run build
         env:
           VITE_API_BASE_URL: https://mininex-backend.onrender.com
-      - name: Save UI build for internal visual QA (no APK)
-        uses: actions/upload-artifact@v4
-        with:
-          name: MiniNex-v0.6-webview-qa
-          path: frontend/dist
-          retention-days: 2
-          if-no-files-found: error
+          VITE_PRIVY_APP_ID: ${{ vars.MININEX_PRIVY_APP_ID }}

@@ -1,5 +1,13 @@
 export const DICTIONARY = {
   en: {
+    privyTitle: 'Your MiniNex wallet', privyUnavailable: 'Privy setup pending',
+    privyUnavailableNote: 'Add the public Privy App ID to the MiniNex build. This demo does not create a wallet.',
+    privyLogin: 'Sign in / create wallet', privyLogout: 'Sign out',
+    privyLoading: 'Loading secure wallet…', privyConnected: 'Wallet created',
+    privyNoWallet: 'Waiting for your embedded Ethereum wallet',
+    privyEvm: 'Ethereum (EVM)', privyNoDeposits: 'Deposits and withdrawals are not available yet. Do not send real assets.',
+    privyPaperSeparation: 'Demo portfolio and personal wallet are strictly separate',
+    privyError: 'Wallet login failed. Please try again.',
     compactDemo: 'DEMO', compactPortfolio: 'Portfolio (demo)', compactEstNet: 'Est. net P/L',
     compactDemoFunds: 'Simulated funds', compactChooseAsset: 'Select coin', compactMode: 'Trading mode',
     compactAuto: 'AUTO', compactLiveDisabled: 'LIVE OFF', compactNoChart: 'Collecting prices',
@@ -63,6 +71,14 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    privyTitle: 'Deine MiniNex-Wallet', privyUnavailable: 'Privy noch nicht eingerichtet',
+    privyUnavailableNote: 'Die öffentliche Privy App ID muss noch in MiniNex hinterlegt werden. Diese Demo erstellt keine Wallet.',
+    privyLogin: 'Anmelden / Wallet erstellen', privyLogout: 'Abmelden',
+    privyLoading: 'Sichere Wallet wird geladen …', privyConnected: 'Wallet erstellt',
+    privyNoWallet: 'Warte auf deine integrierte Ethereum-Wallet',
+    privyEvm: 'Ethereum (EVM)', privyNoDeposits: 'Ein- und Auszahlungen sind noch nicht verfügbar. Bitte keine echten Coins senden.',
+    privyPaperSeparation: 'Demo-Portfolio und persönliche Wallet bleiben strikt getrennt',
+    privyError: 'Wallet-Anmeldung fehlgeschlagen. Bitte erneut versuchen.',
     compactDemo: 'DEMO', compactPortfolio: 'Portfolio (Demo)', compactEstNet: 'Netto-G/V (geschätzt)',
     compactDemoFunds: 'Simuliertes Guthaben', compactChooseAsset: 'Coin wählen', compactMode: 'Handelsmodus',
     compactAuto: 'AUTO', compactLiveDisabled: 'LIVE AUS', compactNoChart: 'Sammle Kursdaten',

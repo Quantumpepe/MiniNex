@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
+import PrivyWalletPanel from './PrivyWalletPanel.jsx';
 import {
   API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
   formatRelative, formatSigned, formatTimestamp, limitHistory,
@@ -267,7 +268,7 @@ export default function App() {
     <aside className="sidebar">
       <div className="sidebar-brand"><MiniNexMark/><div><b>mini<span>nex</span></b><small>TRADING INTELLIGENCE</small></div></div>
       <Navigation page={page} setPage={setPage} t={t}/>
-      <div className="sidebar-bottom"><div className="secure-label"><LockKeyhole size={15}/>{t.safeMode}</div><div className="side-footnote">V0.4 · BTC / ETH</div></div>
+      <div className="sidebar-bottom"><div className="secure-label"><LockKeyhole size={15}/>{t.safeMode}</div><div className="side-footnote">V0.7 · BTC / ETH</div></div>
     </aside>
 
     <div className="content-column">
@@ -331,7 +332,8 @@ export default function App() {
 
         {page==='wallet'&&<>
           <section className="page-heading"><span className="overline"><Wallet size={14}/>{t.demoWallet}</span><h1>{t.wallet}</h1><p>{t.walletLater}</p></section>
-          <div className="notice-banner"><LockKeyhole size={19}/><div><strong>{t.walletNotConnected}</strong><span>{t.demoOnly}</span></div></div>
+          <PrivyWalletPanel t={t}/>
+           <div className="notice-banner"><LockKeyhole size={19}/><div><strong>{t.privyPaperSeparation}</strong><span>{t.demoOnly}</span></div></div>
           <div className="asset-switch asset-switch--compact">{ASSETS.map(a=><button key={a} type="button" className={`asset-tab ${asset===a?'asset-tab--active':''}`} onClick={()=>setAsset(a)}><AssetSymbol asset={a} size="sm"/>{a}</button>)}</div>
           <div className="two-column"><section className="panel wallet-card"><div className="panel-top"><h2>{t.demoBalances}</h2><Pill tone="orange">DEMO</Pill></div><MoneyInfo portfolio={portfolio} asset={asset} t={t} lang={language} paper={paper}/></section>
             <section className="panel wallet-card"><div className="panel-top"><h2>{t.fees}</h2><Pill tone="neutral">PAPER</Pill></div><FeeDetails paper={paper} portfolio={portfolio} asset={asset} t={t} lang={language}/></section></div>
