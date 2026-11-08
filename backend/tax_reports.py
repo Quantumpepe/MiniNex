@@ -142,7 +142,7 @@ def make_pdf(rows: list[dict], year: int) -> bytes:
                     r.get("quantity",""),r.get("amount_usd",""),r.get("fee_usd","")]
             data.append([Paragraph(escape(str(v)), styles["MiniCellRight"] if k>=4 else styles["MiniCell"])
                          for k,v in enumerate(values)])
-        table=LongTable(data, colWidths=[31*mm,28*mm,21*mm,15*mm,31*mm,27*mm,22*mm],
+        table=LongTable(data, colWidths=[30*mm,28*mm,21*mm,15*mm,31*mm,27*mm,22*mm],
                         repeatRows=1, hAlign="LEFT")
         table.setStyle(TableStyle([
             ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#d9f6e8")),
