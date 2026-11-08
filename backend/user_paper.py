@@ -26,7 +26,7 @@ LOG=logging.getLogger("mininex.user_paper")
 PAPER_START_USD=Decimal("1000.00")
 _STATE_FIELDS=(
     "stable_cash","coin_quantity","cost_basis","initial_equity","entry_price",
-    "peak_price","last_exit_price","post_exit_low","last_trade_at","last_decision",
+    "peak_price","last_exit_price","post_exit_low","last_trade_at","last_evaluated_at","last_decision",
     "last_reason","realized_profit","accumulated_buy_costs",
     "accumulated_sell_costs","trade_count",
 )
@@ -92,9 +92,9 @@ def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
         },
         "trades":trades or [],
         "paper_only":True,"real_trading_enabled":False,"wallet_funds_used":False,
-        "execution_cadence":"MANUAL_PAPER_TICK_ONLY",
+        "execution_cadence":"SERVER_AUTOMATIC_15_SECONDS",
         "warning":"Simulation only; saved settings do not authorize live trading. "
-                  "Mode and horizon are recorded, but signal calibration is not yet asset-specific.",
+                  "Only simulation. 24h requires long-term verified price history and will not open positions until available.",
     }
 
 
@@ -133,6 +133,15 @@ def read_user_paper(did: str,asset: str) -> dict:
         raise HTTPException(503,"Personal simulation unavailable") from None
 
 
+def market_feed_for_paper_start(asset: str) -> dict:
+    """Injected by the API after independent market-data verification.
+
+    A spot-downtrend demo cannot infer a native BTC/ETH holding from a wallet.
+    The default demo can start stable-only without this function.
+    """
+    raise HTTPException(503,"Verified price required for virtual coin start")
+
+
 def start_user_paper(did: str,asset: str) -> dict:
     """Opt-in to 1,000 *virtual* USD baseline, scaled by user's saved percent."""
     did=_safe_did(did)
@@ -157,6 +166,15 @@ def start_user_paper(did: str,asset: str) -> dict:
                 simulated=PAPER_START_USD*Decimal(settings["percent"])/Decimal(100)
                 p=PaperPortfolio(asset=asset,settlement=settings["stable"],
                                  stable_cash=float(simulated),initial_equity=float(simulated))
+                if settings["mode"]=="SPOT_SHORT":
+                    # Virtual native-coin start, never a real wallet balance.
+                    feed=market_feed_for_paper_start(asset)
+                    price=feed["price_usdt"]
+                    p.coin_quantity=float(simulated)/price
+                    p.cost_basis=float(simulated)
+                    p.stable_cash=0.0
+                    p.entry_price=price
+                    p.peak_price=price
                 cur.execute("""INSERT INTO mininex_user_paper_sessions
                     (privy_did,asset,status,settlement,strategy_mode,horizon,
                      budget_percent,initial_demo_cash,state_json)
@@ -214,9 +232,23 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                 # to Privy signer or transfer any assets here.
                 engine=PaperAutoEngine(market)
                 p=_restore(asset,row["settlement"],row["state_json"],row["initial_demo_cash"])
+                if p.last_evaluated_at is not None and now-p.last_evaluated_at<12:
+                    return _session_data(row,_trades(cur,did,asset))
                 engine.portfolios={asset:p}
                 feed=market.snapshot(now=now)["markets"][asset]
-                engine.process_asset(asset,feed,now)
+                from .auto_engine import PaperRules
+                # Match the evaluation history to the selected horizon; no
+                # 24h history is available in the current in-memory feed.
+                windows={"5m":(190.0,300.0),"15m":(900.0,900.0),
+                         "1h":(3600.0,3600.0)}
+                if row["horizon"]=="24h":
+                    p.last_decision,p.last_reason="WAIT","24H_HISTORY_NOT_AVAILABLE"
+                else:
+                    warmup,window=windows[row["horizon"]]
+                    engine.rules=PaperRules(warmup_seconds=warmup,
+                                            price_window_seconds=window)
+                    engine.process_asset(asset,feed,now)
+                p.last_evaluated_at=now
                 history=list(p.trade_history)
                 for event in history:
                     event_id=p.trade_count
