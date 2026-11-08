@@ -50,3 +50,12 @@ test('trading routes only show read-only verified disabled capability status',()
   assert.match(wallet,/capabilities\.routes\?\.ETH\?\.ready===false/);
   assert.match(langs,/Automatische Signaturen und echte Swaps sind deaktiviert/);
 });
+
+test('BTC and ETH have independent preview budgets with no authorization or persistence',()=>{
+  assert.match(wallet,/useState\(\{BTC:50,ETH:50\}\)/);
+  assert.match(wallet,/\['BTC','ETH'\]\.map/);
+  assert.match(wallet,/type="range" min="0" max="100" step="5"/);
+  assert.match(wallet,/setPreviewBudgets\(old=>\(\{\.\.\.old,\[asset\]:Number\(event.target.value\)\}\)\)/);
+  assert.match(langs,/Diese Prozente werden weder gespeichert noch freigegeben/);
+  assert.doesNotMatch(wallet,/method:'POST'|method:'PUT'|method:'DELETE'/);
+});
