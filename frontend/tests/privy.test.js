@@ -50,10 +50,19 @@ test('verified account automatically provisions a separate BTC wallet with no si
 });
 
 test('ETH and native BTC can copy their full public address without signing',()=>{
-  assert.match(auth,/function CopyWalletAddress\(\{address, t\}\)/);
+  assert.match(auth,/function CopyWalletAddress\(\{address, network, t\}\)/);
   assert.match(auth,/navigator\.clipboard\.writeText\(address\)/);
-  assert.equal((auth.match(/<CopyWalletAddress address=\{address\} t=\{t\}\/>/g)||[]).length,2);
+  assert.match(auth,/<CopyWalletAddress address=\{address\} network="BTC" t=\{t\}\/>/);
+  assert.match(auth,/<CopyWalletAddress address=\{address\} network="ETH" t=\{t\}\/>/);
   assert.match(auth,/privyAddressCopied/);
   assert.match(auth,/privyCopyFailed/);
   assert.doesNotMatch(auth,/sendTransaction\s*\(|sendBitcoin\s*\(|signMessage\s*\(/);
+});
+
+test('full wallet addresses can be revealed per network without signing or sending',()=>{
+  assert.match(auth,/setShowFull\(v=>!v\)/);
+  assert.match(auth,/aria-expanded=\{showFull\}/);
+  assert.match(auth,/overflowWrap:'anywhere'/);
+  assert.match(auth,/network==='BTC' \? t\.privyBtcNetwork : t\.privyEthNetwork/);
+  assert.doesNotMatch(auth,/sendTransaction\s*\(|sendBitcoin\s*\(|delegateWallet\s*\(/);
 });
