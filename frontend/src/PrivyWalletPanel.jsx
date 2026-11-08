@@ -1,3 +1,4 @@
+import InfoTip from './InfoTip.jsx';
 import React, {useEffect, useState} from 'react';
 import {usePrivy, useWallets} from '@privy-io/react-auth';
 import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
@@ -24,7 +25,7 @@ function CopyWalletAddress({address, network, t}) {
     }
   };
   return <div className="privy-copy-address">
-    <div className="privy-wallet-description">{network==='BTC' ? t.privyBtcNetwork : t.privyEthNetwork}</div>
+    <div style={{display:"flex",alignItems:"center",gap:4}}><strong>{network}</strong><InfoTip title={network} label={t.infoLabel}>{network==='BTC' ? t.privyBtcNetwork : t.privyEthNetwork}</InfoTip></div>
     {showFull && <div className="privy-wallet-address"
       style={{overflowWrap:'anywhere',wordBreak:'break-all'}} aria-label={t.privyFullAddress}>{address}</div>}
     <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
@@ -114,7 +115,7 @@ function NativeBtcWallet({user, t}) {
     {address && <CopyWalletAddress address={address} network="BTC" t={t}/> }
     {state==='failed' && !address && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       onClick={()=>setRetry(n=>n+1)}>{t.privyBtcRetry}</button>}
-    <div className="privy-wallet-note">{t.privyBtcSafety}</div>
+    
   </div>;
 }
 
@@ -272,34 +273,25 @@ function ConnectedPrivyWallet({t}) {
     <div className="privy-panel-body">
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
         !authenticated ? <>
-          <div className="privy-wallet-description">{t.privyNoDeposits}</div>
           <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button>
-          <div className="privy-wallet-note">{t.privyOtpHelp}</div>
+          
         </> : <>
           <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
           {address && <CopyWalletAddress address={address} network="ETH" t={t}/> }
           {identityStatus==='verified' && databaseStatus==='stored'
             ? <NativeBtcWallet user={user} t={t}/>
             : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
-          <div className={'privy-wallet-description '+(identityStatus==='verified'?'text-positive':'')} aria-live="polite">
-            {identityStatus==='verified'?t.privyBackendVerified:
-             identityStatus==='checking'?t.privyBackendChecking:
-             identityStatus==='setup'?t.privyBackendSetup:t.privyBackendFailed}
-          </div>
-          <div className={'privy-wallet-description '+(databaseStatus==='stored'?'text-positive':'')} aria-live="polite">
-            {databaseStatus==='stored'?t.privyDatabaseReady:
-             databaseStatus==='checking'?t.privyDatabaseChecking:
-             databaseStatus==='setup'?t.privyDatabaseSetup:t.privyDatabasePending}
-          </div>
+          {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
+            <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}
           {(identityStatus==='failed' || identityStatus==='setup' ||
               (identityStatus==='verified' && databaseStatus!=='stored' && databaseStatus!=='checking')) &&
             <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
               onClick={()=>setRetryNonce(n=>n+1)}>{t.privyRetryConnection}</button>}
-          <div className="privy-wallet-note"><LockKeyhole size={13} style={{verticalAlign:'middle',marginRight:6}}/>{t.privyNoDeposits}</div>
+
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyBudgetTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong><span>{t.privyBudgetPreferences}</span></div>
+        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong><InfoTip title={t.privyBudgetTitle} label={t.infoLabel}>{t.privyBudgetNote}</InfoTip></div>
         {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
           <label style={{display:'flex',flexDirection:'column',gap:8,width:'100%'}}>
             <span style={{display:'flex',justifyContent:'space-between',gap:12}}>
@@ -315,33 +307,23 @@ function ConnectedPrivyWallet({t}) {
             disabled={budgetStatus!=='ready' || budgetBusy || previewBudgets[asset]===savedBudgets?.[asset]?.percent}
             onClick={()=>saveBudget(asset)}>{t.privyBudgetSave} {asset}</button>
         </div>)}
-        <div className="privy-wallet-description" aria-live="polite">{
-          budgetStatus==='ready'?t.privyBudgetReady:
-          budgetStatus==='saving'?t.privyBudgetSaving:
-          budgetStatus==='loading'?t.privyBudgetLoading:t.privyBudgetFailed
-        }</div>
+        {budgetStatus==='failed' && <div className="privy-wallet-description" role="alert">{t.privyBudgetFailed}</div>}
         {budgetStatus==='failed' && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
           disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
-        <div className="privy-hwm-disclaimer">{t.privyBudgetNote}</div>
+
       </div>}
       {authenticated && <TradingSetupPreview t={t}/>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong><span>{t.privyTradingLocked}</span></div>
-        {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
-          <b>{asset}</b><span>{routeCapabilities?.routes?.[asset]?.ready===false
-            ? t.privyTradingPreparing : t.privyTradingUnverified}</span>
-        </div>)}
-        <div className="privy-hwm-disclaimer">{t.privyTradingNote}</div>
+        <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong><InfoTip title={t.privyTradingTitle} label={t.infoLabel}>{t.privyTradingNote}</InfoTip></div>
       </div>}
       <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyHwmTitle}</strong><span>5 %</span></div>
-        <div className="privy-wallet-description">{t.privyHwmDescription}</div>
+        <div className="privy-hwm-title"><strong>{t.privyHwmTitle} · 5 %</strong><InfoTip title={t.privyHwmTitle} label={t.infoLabel}>{t.privyHwmDescription}</InfoTip></div>
         {authenticated && databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
           {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
             <b>{asset}</b><span>{t.privyHwmValue}: {formatHwmUsd(assetLedger[asset]?.high_water_mark_usd)} USD</span>
           </div>)}
         </div>}
-        <div className="privy-hwm-disclaimer">{t.privyHwmPrepared}</div>
+
       </div>
       {error&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
     </div>
@@ -352,8 +334,7 @@ export default function PrivyWalletPanel({t}) {
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
     <div className="privy-panel-body">
       <strong>{t.privyUnavailable}</strong>
-      <p className="privy-wallet-description">{t.privyUnavailableNote}</p>
-      <p className="privy-wallet-note">{t.privyNoDeposits}</p>
+
     </div>
   </section>;
   return <ConnectedPrivyWallet t={t}/>;
