@@ -34,8 +34,7 @@ function CopyWalletAddress({address, network, t}) {
       </button>
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
         onClick={copyAddress} aria-label={t.privyCopyAddress}>
-        <Copy size={15} style={{verticalAlign:'middle',marginRight:6}}/>
-        {t.privyCopyAddress}
+        <Copy size={18} aria-hidden="true"/>
       </button>
     </div>
     <div className="privy-wallet-description" role="status" aria-live="polite">
