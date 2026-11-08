@@ -35,3 +35,18 @@ def test_preflight_requires_known_origin():
         'Access-Control-Request-Method': 'GET',
     })
     assert bad.status_code == 400
+
+def test_capacitor_mobile_origins_are_allowed():
+    client = TestClient(app)
+    for origin in ('https://localhost', 'capacitor://localhost'):
+        response = client.get('/api/paper/status', headers={'Origin': origin})
+        assert response.status_code == 200
+        assert response.headers['access-control-allow-origin'] == origin
+        assert response.json()['real_trading_enabled'] is False
+
+def test_paper_mode_stays_disabled_after_mobile_update():
+    client = TestClient(app)
+    root = client.get('/').json()
+    assert root['version'] == '0.5.0'
+    assert root['real_orders'] is False
+    assert root['trading'] == 'disabled'

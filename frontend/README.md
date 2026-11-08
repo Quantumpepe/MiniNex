@@ -1,43 +1,63 @@
-# MiniNex UI V0.4 – DE / EN
+# MiniNex V0.5 — installable Android/iOS app project
 
-A fast, mobile-first React/Vite preview that consumes the existing **PAPER-ONLY** MiniNex backend.
+MiniNex runs as a local **Capacitor 8** app (React/Vite). Android and iOS package
+compiled `frontend/dist` files into their native WebView. **No Render Static Site
+is used or needed.** The existing read-only public paper API remains on Render.
+Its address is technically discoverable through network inspection, never a secret.
 
-## Features
+## Important
+- **PAPER-ONLY DEMO**, no real money, wallets, deposits, signatures, user balances,
+  real trading, or private API credentials.
+- DE and EN are selectable in Settings.
+- The temporary test application ID is `com.mininex.preview`. Choose an ID you own
+  before signing/releasing to either app store.
+- No JS app or API URL can be made completely invisible to an app user.
 
-- German / English manual switch in the header and Settings (locale remembered locally).
-- Live BTC/ETH public prices via `/ws/market`, backup REST polling, cross-provider verification status.
-- Real backend history: 15-min and up to 1-hour charts. **24-hour history is not yet stored** and the 24h button is disabled.
-- Buy/sell paper markers on charts when demo trades exist. Paper AUTO decisions, demo holdings, estimated realized/unrealized net PnL, estimated fees and trade history.
-- Wallet is explicitly a **preview**; it cannot connect Privy or perform deposits/transfers. No real orders or user balances.
-- No stored wallet credentials, signing keys or backend credentials.
-
-## Development
+## Android (Windows or macOS)
+Install Node 22+, Android Studio and the Android SDK:
 
 ```bash
 cd frontend
 npm install
-npm run dev
-npm run build
 npm test
+npm run build
+npx cap add android
+npx cap sync android
+npx cap open android
 ```
 
-For testing against a specific backend, set `VITE_API_BASE_URL` in `frontend/.env.local` (public API URL only).
+In Android Studio: Build -> Build APK(s) or Run on a connected phone.
+For later source updates: `npm run native:android:sync`, then rebuild.
 
-## Render static-site deployment
+The included GitHub Actions workflow builds a **debug APK** on pushes to main
+and can be started manually under **Actions -> MiniNex Android debug APK**.
+Download the resulting APK from the successful run's **Artifacts** area.
+This debug package is for testing, not a Google Play release. Android may show
+an installation warning for APKs outside the Play Store.
 
-Create a **new Render Static Site** from repository `Quantumpepe/MiniNex` (leave the Python `mininex-backend` web service running separately).
+## iOS (Mac required)
+Install Xcode 26+ (Capacitor 8) and Apple's development tools:
 
-- Site name: `mininex-ui` (or another name; see CORS below)
-- Branch: `main`
-- Root directory: `frontend`
-- Build command: `npm ci && npm run build` (or `npm install && npm run build` if lockfile not yet committed)
-- Publish directory: `dist`
-- Public environment variable: `VITE_API_BASE_URL=https://mininex-backend.onrender.com`
+```bash
+cd frontend
+npm install
+npm run build
+npx cap add ios
+npx cap sync ios
+npx cap open ios
+```
 
-The Python backend explicitly allows `https://mininex-ui.onrender.com`, `http://localhost:5173` and `http://127.0.0.1:5173` as browser origins. If the actual static-site URL is different, add that full HTTPS origin (without a trailing slash) to the Python backend environment variable `MININEX_ALLOWED_ORIGINS`, then redeploy the backend. No wildcard origins with credentials.
+Use Xcode with your Apple development team to install on an iPhone. TestFlight
+and App Store uploads require Apple signing/provisioning and review. This repo
+does **not** produce a signed IPA automatically.
 
-This is a responsive web preview, **not yet a native Android/iOS package**.
+## Security and privacy
+The GitHub repository is currently **public**. Change repository visibility in
+GitHub Settings -> Danger Zone -> Change visibility if you want private source.
+Even a private repo cannot conceal a mobile app's API endpoints or bundled JS.
 
-## Safety / correctness
-
-Paper status must explicitly assert `mode: PAPER_AUTO_DEMO`, `real_trading_enabled: false`, and `wallet_connected: false` before the UI displays portfolio data. User-facing money metrics must come from the server, never fabricated demo chart values. Unavailable/stale verified prices are shown as unavailable rather than zero. Trades in `Activity` are **simulated only**.
+The backend allows Capacitor local origins `https://localhost` (Android) and
+`capacitor://localhost` (iOS) for the anonymous demo API. Before real
+accounts/trading, add secure authentication and authorization; CORS is not
+an access-control mechanism. Create a permanent bundle ID, native app icon,
+versioned dependency lockfile, and code-signing setup before public release.

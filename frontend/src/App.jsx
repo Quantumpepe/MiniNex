@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin,
-  Check, ChevronDown, CircleAlert, Clock3, ExternalLink, Globe2,
+  Check, ChevronDown, CircleAlert, Clock3, Globe2,
   History, Info, LayoutDashboard, LockKeyhole, RefreshCcw,
   Settings2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet,
   Wifi, WifiOff, Zap,
@@ -342,7 +342,7 @@ export default function App() {
             <div className="language-options"><button type="button" className={language==='de'?'chosen':''} onClick={()=>chooseLang('de')}><span>🇩🇪 Deutsch</span>{language==='de'&&<Check size={17}/>}</button><button type="button" className={language==='en'?'chosen':''} onClick={()=>chooseLang('en')}><span>🇬🇧 English</span>{language==='en'&&<Check size={17}/>}</button></div>
           </section>
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Wifi size={21}/></span><div><h2>{t.apiStatus}</h2><p>{t.apiInfo}</p></div></div>
-            <div className="settings-state"><Pill tone={syncedAt&&Date.now()-syncedAt<FRESH_MS?'teal':'orange'} icon={syncedAt?Check:WifiOff}>{syncedAt&&Date.now()-syncedAt<FRESH_MS?t.apiConnected:t.apiDisconnected}</Pill><a href={`${API_BASE}/health`} target="_blank" rel="noreferrer">API <ExternalLink size={14}/></a></div>
+            <div className="settings-state"><Pill tone={syncedAt&&Date.now()-syncedAt<FRESH_MS?'teal':'orange'} icon={syncedAt?Check:WifiOff}>{syncedAt&&Date.now()-syncedAt<FRESH_MS?t.apiConnected:t.apiDisconnected}</Pill></div>
           </section>
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Info size={21}/></span><div><h2>{t.about}</h2><p>{t.aboutText}</p></div></div></section>
         </>}

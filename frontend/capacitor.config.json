@@ -1,0 +1,10 @@
+{
+  "appId": "com.mininex.preview",
+  "appName": "MiniNex",
+  "webDir": "dist",
+  "server": {
+    "hostname": "localhost",
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  }
+}

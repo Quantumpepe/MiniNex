@@ -25,12 +25,14 @@ async def lifespan(app: FastAPI):
         await market.stop()
 
 
-app = FastAPI(title="MiniNex API", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="MiniNex API", version="0.5.0", lifespan=lifespan)
 
 # Only known public browser origins can access read-only market/paper API.
 # Extra frontends: MININEX_ALLOWED_ORIGINS=https://my-mininex.example
 _allowed_origins = [
     "https://mininex-ui.onrender.com",
+    "https://localhost",  # Capacitor Android bundled WebView
+    "capacitor://localhost",  # Capacitor iOS bundled WebView
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
@@ -50,7 +52,7 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"app": "MiniNex", "version": "0.4.0", "status": "online",
+    return {"app": "MiniNex", "version": "0.5.0", "status": "online",
             "trading": "disabled", "paper_auto": "enabled", "real_orders": False}
 
 
