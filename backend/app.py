@@ -5,7 +5,7 @@ import os
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, StrictInt
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .market_data import MarketDataService
@@ -14,6 +14,7 @@ from .auth import verify_privy_bearer
 from .storage import get_account_summary
 from .budgets import get_budget_preferences, save_budget_preference
 from .trade_preferences import get_trade_preferences, save_trade_preference
+from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_year
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -242,4 +243,43 @@ def trade_preferences_update(
             did, asset, body.mode, body.stable, body.horizon, body.expected_revision
         ),
         headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/activity/{year}")
+def annual_verified_activity(year: int, authorization: str | None = Header(default=None)):
+    """Read only confirmed account-bound activity; never paper trading history."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    try:
+        validate_year(year)
+    except ValueError:
+        raise HTTPException(422, "Invalid year") from None
+    rows = list_verified_activity(did, year)
+    return JSONResponse({
+        "year": year, "rows": rows, "count": len(rows), "verified_only": True,
+        "paper_excluded": True, "tax_complete": False,
+    }, headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/activity/{year}/export/{format}")
+def annual_verified_activity_export(
+    year: int, format: str, authorization: str | None = Header(default=None),
+):
+    did = verify_privy_bearer(authorization)["user_id"]
+    try:
+        validate_year(year)
+    except ValueError:
+        raise HTTPException(422, "Invalid year") from None
+    if format not in ("csv", "pdf"):
+        raise HTTPException(404, "Unsupported export")
+    rows = list_verified_activity(did, year)
+    blob = make_csv(rows, year) if format == "csv" else make_pdf(rows, year)
+    return Response(
+        content=blob,
+        media_type="text/csv; charset=utf-8" if format == "csv" else "application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="MiniNex_Activity_{year}.{format}"',
+            "X-Content-Type-Options": "nosniff",
+        },
     )
