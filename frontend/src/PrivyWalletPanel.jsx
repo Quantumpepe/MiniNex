@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {usePrivy, useWallets} from '@privy-io/react-auth';
+import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
 import {LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
 import {API_BASE} from './data.js';
@@ -12,10 +13,76 @@ function formatHwmUsd(value) {
     : '—';
 }
 
+
+const isNativeBtcAddress = (address) =>
+  typeof address === 'string' &&
+  /^(?:bc1q[ac-hj-np-z02-9]{38,59}|bc1p[ac-hj-np-z02-9]{58}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(address);
+
+function findNativeBtcWallet(user) {
+  return (user?.linkedAccounts || []).find(account =>
+    account?.type === 'wallet' && account?.chainType === 'bitcoin' &&
+    isNativeBtcAddress(account.address)
+  );
+}
+
+// This component is mounted only after Privy identity and account persistence
+// are confirmed. No BTC signing, transactions or transfers are enabled.
+function NativeBtcWallet({user, t}) {
+  const {createWallet} = useCreateExtendedWallet();
+  const [createdWallet,setCreatedWallet] = useState(null);
+  const [state,setState] = useState('checking');
+  const [retry,setRetry] = useState(0);
+  const attemptedFor = React.useRef(null);
+  const existing = findNativeBtcWallet(user);
+  const address = existing?.address || (isNativeBtcAddress(createdWallet?.address) ? createdWallet.address : null);
+
+  useEffect(()=>{
+    const userId = user?.id;
+    if (!userId || address) {
+      if (address) setState('created');
+      return;
+    }
+    const attemptKey = userId + ':' + retry;
+    if (attemptedFor.current === attemptKey) return;
+    attemptedFor.current = attemptKey;
+    let active = true;
+    setState('creating');
+    (async()=>{
+      try {
+        // No signer or server authorization is granted here.
+        const result = await createWallet({chainType: 'bitcoin'});
+        if (!active) return;
+        const wallet = result?.wallet;
+        if (!wallet || wallet.chainType !== 'bitcoin' || !isNativeBtcAddress(wallet.address)) {
+          setState('failed');
+          return;
+        }
+        setCreatedWallet(wallet);
+        setState('created');
+      } catch {
+        if (active) setState('failed');
+      }
+    })();
+    return ()=>{active=false};
+  },[user?.id, address, createWallet, retry]);
+
+  return <div className="privy-btc-wallet">
+    <div className="privy-wallet-description"><strong>{t.privyBtcTitle}</strong> · {
+      address ? t.privyBtcCreated :
+      state==='creating' ? t.privyBtcCreating :
+      state==='failed' ? t.privyBtcFailed : t.privyBtcPending
+    }</div>
+    {address && <div className="privy-wallet-address" title={t.privyBtcTitle}>{address.slice(0,12)}…{address.slice(-10)}</div>}
+    {state==='failed' && !address && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+      onClick={()=>setRetry(n=>n+1)}>{t.privyBtcRetry}</button>}
+    <div className="privy-wallet-note">{t.privyBtcSafety}</div>
+  </div>;
+}
+
 // Deliberately no sendTransaction, withdrawal or delegation path here.
 // The existing backend is PAPER-only, even when a user signs in to Privy.
 function ConnectedPrivyWallet({t}) {
-  const {ready, authenticated, login, logout, getAccessToken} = usePrivy();
+  const {ready, authenticated, user, login, logout, getAccessToken} = usePrivy();
   const {wallets, ready:walletsReady} = useWallets();
   const [error,setError]=useState(false);
   const [retryNonce,setRetryNonce]=useState(0);
@@ -81,10 +148,9 @@ function ConnectedPrivyWallet({t}) {
         </> : <>
           <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
           {address&&<div className="privy-wallet-address" title={t.privyEvm}>{address.slice(0,12)}…{address.slice(-10)}</div>}
-          <div className="privy-wallet-description" aria-label={t.privyBtcTitle}>
-            <strong>{t.privyBtcTitle}</strong> · {t.privyBtcPending}
-          </div>
-          <div className="privy-wallet-note">{t.privyBtcSafety}</div>
+          {identityStatus==='verified' && databaseStatus==='stored'
+            ? <NativeBtcWallet user={user} t={t}/>
+            : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
           <div className={'privy-wallet-description '+(identityStatus==='verified'?'text-positive':'')} aria-live="polite">
             {identityStatus==='verified'?t.privyBackendVerified:
              identityStatus==='checking'?t.privyBackendChecking:
