@@ -94,10 +94,10 @@ function PriceChart({history,asset,period,market,trades,t,lang}) {
   const last = model?.coords.at(-1);
   return <div className="chart-frame">
     <div className="chart-headerline">
-      <div className="chart-source"><span className="chart-source-dot"/>{t.wsSource}</div>
+      
       <span className="tiny-muted">{recent.length>0 ? `${formatTimestamp(recent[0].timestamp,lang)} – ${formatTimestamp(recent.at(-1).timestamp,lang)}` : '—'}</span>
     </div>
-    {!model || recent.length<2 ? <div className="chart-empty"><BarChart3 size={33}/><strong>{t.noHistory}</strong><span>{t.noHistorySub}</span></div>
+    {!model || recent.length<2 ? <div className="chart-empty"><BarChart3 size={33}/><strong>{t.noHistory}</strong></div>
     : <div className="chart-svg-wrap">
       <svg ref={svgRef} className="chart-svg" viewBox="0 0 820 270" role="img" aria-label={`${asset} ${t.market}`} onPointerMove={onMove} onPointerLeave={()=>setHover(null)}>
         <defs>
@@ -269,13 +269,13 @@ export default function App() {
     <aside className="sidebar">
       <div className="sidebar-brand"><MiniNexMark/><div><b>mini<span>nex</span></b><small>TRADING INTELLIGENCE</small></div></div>
       <Navigation page={page} setPage={setPage} t={t}/>
-      <div className="sidebar-bottom"><div className="secure-label"><LockKeyhole size={15}/>{t.safeMode}</div><div className="side-footnote">V0.7 · BTC / ETH</div></div>
+      
     </aside>
 
     <div className="content-column">
       <header className="topbar">
         <button className="mobile-brand" type="button" onClick={()=>setPage('overview')} aria-label={t.overview} title={t.overview}><MiniNexMark size={34}/><b>mini<span>nex</span></b></button>
-        <div className="topbar-status"><span className="live-circle"/><span>{t.simulated}</span></div>
+        
         <div className="header-actions">
           <div className="lang-switch" role="group" aria-label={t.language}>
             <button type="button" className={language==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={language==='de'}>DE</button>
@@ -294,10 +294,10 @@ export default function App() {
             paper={paper} workerOnline={workerOnline} goTo={setPage}
           />
           <div className="desktop-overview">
-          <section className="welcome-head"><div><span className="overline"><Sparkles size={14}/>{t.subhead}</span><h1>{t.headline}</h1></div><Pill tone="teal" icon={ShieldCheck}>{t.demoOnly}</Pill></section>
+          <section className="welcome-head"><h1>MiniNex</h1></section>
           <div className="asset-switch" role="tablist" aria-label="Asset">
             {ASSETS.map(a=><button type="button" key={a} role="tab" aria-selected={asset===a} className={`asset-tab ${asset===a?'asset-tab--active':''}`} onClick={()=>{setAsset(a);setPeriod('m15');}}>
-              <AssetSymbol asset={a} size="sm"/><span>{a==='BTC'?'Bitcoin':'Ethereum'}</span><small>{a}</small>
+              <AssetSymbol asset={a} size="sm"/><span>{a==='BTC'?'Bitcoin':'Ethereum'}</span>
             </button>)}
           </div>
 
@@ -312,54 +312,32 @@ export default function App() {
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
 
-              <section className="panel intelligence-panel"><div className="panel-top"><div><span className="section-eyebrow">{t.watchMode}</span><h2>{t.tradingEngine}</h2></div><Pill tone={workerOnline?'teal':'orange'} icon={workerOnline?Activity:CircleAlert}>{workerOnline?t.autoOnline:t.autoOffline}</Pill></div>
-                <p className="muted-description">{t.paperStrategy}</p>
-                <div className="decision-box"><span className="decision-icon"><Activity size={22}/></span><div><span className="tiny-muted">{t.decision}</span><strong>{portfolio?.last_decision?.replaceAll('_',' ')||t.waiting}</strong><p>{t[`reason_${portfolio?.last_reason}`]||(portfolio?.last_reason||t.waiting).replaceAll('_',' ')}</p></div></div>
-                <div className="engine-footer"><span><Clock3 size={14}/>{paper?.last_tick?formatRelative(paper.last_tick,language):t.noData}</span><span className="text-positive"><ShieldCheck size={14}/>{t.safeMode}</span></div>
-              </section>
-            </div>
-            <div className="overview-aside">
-              <section className="panel portfolio-panel"><div className="panel-top"><div><span className="section-eyebrow">{t.portfolio}</span><h2>{t.portfolioValue}</h2></div><span className="wallet-icon"><Wallet size={19}/></span></div>
-                <div className="portfolio-total">{formatMoney(value,language)}</div><p className="subdued">{t.afterExitCosts}</p>
-                <div className="portfolio-stats"><StatBox label={t.realizedNet} value={<Pnl n={realized}/>} icon={TrendingUp}/><StatBox label={t.unrealizedNet} value={<Pnl n={unrealized}/>} icon={Activity}/></div>
-                <div className="mini-holdings"><div><span>{t.held}</span><b>{formatCoin(portfolio?.coin_quantity,language)} {asset}</b></div><div><span>{t.cash}</span><b>{formatMoney(portfolio?.stable_cash,language)} {portfolio?.settlement||'USDT'}</b></div></div>
-                <button className="text-link" type="button" onClick={tabKey('wallet')}>{t.demoWallet} <ArrowRight size={15}/></button>
-              </section>
-              <section className="panel recent-panel"><div className="panel-top"><div><span className="section-eyebrow">{t.activity}</span><h2>{t.latestActivity}</h2></div><button type="button" className="tiny-action" onClick={tabKey('activity')}>{t.seeAll} <ArrowRight size={14}/></button></div><ActivityList trades={trades} t={t} lang={language} asset={asset} compact/></section>
             </div>
           </div>
           </div>
         </>}
 
         {page==='wallet'&&<>
-          <section className="page-heading"><span className="overline"><Wallet size={14}/>{t.demoWallet}</span><h1>{t.wallet}</h1><p>{t.walletLater}</p></section>
+          <section className="page-heading"><h1>{t.wallet}</h1></section>
           <PrivyWalletPanel t={t}/>
-           <div className="notice-banner"><LockKeyhole size={19}/><div><strong>{t.privyPaperSeparation}</strong><span>{t.demoOnly}</span></div></div>
-          <div className="asset-switch asset-switch--compact">{ASSETS.map(a=><button key={a} type="button" className={`asset-tab ${asset===a?'asset-tab--active':''}`} onClick={()=>setAsset(a)}><AssetSymbol asset={a} size="sm"/>{a}</button>)}</div>
-          <div className="two-column"><section className="panel wallet-card"><div className="panel-top"><h2>{t.demoBalances}</h2><Pill tone="orange">DEMO</Pill></div><MoneyInfo portfolio={portfolio} asset={asset} t={t} lang={language} paper={paper}/></section>
-            <section className="panel wallet-card"><div className="panel-top"><h2>{t.fees}</h2><Pill tone="neutral">PAPER</Pill></div><FeeDetails paper={paper} portfolio={portfolio} asset={asset} t={t} lang={language}/></section></div>
-          <div className="bottom-note"><Info size={17}/>{t.noteDemo}</div>
         </>}
 
         {page==='activity'&&<>
-          <section className="page-heading"><span className="overline"><History size={14}/>{t.activity}</span><h1>{t.historyHeading}</h1><p>{t.historySub}</p></section>
-          <div className="asset-switch asset-switch--compact">{ASSETS.map(a=><button key={a} type="button" className={`asset-tab ${asset===a?'asset-tab--active':''}`} onClick={()=>setAsset(a)}><AssetSymbol asset={a} size="sm"/>{a}</button>)}</div>
-          <section className="panel full-activity"><div className="panel-top"><div><h2>{name} · {t.moves}</h2><span className="muted-description">{portfolio?.trade_count??0} {t.moves.toLowerCase()}</span></div><Pill tone="orange">DEMO</Pill></div><ActivityList trades={trades} t={t} lang={language} asset={asset}/></section>
-          <section className="panel fees-panel"><button type="button" className="fee-toggle" onClick={()=>setCostsOpen(v=>!v)} aria-expanded={costsOpen}><span><Info size={17}/>{t.viewCostDetails}</span><ChevronDown size={17} className={costsOpen?'rotate':''}/></button>{costsOpen&&<FeeDetails paper={paper} portfolio={portfolio} asset={asset} t={t} lang={language}/>}</section>
+          <section className="page-heading"><h1>{t.activity}</h1><p>{t.noRealTrades}</p></section>
         </>}
 
         {page==='settings'&&<>
-          <section className="page-heading"><span className="overline"><Settings2 size={14}/>{t.prefs}</span><h1>{t.settings}</h1><p>{t.version}</p></section>
-          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Globe2 size={21}/></span><div><h2>{t.language}</h2><p>{t.chooseLang}</p></div></div>
+          <section className="page-heading"><h1>{t.settings}</h1></section>
+          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Globe2 size={21}/></span><div><h2>{t.language}</h2></div></div>
             <div className="language-options"><button type="button" className={language==='de'?'chosen':''} onClick={()=>chooseLang('de')}><span>🇩🇪 Deutsch</span>{language==='de'&&<Check size={17}/>}</button><button type="button" className={language==='en'?'chosen':''} onClick={()=>chooseLang('en')}><span>🇬🇧 English</span>{language==='en'&&<Check size={17}/>}</button></div>
           </section>
-          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Wifi size={21}/></span><div><h2>{t.apiStatus}</h2><p>{t.apiInfo}</p></div></div>
+          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Wifi size={21}/></span><div><h2>{t.apiStatus}</h2></div></div>
             <div className="settings-state"><Pill tone={syncedAt&&Date.now()-syncedAt<FRESH_MS?'teal':'orange'} icon={syncedAt?Check:WifiOff}>{syncedAt&&Date.now()-syncedAt<FRESH_MS?t.apiConnected:t.apiDisconnected}</Pill></div>
           </section>
-          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Info size={21}/></span><div><h2>{t.about}</h2><p>{t.aboutText}</p></div></div></section>
+          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><LockKeyhole size={21}/></span><div><h2>{t.tradingUnavailable}</h2></div></div></section>
         </>}
       </main>
-      <footer className="app-footer"><span>{t.version}</span><span><span className={`foot-dot ${connected?'online':''}`}/>{connected?t.streamOnline:t.streamOffline}</span></footer>
+      
     </div>
     
   </div>;
