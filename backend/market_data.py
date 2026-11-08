@@ -116,7 +116,7 @@ class MarketDataService:
         self.max_divergence_pct = 1.5
         self._primary: dict[str, dict[str, Any]] = {}
         self._reference: dict[str, dict[str, Any]] = {}
-        self._history: dict[str, deque] = {asset: deque(maxlen=3600) for asset in ASSETS}
+        self._history: dict[str, deque] = {asset: deque(maxlen=1500) for asset in ASSETS}
         self._historical: dict[str, list[dict]] = {asset: [] for asset in ASSETS}
         self.history_loaded_at: dict[str,float|None] = {asset: None for asset in ASSETS}
         self.last_history_error: str | None = None
@@ -261,7 +261,7 @@ class MarketDataService:
             if (price is None or not math.isfinite(opened) or not math.isfinite(closed)
                 or opened<=last_open or closed-opened<interval_seconds-1.1
                 or closed-opened>interval_seconds+1.1 or closed>=now
-                or opened<now-90000 or opened>now):
+                or opened<now-93000 or opened>now):
                 raise ValueError("Invalid, future or incomplete candle")
             parsed.append({"timestamp":closed,"price_usdt":price})
             last_open=opened
