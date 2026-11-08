@@ -120,6 +120,7 @@ def market_status():
         "historical_samples":snap["historical_samples"],
         "history_loaded_at":snap["history_loaded_at"],
         "history_preload_error":market.last_history_error,
+        "history_errors":snap["history_errors"],
         "primary_ws_connected": snap["primary_ws_connected"],
         "rest_backup_active":snap["rest_backup_active"],
         "rest_backup_error":market.last_rest_error,
