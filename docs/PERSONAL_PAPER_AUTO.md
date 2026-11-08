@@ -19,14 +19,15 @@
   Kraken. Invalid or stale prices never trigger orders. All fills, spreads,
   slippage and network fees are **indicative simulation values**.
 - The existing dynamic net-profit trailing and post-exit rebound logic are
-  reused for each owner's virtual portfolio. 5m/15m/1h select the maximum
-  rolling analysis lookback, **not the mandatory waiting period**. All three
-  can start evaluating signals after ~190 seconds of actually observed,
-  timestamped price samples (including a verified 180-second momentum window).
-  As more observations arrive, the strategy automatically uses the full
-  selected 5m/15m/1h history. **24h will explicitly WAIT until a
-  genuine 24h history source is implemented**. Do not misrepresent the
-  existing 1-hour memory window as 24-hour signals.
+  reused for each owner's virtual portfolio. The server now downloads real
+  *closed* Binance 1-minute and 5-minute BTC/ETH spot candles on boot and
+  refreshes this rolling historical context every five minutes. The selected
+  5m/15m/1h/24h horizon is an analysis lookback, **not a startup wait**.
+  No fixed 3-minute or 15-minute startup timer remains. A new session can
+  evaluate signals as soon as real historical prices and a live Binance quote
+  independently cross-checked against Kraken are available. No artificial
+  candles or forced buys are generated. Historical requests can fail; in
+  that case the engine waits for genuinely observed data rather than guessing.
 - The process scans at most 30 oldest-updated active sessions per cycle. This
   bounds database/CPU load; sizing, metrics, backpressure and dedicated worker
   deployment are required before scaling up to hundreds of simultaneous users.
