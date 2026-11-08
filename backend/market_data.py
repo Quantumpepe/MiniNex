@@ -29,6 +29,7 @@ DEFAULT_WS = (
     "btcusdt@miniTicker/ethusdt@miniTicker"
 )
 DEFAULT_REFERENCE_URL = "https://api.kraken.com/0/public/Ticker"
+DEFAULT_PRIMARY_REST_URL = "https://data-api.binance.vision/api/v3/ticker/price"
 
 
 def utc_iso(timestamp: float | None) -> str | None:
@@ -107,6 +108,7 @@ class MarketDataService:
         self._clock = clock
         self.ws_url = os.getenv("MININEX_MARKET_WS_URL", DEFAULT_WS)
         self.reference_url = os.getenv("MININEX_REFERENCE_URL", DEFAULT_REFERENCE_URL)
+        self.primary_rest_url = DEFAULT_PRIMARY_REST_URL
         self.reference_period_seconds = max(15.0, float(os.getenv("MININEX_REFERENCE_INTERVAL", "25")))
         self.max_primary_age_seconds = 10.0
         self.max_reference_age_seconds = 90.0
@@ -116,6 +118,8 @@ class MarketDataService:
         self._history: dict[str, deque] = {asset: deque(maxlen=3600) for asset in ASSETS}
         self.primary_connected = False
         self.last_primary_error: str | None = None
+        self.last_rest_error: str | None = None
+        self.rest_backup_active = False
         self.last_reference_error: str | None = None
         self._tasks: list[asyncio.Task] = []
 
@@ -125,6 +129,7 @@ class MarketDataService:
         self._tasks = [
             asyncio.create_task(self._primary_loop(), name="market-binance"),
             asyncio.create_task(self._reference_loop(), name="market-kraken"),
+            asyncio.create_task(self._rest_backup_loop(), name="market-binance-rest-backup"),
         ]
 
     async def stop(self) -> None:
@@ -134,6 +139,7 @@ class MarketDataService:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self.primary_connected = False
+        self.rest_backup_active = False
 
     def ingest_primary(self, payload: str | dict[str, Any], *, now: float | None = None) -> bool:
         """Ingest a validated WS packet. Public for deterministic offline tests."""
@@ -144,11 +150,92 @@ class MarketDataService:
         old = self._primary.get(asset)
         if old and tick["event_at"] < old["event_at"]:
             return False  # ignore out-of-order packets
+        tick["source"] = "Binance Spot WebSocket"
         self._primary[asset] = tick
         history = self._history[asset]
         if not history or tick["received_at"] - history[-1]["timestamp"] >= 1.0:
             history.append({"timestamp": tick["received_at"], "price_usdt": tick["price"]})
         return True
+
+    def ingest_primary_rest(self, payload: Any, *, now: float | None = None) -> bool:
+        """Accept only a complete fixed-symbol Binance spot REST response.
+
+        This is a genuine second delivery path of the PRIMARY vendor, not
+        a second independent verification source. Kraken must still agree.
+        Fail closed if either asset is missing, invalid or duplicated.
+        """
+        if not isinstance(payload,list) or len(payload)!=2:
+            return False
+        prices={}
+        for item in payload:
+            if not isinstance(item,dict):
+                return False
+            asset=SYMBOL_TO_ASSET.get(item.get("symbol"))
+            price=positive_price(item.get("price"))
+            if asset is None or price is None or asset in prices:
+                return False
+            prices[asset]=price
+        if set(prices)!=set(ASSETS):
+            return False
+        at=self._clock() if now is None else now
+        if not math.isfinite(at) or at<=0:
+            return False
+        for asset,price in prices.items():
+            existing=self._primary.get(asset)
+            # Do not overwrite working, fresh WebSocket data.
+            if (self.primary_connected and existing
+                and existing.get("source")=="Binance Spot WebSocket"
+                and 0<=at-existing["received_at"]<=self.max_primary_age_seconds):
+                continue
+            # Avoid losing an already collected primary history or
+            # overwriting a more recent WS sample during a REST request.
+            if existing and existing["received_at"]>at:
+                continue
+            self._primary[asset]={
+                "asset":asset,"price":price,
+                "change_24h_pct":None,
+                "event_at":at,"received_at":at,
+                "source":"Binance Spot REST",
+            }
+            history=self._history[asset]
+            if not history or at-history[-1]["timestamp"]>=1.0:
+                history.append({"timestamp":at,"price_usdt":price})
+        self.rest_backup_active=any(
+            item.get("source")=="Binance Spot REST"
+            and 0<=at-item["received_at"]<=self.max_primary_age_seconds
+            for item in self._primary.values()
+        )
+        return True
+
+    async def _rest_backup_loop(self) -> None:
+        """Recover transient WS gaps without ever bypassing Kraken checks."""
+        async with httpx.AsyncClient(timeout=httpx.Timeout(7.0),
+                                     follow_redirects=False) as client:
+            while True:
+                try:
+                    now=self._clock()
+                    required=any(
+                        not self.primary_connected or
+                        not (p:=self._primary.get(asset)) or
+                        now-p["received_at"]>6.0
+                        for asset in ASSETS
+                    )
+                    if required:
+                        # Fixed Binance spot API; no user-input URLs or pairs.
+                        response=await client.get(self.primary_rest_url,params={
+                            "symbols":json.dumps(list(SYMBOL_TO_ASSET))
+                        })
+                        response.raise_for_status()
+                        if not self.ingest_primary_rest(response.json()):
+                            raise ValueError("Invalid Binance spot REST backup prices")
+                        self.last_rest_error=None
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.last_rest_error=f"{type(exc).__name__}: {str(exc)[:160]}"
+                    LOGGER.warning("Binance REST market backup unavailable: %s",
+                                   self.last_rest_error)
+                await asyncio.sleep(5.0)
 
     def ingest_reference(self, payload: dict[str, Any], *, now: float | None = None) -> bool:
         prices = parse_kraken_ticker(payload)
@@ -170,10 +257,12 @@ class MarketDataService:
             divergence = None
             if primary_fresh and reference_fresh:
                 divergence = abs(primary["price"] - reference["price"]) / reference["price"] * 100
-            verified = bool(self.primary_connected and divergence is not None and divergence <= self.max_divergence_pct)
+            source=primary.get("source","Binance Spot WebSocket") if primary else None
+            primary_healthy=self.primary_connected if source=="Binance Spot WebSocket" else source=="Binance Spot REST"
+            verified = bool(primary_fresh and primary_healthy and divergence is not None and divergence <= self.max_divergence_pct)
             if not primary_fresh:
                 reason = "PRIMARY_MISSING_OR_STALE"
-            elif not self.primary_connected:
+            elif not primary_healthy:
                 reason = "PRIMARY_DISCONNECTED"
             elif not reference_fresh:
                 reason = "REFERENCE_MISSING_OR_STALE"
@@ -186,7 +275,7 @@ class MarketDataService:
                 "primary_pair": f"{asset}/USDT",
                 "price_usdt": primary["price"] if primary_fresh else None,
                 "change_24h_pct": primary["change_24h_pct"] if primary_fresh else None,
-                "primary_source": "Binance Spot WebSocket",
+                "primary_source": source,
                 "primary_at": utc_iso(primary["event_at"]) if primary else None,
                 "reference_price_usd": reference["price"] if reference_fresh else None,
                 "reference_source": "Kraken Spot",
@@ -202,6 +291,7 @@ class MarketDataService:
             "trading_enabled": False,
             "execution_enabled": False,
             "primary_ws_connected": self.primary_connected,
+            "rest_backup_active": any(v.get("primary_source")=="Binance Spot REST" and v.get("market_data_valid") for v in markets.values()),
             "markets": markets,
         }
 
@@ -226,7 +316,11 @@ class MarketDataService:
                     self.last_primary_error = None
                     retry_seconds = 1.0
                     LOGGER.info("Binance public market stream connected")
-                    async for packet in stream:
+                    while True:
+                        try:
+                            packet=await asyncio.wait_for(stream.recv(),timeout=18.0)
+                        except asyncio.TimeoutError:
+                            raise TimeoutError("No primary market ticks for 18 seconds") from None
                         self.ingest_primary(packet)
             except asyncio.CancelledError:
                 raise
