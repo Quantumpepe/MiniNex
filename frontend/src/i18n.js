@@ -1,5 +1,8 @@
 export const DICTIONARY = {
   en: {
+    privyCopyAddress: 'Copy address',
+    privyAddressCopied: 'Full wallet address copied',
+    privyCopyFailed: 'Copy failed. Check clipboard permission.',
     privyBudgetTitle: 'AUTO budget · BTC / ETH',
     privyBudgetPreview: 'PREVIEW',
     privyBudgetPreferences: 'SAVED SETTINGS',
@@ -9,7 +12,7 @@ export const DICTIONARY = {
     privyBudgetLoading: 'Loading saved settings…',
     privyBudgetFailed: 'Could not save or load. Reload settings before trying again.',
     privyBudgetReload: 'Reload settings',
-    privyBudgetNote: 'Settings are stored privately, but are NOT trading permission. Automatic transactions remain disabled.'
+    privyBudgetNote: 'Settings are stored privately, but are NOT trading permission. Automatic transactions remain disabled.',
     privyTradingTitle: 'Automated trading · BTC / ETH',
     privyTradingLocked: 'LOCKED',
     privyTradingPreparing: 'Route not active',
@@ -84,7 +87,7 @@ export const DICTIONARY = {
     prefs: 'Preferences', language: 'Language', chooseLang: 'Select your app language',
     apiStatus: 'Backend connection', apiConnected: 'Connected to MiniNex', apiDisconnected: 'Connection interrupted',
     apiInfo: 'All numbers are read from the public paper-only backend. No login, trading rights or private keys.',
-    build: 'Preview version', version: 'MiniNex V0.8.6 · Paper preview',
+    build: 'Preview version', version: 'MiniNex V0.8.7 · Paper preview',
     about: 'About this preview', aboutText: 'MiniNex is under development. The AUTO engine runs simulated BTC and ETH strategies independently. It cannot place trades or access your wallet.',
     refresh: 'Refresh', retrying: 'Trying to reconnect…',
     reason_OK: 'Normal market conditions', reason_WAITING_FOR_VERIFIED_DATA: 'Waiting for verified prices',
@@ -106,6 +109,9 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    privyCopyAddress: 'Adresse kopieren',
+    privyAddressCopied: 'Vollständige Wallet-Adresse kopiert',
+    privyCopyFailed: 'Kopieren fehlgeschlagen. Zwischenablage-Berechtigung prüfen.',
     privyBudgetTitle: 'AUTO-Budget · BTC / ETH',
     privyBudgetPreview: 'VORSCHAU',
     privyBudgetPreferences: 'GESPEICHERTE EINSTELLUNGEN',
@@ -115,7 +121,7 @@ export const DICTIONARY = {
     privyBudgetLoading: 'Lade gespeicherte Einstellungen …',
     privyBudgetFailed: 'Laden oder Speichern fehlgeschlagen. Bitte Einstellungen erneut laden.',
     privyBudgetReload: 'Einstellungen neu laden',
-    privyBudgetNote: 'Einstellungen werden privat gespeichert, sind aber KEINE Handelsfreigabe. Automatische Transaktionen bleiben deaktiviert.'
+    privyBudgetNote: 'Einstellungen werden privat gespeichert, sind aber KEINE Handelsfreigabe. Automatische Transaktionen bleiben deaktiviert.',
     privyTradingTitle: 'Automatischer Handel · BTC / ETH',
     privyTradingLocked: 'GESPERRT',
     privyTradingPreparing: 'Handelsweg nicht aktiv',
@@ -190,7 +196,7 @@ export const DICTIONARY = {
     prefs: 'Einstellungen', language: 'Sprache', chooseLang: 'Wähle deine App-Sprache',
     apiStatus: 'Backend-Verbindung', apiConnected: 'Mit MiniNex verbunden', apiDisconnected: 'Verbindung unterbrochen',
     apiInfo: 'Alle Zahlen kommen aus dem öffentlichen Demo-Backend. Keine Anmeldung, Handelsrechte oder Private Keys.',
-    build: 'Vorschauversion', version: 'MiniNex V0.8.6 · Demo-Vorschau',
+    build: 'Vorschauversion', version: 'MiniNex V0.8.7 · Demo-Vorschau',
     about: 'Über diese Vorschau', aboutText: 'MiniNex befindet sich in Entwicklung. Die AUTO-Engine simuliert BTC und ETH unabhängig voneinander. Sie kann weder echte Trades ausführen noch auf deine Wallet zugreifen.',
     refresh: 'Aktualisieren', retrying: 'Verbindung wird wiederhergestellt …',
     reason_OK: 'Normale Marktbedingungen', reason_WAITING_FOR_VERIFIED_DATA: 'Warte auf verifizierte Kurse',
