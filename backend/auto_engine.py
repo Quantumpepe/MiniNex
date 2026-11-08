@@ -80,6 +80,7 @@ class PaperRules:
     min_trend_60s_pct: float = 0.05
     min_trend_180s_pct: float = 0.12
     min_trend_near_high_fraction: float = 0.997
+    min_graduated_trend_600s_pct: float = 0.15
     profit_trailing_arm_net_pct: float = 0.30
     trailing_pullback_pct: float = 0.20
     # In strong upward momentum, do not prematurely take profit on tiny pullbacks.
@@ -227,6 +228,7 @@ class PaperAutoEngine:
             return {"ready": False, "reason": "SIGNAL_HISTORY_STALE", "samples": len(points)}
         p60 = self._prev_price(points, now - 60)
         p180 = self._prev_price(points, now - 180)
+        p600 = self._prev_price(points, now - 600)
         if not p60 or not p180:
             return {"ready": False, "reason": "MOMENTUM_WINDOW_NOT_READY", "samples": len(points)}
         prices = [float(p["price_usdt"]) for p in points]
@@ -245,6 +247,11 @@ class PaperAutoEngine:
         # The last five observed prices smooth transient WS noise.
         recent = prices[-min(5,len(prices)):]
         recent_mean = sum(recent) / len(recent)
+        local_window = [p["price_usdt"] for p in points
+                        if now - p["timestamp"] <= min(self.rules.price_window_seconds,900)]
+        local_high = max(local_window) if local_window else high
+        local_mean = sum(local_window)/len(local_window) if local_window else price
+        mom600 = (price / p600 - 1) * 100 if p600 else None
         mom60 = (price / p60 - 1) * 100
         mom180 = (price / p180 - 1) * 100
         fall_from_high = max(0.0, (1 - price / high) * 100)
@@ -255,6 +262,9 @@ class PaperAutoEngine:
                 "rebound_from_window_low_pct": clean(rebound_from_low, 4),
                 "prior_max_drawdown_pct": clean(prior_max_drawdown_pct, 4),
                 "recent_mean_price": clean(recent_mean),
+                "local_high": clean(local_high),
+                "local_mean": clean(local_mean),
+                "momentum_600s_pct": clean(mom600,4) if mom600 is not None else None,
                 "window_high": clean(high), "window_low": clean(low)}
 
     def process(self, *, now: float | None = None) -> None:
@@ -349,6 +359,17 @@ class PaperAutoEngine:
                 and price >= sig["window_high"] * self.rules.min_trend_near_high_fraction
                 and price >= sig.get("recent_mean_price", price)
             )
+            # Gradual rise over ten minutes: the old 60s/180s thresholds
+            # excluded quiet but persistent uptrends. A flat/downward
+            # 60s candle alone cannot qualify; recent support must hold.
+            gradual_trend = (
+                sig.get("momentum_600s_pct") is not None
+                and sig["momentum_600s_pct"] >= self.rules.min_graduated_trend_600s_pct
+                and sig["momentum_180s_pct"] >= 0.0
+                and sig["momentum_60s_pct"] >= 0.0
+                and price >= sig.get("local_mean",price)
+                and price >= sig.get("local_high",price)*0.995
+            )
             if p.last_exit_price is not None:
                 # After selling into stablecoins, buying on a falling candle is
                 # prohibited: first observe a decline, then a positive rebound.
@@ -361,17 +382,19 @@ class PaperAutoEngine:
                            and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct)
                 breakout = False
                 trend_continuation = False
+                gradual_trend = False
                 if not rebound:
                     p.last_decision, p.last_reason = "WAIT", "AWAITING_POST_EXIT_REBOUND"
                     return
-            elif not (rebound or breakout or trend_continuation):
+            elif not (rebound or breakout or trend_continuation or gradual_trend):
                 p.last_decision, p.last_reason = "WAIT", "NO_CONFIRMED_ENTRY_SIGNAL"
                 return
             buy = self._buy_quote(asset, p.stable_cash, price)
             if not buy:
                 p.last_decision, p.last_reason = "WAIT", "BUDGET_TOO_SMALL_AFTER_ALL_COSTS"
                 return
-            reason = "REBOUND" if rebound else "BREAKOUT" if breakout else "TREND_CONTINUATION"
+            reason = ("REBOUND" if rebound else "BREAKOUT" if breakout
+                      else "GRADUAL_TREND" if gradual_trend else "TREND_CONTINUATION")
             self._paper_buy(p, buy, now, price, reason)
 
     def _paper_buy(self, p: PaperPortfolio, quote: dict[str, float], at: float, price: float, reason: str) -> None:
