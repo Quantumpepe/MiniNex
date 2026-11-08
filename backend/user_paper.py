@@ -27,7 +27,7 @@ PAPER_START_USD=Decimal("1000.00")
 _STATE_FIELDS=(
     "stable_cash","coin_quantity","cost_basis","initial_equity","entry_price",
     "peak_price","last_exit_price","post_exit_low","last_trade_at","last_evaluated_at","last_decision",
-    "last_reason","last_signal_summary","realized_profit","accumulated_buy_costs",
+    "last_reason","last_signal_summary","last_sold_quantity","realized_profit","accumulated_buy_costs",
     "accumulated_sell_costs","trade_count",
 )
 
@@ -171,6 +171,7 @@ def start_user_paper(did: str,asset: str,market: Any | None = None) -> dict:
                     raise HTTPException(409,"Personal simulation already started")
                 simulated=PAPER_START_USD*Decimal(settings["percent"])/Decimal(100)
                 p=PaperPortfolio(asset=asset,settlement=settings["stable"],
+                                 strategy_mode=settings["mode"],
                                  stable_cash=float(simulated),initial_equity=float(simulated))
                 if settings["mode"]=="SPOT_SHORT":
                     # Virtual native-coin start, never a real wallet balance.
@@ -238,6 +239,7 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                 # to Privy signer or transfer any assets here.
                 engine=PaperAutoEngine(market)
                 p=_restore(asset,row["settlement"],row["state_json"],row["initial_demo_cash"])
+                p.strategy_mode=row["strategy_mode"]
                 if p.last_evaluated_at is not None and now-p.last_evaluated_at<12:
                     return _session_data(row,_trades(cur,did,asset))
                 engine.portfolios={asset:p}
