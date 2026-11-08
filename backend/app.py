@@ -15,6 +15,7 @@ from .storage import get_account_summary
 from .budgets import get_budget_preferences, save_budget_preference
 from .trade_preferences import get_trade_preferences, save_trade_preference
 from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_year
+from .blockchain_preview import fetch_preview, check_address
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -282,4 +283,17 @@ def annual_verified_activity_export(
             "Content-Disposition": f'attachment; filename="MiniNex_Activity_{year}.{format}"',
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+@app.get("/api/blockchain/preview/{asset}")
+async def blockchain_preview(
+    asset: str, address: str, authorization: str | None = Header(default=None),
+):
+    """Read-only public explorer view; query address does not prove wallet ownership."""
+    verify_privy_bearer(authorization)
+    check_address(asset, address)
+    return JSONResponse(
+        await fetch_preview(asset, address),
+        headers={"Cache-Control": "private, no-store"},
     )
