@@ -183,3 +183,37 @@
   .privy-setup-asset label{flex-direction:column;align-items:stretch!important;gap:4px!important}
   .privy-setup-asset select{max-width:100%;width:100%}
 }
+
+/* MiniNex market-first homepage: readable on phones, no fictional demo balances. */
+@media(max-width:780px){
+  .app-shell--home .main-body{overflow:auto;display:block;max-width:600px;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  .app-shell--home,.app-shell--home .content-column{height:auto;min-height:100dvh;overflow:visible}
+  .compact-home--market{display:flex;flex-direction:column;gap:12px;height:auto;min-height:0;width:100%}
+  .compact-home--market .compact-welcome{display:flex;align-items:baseline;justify-content:space-between;padding:6px 1px}
+  .compact-home--market .compact-welcome h1{font-size:22px}
+  .compact-home-label{color:#9fc7be;font-size:12px}
+  .compact-price-cards{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .compact-quote-card{display:flex;flex-direction:column;text-align:left;align-items:stretch;gap:14px;min-width:0;padding:15px 12px;border-radius:17px;border:1px solid #2d5556;background:linear-gradient(155deg,#11343b,#0b2029);color:#e5fcf5;cursor:pointer}
+  .compact-quote-card.active{border-color:#5df2bb;box-shadow:inset 0 0 0 1px #438e76;background:linear-gradient(150deg,#134638,#103037)}
+  .compact-quote-heading{display:flex;align-items:center;gap:7px;min-width:0}
+  .compact-quote-heading strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .compact-quote-heading small{font-size:10px;color:#90aaa9;margin-left:auto}
+  .compact-quote-card .compact-token{width:29px;height:29px}
+  .compact-quote-price{font-size:clamp(17px,4.5vw,23px);font-weight:800;letter-spacing:-.4px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .compact-quote-change{font-size:15px;font-weight:750}
+  .compact-quote-change small{color:#8dafad;font-size:11px;font-weight:500}
+  .compact-main-chart{display:flex;flex-direction:column;gap:12px;padding:16px 14px;border-radius:17px;border:1px solid #315b5b;background:linear-gradient(145deg,#12343b,#0b2028);min-height:300px}
+  .compact-chart-top{display:flex;align-items:center;justify-content:space-between}
+  .compact-chart-title{display:flex;align-items:center;gap:8px;color:#cbece3;font-size:13px;letter-spacing:.5px}
+  .compact-chart-price{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .compact-chart-price strong{font-size:clamp(23px,6vw,33px);font-weight:850;letter-spacing:-.5px;white-space:nowrap}
+  .compact-chart-price>span{font-size:14px;font-weight:800}
+  .compact-chart-price small{font-size:11px;color:#9bc0bd}
+  .compact-chart-large,.compact-chart-empty{width:100%;height:170px;min-height:140px;display:block}
+  .compact-chart-empty{display:flex;align-items:center;justify-content:center;gap:10px;color:#89afaf}
+  .compact-chart-footer{border-top:1px solid #2a4e4e;padding-top:12px;display:grid;grid-template-columns:1fr auto;gap:8px;color:#9dbfbc;font-size:12px}
+  .compact-chart-footer b{color:#e7f9f3;font-variant-numeric:tabular-nums}
+  .compact-home--market .compact-actions{grid-template-columns:1fr 1fr;min-height:50px;gap:9px}
+  .compact-home--market .compact-actions button{font-size:14px;border-radius:13px}
+}
+@media(max-width:365px){.compact-quote-card{padding:12px 8px}.compact-quote-heading strong{font-size:12px}.compact-quote-price{font-size:16px}}
