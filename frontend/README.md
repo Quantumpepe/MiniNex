@@ -81,3 +81,6 @@ Mobile Home uses two prominent buttons (Trade history / Wallet) instead of the d
 - The existing backend API remains independent anonymous **PAPER_AUTO_DEMO**. Its `wallet_connected:false` is expected and distinct from a user's Privy authentication in the client. Never send real funds to an address displayed in this preview.
 - Before real assets: server-side verification of Privy access tokens and wallet ownership, separate persistent per-user accounting, independent BTC wallet integration, budget/policy enforcement, secure signers and real-world security review are required.
 - The GitHub **frontend-check** workflow runs tests and Vite builds only and does **not** create or publish an APK.
+
+## Privy App ID connected
+The public Privy App ID for MiniNex is now compiled as the default app identifier, with `VITE_PRIVY_APP_ID` overriding it when set. This is not an app secret. To test email login, verify this Privy app is enabled for email authentication and that the mobile Capacitor origins are permitted in the Privy dashboard. Native device compatibility and real transaction authorization are not yet validated.

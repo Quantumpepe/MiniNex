@@ -21,7 +21,11 @@
     "@capacitor/core": "^8.0.0",
     "@capacitor/android": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
-    "@privy-io/react-auth": "^3.51.3"
+    "@privy-io/react-auth": "^3.51.3",
+    "@solana-program/system": "^0.8.0",
+    "@solana-program/token": "^0.6.0",
+    "@solana-program/memo": "^0.8.0",
+    "@solana/kit": "^3.0.3"
   },
   "devDependencies": {
     "vite": "^6.1.0",

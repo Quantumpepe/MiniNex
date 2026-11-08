@@ -11,6 +11,7 @@ test('official Privy provider is gated on a public app ID',()=>{
   assert.match(main,/PRIVY_APP_ID\s*\?/);
   assert.match(main,/<PrivyProvider/);
   assert.match(cfg,/VITE_PRIVY_APP_ID/);
+  assert.match(cfg,/cmw7sb7ty013o0gl55aqyzi3y/);
   assert.match(cfg,/createOnLogin:\s*'all-users'/);
 });
 test('wallet uses embedded EVM address, not the demo wallet',()=>{
