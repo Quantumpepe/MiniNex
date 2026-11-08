@@ -7,6 +7,7 @@ import {
   Wifi, WifiOff, Zap,
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
+import CompactOverview from './CompactOverview.jsx';
 import {
   API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
   formatRelative, formatSigned, formatTimestamp, limitHistory,
@@ -16,8 +17,8 @@ import {
 const ASSETS = ['BTC', 'ETH'];
 const NAV = [
   {key:'overview', icon:LayoutDashboard},
-  {key:'wallet', icon:Wallet},
   {key:'activity', icon:History},
+  {key:'wallet', icon:Wallet},
   {key:'settings', icon:Settings2},
 ];
 const WINDOW = {m15:900, h1:3600};
@@ -190,7 +191,7 @@ function useMiniNexData(asset, refreshNonce) {
 function Navigation({page,setPage,t,mobile=false}) {
   return <nav className={mobile?'mobile-navigation':'side-navigation'} aria-label="Navigation">
     {NAV.map(({key,icon:Icon})=><button type="button" key={key} className={`nav-item ${page===key?'nav-item--active':''}`} onClick={()=>setPage(key)} aria-current={page===key?'page':undefined}>
-      <Icon size={mobile?20:18} strokeWidth={2} /> <span>{t[key]}</span>
+      <Icon size={mobile?20:18} strokeWidth={2} /> <span>{mobile && key==='activity' ? t.compactSeeTrades : t[key]}</span>
     </button>)}
   </nav>;
 }
@@ -262,7 +263,7 @@ export default function App() {
   useEffect(()=>{document.documentElement.lang=language;document.title=`MiniNex · ${asset} & ETH/BTC`;},[language,asset]);
   const tabKey=(name)=>()=>setPage(name);
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${page==='overview' ? 'app-shell--home' : ''}`}>
     <aside className="sidebar">
       <div className="sidebar-brand"><MiniNexMark/><div><b>mini<span>nex</span></b><small>TRADING INTELLIGENCE</small></div></div>
       <Navigation page={page} setPage={setPage} t={t}/>
@@ -284,6 +285,12 @@ export default function App() {
 
       <main className="main-body">
         {page==='overview'&&<>
+          <CompactOverview
+            t={t} lang={language} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
+            history={history} trades={trades} market={mk} valid={valid} portfolio={portfolio}
+            paper={paper} workerOnline={workerOnline} goTo={setPage}
+          />
+          <div className="desktop-overview">
           <section className="welcome-head"><div><span className="overline"><Sparkles size={14}/>{t.subhead}</span><h1>{t.headline}</h1></div><Pill tone="teal" icon={ShieldCheck}>{t.demoOnly}</Pill></section>
           <div className="asset-switch" role="tablist" aria-label="Asset">
             {ASSETS.map(a=><button type="button" key={a} role="tab" aria-selected={asset===a} className={`asset-tab ${asset===a?'asset-tab--active':''}`} onClick={()=>{setAsset(a);setPeriod('m15');}}>
@@ -317,6 +324,7 @@ export default function App() {
               </section>
               <section className="panel recent-panel"><div className="panel-top"><div><span className="section-eyebrow">{t.activity}</span><h2>{t.latestActivity}</h2></div><button type="button" className="tiny-action" onClick={tabKey('activity')}>{t.seeAll} <ArrowRight size={14}/></button></div><ActivityList trades={trades} t={t} lang={language} asset={asset} compact/></section>
             </div>
+          </div>
           </div>
         </>}
 

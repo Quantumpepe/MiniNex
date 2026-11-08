@@ -1,4 +1,4 @@
-# MiniNex V0.5 — BTC/ETH paper AUTO + Android/iOS app
+# MiniNex V0.6 — BTC/ETH paper AUTO + Android/iOS app
 
 Independent BTC/ETH market monitoring and **simulated**, paper-only AUTO
 strategy. The local Capacitor mobile project is in [frontend/](frontend/README.md).
@@ -14,3 +14,7 @@ server restart; estimated profits are demonstrations, not live trading results.
 
 See [mobile setup](frontend/README.md). The repository is currently PUBLIC;
 make it private under GitHub Settings if source-code privacy is required.
+
+### V0.6 compact phone Home
+
+The Home screen is designed to fit a phone viewport without vertical scrolling: DE/EN language switch, BTC/ETH selection, estimated demo portfolio, verified market sparkline, paper AUTO status and net P/L. More extensive Trade/Wallet/Settings pages can scroll when necessary. Real orders remain disabled; users can install only through the official stores after review and signing.

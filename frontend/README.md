@@ -1,4 +1,4 @@
-# MiniNex V0.5 — installable Android/iOS app project
+# MiniNex V0.6 — installable Android/iOS app project
 
 MiniNex runs as a local **Capacitor 8** app (React/Vite). Android and iOS package
 compiled `frontend/dist` files into their native WebView. **No Render Static Site
@@ -61,3 +61,7 @@ The backend allows Capacitor local origins `https://localhost` (Android) and
 accounts/trading, add secure authentication and authorization; CORS is not
 an access-control mechanism. Create a permanent bundle ID, native app icon,
 versioned dependency lockfile, and code-signing setup before public release.
+
+## Compact no-scroll phone Home (V0.6)
+
+The phone overview fits within one viewport with no vertical Home scrolling. Detailed Trade, Wallet and Settings tabs can scroll. No synthetic profit or trade controls were introduced. The displayed market price is quoted in USDT independently of the paper portfolio settlement token. Existing API data and paper-only constraints remain unchanged.
