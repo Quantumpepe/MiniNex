@@ -56,3 +56,31 @@ def test_non_paper_payload_is_rejected():
     except ValueError:
         return
     assert False
+
+
+def test_cost_breakdown_reconciles_exactly_without_double_deduction():
+    state=active()
+    state["trades"]=[{
+        "kind":"PAPER_BUY",
+        "estimated_costs":{"venue_fee":0.496,"network_fee":2.5,
+                           "spread_and_slippage_cost":0.645}
+    }]
+    val=add_paper_mark_to_market(state,Feed())["position"]["valuation"]
+    assert val["last_buy_costs_usd"]==3.641
+    assert abs(val["estimated_sale_costs_usd"]-(
+        val["estimated_sale_fee_usd"]+
+        val["estimated_sale_network_fee_usd"]+
+        val["estimated_sale_spread_slippage_usd"])) < 0.000002
+    assert abs(val["estimated_sale_gross_usd"]-
+        val["estimated_sale_costs_usd"]-val["estimated_exit_net_usd"])<0.000002
+    assert abs(val["estimated_exit_net_usd"]-
+        497.5-val["unrealized_net_pnl_usd"])<0.000002
+    # Buy costs are already part of the 497.50 invested amount.
+    assert val["unrealized_net_pnl_usd"] == round(
+        val["estimated_exit_net_usd"]-497.5,6)
+
+
+def test_historical_entry_cost_missing_is_not_fabricated():
+    val=add_paper_mark_to_market(active(),Feed())["position"]["valuation"]
+    assert val["last_buy_costs_usd"] is None
+    assert val["estimated_sale_costs_usd"]>0
