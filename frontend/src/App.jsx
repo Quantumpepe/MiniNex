@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
+import HelpCenter from './HelpCenter.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
 import {
   API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
@@ -245,6 +246,7 @@ export default function App() {
   const [page,setPage]=useState('overview');
   const [period,setPeriod]=useState('m15');
   const [costsOpen,setCostsOpen]=useState(false);
+  const [helpOpen,setHelpOpen]=useState(false);
   const [refreshNonce,setRefreshNonce]=useState(0);
   const {market,paper,history,trades,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
   const t=DICTIONARY[language];
@@ -290,7 +292,7 @@ export default function App() {
         {page==='overview'&&<>
           <CompactOverview
             t={t} lang={language} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
-            history={history} trades={trades} market={mk} valid={valid} portfolio={portfolio}
+            history={history} trades={trades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio}
             paper={paper} workerOnline={workerOnline} goTo={setPage}
           />
           <div className="desktop-overview">
@@ -327,7 +329,9 @@ export default function App() {
         </>}
 
         {page==='settings'&&<>
-          <section className="page-heading"><h1>{t.settings}</h1></section>
+          <section className="page-heading settings-heading"><h1>{t.settings}</h1><button type="button" className="settings-info-button" aria-label={t.helpTitle} aria-expanded={helpOpen} aria-controls="mininex-help" onClick={()=>setHelpOpen(v=>!v)}><Info size={22}/></button></section>
+          {helpOpen && <HelpCenter t={t}/>}
+
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Globe2 size={21}/></span><div><h2>{t.language}</h2></div></div>
             <div className="language-options"><button type="button" className={language==='de'?'chosen':''} onClick={()=>chooseLang('de')}><span>🇩🇪 Deutsch</span>{language==='de'&&<Check size={17}/>}</button><button type="button" className={language==='en'?'chosen':''} onClick={()=>chooseLang('en')}><span>🇬🇧 English</span>{language==='en'&&<Check size={17}/>}</button></div>
           </section>
