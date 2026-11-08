@@ -1,0 +1,111 @@
+import React, {useCallback,useEffect,useState} from 'react';
+import {usePrivy} from '@privy-io/react-auth';
+import {API_BASE} from './data.js';
+import {PRIVY_APP_ID} from './privyConfig.js';
+
+const ASSETS=['BTC','ETH'];
+const empty={status:'NOT_STARTED',paper_only:true,trades:[]};
+
+function PersonalDemo({t}) {
+  const {ready,authenticated,getAccessToken}=usePrivy();
+  const [asset,setAsset]=useState('BTC');
+  const [data,setData]=useState({BTC:empty,ETH:empty});
+  const [status,setStatus]=useState('idle');
+  const [busy,setBusy]=useState(false);
+
+  const fetchOne=useCallback(async current=>{
+    const token=await getAccessToken();
+    if(!token)throw new Error('Authentication required');
+    const response=await fetch(API_BASE+'/api/user-paper/'+current,{
+      headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+    });
+    if(!response.ok)throw new Error('Session unavailable');
+    const result=await response.json();
+    if(result?.paper_only!==true||result?.real_trading_enabled!==false||
+       result?.wallet_funds_used!==false)throw new Error('Invalid simulation');
+    return result;
+  },[getAccessToken]);
+
+  useEffect(()=>{
+    if(!ready||!authenticated){setData({BTC:empty,ETH:empty});setStatus('idle');return;}
+    let active=true;
+    setStatus('loading');
+    Promise.all(ASSETS.map(fetchOne)).then(rows=>{
+      if(active){setData({BTC:rows[0],ETH:rows[1]});setStatus('ready');}
+    }).catch(()=>{if(active)setStatus('failed');});
+    return()=>{active=false;};
+  },[ready,authenticated,fetchOne]);
+
+  const command=async action=>{
+    if(busy||!ready||!authenticated)return;
+    setBusy(true);
+    try{
+      const token=await getAccessToken();
+      if(!token)throw new Error('Authentication required');
+      const response=await fetch(API_BASE+'/api/user-paper/'+asset+'/'+action,{
+        method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+        cache:'no-store'
+      });
+      if(!response.ok)throw new Error('Command failed');
+      const result=await response.json();
+      if(result?.asset!==asset||result?.paper_only!==true||
+         result?.wallet_funds_used!==false||result?.real_trading_enabled!==false)
+        throw new Error('Invalid response');
+      setData(previous=>({...previous,[asset]:result}));
+      setStatus('ready');
+    }catch{setStatus('failed');}
+    finally{setBusy(false);}
+  };
+  const current=data[asset]||empty;
+  const position=current.position||{};
+  return <section className="privy-hwm-box personal-paper" aria-label={t.personalDemoTitle}>
+    <div className="privy-hwm-title"><strong>{t.personalDemoTitle}</strong></div>
+    <p className="privy-wallet-description">{t.personalDemoNote}</p>
+    <div className="personal-paper-tabs">
+      {ASSETS.map(coin=><button key={coin} type="button" aria-pressed={asset===coin}
+        className={asset===coin?'personal-paper-selected':''}
+        onClick={()=>setAsset(coin)}>{coin}</button>)}
+    </div>
+    {!ready||!authenticated?<p className="privy-wallet-description">{t.taxLoginRequired}</p>:<>
+      {status==='loading'&&<p className="privy-wallet-description">{t.privyBudgetLoading}</p>}
+      {status==='failed'&&<p className="privy-wallet-description" role="alert">{t.personalDemoFailed}</p>}
+      <p className="privy-wallet-description">
+        {t.personalDemoStatus}: {current.status||'NOT_STARTED'} · {current.settlement||'USDC'}
+      </p>
+      {current.status!=='NOT_STARTED'&&<div className="balance-grid">
+        <div className="balance-line"><span>{t.personalDemoCash}</span><b>{position.stable_cash||'0'} {current.settlement}</b></div>
+        <div className="balance-line"><span>{t.personalDemoCoin}</span><b>{position.coin_quantity||'0'} {asset}</b></div>
+        <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{position.realized_net_profit||'0'}</b></div>
+        <div className="balance-line"><span>{t.personalDemoTrades}</span><b>{position.trade_count||0}</b></div>
+      </div>}
+      <div className="personal-paper-controls">
+        {current.status==='NOT_STARTED'&&<button type="button" disabled={busy||status==='loading'}
+          onClick={()=>command('start')}>{t.personalDemoStart}</button>}
+        {current.status==='ACTIVE'&&<>
+          <button type="button" disabled={busy} onClick={()=>command('evaluate')}>{t.personalDemoEvaluate}</button>
+          <button type="button" disabled={busy} onClick={()=>command('pause')}>{t.personalDemoPause}</button>
+        </>}
+        {current.status==='PAUSED'&&<button type="button" disabled={busy}
+          onClick={()=>command('resume')}>{t.personalDemoResume}</button>}
+        {status==='failed'&&<button type="button" disabled={busy}
+          onClick={async()=>{
+            setBusy(true);
+            try{const result=await fetchOne(asset);setData(old=>({...old,[asset]:result}));setStatus('ready');}
+            catch{setStatus('failed');}finally{setBusy(false);}
+          }}>{t.privyBudgetReload}</button>}
+      </div>
+      {!!current.trades?.length&&<div className="tax-activity-list">
+        {current.trades.slice(-8).reverse().map((trade,i)=><div className="tax-activity-row"
+          key={trade.at+'-'+trade.kind+'-'+i}>
+          <div><strong>{trade.kind?.replace('PAPER_','')||'TRADE'}</strong>
+            <small>{trade.at?.slice(0,16).replace('T',' ')||''} UTC</small></div>
+          <div><strong>{trade.quantity} {asset}</strong><small>{t.simulatedTradeLabel}</small></div>
+        </div>)}
+      </div>}
+    </>}
+  </section>;
+}
+
+export default function UserPaperSessions({t}) {
+  return PRIVY_APP_ID?<PersonalDemo t={t}/>:null;
+}
