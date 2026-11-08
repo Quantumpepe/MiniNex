@@ -1,7 +1,7 @@
 import React, {useMemo} from 'react';
-import {Activity, ArrowRight, BarChart3, Bitcoin, Wallet} from 'lucide-react';
+import {Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
-import {formatMoney,formatNumber,validMarket} from './data.js';
+import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
 
 function AssetIcon({asset}) {
   return <span className={'compact-token compact-token--'+asset.toLowerCase()} aria-hidden="true">
@@ -33,7 +33,7 @@ function MarketChart({history,period,valid,t,asset}) {
   </svg>;
 }
 
-export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,goTo}) {
+export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -67,6 +67,21 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
         <span>{t.reference}</span><b>{formatMoney(valid?selected?.reference_price_usd:null,lang)}</b>
         <span>{t.spreadCheck}</span><b>{valid&&selected?.price_divergence_pct!=null?formatNumber(selected.price_divergence_pct,lang,3)+'%':'—'}</b>
       </div>
+    </section>
+    <section className="compact-recent-trades" aria-label={t.recentTrades}>
+      <div className="compact-recent-heading"><strong>{t.recentTrades} · {asset}</strong><span>{t.simulatedTradeLabel}</span></div>
+      {Array.isArray(trades)&&trades.length ? <div className="compact-trade-list">
+        {[...trades].reverse().slice(0,4).map((trade,index)=>{
+          const buy=trade.kind==='PAPER_BUY';
+          const amount=buy?trade.total_spent:trade.net_proceeds;
+          const pnl=!buy&&trade.realized_net_profit!=null?Number(trade.realized_net_profit):null;
+          return <div className="compact-trade-row" key={(trade.at||index)+'-'+index}>
+            <span className={'compact-trade-icon '+(buy?'is-buy':'is-sell')}>{buy?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span>
+            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {asset}</strong><small>{formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
+            <div className="compact-trade-value"><strong>{formatMoney(amount,lang)}</strong>{pnl!=null&&<small className={pnl>=0?'text-positive':'text-negative'}>{formatSigned(pnl,lang)}</small>}</div>
+          </div>;
+        })}
+      </div> : <p className="compact-trade-empty">{t.noRecentTrades}</p>}
     </section>
     <div className="compact-actions">
       <button type="button" onClick={()=>goTo('activity')}><Activity size={18}/>{t.activity}<ArrowRight size={15}/></button>
