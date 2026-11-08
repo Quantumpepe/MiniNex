@@ -168,3 +168,63 @@ def test_live_market_data_must_still_be_verified_for_new_trend_entry():
                                    "reason":"PRIMARY_MISSING_OR_STALE",
                                    "price_usdt":100.0},1000)
     assert engine.portfolios["BTC"].trade_count==0
+
+
+def test_gentle_ten_minute_uptrend_can_buy_even_without_fast_spike():
+    """Slow BTC appreciation should be considered, unlike the old 60s-only rule."""
+    class Gradual:
+        def history(self,asset,limit=3600):
+            return [
+                {"timestamp":float(t),
+                 "price_usdt":70000*(1+0.0000027*(t-200))}
+                for t in range(200,1001,10)
+            ]
+    engine=PaperAutoEngine(Gradual(),rules=PaperRules(
+        warmup_seconds=0,min_history_samples=4,price_window_seconds=900))
+    engine.portfolios["BTC"]=PaperPortfolio(
+        asset="BTC",settlement="USDC",stable_cash=500.0)
+    price=70000*(1+0.0000027*800)
+    sig=engine._signal("BTC",1000,price)
+    assert sig["ready"]
+    assert sig["momentum_600s_pct"]>=0.15
+    assert sig["momentum_60s_pct"]<engine.rules.min_trend_60s_pct
+    engine.process_asset("BTC",verified(price),now=1000)
+    assert engine.portfolios["BTC"].last_decision=="PAPER_BUY"
+    assert engine.portfolios["BTC"].last_reason=="GRADUAL_TREND"
+
+
+def test_negative_short_momentum_rejects_gradual_trend():
+    engine=PaperAutoEngine(Market())
+    engine.portfolios["BTC"]=PaperPortfolio(
+        asset="BTC",settlement="USDC",stable_cash=500.0)
+    engine._signal=lambda asset,now,price:{
+        "ready":True,"window_high":70020,"window_low":69700,
+        "momentum_60s_pct":-0.05,"momentum_180s_pct":0.01,
+        "momentum_600s_pct":0.3,"local_high":70020,
+        "local_mean":69950,"recent_mean_price":69980,
+        "fall_from_window_high_pct":0.02,
+        "rebound_from_window_low_pct":0.3,
+        "prior_max_drawdown_pct":0.1,
+    }
+    engine.process_asset("BTC",verified(70000),now=1000)
+    assert engine.portfolios["BTC"].trade_count==0
+    assert engine.portfolios["BTC"].last_reason=="NO_CONFIRMED_ENTRY_SIGNAL"
+
+
+def test_post_exit_waits_for_rebound_instead_of_gradual_trend():
+    engine=PaperAutoEngine(Market())
+    engine.portfolios["BTC"]=PaperPortfolio(
+        asset="BTC",settlement="USDC",stable_cash=500.0,
+        last_exit_price=69900,post_exit_low=69900,last_trade_at=0)
+    engine._signal=lambda asset,now,price:{
+        "ready":True,"window_high":70000,"window_low":69400,
+        "momentum_60s_pct":0.03,"momentum_180s_pct":0.06,
+        "momentum_600s_pct":0.3,"local_high":70000,
+        "local_mean":69800,"recent_mean_price":69930,
+        "fall_from_window_high_pct":0.02,
+        "rebound_from_window_low_pct":0.1,
+        "prior_max_drawdown_pct":0.3,
+    }
+    engine.process_asset("BTC",verified(69980),now=1000)
+    assert engine.portfolios["BTC"].trade_count==0
+    assert engine.portfolios["BTC"].last_reason=="AWAITING_POST_EXIT_REBOUND"
