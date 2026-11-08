@@ -163,95 +163,104 @@ class MarketDataService:
             history.append({"timestamp": tick["received_at"], "price_usdt": tick["price"]})
         return True
 
-    def ingest_primary_rest(self, payload: Any, *, now: float | None = None) -> bool:
-        """Accept only a complete fixed-symbol Binance spot REST response.
+    def ingest_primary_rest_asset(self, packet: Any, *, now: float | None = None) -> bool:
+        """Independently recover one primary asset; never fabricate a market tick.
 
-        This is a genuine second delivery path of the PRIMARY vendor, not
-        a second independent verification source. Kraken must still agree.
-        Fail closed if either asset is missing, invalid or duplicated.
+        A broken ETH endpoint must not prevent BTC recovery, or vice versa.
+        Kraken still independently confirms both quotes in snapshot().
         """
-        if not isinstance(payload,list) or len(payload)!=2:
+        if not isinstance(packet, dict):
             return False
-        prices={}
-        for item in payload:
-            if not isinstance(item,dict):
-                return False
-            asset=SYMBOL_TO_ASSET.get(item.get("symbol"))
-            price=positive_price(item.get("price"))
-            if asset is None or price is None or asset in prices:
-                return False
-            prices[asset]=price
-        if set(prices)!=set(ASSETS):
+        asset = SYMBOL_TO_ASSET.get(packet.get("symbol"))
+        price = positive_price(packet.get("price"))
+        if asset is None or price is None:
             return False
-        at=self._clock() if now is None else now
-        if not math.isfinite(at) or at<=0:
+        at = self._clock() if now is None else now
+        if not math.isfinite(at) or at <= 0:
             return False
-        for asset,price in prices.items():
-            existing=self._primary.get(asset)
-            # Do not overwrite working, fresh WebSocket data.
-            if (self.primary_connected and existing
-                and existing.get("source")=="Binance Spot WebSocket"
-                and 0<=at-existing["received_at"]<=6.0):
-                continue
-            # Avoid losing an already collected primary history or
-            # overwriting a more recent WS sample during a REST request.
-            if existing and existing["received_at"]>at:
-                continue
-            self._primary[asset]={
-                "asset":asset,"price":price,
-                "change_24h_pct":None,
-                "event_at":at,"received_at":at,
-                "source":"Binance Spot REST",
-            }
-            history=self._history[asset]
-            if not history or at-history[-1]["timestamp"]>=1.0:
-                history.append({"timestamp":at,"price_usdt":price})
-        self.rest_backup_active=any(
-            item.get("source")=="Binance Spot REST"
-            and 0<=at-item["received_at"]<=self.max_primary_age_seconds
-            for item in self._primary.values()
-        )
+        existing = self._primary.get(asset)
+        # WebSocket is the preferred low-latency feed if recently active.
+        if (self.primary_connected and existing
+            and existing.get("source") == "Binance Spot WebSocket"
+            and 0 <= at - existing["received_at"] <= 3.0):
+            return True
+        if existing and existing["received_at"] > at:
+            return True
+        self._primary[asset] = {
+            "asset": asset, "price": price, "change_24h_pct": None,
+            "event_at": at, "received_at": at,
+            "source": "Binance Spot REST",
+        }
+        history = self._history[asset]
+        if not history or at - history[-1]["timestamp"] >= 1.0:
+            history.append({"timestamp": at, "price_usdt": price})
+        self.rest_backup_active = True
         return True
 
+    def ingest_primary_rest(self, payload: Any, *, now: float | None = None) -> bool:
+        """Legacy batch helper: reject invalid/incomplete batches atomically."""
+        if not isinstance(payload, list) or len(payload) != len(ASSETS):
+            return False
+        symbols = [item.get("symbol") if isinstance(item, dict) else None
+                   for item in payload]
+        if set(symbols) != set(SYMBOL_TO_ASSET) or len(set(symbols)) != len(ASSETS):
+            return False
+        if any(positive_price(item.get("price")) is None for item in payload):
+            return False
+        at = self._clock() if now is None else now
+        return all(self.ingest_primary_rest_asset(item, now=at) for item in payload)
+
     async def _rest_backup_loop(self) -> None:
-        """Recover transient WS gaps without ever bypassing Kraken checks."""
-        async with httpx.AsyncClient(timeout=httpx.Timeout(7.0),
-                                     follow_redirects=False) as client:
+        """Prompt per-asset REST recovery without sequential BTC/ETH delays.
+
+        Check every three seconds; request both symbols concurrently with a
+        bounded timeout. Missing data still fails closed after freshness expiry.
+        """
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(3.5), follow_redirects=False
+        ) as client:
             while True:
                 try:
-                    now=self._clock()
-                    required=any(
-                        not self.primary_connected or
-                        not (p:=self._primary.get(asset)) or
-                        now-p["received_at"]>6.0
-                        for asset in ASSETS
-                    )
-                    if required:
-                        # Fixed Binance spot API; no user-input URLs or pairs.
-                        # Request the two fixed symbols separately: Binance
-                        # can reject the combined symbols parameter with 400.
-                        # Each response must confirm exactly its requested pair.
-                        packets=[]
-                        for symbol in SYMBOL_TO_ASSET:
-                            response=await client.get(self.primary_rest_url,
-                                                      params={"symbol":symbol})
+                    at = self._clock()
+                    needed = [
+                        symbol for symbol, asset in SYMBOL_TO_ASSET.items()
+                        if not self.primary_connected
+                        or not (sample := self._primary.get(asset))
+                        or not 0 <= at - sample["received_at"] <= 3.0
+                    ]
+                    if needed:
+                        async def fetch_symbol(symbol: str) -> dict:
+                            response = await client.get(
+                                self.primary_rest_url, params={"symbol":symbol}
+                            )
                             response.raise_for_status()
-                            packet=response.json()
-                            if (not isinstance(packet,dict)
-                                or packet.get("symbol")!=symbol
+                            packet = response.json()
+                            if (not isinstance(packet, dict)
+                                or packet.get("symbol") != symbol
                                 or positive_price(packet.get("price")) is None):
-                                raise ValueError("Invalid spot price for "+symbol)
-                            packets.append(packet)
-                        if not self.ingest_primary_rest(packets):
-                            raise ValueError("Invalid Binance spot REST backup prices")
-                        self.last_rest_error=None
+                                raise ValueError("Invalid Binance spot REST "+symbol)
+                            return packet
+
+                        results = await asyncio.gather(
+                            *(fetch_symbol(symbol) for symbol in needed),
+                            return_exceptions=True,
+                        )
+                        errors = []
+                        for symbol, result in zip(needed, results):
+                            if isinstance(result, BaseException):
+                                errors.append(f"{symbol}: {type(result).__name__}: {str(result)[:90]}")
+                            elif not self.ingest_primary_rest_asset(result):
+                                errors.append(f"{symbol}: Invalid fallback data")
+                        self.last_rest_error = "; ".join(errors)[:250] if errors else None
+                        if errors:
+                            LOGGER.warning("Binance REST backup: %s", self.last_rest_error)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    self.last_rest_error=f"{type(exc).__name__}: {str(exc)[:160]}"
+                    self.last_rest_error = f"{type(exc).__name__}: {str(exc)[:160]}"
                     LOGGER.warning("Binance REST market backup unavailable: %s",
                                    self.last_rest_error)
-                await asyncio.sleep(5.0)
+                await asyncio.sleep(3.0)
 
     @staticmethod
     def _parse_closed_candles(payload: Any, now: float, interval_seconds: int) -> list[dict]:
