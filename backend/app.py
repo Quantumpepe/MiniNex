@@ -335,9 +335,29 @@ async def blockchain_import_verified_page(
     )
 
 
+def _paper_visible() -> bool:
+    # Future live-mode cutover: NEVER display or execute simulated sessions.
+    # This flag only DISABLES paper mode; it cannot enable real trading.
+    return os.getenv("MININEX_LIVE_TRADING_ENABLED","false").lower() != "true"
+
+
+def _require_paper_visible() -> None:
+    if not _paper_visible():
+        raise HTTPException(404,"Paper simulation unavailable in live mode")
+
+
+@app.get("/api/user-paper/availability")
+def user_paper_availability():
+    return JSONResponse({
+        "paper_available":_paper_visible(),
+        "live_trading_enabled":False,
+    },headers={"Cache-Control":"no-store"})
+
+
 @app.get("/api/user-paper/{asset}")
 def user_paper_status(asset: str, authorization: str | None = Header(default=None)):
     """Authenticated, owner-isolated, persistent simulation status and fills."""
+    _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(read_user_paper(did,asset),headers={"Cache-Control":"private, no-store"})
 
@@ -345,6 +365,7 @@ def user_paper_status(asset: str, authorization: str | None = Header(default=Non
 @app.post("/api/user-paper/{asset}/start")
 def user_paper_start(asset: str, authorization: str | None = Header(default=None)):
     """Explicitly start a demo session; saved percent applies to virtual 1000 USD."""
+    _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(start_user_paper(did,asset,market),headers={"Cache-Control":"private, no-store"})
 
@@ -352,6 +373,7 @@ def user_paper_start(asset: str, authorization: str | None = Header(default=None
 @app.post("/api/user-paper/{asset}/evaluate")
 def user_paper_evaluate(asset: str, authorization: str | None = Header(default=None)):
     """Single manual evaluation against verified shared market data, not background live trading."""
+    _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(step_user_paper(did,asset,market,time.time()),
                         headers={"Cache-Control":"private, no-store"})
@@ -360,6 +382,7 @@ def user_paper_evaluate(asset: str, authorization: str | None = Header(default=N
 def user_paper_action(asset: str, action: str,
                       authorization: str | None = Header(default=None)):
     """Only pause or resume an existing simulation; never wallet execution."""
+    _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(set_user_paper_status(did,asset,action),
                         headers={"Cache-Control":"private, no-store"})
