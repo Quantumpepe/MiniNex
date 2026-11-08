@@ -30,7 +30,8 @@ personal_paper = PersonalPaperWorker(market)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await market.start()
-    await paper.start()
+    if _paper_visible():
+        await paper.start()
     await personal_paper.start()
     try:
         yield
@@ -126,11 +127,13 @@ def price_history(asset: str, limit: int = 120):
 
 @app.get("/api/paper/status")
 def paper_status():
+    _require_paper_visible()
     return JSONResponse(paper.status(), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/paper/status/{asset}")
 def paper_asset_status(asset: str):
+    _require_paper_visible()
     asset = asset.upper()
     if asset not in ("BTC", "ETH"):
         raise HTTPException(404, "Only BTC and ETH are supported")
@@ -139,6 +142,7 @@ def paper_asset_status(asset: str):
 
 @app.get("/api/paper/trades/{asset}")
 def paper_trade_history(asset: str, limit: int = 50):
+    _require_paper_visible()
     asset = asset.upper()
     if asset not in ("BTC", "ETH"):
         raise HTTPException(404, "Only BTC and ETH are supported")
