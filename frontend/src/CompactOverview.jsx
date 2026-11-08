@@ -72,7 +72,7 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
             <button type="button" className={period==='h1'?'on':''} aria-pressed={period==='h1'} onClick={()=>setPeriod('h1')}>1h</button>
           </div>
         </div>
-        <PriceMini history={history} trades={trades} period={period} valid={valid} t={t}/>
+        <PriceMini history={history} trades={[]} period={period} valid={valid} t={t}/>
       </div>
     </section>
     <div className="compact-actions">
