@@ -37,3 +37,13 @@ test('backend live mode hides all simulation cards and the old public trade prev
   assert.match(app,/paperVisible&&<section className="panel recent-panel"/);
   assert.match(compact,/showSimulatedTrades&&<section className="compact-recent-trades"/);
 });
+
+test('overview displays only current Privy account paper trades, never shared demo fills',()=>{
+  assert.match(app,/function usePersonalPaperTrades\(/);
+  assert.match(app,/Authorization:'Bearer '\+token/);
+  assert.match(app,/data\?\.asset!==asset/);
+  assert.match(app,/trade\?\.real_trade===false/);
+  assert.match(app,/history=\{history\} trades=\{personalTrades\}/);
+  assert.match(app,/<ActivityList trades=\{personalTrades\}/);
+  assert.doesNotMatch(app,/<ActivityList trades=\{trades\}/);
+});
