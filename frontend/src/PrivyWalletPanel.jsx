@@ -4,6 +4,14 @@ import {LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
 import {API_BASE} from './data.js';
 
+function formatHwmUsd(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0
+    ? amount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+    : '—';
+}
+
 // Deliberately no sendTransaction, withdrawal or delegation path here.
 // The existing backend is PAPER-only, even when a user signs in to Privy.
 function ConnectedPrivyWallet({t}) {
@@ -95,7 +103,7 @@ function ConnectedPrivyWallet({t}) {
         <div className="privy-wallet-description">{t.privyHwmDescription}</div>
         {authenticated && databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
           {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
-            <b>{asset}</b><span>{t.privyHwmValue}: {assetLedger[asset]?.high_water_mark_usd??'—'} USD</span>
+            <b>{asset}</b><span>{t.privyHwmValue}: {formatHwmUsd(assetLedger[asset]?.high_water_mark_usd)} USD</span>
           </div>)}
         </div>}
         <div className="privy-hwm-disclaimer">{t.privyHwmPrepared}</div>
