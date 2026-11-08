@@ -43,6 +43,30 @@ jobs:
         run: npx cap add android
       - name: Sync bundled assets
         run: npx cap sync android
+      - name: Install approved MiniNex Android launcher artwork
+        run: |
+          python3 -m venv /tmp/mininex-icon-env
+          /tmp/mininex-icon-env/bin/pip install --quiet Pillow
+          /tmp/mininex-icon-env/bin/python - <<'PY'
+          from pathlib import Path
+          from base64 import b64decode
+          from io import BytesIO
+          from PIL import Image
+          logo = Image.open(BytesIO(b64decode(Path('branding/mininex-logo.webp.b64').read_text().strip()))).convert('RGB')
+          resources = Path('android/app/src/main/res')
+          for bucket, pixels in [('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)]:
+              folder = resources / ('mipmap-' + bucket)
+              folder.mkdir(parents=True,exist_ok=True)
+              icon = logo.resize((pixels,pixels),Image.Resampling.LANCZOS)
+              icon.save(folder / 'ic_launcher.png')
+              icon.save(folder / 'ic_launcher_round.png')
+          # Android's adaptive launcher XML otherwise overrides the PNG icons on Android 8+.
+          adaptive = resources / 'mipmap-anydpi-v26'
+          if adaptive.exists():
+              for filename in ('ic_launcher.xml','ic_launcher_round.xml'):
+                  (adaptive / filename).unlink(missing_ok=True)
+          print('MiniNex circular launcher icons installed in five Android densities')
+          PY
       - name: Validate stable APK signing key
         env:
           MININEX_APK_KEYSTORE_B64: ${{ secrets.MININEX_APK_KEYSTORE_B64 }}
