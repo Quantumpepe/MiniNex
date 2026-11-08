@@ -39,6 +39,14 @@ SCHEMA = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (privy_did,asset)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_budget_preferences (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        percent SMALLINT NOT NULL DEFAULT 0 CHECK (percent BETWEEN 0 AND 100),
+        revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_fee_events (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL,
@@ -96,6 +104,14 @@ def _prepare_rows(cur, did: str) -> None:
         cur.execute(
             """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
                ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
             (did,asset),
         )
 
