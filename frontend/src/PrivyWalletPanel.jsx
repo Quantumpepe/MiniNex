@@ -89,12 +89,14 @@ function ConnectedPrivyWallet({t}) {
   const [identityStatus,setIdentityStatus]=useState('idle');
   const [databaseStatus,setDatabaseStatus]=useState('idle');
   const [assetLedger,setAssetLedger]=useState(null);
+  const [routeCapabilities,setRouteCapabilities]=useState(null);
   useEffect(()=>{
-    if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);return;}
+    if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);setRouteCapabilities(null);return;}
     let active=true;
     setIdentityStatus('checking');
     setDatabaseStatus('idle');
     setAssetLedger(null);
+    setRouteCapabilities(null);
     (async()=>{
       try {
         const token=await getAccessToken();
@@ -123,6 +125,25 @@ function ConnectedPrivyWallet({t}) {
           if(account?.account_persistent===true && account?.mode==='PAPER_ONLY_NO_LIVE_ORDERS'){
             setAssetLedger(account.ledger||null);
             setDatabaseStatus('stored');
+            // Read-only capability contract; never enable trading from wallet existence.
+            try {
+              const routesResponse=await fetch(API_BASE+'/api/trading/capabilities',{
+                method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+              });
+              if(!active)return;
+              if(routesResponse.ok){
+                const capabilities=await routesResponse.json();
+                if(active && capabilities?.mode==='PREPARATION_ONLY' &&
+                   capabilities.real_trading_enabled===false &&
+                   capabilities.automated_signing_enabled===false &&
+                   capabilities.routes?.BTC?.ready===false &&
+                   capabilities.routes?.ETH?.ready===false){
+                  setRouteCapabilities(capabilities);
+                }
+              }
+            }catch{
+              // Missing route status never implies trading is ready.
+            }
           }else{
             setDatabaseStatus('failed');
           }
@@ -168,6 +189,14 @@ function ConnectedPrivyWallet({t}) {
           <div className="privy-wallet-note"><LockKeyhole size={13} style={{verticalAlign:'middle',marginRight:6}}/>{t.privyNoDeposits}</div>
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
+      {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
+        <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong><span>{t.privyTradingLocked}</span></div>
+        {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
+          <b>{asset}</b><span>{routeCapabilities?.routes?.[asset]?.ready===false
+            ? t.privyTradingPreparing : t.privyTradingUnverified}</span>
+        </div>)}
+        <div className="privy-hwm-disclaimer">{t.privyTradingNote}</div>
+      </div>}
       <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
         <div className="privy-hwm-title"><strong>{t.privyHwmTitle}</strong><span>5 %</span></div>
         <div className="privy-wallet-description">{t.privyHwmDescription}</div>
