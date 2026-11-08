@@ -1,6 +1,7 @@
 import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import {App as CapacitorApp} from '@capacitor/app';
 import {Capacitor} from '@capacitor/core';
+import {usePrivy} from '@privy-io/react-auth';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin,
@@ -196,6 +197,45 @@ function useMiniNexData(asset, refreshNonce) {
   return {market,paper,history,trades,connected,paperError,syncedAt};
 }
 
+function usePersonalPaperTrades(asset, paperVisible, refreshNonce) {
+  const {ready,authenticated,getAccessToken}=usePrivy();
+  const [trades,setTrades]=useState([]);
+  useEffect(()=>{
+    let active=true;
+    setTrades([]);
+    if(!paperVisible||!ready||!authenticated)return()=>{active=false;};
+    let inFlight=false;
+    const sync=async()=>{
+      if(inFlight)return;
+      inFlight=true;
+      try{
+        const token=await getAccessToken();
+        if(!token)throw new Error('Missing Privy token');
+        const response=await fetch(API_BASE+'/api/user-paper/'+asset,{
+          headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+        });
+        if(!response.ok)throw new Error('Personal history unavailable');
+        const data=await response.json();
+        if(!active)return;
+        if(data?.asset!==asset||data?.paper_only!==true||
+            data?.real_trading_enabled!==false||data?.wallet_funds_used!==false){
+          throw new Error('Untrusted personal paper response');
+        }
+        setTrades(Array.isArray(data.trades)?
+          data.trades.filter(trade=>trade?.asset===asset&&
+            (trade?.kind==='PAPER_BUY'||trade?.kind==='PAPER_SELL')&&
+            trade?.real_trade===false):[]);
+      }catch{
+        if(active)setTrades([]);
+      }finally{inFlight=false;}
+    };
+    sync();
+    const interval=setInterval(sync,20000);
+    return()=>{active=false;clearInterval(interval);};
+  },[asset,paperVisible,ready,authenticated,getAccessToken,refreshNonce]);
+  return trades;
+}
+
 function Navigation({page,setPage,t,mobile=false}) {
   return <nav className={mobile?'mobile-navigation':'side-navigation'} aria-label="Navigation">
     {NAV.map(({key,icon:Icon})=><button type="button" key={key} className={`nav-item ${page===key?'nav-item--active':''}`} onClick={()=>setPage(key)} aria-current={page===key?'page':undefined}>
@@ -304,7 +344,8 @@ export default function App() {
       .catch(()=>{if(active)setPaperVisible(false);});
     return()=>{active=false;};
   },[]);
-  const {market,paper,history,trades,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
+  const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
+  const personalTrades=usePersonalPaperTrades(asset,paperVisible,refreshNonce);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
   const valid=validMarket(mk) && Date.now()-syncedAt<FRESH_MS;
@@ -348,7 +389,7 @@ export default function App() {
         {page==='overview'&&<>
           <CompactOverview
             t={t} lang={language} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
-            history={history} trades={trades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
+            history={history} trades={personalTrades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
@@ -371,7 +412,7 @@ export default function App() {
               </section>
               {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
                 <div className="panel-top"><h2>{t.recentTrades} · {asset}</h2><span className="muted-description">{t.simulatedTradeLabel}</span></div>
-                <ActivityList trades={trades} t={t} lang={language} asset={asset} compact/>
+                <ActivityList trades={personalTrades} t={t} lang={language} asset={asset} compact/>
               </section>}
             </div>
           </div>
