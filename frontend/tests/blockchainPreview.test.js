@@ -11,7 +11,7 @@ test('Blockchain preview only uses linked native BTC and embedded ETH wallet',()
   assert.match(component,/BTC_ADDRESS\.test/);
   assert.match(component,/ETH_ADDRESS\.test/);
   assert.match(component,/getAccessToken/);
-  assert.match(component,/\\/api\\/blockchain\\/history\\//);
+  assert.match(component,/\/api\/blockchain\/history\//);
   assert.match(component,/Authorization:'Bearer '\+token/);
   assert.match(app,/<BlockchainPreview t=\{t\}\/>/);
 });
