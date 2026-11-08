@@ -97,3 +97,6 @@ The public Privy App ID for MiniNex is now compiled as the default app identifie
 
 ## V0.8 wallet database indicator
 The Wallet screen fetches `GET /api/account` only after Privy JWT verification has succeeded, then shows whether the user's private PostgreSQL account is persisted. BTC and ETH each have a separate **realized-net HWM** at a fixed 5% fee rate; all shown fee data are explicitly marked **PREPARED / NOT COLLECTED**. No client can submit or change HWM or realized PnL. The existing demo balances are not persisted and remain strictly isolated. Home has no added rows or scrolling.
+
+## V0.8.1 Verification retry
+If authenticated wallet or database verification fails, tap **Verbindung erneut pruefen / Check connection again** in Wallet to fetch a fresh Privy token and re-check the backend; this remains read-only. For a private backend smoke test run `python -m backend.diagnostics` in Render Shell. An offline HTML preview cannot authenticate a real user.

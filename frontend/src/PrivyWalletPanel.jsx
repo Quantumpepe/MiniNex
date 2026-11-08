@@ -10,6 +10,7 @@ function ConnectedPrivyWallet({t}) {
   const {ready, authenticated, login, logout, getAccessToken} = usePrivy();
   const {wallets, ready:walletsReady} = useWallets();
   const [error,setError]=useState(false);
+  const [retryNonce,setRetryNonce]=useState(0);
   const [identityStatus,setIdentityStatus]=useState('idle');
   const [databaseStatus,setDatabaseStatus]=useState('idle');
   const [assetLedger,setAssetLedger]=useState(null);
@@ -58,7 +59,7 @@ function ConnectedPrivyWallet({t}) {
       }
     })();
     return()=>{active=false};
-  },[ready,authenticated,getAccessToken]);
+  },[ready,authenticated,getAccessToken,retryNonce]);
   const embedded = wallets.find(wallet=>wallet.walletClientType==='privy' && /^0x[0-9a-fA-F]{40}$/.test(wallet.address||''));
   const address = embedded?.address;
   const act = async (fn) => {try {setError(false); await fn();} catch {setError(true);}};
@@ -82,6 +83,10 @@ function ConnectedPrivyWallet({t}) {
              databaseStatus==='checking'?t.privyDatabaseChecking:
              databaseStatus==='setup'?t.privyDatabaseSetup:t.privyDatabasePending}
           </div>
+          {(identityStatus==='failed' || identityStatus==='setup' ||
+              (identityStatus==='verified' && databaseStatus!=='stored' && databaseStatus!=='checking')) &&
+            <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+              onClick={()=>setRetryNonce(n=>n+1)}>{t.privyRetryConnection}</button>}
           <div className="privy-wallet-note"><LockKeyhole size={13} style={{verticalAlign:'middle',marginRight:6}}/>{t.privyNoDeposits}</div>
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}

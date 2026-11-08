@@ -28,3 +28,12 @@ MiniNex now includes a fail-closed identity-only GET /api/auth/me endpoint. It r
 - The ledger is backed by PostgreSQL and uses transaction-locked, idempotent event IDs to prevent double charging. Fee rate is fixed at 5% of cumulative realized net USD gains exceeding the previous HWM after loss recovery. Results are *assessed only*; no payout or collection exists.
 - No public endpoint can append trade events. That write path must only be connected to a future fully verified live settlement engine. Paper engine balances/trades remain ephemeral and do **not** enter the live fee ledger.
 - The HWM rules require correct verified realized-cost accounting and fiat normalization before future live use. Additional equity-HWM checks, deposits/withdrawals, trading authorization, native BTC handling and audit checks are still required.
+
+
+## V0.8.1 Privy + PostgreSQL Render-Shell system test
+On your Render MiniNex backend **Shell**, run `python -m backend.diagnostics`. It safely validates:
+1. A correctly formatted ES256 public verification key (without printing it).
+2. Rejection of missing/invalid tokens.
+3. An isolated temporary PostgreSQL account with separate BTC/ETH zeroed HWM rows.
+4. Reading those rows from a fresh database connection, then deleting the temporary account.
+The diagnostic **does not** prove that a real user can log in via Privy inside an Android/iOS Capacitor app; that still needs a real device with login allowed origins. It never accesses the user's wallet, makes trades, or collects fees. Actual schema is initialized by the prior DB setup.

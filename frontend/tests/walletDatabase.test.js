@@ -22,3 +22,10 @@ test('5% HWM description localized and real collection disabled',()=>{
   assert.match(langs,/No live fees collected/);
   assert.match(langs,/Keine echten Gebühren/);
 });
+
+test('failed Privy/database check is recoverable without funds or extra permissions',()=>{
+  assert.match(wallet,/setRetryNonce\(n=>n\+1\)/);
+  assert.match(wallet,/getAccessToken,retryNonce/);
+  assert.match(wallet,/privyRetryConnection/);
+  assert.doesNotMatch(wallet,/sendTransaction\(|sendBitcoin\(|delegateWallet\(/);
+});
