@@ -33,7 +33,7 @@ function MarketChart({history,period,valid,t,asset}) {
   </svg>;
 }
 
-export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo}) {
+export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo,showSimulatedTrades=true}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -68,7 +68,7 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
         <span>{t.spreadCheck}</span><b>{valid&&selected?.price_divergence_pct!=null?formatNumber(selected.price_divergence_pct,lang,3)+'%':'—'}</b>
       </div>
     </section>
-    <section className="compact-recent-trades" aria-label={t.recentTrades}>
+    {showSimulatedTrades&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
       <div className="compact-recent-heading"><strong>{t.recentTrades} · {asset}</strong><span>{t.simulatedTradeLabel}</span></div>
       {Array.isArray(trades)&&trades.length ? <div className="compact-trade-list">
         {[...trades].reverse().slice(0,4).map((trade,index)=>{
@@ -82,7 +82,7 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
           </div>;
         })}
       </div> : <p className="compact-trade-empty">{t.noRecentTrades}</p>}
-    </section>
+    </section>}
     <div className="compact-actions">
       <button type="button" onClick={()=>goTo('activity')}><Activity size={18}/>{t.activity}<ArrowRight size={15}/></button>
       <button type="button" onClick={()=>goTo('wallet')}><Wallet size={18}/>{t.wallet}</button>
