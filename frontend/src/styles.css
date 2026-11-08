@@ -267,3 +267,12 @@
 .activity-report-heading .tax-export-actions{width:100%;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
 .activity-report-heading .tax-export-actions button{padding:9px 4px;font-size:12px;min-width:0}
 .activity-report-heading .tax-export-actions button.chain-tab-selected{background:#2a8064;border-color:#76d5aa;color:#ffffff}
+
+/* Owner-bound paper sessions - deliberately separate from wallet balances. */
+.personal-paper{display:flex;flex-direction:column;gap:13px}
+.personal-paper-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.personal-paper-tabs button,.personal-paper-controls button{padding:10px 12px;color:#e2fdf1;background:#13363c;border:1px solid #49796e;border-radius:10px;font-size:13px;font-weight:700}
+.personal-paper-tabs button.personal-paper-selected{background:#24644e;border-color:#68cda5}
+.personal-paper-controls{display:flex;flex-wrap:wrap;gap:8px}
+.personal-paper-controls button{flex:1 1 auto}
+.personal-paper .balance-grid{display:grid;gap:9px}
