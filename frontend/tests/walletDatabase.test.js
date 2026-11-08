@@ -41,3 +41,12 @@ test('wallet introductory copy reflects integrated Privy login, not future integ
   assert.doesNotMatch(langs,/Privy wallet integration will follow in a later version/);
   assert.match(langs,/Privy-Anmeldung und Ethereum-Wallet sind unten verfügbar/);
 });
+
+test('trading routes only show read-only verified disabled capability status',()=>{
+  assert.match(wallet,/API_BASE\+'\/api\/trading\/capabilities'/);
+  assert.match(wallet,/capabilities\.real_trading_enabled===false/);
+  assert.match(wallet,/capabilities\.automated_signing_enabled===false/);
+  assert.match(wallet,/capabilities\.routes\?\.BTC\?\.ready===false/);
+  assert.match(wallet,/capabilities\.routes\?\.ETH\?\.ready===false/);
+  assert.match(langs,/Automatische Signaturen und echte Swaps sind deaktiviert/);
+});
