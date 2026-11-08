@@ -12,7 +12,8 @@ function ExplorerView({t}) {
   const [asset,setAsset]=useState('BTC');
   const [cursor,setCursor]=useState(null);
   const [nextCursor,setNextCursor]=useState(null);
-  const [loadingMore,setLoadingMore]=useState(false);
+  const [syncStatus,setSyncStatus]=useState('idle');
+  const [syncCount,setSyncCount]=useState(0);
   const [reload,setReload]=useState(0);
   const [state,setState]=useState('idle');
   const [items,setItems]=useState([]);
@@ -22,7 +23,7 @@ function ExplorerView({t}) {
   const eth=wallets.find(wallet=>
     wallet?.walletClientType==='privy' && ETH_ADDRESS.test(wallet?.address||''))?.address;
   const address=asset==='BTC'?btc:eth;
-  const changeAsset=next=>{setAsset(next);setCursor(null);setNextCursor(null);setItems([]);};
+  const changeAsset=next=>{setAsset(next);setCursor(null);setNextCursor(null);setItems([]);setSyncStatus('idle');};
 
   useEffect(()=>{
     if(!ready || !authenticated || !address){
@@ -30,6 +31,7 @@ function ExplorerView({t}) {
     }
     let active=true;
     if(!cursor)setItems([]);
+    setSyncStatus('idle');
     setState('loading');
     (async()=>{
       try {
@@ -51,6 +53,28 @@ function ExplorerView({t}) {
     })();
     return()=>{active=false;};
   },[ready,authenticated,asset,address,getAccessToken,reload,cursor]);
+
+  const archivePage=async()=>{
+    if(!address || !authenticated || state!=='ready' || syncStatus==='saving')return;
+    setSyncStatus('saving');
+    try{
+      const token=await getAccessToken();
+      if(!token)throw new Error('Not authenticated');
+      const response=await fetch(API_BASE+'/api/blockchain/sync/'+asset+
+        '?address='+encodeURIComponent(address)+(cursor?'&cursor='+encodeURIComponent(cursor):''),{
+        method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+        cache:'no-store'
+      });
+      if(!response.ok)throw new Error('Verification unavailable');
+      const data=await response.json();
+      if(data?.wallet_ownership_verified!==true || data?.tax_complete!==false ||
+          data?.asset!==asset || !Number.isInteger(data?.saved))
+        throw new Error('Unexpected verification result');
+      setSyncCount(data.saved);
+      setSyncStatus('saved');
+      window.dispatchEvent(new Event('mininex-activity-updated'));
+    }catch{setSyncStatus('failed');}
+  };
 
   return <section className="panel activity-report">
     <div className="activity-report-heading">
@@ -87,6 +111,13 @@ function ExplorerView({t}) {
             </div>
           </div>)}
         </div>}
+        {state==='ready'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          onClick={archivePage} disabled={syncStatus==='saving'}>
+          {t.chainArchivePage}
+        </button>}
+        {syncStatus==='saving'&&<p>{t.chainArchiving}</p>}
+        {syncStatus==='saved'&&<p>{t.chainArchived.replace('{count}',String(syncCount))}</p>}
+        {syncStatus==='failed'&&<p role="alert">{t.chainArchiveUnavailable}</p>}
         {state==='ready'&&nextCursor&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
           onClick={()=>setCursor(nextCursor)}>{t.chainLoadMore}</button>}
       </>}
