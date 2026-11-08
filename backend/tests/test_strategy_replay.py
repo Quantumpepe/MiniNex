@@ -43,7 +43,14 @@ def test_replay_looks_only_at_past_samples_not_future():
     assert a["sample_count"]==30
     assert b["sample_count"]==len(points)
     assert a["to_timestamp"]<b["to_timestamp"]
-    assert a["trade_count"]==0
+    # The longer replay must reproduce every prior trade identically.
+    # Decisions at earlier timestamps cannot depend on future samples.
+    prefix_events = [
+        e for e in b["trades"]
+        if __import__("datetime").datetime.fromisoformat(e["at"]).timestamp()
+        <= a["to_timestamp"]
+    ]
+    assert prefix_events == a["trades"]
 
 
 def test_invalid_replay_data_rejected():
