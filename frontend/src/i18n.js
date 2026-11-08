@@ -1,5 +1,6 @@
 export const DICTIONARY = {
   en: {
+    tradeSettingsFailed: 'Could not save trade settings. Reload to try again.',
     recentTrades: 'Recent trades',
     simulatedTradeLabel: 'SIMULATED',
     noRecentTrades: 'No trades yet',
@@ -154,6 +155,7 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    tradeSettingsFailed: 'Handelseinstellungen konnten nicht gespeichert werden. Bitte neu laden.',
     recentTrades: 'Letzte Trades',
     simulatedTradeLabel: 'SIMULATION',
     noRecentTrades: 'Noch keine Trades',
