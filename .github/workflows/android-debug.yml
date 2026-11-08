@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android-debug:
@@ -58,3 +58,21 @@ jobs:
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish a single public APK (no sign-in or ZIP)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp android/app/build/outputs/apk/debug/app-debug.apk MiniNex-Android-Demo.apk
+          tag="v0.5-android-demo"
+          repo="$GITHUB_REPOSITORY"
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            gh release upload "$tag" MiniNex-Android-Demo.apk --clobber --repo "$repo"
+          else
+            gh release create "$tag" MiniNex-Android-Demo.apk \
+              --repo "$repo" --target "$GITHUB_SHA" \
+              --title "MiniNex v0.5 Android Demo" \
+              --notes "TEST ONLY: No real trading, no connected wallet, no real money. Install only if you trust this repository. Android debug APK, not a store release." \
+              --prerelease --latest=false
+          fi
