@@ -90,6 +90,7 @@ function ConnectedPrivyWallet({t}) {
   const [databaseStatus,setDatabaseStatus]=useState('idle');
   const [assetLedger,setAssetLedger]=useState(null);
   const [routeCapabilities,setRouteCapabilities]=useState(null);
+  const [previewBudgets,setPreviewBudgets]=useState({BTC:50,ETH:50});
   useEffect(()=>{
     if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);setRouteCapabilities(null);return;}
     let active=true;
@@ -189,6 +190,21 @@ function ConnectedPrivyWallet({t}) {
           <div className="privy-wallet-note"><LockKeyhole size={13} style={{verticalAlign:'middle',marginRight:6}}/>{t.privyNoDeposits}</div>
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
+      {authenticated && <div className="privy-hwm-box" aria-label={t.privyBudgetTitle}>
+        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong><span>{t.privyBudgetPreview}</span></div>
+        {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
+          <label style={{display:'flex',flexDirection:'column',gap:8,width:'100%'}}>
+            <span style={{display:'flex',justifyContent:'space-between',gap:12}}>
+              <strong>{asset}</strong><span>{previewBudgets[asset]} %</span>
+            </span>
+            <input type="range" min="0" max="100" step="5"
+              value={previewBudgets[asset]}
+              onChange={event=>setPreviewBudgets(old=>({...old,[asset]:Number(event.target.value)}))}
+              aria-label={asset+' '+t.privyBudgetTitle}/>
+          </label>
+        </div>)}
+        <div className="privy-hwm-disclaimer">{t.privyBudgetNote}</div>
+      </div>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
         <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong><span>{t.privyTradingLocked}</span></div>
         {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
