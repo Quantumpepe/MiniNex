@@ -11,10 +11,14 @@ function ConnectedPrivyWallet({t}) {
   const {wallets, ready:walletsReady} = useWallets();
   const [error,setError]=useState(false);
   const [identityStatus,setIdentityStatus]=useState('idle');
+  const [databaseStatus,setDatabaseStatus]=useState('idle');
+  const [assetLedger,setAssetLedger]=useState(null);
   useEffect(()=>{
-    if(!ready||!authenticated){setIdentityStatus('idle');return;}
+    if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);return;}
     let active=true;
     setIdentityStatus('checking');
+    setDatabaseStatus('idle');
+    setAssetLedger(null);
     (async()=>{
       try {
         const token=await getAccessToken();
@@ -26,7 +30,29 @@ function ConnectedPrivyWallet({t}) {
         if(response.status===503){setIdentityStatus('setup');return;}
         if(!response.ok){setIdentityStatus('failed');return;}
         const status=await response.json();
-        if(active) setIdentityStatus(status?.authenticated===true && status.mode==='IDENTITY_ONLY' ? 'verified' : 'failed');
+        if(status?.authenticated!==true || status.mode!=='IDENTITY_ONLY'){
+          if(active)setIdentityStatus('failed');
+          return;
+        }
+        if(active){setIdentityStatus('verified');setDatabaseStatus('checking');}
+        try{
+          const accountResponse=await fetch(API_BASE+'/api/account',{
+            method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+          });
+          if(!active)return;
+          if(accountResponse.status===503){setDatabaseStatus('setup');return;}
+          if(!accountResponse.ok){setDatabaseStatus('failed');return;}
+          const account=await accountResponse.json();
+          if(!active)return;
+          if(account?.account_persistent===true && account?.mode==='PAPER_ONLY_NO_LIVE_ORDERS'){
+            setAssetLedger(account.ledger||null);
+            setDatabaseStatus('stored');
+          }else{
+            setDatabaseStatus('failed');
+          }
+        }catch{
+          if(active)setDatabaseStatus('failed');
+        }
       } catch {
         if(active)setIdentityStatus('failed');
       }
@@ -51,9 +77,24 @@ function ConnectedPrivyWallet({t}) {
              identityStatus==='checking'?t.privyBackendChecking:
              identityStatus==='setup'?t.privyBackendSetup:t.privyBackendFailed}
           </div>
+          <div className={'privy-wallet-description '+(databaseStatus==='stored'?'text-positive':'')} aria-live="polite">
+            {databaseStatus==='stored'?t.privyDatabaseReady:
+             databaseStatus==='checking'?t.privyDatabaseChecking:
+             databaseStatus==='setup'?t.privyDatabaseSetup:t.privyDatabasePending}
+          </div>
           <div className="privy-wallet-note"><LockKeyhole size={13} style={{verticalAlign:'middle',marginRight:6}}/>{t.privyNoDeposits}</div>
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
+      <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
+        <div className="privy-hwm-title"><strong>{t.privyHwmTitle}</strong><span>5 %</span></div>
+        <div className="privy-wallet-description">{t.privyHwmDescription}</div>
+        {authenticated && databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
+          {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
+            <b>{asset}</b><span>{t.privyHwmValue}: {assetLedger[asset]?.high_water_mark_usd??'—'} USD</span>
+          </div>)}
+        </div>}
+        <div className="privy-hwm-disclaimer">{t.privyHwmPrepared}</div>
+      </div>
       {error&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
     </div>
   </section>;

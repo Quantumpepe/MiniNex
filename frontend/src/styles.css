@@ -164,3 +164,12 @@
 .privy-wallet-action{justify-self:start;padding:10px 14px;border-radius:10px;background:#42dda8;border:1px solid #59e8b1;color:#04251d;font-size:12px;font-weight:800}
 .privy-wallet-action--secondary{background:#132f36;color:#bbe9de;border-color:#31615f}
 .privy-wallet-action:disabled{opacity:.5;cursor:default}
+
+/* V0.8: database and HWM status on the wallet details page only. */
+.privy-hwm-box{padding:12px;border-radius:12px;border:1px solid #2a5655;background:linear-gradient(135deg,#103233,#0a232c);display:grid;gap:7px}
+.privy-hwm-title{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px}
+.privy-hwm-title span{font-size:15px;color:#64f0ba;font-weight:900}
+.privy-hwm-ledger{display:grid;gap:6px;border-top:1px solid #2a5655;padding-top:8px}
+.privy-hwm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#a1baba;font-variant-numeric:tabular-nums}
+.privy-hwm-row b{color:#e1f6ee}
+.privy-hwm-disclaimer{font-size:10px;color:#d8bb82}

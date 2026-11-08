@@ -93,3 +93,7 @@ The public Privy App ID for MiniNex is now compiled as the default app identifie
 - Until that variable is present, the protected endpoint returns HTTP 503 and Wallet shows an unconfigured state. Unauthenticated callers receive HTTP 401.
 - This is **identity only**: response explicitly sets `wallet_connected:false`, `trading_enabled:false`. It does not bind a wallet to a user, prove a wallet address is owned, or permit deposits/trades.
 - Capacitor native Privy email login still requires real-device testing and compatible permitted origins.
+
+
+## V0.8 wallet database indicator
+The Wallet screen fetches `GET /api/account` only after Privy JWT verification has succeeded, then shows whether the user's private PostgreSQL account is persisted. BTC and ETH each have a separate **realized-net HWM** at a fixed 5% fee rate; all shown fee data are explicitly marked **PREPARED / NOT COLLECTED**. No client can submit or change HWM or realized PnL. The existing demo balances are not persisted and remain strictly isolated. Home has no added rows or scrolling.
