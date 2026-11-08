@@ -38,3 +38,13 @@ test('native BTC placeholder cannot be mistaken for an EVM receiving address',()
   assert.doesNotMatch(auth,/bc1[a-z0-9]{20,}/i);
   assert.doesNotMatch(auth,/sendBitcoin\s*\(/);
 });
+
+test('verified account automatically provisions a separate BTC wallet with no signing rights',()=>{
+  assert.match(auth, /useCreateWallet as useCreateExtendedWallet/);
+  assert.match(auth, /@privy-io\/react-auth\/extended-chains/);
+  assert.match(auth, /createWallet\(\{chainType: 'bitcoin'\}\)/);
+  assert.match(auth, /identityStatus==='verified' && databaseStatus==='stored'/);
+  assert.match(auth, /findNativeBtcWallet\(user\)/);
+  assert.match(auth, /isNativeBtcAddress\(wallet.address\)/);
+  assert.doesNotMatch(auth, /sendBitcoin\s*\(|signRaw\s*\(|sendTransaction\s*\(/);
+});
