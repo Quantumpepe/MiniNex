@@ -21,7 +21,10 @@ test('Compact buttons lead to actual Wallet/Trade sections, not fake live orders
  assert.match(compact,/goTo\('wallet'\)/);
  assert.doesNotMatch(compact,/onClick\s*=\s*\{[^}]+trade/i);
 });
-test('Native build stays manual and no APK is published publicly',()=>{
+test('Native build stays manual and distributes only a temporary debug artifact',()=>{
  assert.match(workflow,/workflow_dispatch:/);
- assert.doesNotMatch(workflow,/upload-artifact|gh release|branches: \[main\]/);
+ assert.doesNotMatch(workflow,/gh release|branches: \[main\]/);
+ assert.match(workflow,/uses: actions\/upload-artifact@v4/);
+ assert.match(workflow,/retention-days: 7/);
+ assert.match(workflow,/app-debug\.apk/);
 });
