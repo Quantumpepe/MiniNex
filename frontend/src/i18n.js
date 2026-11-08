@@ -1,5 +1,8 @@
 export const DICTIONARY = {
   en: {
+    recentTrades: 'Recent trades',
+    simulatedTradeLabel: 'SIMULATED',
+    noRecentTrades: 'No trades yet',
     helpTitle: 'MiniNex help',
     helpWalletTitle: 'Wallets',
     helpWalletText: 'MiniNex uses separate wallet addresses for native Bitcoin and Ethereum. BTC and ETH are not interchangeable networks. Use the correct network for each asset.',
@@ -151,6 +154,9 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    recentTrades: 'Letzte Trades',
+    simulatedTradeLabel: 'SIMULATION',
+    noRecentTrades: 'Noch keine Trades',
     helpTitle: 'MiniNex Hilfe',
     helpWalletTitle: 'Wallets',
     helpWalletText: 'MiniNex verwendet getrennte Wallet-Adressen für natives Bitcoin und Ethereum. BTC und ETH laufen nicht über dasselbe Netzwerk. Für jede Einzahlung muss das passende Netzwerk gewählt werden.',
