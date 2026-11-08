@@ -15,6 +15,7 @@ import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
+import UserPaperSessions from './UserPaperSessions.jsx';
 import {
   API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
   formatRelative, formatSigned, formatTimestamp, limitHistory,
@@ -372,6 +373,7 @@ export default function App() {
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
           <PrivyWalletPanel t={t}/>
+          <UserPaperSessions t={t}/>
         </>}
 
         {page==='activity'&&<>
