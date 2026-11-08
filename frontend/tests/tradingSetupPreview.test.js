@@ -21,7 +21,7 @@ test('spot long and held-coin downtrend are explicitly separated from leverage',
 
 test('USDC, USDT and 5m, 15m, 1h, 24h are per-asset choices',()=>{
   assert.match(setup,/const STABLES = \['USDC','USDT'\]/);
-  assert.match(setup,/const HORIZONS = \['15m','1h','24h'\]/);
+  assert.match(setup,/const HORIZONS = \['5m','15m','1h','24h'\]/);
   assert.match(setup,/onChange=\{event=>change\(asset,'mode',event.target.value\)\}/);
   assert.match(setup,/onChange=\{event=>change\(asset,'stable',event.target.value\)\}/);
   assert.match(setup,/onChange=\{event=>change\(asset,'horizon',event.target.value\)\}/);
