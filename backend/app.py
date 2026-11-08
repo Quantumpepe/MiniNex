@@ -3,12 +3,13 @@ from contextlib import asynccontextmanager
 import asyncio
 import os
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .market_data import MarketDataService
 from .auto_engine import PaperAutoEngine
+from .auth import verify_privy_bearer
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -46,7 +47,7 @@ app.add_middleware(
     allow_origins=list(dict.fromkeys(_allowed_origins)),
     allow_credentials=False,
     allow_methods=["GET"],
-    allow_headers=["Accept", "Content-Type"],
+    allow_headers=["Accept", "Content-Type", "Authorization"],
 )
 
 
@@ -60,6 +61,19 @@ def home():
 def health():
     # Deployment health != independently verified market data.
     return {"status": "ok"}
+
+
+@app.get("/api/auth/me")
+def authenticated_identity(authorization: str | None = Header(default=None)):
+    """Verify Privy access token. Never assert wallet ownership or permission to trade."""
+    identity = verify_privy_bearer(authorization)
+    return JSONResponse({
+        "authenticated": True,
+        "privy_user_id": identity["user_id"],
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "mode": "IDENTITY_ONLY",
+    }, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/market/prices")

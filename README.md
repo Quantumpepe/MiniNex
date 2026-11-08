@@ -18,3 +18,6 @@ make it private under GitHub Settings if source-code privacy is required.
 ### V0.6 compact phone Home
 
 The Home screen is designed to fit a phone viewport without vertical scrolling: DE/EN language switch, BTC/ETH selection, estimated demo portfolio, verified market sparkline, paper AUTO status and net P/L. More extensive Trade/Wallet/Settings pages can scroll when necessary. Real orders remain disabled; users can install only through the official stores after review and signing.
+
+## V0.7.1 Privy identity verification
+MiniNex now includes a fail-closed identity-only GET /api/auth/me endpoint. It requires a valid Privy JWT signed by the configured MiniNex public verification key; no real wallets, funds, trades or positions are enabled by this endpoint. Deployment requires setting MININEX_PRIVY_VERIFICATION_KEY in Render. See frontend/README.md.

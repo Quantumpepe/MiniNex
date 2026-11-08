@@ -1,5 +1,9 @@
 export const DICTIONARY = {
   en: {
+    privyBackendVerified: 'MiniNex login verified by backend',
+    privyBackendChecking: 'Checking secure MiniNex login…',
+    privyBackendSetup: 'Backend verification key not configured yet',
+    privyBackendFailed: 'Backend login check unavailable. Trading remains locked.',
     privyTitle: 'Your MiniNex wallet', privyUnavailable: 'Privy setup pending',
     privyUnavailableNote: 'Add the public Privy App ID to the MiniNex build. This demo does not create a wallet.',
     privyLogin: 'Sign in / create wallet', privyLogout: 'Sign out',
@@ -71,6 +75,10 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    privyBackendVerified: 'MiniNex-Anmeldung vom Backend bestätigt',
+    privyBackendChecking: 'Prüfe sichere MiniNex-Anmeldung …',
+    privyBackendSetup: 'Backend-Prüfschlüssel noch nicht eingerichtet',
+    privyBackendFailed: 'Backend-Anmeldung nicht bestätigt. Trading bleibt gesperrt.',
     privyTitle: 'Deine MiniNex-Wallet', privyUnavailable: 'Privy noch nicht eingerichtet',
     privyUnavailableNote: 'Die öffentliche Privy App ID muss noch in MiniNex hinterlegt werden. Diese Demo erstellt keine Wallet.',
     privyLogin: 'Anmelden / Wallet erstellen', privyLogout: 'Abmelden',

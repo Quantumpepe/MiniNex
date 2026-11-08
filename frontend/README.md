@@ -84,3 +84,12 @@ Mobile Home uses two prominent buttons (Trade history / Wallet) instead of the d
 
 ## Privy App ID connected
 The public Privy App ID for MiniNex is now compiled as the default app identifier, with `VITE_PRIVY_APP_ID` overriding it when set. This is not an app secret. To test email login, verify this Privy app is enabled for email authentication and that the mobile Capacitor origins are permitted in the Privy dashboard. Native device compatibility and real transaction authorization are not yet validated.
+
+
+## V0.7.1: server-side Privy login verification
+- The logged-in Wallet page sends a fresh Privy bearer access token to `GET /api/auth/me` **only** after sign-in.
+- The server verifies the ES256 signature, issuer `privy.io`, exact app audience, expiry, required claims and Privy DID. The token is never logged or stored.
+- For Render set `MININEX_PRIVY_VERIFICATION_KEY` to the **public access-token verification PEM** from your MiniNex Privy app settings. Paste it as a Render environment variable, **never into GitHub or the frontend**.
+- Until that variable is present, the protected endpoint returns HTTP 503 and Wallet shows an unconfigured state. Unauthenticated callers receive HTTP 401.
+- This is **identity only**: response explicitly sets `wallet_connected:false`, `trading_enabled:false`. It does not bind a wallet to a user, prove a wallet address is owned, or permit deposits/trades.
+- Capacitor native Privy email login still requires real-device testing and compatible permitted origins.
