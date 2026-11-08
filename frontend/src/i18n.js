@@ -1,7 +1,8 @@
 export const DICTIONARY = {
   en: {
+    chainLoadMore: 'Load older transactions',
     chainPreviewTitle: 'Blockchain transactions',
-    chainPreviewNote: 'Read-only public blockchain preview for the wallet shown in MiniNex. Only recent native BTC/ETH transfers are shown; it is not complete, not a trade record and not yet part of the tax export.',
+    chainPreviewNote: 'Read-only public blockchain preview for the wallet shown in MiniNex. Paginated BTC, ETH, USDC and USDT transfers are displayed; it is not a complete tax record until account ownership and historical sync are verified.',
     chainWalletMissing: 'No matching Bitcoin or Ethereum wallet found for this account yet.',
     chainRefresh: 'Refresh blockchain',
     chainPreviewUnavailable: 'Blockchain explorer unavailable. Try again later.',
@@ -178,8 +179,9 @@ export const DICTIONARY = {
     viewHistory: 'Open activity', selected: 'Selected',
   },
   de: {
+    chainLoadMore: 'Ältere Transaktionen laden',
     chainPreviewTitle: 'Blockchain-Transaktionen',
-    chainPreviewNote: 'Nur lesende Blockchain-Vorschau für die in MiniNex angezeigte Wallet. Nur neuere native BTC-/ETH-Überweisungen; kein vollständiger Verlauf, kein Trade-Beleg und noch nicht im Steuerexport enthalten.',
+    chainPreviewNote: 'Nur lesende Blockchain-Vorschau für die in MiniNex angezeigte Wallet. BTC-, ETH-, USDC- und USDT-Transfers mit älteren Seiten; noch keine vollständigen Steuerbelege, bis Wallet-Zuordnung und Historie geprüft sind.',
     chainWalletMissing: 'Für dieses Konto wurde noch keine passende Bitcoin- oder Ethereum-Wallet gefunden.',
     chainRefresh: 'Blockchain aktualisieren',
     chainPreviewUnavailable: 'Blockchain-Explorer nicht erreichbar. Bitte später erneut versuchen.',
