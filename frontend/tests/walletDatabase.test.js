@@ -29,3 +29,15 @@ test('failed Privy/database check is recoverable without funds or extra permissi
   assert.match(wallet,/privyRetryConnection/);
   assert.doesNotMatch(wallet,/sendTransaction\(|sendBitcoin\(|delegateWallet\(/);
 });
+
+test('HWM numbers are formatted as ordinary USD amounts, not PostgreSQL exponent strings',()=>{
+  assert.match(wallet,/function formatHwmUsd\(value\)/);
+  assert.match(wallet,/Number\(value\)/);
+  assert.match(wallet,/minimumFractionDigits: 2, maximumFractionDigits: 2/);
+  assert.match(wallet,/formatHwmUsd\(assetLedger\[asset\]\?\.high_water_mark_usd\)/);
+});
+test('wallet introductory copy reflects integrated Privy login, not future integration',()=>{
+  assert.doesNotMatch(langs,/Privy-Wallet wird erst in einer späteren Version integriert/);
+  assert.doesNotMatch(langs,/Privy wallet integration will follow in a later version/);
+  assert.match(langs,/Privy-Anmeldung und Ethereum-Wallet sind unten verfügbar/);
+});
