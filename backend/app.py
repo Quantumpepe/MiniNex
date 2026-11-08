@@ -21,6 +21,7 @@ from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper
 from .personal_paper_worker import PersonalPaperWorker
+from .treasury import treasury_status
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -89,6 +90,13 @@ def authenticated_identity(authorization: str | None = Header(default=None)):
         "trading_enabled": False,
         "mode": "IDENTITY_ONLY",
     }, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/treasury/status")
+def configured_treasury_status(authorization: str | None = Header(default=None)):
+    """Authenticated config readiness ONLY; never expose owner address or execute."""
+    verify_privy_bearer(authorization)
+    return JSONResponse(treasury_status(),headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/account")
