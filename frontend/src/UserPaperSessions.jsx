@@ -36,6 +36,25 @@ function PersonalDemo({t}) {
     return()=>{active=false;};
   },[ready,authenticated,fetchOne]);
 
+  // Live UI refresh only; strategy execution remains fully server-side.
+  useEffect(()=>{
+    if(!ready||!authenticated)return;
+    let cancelled=false;
+    let inFlight=false;
+    const refresh=async()=>{
+      if(inFlight||busy)return;
+      inFlight=true;
+      try{
+        const rows=await Promise.all(ASSETS.map(fetchOne));
+        if(!cancelled)setData({BTC:rows[0],ETH:rows[1]});
+      }catch{
+        // Keep the last proven simulation state during brief network errors.
+      }finally{inFlight=false;}
+    };
+    const timer=setInterval(refresh,20000);
+    return()=>{cancelled=true;clearInterval(timer);};
+  },[ready,authenticated,fetchOne,busy]);
+
   const command=async action=>{
     if(busy||!ready||!authenticated)return;
     setBusy(true);
@@ -70,7 +89,7 @@ function PersonalDemo({t}) {
       {status==='loading'&&<p className="privy-wallet-description">{t.privyBudgetLoading}</p>}
       {status==='failed'&&<p className="privy-wallet-description" role="alert">{t.personalDemoFailed}</p>}
       <p className="privy-wallet-description">
-        {t.personalDemoStatus}: {current.status||'NOT_STARTED'} · {current.settlement||'USDC'}
+        {t.personalDemoStatus}: {current.status||'NOT_STARTED'} · {current.settlement||'USDC'} · {current.strategy_mode||'LONG'} · {current.horizon||'15m'}
       </p>
       {current.status!=='NOT_STARTED'&&<div className="balance-grid">
         <div className="balance-line"><span>{t.personalDemoCash}</span><b>{position.stable_cash||'0'} {current.settlement}</b></div>
@@ -82,7 +101,6 @@ function PersonalDemo({t}) {
         {current.status==='NOT_STARTED'&&<button type="button" disabled={busy||status==='loading'}
           onClick={()=>command('start')}>{t.personalDemoStart}</button>}
         {current.status==='ACTIVE'&&<>
-          <button type="button" disabled={busy} onClick={()=>command('evaluate')}>{t.personalDemoEvaluate}</button>
           <button type="button" disabled={busy} onClick={()=>command('pause')}>{t.personalDemoPause}</button>
         </>}
         {current.status==='PAUSED'&&<button type="button" disabled={busy}
