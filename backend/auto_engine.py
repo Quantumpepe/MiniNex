@@ -74,6 +74,12 @@ class PaperRules:
     min_positive_60s_pct: float = 0.10
     min_breakout_60s_pct: float = 0.24
     min_breakout_180s_pct: float = 0.45
+    # A steady uptrend is an entry opportunity even without a single
+    # unusually large one-minute breakout. These are PAPER signal filters,
+    # not promises of profitability or an instruction to force a buy.
+    min_trend_60s_pct: float = 0.06
+    min_trend_180s_pct: float = 0.12
+    min_trend_near_high_fraction: float = 0.997
     profit_trailing_arm_net_pct: float = 0.30
     trailing_pullback_pct: float = 0.20
     # In strong upward momentum, do not prematurely take profit on tiny pullbacks.
@@ -226,6 +232,19 @@ class PaperAutoEngine:
         prices = [float(p["price_usdt"]) for p in points]
         high = max(prices)
         low = min(prices)
+        # Use actual chronological extremes to measure a prior pullback:
+        # "current price below high" alone misses a completed rebound.
+        running_high = prices[0]
+        prior_max_drawdown_pct = 0.0
+        for observed in prices[1:]:
+            prior_max_drawdown_pct = max(
+                prior_max_drawdown_pct,
+                (1 - observed / running_high) * 100,
+            )
+            running_high = max(running_high, observed)
+        # The last five observed prices smooth transient WS noise.
+        recent = prices[-min(5,len(prices)):]
+        recent_mean = sum(recent) / len(recent)
         mom60 = (price / p60 - 1) * 100
         mom180 = (price / p180 - 1) * 100
         fall_from_high = max(0.0, (1 - price / high) * 100)
@@ -234,6 +253,8 @@ class PaperAutoEngine:
                 "momentum_60s_pct": clean(mom60, 4), "momentum_180s_pct": clean(mom180, 4),
                 "fall_from_window_high_pct": clean(fall_from_high, 4),
                 "rebound_from_window_low_pct": clean(rebound_from_low, 4),
+                "prior_max_drawdown_pct": clean(prior_max_drawdown_pct, 4),
+                "recent_mean_price": clean(recent_mean),
                 "window_high": clean(high), "window_low": clean(low)}
 
     def process(self, *, now: float | None = None) -> None:
@@ -315,12 +336,19 @@ class PaperAutoEngine:
                 p.last_decision, p.last_reason = "HOLD", "TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"
         else:
             # A rebound after a meaningful pullback, or a confirmed short-term breakout.
-            rebound = (sig["fall_from_window_high_pct"] >= self.rules.min_prior_drop_pct
+            rebound = (sig.get("prior_max_drawdown_pct",
+                               sig["fall_from_window_high_pct"]) >= self.rules.min_prior_drop_pct
                        and sig["rebound_from_window_low_pct"] >= self.rules.min_rebound_pct
                        and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct)
             breakout = (sig["momentum_60s_pct"] >= self.rules.min_breakout_60s_pct
                         and sig["momentum_180s_pct"] >= self.rules.min_breakout_180s_pct
                         and price >= sig["window_high"] * 0.999)
+            trend_continuation = (
+                sig["momentum_60s_pct"] >= self.rules.min_trend_60s_pct
+                and sig["momentum_180s_pct"] >= self.rules.min_trend_180s_pct
+                and price >= sig["window_high"] * self.rules.min_trend_near_high_fraction
+                and price >= sig.get("recent_mean_price", price)
+            )
             if p.last_exit_price is not None:
                 # After selling into stablecoins, buying on a falling candle is
                 # prohibited: first observe a decline, then a positive rebound.
@@ -332,17 +360,19 @@ class PaperAutoEngine:
                            and recovered >= self.rules.reentry_rebound_pct
                            and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct)
                 breakout = False
+                trend_continuation = False
                 if not rebound:
                     p.last_decision, p.last_reason = "WAIT", "AWAITING_POST_EXIT_REBOUND"
                     return
-            elif not (rebound or breakout):
-                p.last_decision, p.last_reason = "WAIT", "NO_CONFIRMED_REBOUND_OR_BREAKOUT"
+            elif not (rebound or breakout or trend_continuation):
+                p.last_decision, p.last_reason = "WAIT", "NO_CONFIRMED_ENTRY_SIGNAL"
                 return
             buy = self._buy_quote(asset, p.stable_cash, price)
             if not buy:
                 p.last_decision, p.last_reason = "WAIT", "BUDGET_TOO_SMALL_AFTER_ALL_COSTS"
                 return
-            self._paper_buy(p, buy, now, price, "REBOUND" if rebound else "BREAKOUT")
+            reason = "REBOUND" if rebound else "BREAKOUT" if breakout else "TREND_CONTINUATION"
+            self._paper_buy(p, buy, now, price, reason)
 
     def _paper_buy(self, p: PaperPortfolio, quote: dict[str, float], at: float, price: float, reason: str) -> None:
         if p.coin_quantity > self.rules.min_coin_units:
