@@ -223,7 +223,7 @@ class MarketDataService:
                     if required:
                         # Fixed Binance spot API; no user-input URLs or pairs.
                         response=await client.get(self.primary_rest_url,params={
-                            "symbols":json.dumps(list(SYMBOL_TO_ASSET))
+                            "symbols":json.dumps(list(SYMBOL_TO_ASSET),separators=(",",":"))
                         })
                         response.raise_for_status()
                         if not self.ingest_primary_rest(response.json()):
