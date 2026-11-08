@@ -95,3 +95,26 @@ def test_fail_closed_invalid_assets_and_states():
         user_paper._restore("ETH","USDT",{"stable_cash":-1},user_paper.PAPER_START_USD)
     with pytest.raises(ValueError):
         user_paper._restore("ETH","USDT",{"trade_count":True},user_paper.PAPER_START_USD)
+
+
+def test_15min_and_1h_strategy_do_not_require_full_window_before_first_signal():
+    """Actual observed 180s momentum is mandatory, full horizon is not."""
+    import inspect
+    src=inspect.getsource(user_paper.step_user_paper)
+    assert '"15m":(190.0,900.0)' in src
+    assert '"1h":(190.0,3600.0)' in src
+    assert '"5m":(190.0,300.0)' in src
+    assert '"24h"' in src and '24H_HISTORY_NOT_AVAILABLE' in src
+
+
+def test_three_minute_history_is_enough_for_conservative_signal_evaluation():
+    from backend.auto_engine import PaperAutoEngine,PaperRules
+    class History:
+        def history(self,asset,limit=3600):
+            return [{"timestamp":float(t),"price_usdt":70000.0+0.1*t}
+                    for t in range(1,192)]
+    engine=PaperAutoEngine(History(),rules=PaperRules(
+        warmup_seconds=190,price_window_seconds=900))
+    signal=engine._signal("BTC",191.0,70019.1)
+    assert signal["ready"] is True
+    assert signal["samples"]>=30
