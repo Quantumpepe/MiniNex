@@ -7,6 +7,7 @@ automatically inserted into a verified tax ledger.
 from __future__ import annotations
 
 import base64
+import binascii
 from datetime import datetime, timezone
 from decimal import Decimal
 import json
@@ -51,7 +52,7 @@ def validate_request(asset: str, address: str, cursor: str | None = None) -> tup
                 raise ValueError("invalid number")
             if isinstance(val,str) and (len(val)>85 or not re.fullmatch(r"0x[a-fA-F0-9]+|[0-9]+",val)):
                 raise ValueError("invalid string")
-    except (ValueError,TypeError,UnicodeError,OverflowError):
+    except (ValueError,TypeError,UnicodeError,OverflowError,binascii.Error):
         raise HTTPException(422, "Invalid page cursor") from None
     return asset,address,decoded
 
