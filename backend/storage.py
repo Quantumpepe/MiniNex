@@ -110,6 +110,28 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
        ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        execution_id TEXT NOT NULL,
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK (fee_due_usd > 0),
+        quote_currency TEXT NOT NULL DEFAULT 'USD' CHECK (quote_currency='USD'),
+        destination_network TEXT NOT NULL DEFAULT 'ethereum'
+            CHECK (destination_network='ethereum'),
+        settlement_token TEXT
+            CHECK (settlement_token IN ('USDC','USDT')),
+        status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_LIVE_SETTLEMENT'
+            CHECK (status='AWAITING_VERIFIED_LIVE_SETTLEMENT'),
+        settled_token_amount NUMERIC(36,18),
+        settlement_tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset,execution_id),
+        FOREIGN KEY (privy_did,asset,execution_id)
+            REFERENCES mininex_fee_events(privy_did,asset,execution_id),
+        CHECK (settled_token_amount IS NULL AND settlement_tx_hash IS NULL)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_treasury_obligations_pending
+       ON mininex_treasury_obligations(status,created_at)""",
     """CREATE TABLE IF NOT EXISTS mininex_fee_events (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL,
@@ -284,6 +306,16 @@ def record_trusted_realized_close(
                 (assessment.cumulative_usd,assessment.high_water_mark_usd,
                  assessment.fee_assessed_usd,did,asset),
             )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
     return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
             "high_water_mark_usd":str(assessment.high_water_mark_usd),
             "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
