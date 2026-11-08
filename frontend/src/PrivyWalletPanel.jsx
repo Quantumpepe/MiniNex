@@ -1,4 +1,3 @@
-import InfoTip from './InfoTip.jsx';
 import React, {useEffect, useState} from 'react';
 import {usePrivy, useWallets} from '@privy-io/react-auth';
 import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
@@ -25,7 +24,7 @@ function CopyWalletAddress({address, network, t}) {
     }
   };
   return <div className="privy-copy-address">
-    <div style={{display:"flex",alignItems:"center",gap:4}}><strong>{network}</strong><InfoTip title={network} label={t.infoLabel}>{network==='BTC' ? t.privyBtcNetwork : t.privyEthNetwork}</InfoTip></div>
+    <strong className="privy-wallet-network">{network}</strong>
     {showFull && <div className="privy-wallet-address"
       style={{overflowWrap:'anywhere',wordBreak:'break-all'}} aria-label={t.privyFullAddress}>{address}</div>}
     <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
@@ -269,7 +268,7 @@ function ConnectedPrivyWallet({t}) {
   };
 
   return <section className="panel privy-panel">
-    <div className="privy-panel-header"><h2>{t.privyTitle}</h2><InfoTip title={t.privyTitle} label={t.infoLabel}><p>{t.privyNoDeposits}</p><p>{t.privyBtcSafety}</p></InfoTip></div>
+    <div className="privy-panel-header"><h2>{t.privyTitle}</h2></div>
     <div className="privy-panel-body">
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
         !authenticated ? <>
@@ -291,7 +290,7 @@ function ConnectedPrivyWallet({t}) {
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyBudgetTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong><InfoTip title={t.privyBudgetTitle} label={t.infoLabel}>{t.privyBudgetNote}</InfoTip></div>
+        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong></div>
         {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
           <label style={{display:'flex',flexDirection:'column',gap:8,width:'100%'}}>
             <span style={{display:'flex',justifyContent:'space-between',gap:12}}>
@@ -314,10 +313,10 @@ function ConnectedPrivyWallet({t}) {
       </div>}
       {authenticated && <TradingSetupPreview t={t}/>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong><InfoTip title={t.privyTradingTitle} label={t.infoLabel}>{t.privyTradingNote}</InfoTip></div>
+        <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong></div>
       </div>}
       <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyHwmTitle} · 5 %</strong><InfoTip title={t.privyHwmTitle} label={t.infoLabel}>{t.privyHwmDescription}</InfoTip></div>
+        <div className="privy-hwm-title"><strong>{t.privyHwmTitle} · 5 %</strong></div>
         {authenticated && databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
           {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
             <b>{asset}</b><span>{t.privyHwmValue}: {formatHwmUsd(assetLedger[asset]?.high_water_mark_usd)} USD</span>
