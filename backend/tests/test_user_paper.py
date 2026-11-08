@@ -42,7 +42,7 @@ def test_verified_identity_is_never_taken_from_path_or_body(monkeypatch,signed):
     calls=[]
     monkeypatch.setattr(api,"read_user_paper",lambda did,asset:
                         (calls.append(("read",did,asset)) or {"paper_only":True}))
-    monkeypatch.setattr(api,"start_user_paper",lambda did,asset:
+    monkeypatch.setattr(api,"start_user_paper",lambda did,asset,market:
                         (calls.append(("start",did,asset)) or {"paper_only":True}))
     monkeypatch.setattr(api,"set_user_paper_status",lambda did,asset,action:
                         (calls.append((action,did,asset)) or {"paper_only":True}))
