@@ -19,8 +19,12 @@
   Kraken. Invalid or stale prices never trigger orders. All fills, spreads,
   slippage and network fees are **indicative simulation values**.
 - The existing dynamic net-profit trailing and post-exit rebound logic are
-  reused for each owner's virtual portfolio. The 5m/15m/1h time windows have
-  distinct observation requirements. **24h will explicitly WAIT until a
+  reused for each owner's virtual portfolio. 5m/15m/1h select the maximum
+  rolling analysis lookback, **not the mandatory waiting period**. All three
+  can start evaluating signals after ~190 seconds of actually observed,
+  timestamped price samples (including a verified 180-second momentum window).
+  As more observations arrive, the strategy automatically uses the full
+  selected 5m/15m/1h history. **24h will explicitly WAIT until a
   genuine 24h history source is implemented**. Do not misrepresent the
   existing 1-hour memory window as 24-hour signals.
 - The process scans at most 30 oldest-updated active sessions per cycle. This
