@@ -13,7 +13,7 @@ test('Compact phone Home occupies the viewport without scrolling, and desktop re
  assert.match(app,/<CompactOverview/);
 });
 test('Market quote denomination is USDT, not demo settlement token',()=>{
- assert.match(compact,/\{asset\} \/ USDT/);
+ assert.match(compact,/\{asset\}\/USDT/);
  assert.match(compact,/price_usdt/);
 });
 test('Compact buttons lead to actual Wallet/Trade sections, not fake live orders',()=>{
