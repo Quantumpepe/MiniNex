@@ -13,7 +13,7 @@ test('database lookup only follows valid backend Privy identity',()=>{
 test('read-only HWM values stay in detailed wallet page',()=>{
   assert.match(wallet,/assetLedger\[asset\]\?\.high_water_mark_usd/);
   assert.match(wallet,/\['BTC','ETH'\]\.map/);
-  assert.doesNotMatch(wallet,/method:'POST'|method:'PUT'|method:'DELETE'/);
+  assert.doesNotMatch(wallet,/method:'POST'|method:'DELETE'/);
   assert.match(styles,/\.privy-hwm-box/);
 });
 test('5% HWM description localized and real collection disabled',()=>{
@@ -51,11 +51,14 @@ test('trading routes only show read-only verified disabled capability status',()
   assert.match(langs,/Automatische Signaturen und echte Swaps sind deaktiviert/);
 });
 
-test('BTC and ETH have independent preview budgets with no authorization or persistence',()=>{
-  assert.match(wallet,/useState\(\{BTC:50,ETH:50\}\)/);
-  assert.match(wallet,/\['BTC','ETH'\]\.map/);
-  assert.match(wallet,/type="range" min="0" max="100" step="5"/);
+test('BTC and ETH preferences are loaded and saved independently, not signing authority',()=>{
+  assert.match(wallet,/useState\(\{BTC:0,ETH:0\}\)/);
+  assert.match(wallet,/API_BASE\+'\/api\/budgets'/);
+  assert.match(wallet,/method:'PUT'/);
+  assert.match(wallet,/expected_revision:savedBudgets\[asset\]\.revision/);
+  assert.match(wallet,/onClick=\{\(\)=>saveBudget\(asset\)\}/);
   assert.match(wallet,/setPreviewBudgets\(old=>\(\{\.\.\.old,\[asset\]:Number\(event.target.value\)\}\)\)/);
-  assert.match(langs,/Diese Prozente werden weder gespeichert noch freigegeben/);
-  assert.doesNotMatch(wallet,/method:'POST'|method:'PUT'|method:'DELETE'/);
+  assert.match(langs,/Einstellungen werden privat gespeichert/);
+  assert.match(langs,/KEINE Handelsfreigabe/);
+  assert.doesNotMatch(wallet,/sendTransaction\(|sendBitcoin\(|delegateWallet\(/);
 });
