@@ -120,3 +120,29 @@ def test_three_minute_history_is_enough_for_conservative_signal_evaluation():
     signal=engine._signal("BTC",191.0,70019.1)
     assert signal["ready"] is True
     assert signal["samples"]>=30
+
+def test_5000_virtual_usd_budget_rebase_preserves_existing_results():
+    from decimal import Decimal
+    assert user_paper.PAPER_START_USD == Decimal("5000.00")
+    p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=501.128425,
+                     initial_equity=500.0,realized_profit=1.128425,
+                     trade_count=2,last_exit_price=75500.0)
+    assert user_paper._reconcile_virtual_budget(p,Decimal("500.00"),Decimal("5000.00"))
+    assert p.stable_cash == pytest.approx(5001.128425)
+    assert p.initial_equity == 5000.0
+    assert p.realized_profit == pytest.approx(1.128425)
+    assert p.trade_count == 2
+    assert p.last_exit_price == 75500.0
+
+
+def test_virtual_budget_shrink_does_not_liquidate_positions():
+    from decimal import Decimal
+    p=PaperPortfolio(asset="ETH",settlement="USDC",stable_cash=10.0,
+                     coin_quantity=0.5,cost_basis=490.0,
+                     initial_equity=500.0,trade_count=1)
+    assert not user_paper._reconcile_virtual_budget(p,Decimal("500.00"),Decimal("250.00"))
+    assert p.stable_cash == 10.0
+    assert p.coin_quantity == 0.5
+    assert p.cost_basis == 490.0
+    assert p.initial_equity == 500.0
+    assert p.trade_count == 1
