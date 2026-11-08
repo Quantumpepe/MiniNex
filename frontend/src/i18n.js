@@ -1,7 +1,7 @@
 export const DICTIONARY = {
   en: {
     personalDemoTitle: 'Your BTC / ETH simulation',
-    personalDemoNote: 'Your own virtual balances and paper trades are saved separately for BTC and ETH. The server checks market signals automatically while a session is active, even if the app is closed. First save a demo budget above 0%; 100% means 1,000 virtual USD. Real historical BTC and ETH candles are loaded automatically for 5m, 15m, 1h and 24h analysis, with no artificial startup timer. Real wallet funds are never used.',
+    personalDemoNote: 'Your own virtual balances and paper trades are saved separately for BTC and ETH. The server checks market signals automatically while a session is active, even if the app is closed. First save a demo budget above 0%; 100% means 5,000 virtual USD. Real historical BTC and ETH candles are loaded automatically for 5m, 15m, 1h and 24h analysis, with no artificial startup timer. Real wallet funds are never used.',
     personalDemoLastCheck: 'Last automatic check',
     personalDemoStatus: 'Simulation status',
     personalDemoCash: 'Virtual cash',
@@ -202,7 +202,7 @@ export const DICTIONARY = {
   },
   de: {
     personalDemoTitle: 'Deine BTC-/ETH-Simulation',
-    personalDemoNote: 'Virtuelle Bestände und Trades werden getrennt pro Konto und Coin gespeichert. Solange die Sitzung aktiv ist, prüft der Server den Markt automatisch – auch bei geschlossener App. Zuerst ein Demo-Budget über 0 % speichern; 100 % entspricht 1’000 virtuellen USD. Echte historische BTC- und ETH-Kerzen werden für 5m, 15m, 1h und 24h automatisch geladen, ohne künstliche Startwartezeit. Echtes Wallet-Kapital wird nie verwendet.',
+    personalDemoNote: 'Virtuelle Bestände und Trades werden getrennt pro Konto und Coin gespeichert. Solange die Sitzung aktiv ist, prüft der Server den Markt automatisch – auch bei geschlossener App. Zuerst ein Demo-Budget über 0 % speichern; 100 % entspricht 5’000 virtuellen USD. Echte historische BTC- und ETH-Kerzen werden für 5m, 15m, 1h und 24h automatisch geladen, ohne künstliche Startwartezeit. Echtes Wallet-Kapital wird nie verwendet.',
     personalDemoLastCheck: 'Letzte automatische Prüfung',
     personalDemoStatus: 'Simulationsstatus',
     personalDemoCash: 'Virtuelles Guthaben',
