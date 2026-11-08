@@ -133,16 +133,18 @@ def read_user_paper(did: str,asset: str) -> dict:
         raise HTTPException(503,"Personal simulation unavailable") from None
 
 
-def market_feed_for_paper_start(asset: str) -> dict:
-    """Injected by the API after independent market-data verification.
+def market_feed_for_paper_start(asset: str, market: Any | None = None) -> dict:
+    """Use a verified reference price solely to seed a VIRTUAL native holding."""
+    if market is None:
+        raise HTTPException(503,"Verified demo price unavailable")
+    feed=market.snapshot()["markets"][asset]
+    price=feed.get("price_usdt")
+    if not feed.get("market_data_valid") or type(price) not in (int,float) or not math.isfinite(price) or price<=0:
+        raise HTTPException(409,"Wait for verified market price before spot-downtrend simulation")
+    return feed
 
-    A spot-downtrend demo cannot infer a native BTC/ETH holding from a wallet.
-    The default demo can start stable-only without this function.
-    """
-    raise HTTPException(503,"Verified price required for virtual coin start")
 
-
-def start_user_paper(did: str,asset: str) -> dict:
+def start_user_paper(did: str,asset: str,market: Any | None = None) -> dict:
     """Opt-in to 1,000 *virtual* USD baseline, scaled by user's saved percent."""
     did=_safe_did(did)
     asset=_asset(asset)
@@ -168,7 +170,7 @@ def start_user_paper(did: str,asset: str) -> dict:
                                  stable_cash=float(simulated),initial_equity=float(simulated))
                 if settings["mode"]=="SPOT_SHORT":
                     # Virtual native-coin start, never a real wallet balance.
-                    feed=market_feed_for_paper_start(asset)
+                    feed=market_feed_for_paper_start(asset,market)
                     price=feed["price_usdt"]
                     p.coin_quantity=float(simulated)/price
                     p.cost_basis=float(simulated)
