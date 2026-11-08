@@ -2,6 +2,7 @@ export const DICTIONARY = {
   en: {
     personalDemoTitle: 'Your BTC / ETH simulation',
     personalDemoNote: 'Your own virtual balances and paper trades are saved separately for BTC and ETH. The server checks market signals automatically while a session is active, even if the app is closed. First save a demo budget above 0%; 100% means 1,000 virtual USD. 5m, 15m and 1h require sufficient observed market history; 24h stays waiting until long-term data is available. Real wallet funds are never used.',
+    personalDemoLastCheck: 'Last automatic check',
     personalDemoStatus: 'Simulation status',
     personalDemoCash: 'Virtual cash',
     personalDemoCoin: 'Virtual coin',
@@ -197,6 +198,7 @@ export const DICTIONARY = {
   de: {
     personalDemoTitle: 'Deine BTC-/ETH-Simulation',
     personalDemoNote: 'Virtuelle Bestände und Trades werden getrennt pro Konto und Coin gespeichert. Solange die Sitzung aktiv ist, prüft der Server den Markt automatisch – auch bei geschlossener App. Zuerst ein Demo-Budget über 0 % speichern; 100 % entspricht 1’000 virtuellen USD. Für 5m, 15m und 1h müssen genug Marktdaten vorliegen; 24h wartet noch auf Langzeitdaten. Echtes Wallet-Kapital wird nie verwendet.',
+    personalDemoLastCheck: 'Letzte automatische Prüfung',
     personalDemoStatus: 'Simulationsstatus',
     personalDemoCash: 'Virtuelles Guthaben',
     personalDemoCoin: 'Virtueller Coin-Bestand',
