@@ -105,6 +105,10 @@ function PersonalDemo({t}) {
         {t.personalDemoLastCheck}: {position.last_evaluated_at?
           formatTimestamp(position.last_evaluated_at,undefined,{year:'numeric',month:'2-digit',day:'2-digit'}):'—'} · {position.last_reason||'WAIT'}
       </p>}
+      {current.status!=='NOT_STARTED'&&position.last_signal_summary&&
+        <p className="privy-wallet-description">
+          {String(position.last_signal_summary)}
+        </p>}
       {current.status!=='NOT_STARTED'&&<div className="balance-grid">
         <div className="balance-line"><span>{t.personalDemoCash}</span><b>{position.stable_cash||'0'} {current.settlement}</b></div>
         <div className="balance-line"><span>{t.personalDemoCoin}</span><b>{position.coin_quantity||'0'} {asset}</b></div>
