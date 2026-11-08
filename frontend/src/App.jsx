@@ -308,7 +308,7 @@ export default function App() {
                 <div className="price-top"><div><div className="main-price">{formatMoney(price,language)}</div><span className={`market-change ${Number(change)>=0?'text-positive':'text-negative'}`}>{change!=null?`${Number(change)>0?'+':''}${formatNumber(change,language)}%`: '—'} <span>24h</span></span></div>
                   <div className="time-switch" role="group" aria-label="Chart period"><button type="button" className={period==='m15'?'active':''} onClick={()=>setPeriod('m15')}>{t.quarterHour}</button><button type="button" className={period==='h1'?'active':''} onClick={()=>setPeriod('h1')}>{t.hourly}</button><button type="button" disabled title={t.historyLimit}>{t.day}</button></div>
                 </div>
-                <PriceChart history={history} asset={asset} period={period} market={mk} trades={trades} t={t} lang={language}/>
+                <PriceChart history={history} asset={asset} period={period} market={mk} trades={[]} t={t} lang={language}/>
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
 
