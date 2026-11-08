@@ -80,7 +80,7 @@ def parse_token(row: dict, address: str, asset: str) -> dict | None:
     try:
         src=str((row.get("from") or {}).get("hash","")).lower()
         dest=str((row.get("to") or {}).get("hash","")).lower()
-        if src!=address.lower() and dest!=address.lower():
+        if src==dest or (src!=address.lower() and dest!=address.lower()):
             return None
         # Blockscout uses total.value and total.decimals in token transfers.
         total=row.get("total")
@@ -88,7 +88,8 @@ def parse_token(row: dict, address: str, asset: str) -> dict | None:
             return None
         units=int(total["value"])
         decimals=int(total.get("decimals") if total.get("decimals") is not None else token["decimals"])
-        if units<0 or not 0<=decimals<=30:
+        # Canonical Ethereum USDC and USDT both have exactly 6 decimals.
+        if units<0 or decimals!=6:
             return None
         index=int(row["log_index"])
         if index<0 or index>100000:
