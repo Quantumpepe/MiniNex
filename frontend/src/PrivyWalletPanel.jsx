@@ -90,14 +90,18 @@ function ConnectedPrivyWallet({t}) {
   const [databaseStatus,setDatabaseStatus]=useState('idle');
   const [assetLedger,setAssetLedger]=useState(null);
   const [routeCapabilities,setRouteCapabilities]=useState(null);
-  const [previewBudgets,setPreviewBudgets]=useState({BTC:50,ETH:50});
+  const [previewBudgets,setPreviewBudgets]=useState({BTC:0,ETH:0});
+  const [savedBudgets,setSavedBudgets]=useState(null);
+  const [budgetStatus,setBudgetStatus]=useState('idle');
+  const [budgetBusy,setBudgetBusy]=useState(false);
   useEffect(()=>{
-    if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);setRouteCapabilities(null);return;}
+    if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);setRouteCapabilities(null);setSavedBudgets(null);setPreviewBudgets({BTC:0,ETH:0});setBudgetStatus('idle');return;}
     let active=true;
     setIdentityStatus('checking');
     setDatabaseStatus('idle');
     setAssetLedger(null);
     setRouteCapabilities(null);
+    setBudgetStatus('loading');
     (async()=>{
       try {
         const token=await getAccessToken();
@@ -126,6 +130,27 @@ function ConnectedPrivyWallet({t}) {
           if(account?.account_persistent===true && account?.mode==='PAPER_ONLY_NO_LIVE_ORDERS'){
             setAssetLedger(account.ledger||null);
             setDatabaseStatus('stored');
+            try{
+              const prefsResponse=await fetch(API_BASE+'/api/budgets',{
+                method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+              });
+              if(!active)return;
+              if(!prefsResponse.ok)throw new Error('Unavailable');
+              const data=await prefsResponse.json();
+              if(!(data?.mode==='PREFERENCES_ONLY' && data.trading_enabled===false &&
+        data.signing_authorized===false && ['BTC','ETH'].every(asset=>
+          Number.isInteger(data?.budgets?.[asset]?.percent) &&
+          data.budgets[asset].percent>=0 && data.budgets[asset].percent<=100 &&
+          Number.isInteger(data.budgets[asset].revision) &&
+          data.budgets[asset].authorized===false)))throw new Error('Invalid budget settings');
+              if(active){
+                setSavedBudgets(data.budgets);
+                setPreviewBudgets({BTC:data.budgets.BTC.percent,ETH:data.budgets.ETH.percent});
+                setBudgetStatus('ready');
+              }
+            }catch{
+              if(active){setSavedBudgets(null);setBudgetStatus('failed');}
+            }
             // Read-only capability contract; never enable trading from wallet existence.
             try {
               const routesResponse=await fetch(API_BASE+'/api/trading/capabilities',{
@@ -160,6 +185,49 @@ function ConnectedPrivyWallet({t}) {
   const embedded = wallets.find(wallet=>wallet.walletClientType==='privy' && /^0x[0-9a-fA-F]{40}$/.test(wallet.address||''));
   const address = embedded?.address;
   const act = async (fn) => {try {setError(false); await fn();} catch {setError(true);}};
+  const applyBudgetResponse = data => {
+    if(!(data?.mode==='PREFERENCES_ONLY' && data.trading_enabled===false &&
+        data.signing_authorized===false && ['BTC','ETH'].every(asset=>
+          Number.isInteger(data?.budgets?.[asset]?.percent) &&
+          data.budgets[asset].percent>=0 && data.budgets[asset].percent<=100 &&
+          Number.isInteger(data.budgets[asset].revision) &&
+          data.budgets[asset].authorized===false)))throw new Error('Invalid budget response');
+    setSavedBudgets(data.budgets);
+    setPreviewBudgets({BTC:data.budgets.BTC.percent,ETH:data.budgets.ETH.percent});
+    setBudgetStatus('ready');
+  };
+  const saveBudget = async asset => {
+    if(budgetBusy || budgetStatus!=='ready' || !savedBudgets?.[asset])return;
+    setBudgetBusy(true);
+    setBudgetStatus('saving');
+    try{
+      const token=await getAccessToken();
+      if(!token)throw new Error('No token');
+      const response=await fetch(API_BASE+'/api/budgets/'+asset,{
+        method:'PUT',
+        headers:{Authorization:'Bearer '+token,Accept:'application/json','Content-Type':'application/json'},
+        cache:'no-store',
+        body:JSON.stringify({percent:previewBudgets[asset],expected_revision:savedBudgets[asset].revision})
+      });
+      if(!response.ok)throw new Error('Unable to save');
+      applyBudgetResponse(await response.json());
+    }catch{setBudgetStatus('failed');}
+    finally{setBudgetBusy(false);}
+  };
+  const reloadBudgets = async () => {
+    setBudgetBusy(true);
+    try{
+      const token=await getAccessToken();
+      if(!token)throw new Error('No token');
+      const response=await fetch(API_BASE+'/api/budgets',{
+        method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+      });
+      if(!response.ok)throw new Error('Unavailable');
+      applyBudgetResponse(await response.json());
+    }catch{setBudgetStatus('failed');}
+    finally{setBudgetBusy(false);}
+  };
+
   return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2><ShieldCheck size={19} color="#54eabb"/></div>
     <div className="privy-panel-body">
@@ -191,7 +259,7 @@ function ConnectedPrivyWallet({t}) {
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyBudgetTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong><span>{t.privyBudgetPreview}</span></div>
+        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong><span>{t.privyBudgetPreferences}</span></div>
         {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
           <label style={{display:'flex',flexDirection:'column',gap:8,width:'100%'}}>
             <span style={{display:'flex',justifyContent:'space-between',gap:12}}>
@@ -199,10 +267,21 @@ function ConnectedPrivyWallet({t}) {
             </span>
             <input type="range" min="0" max="100" step="5"
               value={previewBudgets[asset]}
+              disabled={budgetStatus!=='ready' || budgetBusy}
               onChange={event=>setPreviewBudgets(old=>({...old,[asset]:Number(event.target.value)}))}
               aria-label={asset+' '+t.privyBudgetTitle}/>
           </label>
+          <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
+            disabled={budgetStatus!=='ready' || budgetBusy || previewBudgets[asset]===savedBudgets?.[asset]?.percent}
+            onClick={()=>saveBudget(asset)}>{t.privyBudgetSave} {asset}</button>
         </div>)}
+        <div className="privy-wallet-description" aria-live="polite">{
+          budgetStatus==='ready'?t.privyBudgetReady:
+          budgetStatus==='saving'?t.privyBudgetSaving:
+          budgetStatus==='loading'?t.privyBudgetLoading:t.privyBudgetFailed
+        }</div>
+        {budgetStatus==='failed' && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
         <div className="privy-hwm-disclaimer">{t.privyBudgetNote}</div>
       </div>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
