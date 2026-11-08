@@ -227,3 +227,21 @@
 .settings-help-item{padding:12px 0;border-top:1px solid #2b514c}
 .settings-help-item h3{font-size:14px;font-weight:760;margin:0 0 6px;color:#9cf4d0}
 .settings-help-item p{font-size:13px;line-height:1.6;color:#c5dbd8;margin:0}
+
+/* Last executed strategy trades on the overview; simulated data remains explicit. */
+.compact-recent-trades{background:linear-gradient(145deg,#123239,#0a222a);border:1px solid #315a57;border-radius:17px;padding:14px;display:flex;flex-direction:column;gap:11px}
+.compact-recent-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.compact-recent-heading strong{font-size:15px;color:#e5fcf5}
+.compact-recent-heading span{font-size:10px;letter-spacing:.65px;color:#e2bb87;font-weight:780}
+.compact-trade-list{display:flex;flex-direction:column}
+.compact-trade-row{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid #29484b}
+.compact-trade-icon{display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;border-radius:10px;background:#174939;color:#62ecc1}
+.compact-trade-icon.is-sell{background:#4a342b;color:#f9b88e}
+.compact-trade-detail,.compact-trade-value{display:flex;flex-direction:column;gap:4px}
+.compact-trade-detail{flex:1;min-width:0}
+.compact-trade-detail strong,.compact-trade-value strong{font-size:13px}
+.compact-trade-detail small,.compact-trade-value small{font-size:11px;color:#93b8b4}
+.compact-trade-value{text-align:right;font-variant-numeric:tabular-nums}
+.compact-trade-value small.text-positive{color:#63f3be}
+.compact-trade-value small.text-negative{color:#ff9b8e}
+.compact-trade-empty{margin:0;color:#9ebdb8;font-size:13px}
