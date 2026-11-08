@@ -12,6 +12,15 @@ function PersonalDemo({t}) {
   const [data,setData]=useState({BTC:empty,ETH:empty});
   const [status,setStatus]=useState('idle');
   const [busy,setBusy]=useState(false);
+  const [paperVisible,setPaperVisible]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    fetch(API_BASE+'/api/user-paper/availability',{cache:'no-store'})
+      .then(r=>{if(!r.ok)throw new Error('Unavailable');return r.json();})
+      .then(data=>{if(active)setPaperVisible(data?.paper_available===true&&data?.live_trading_enabled===false);})
+      .catch(()=>{if(active)setPaperVisible(false);});
+    return()=>{active=false;};
+  },[]);
 
   const fetchOne=useCallback(async current=>{
     const token=await getAccessToken();
@@ -27,18 +36,18 @@ function PersonalDemo({t}) {
   },[getAccessToken]);
 
   useEffect(()=>{
-    if(!ready||!authenticated){setData({BTC:empty,ETH:empty});setStatus('idle');return;}
+    if(!ready||!authenticated||!paperVisible){setData({BTC:empty,ETH:empty});setStatus('idle');return;}
     let active=true;
     setStatus('loading');
     Promise.all(ASSETS.map(fetchOne)).then(rows=>{
       if(active){setData({BTC:rows[0],ETH:rows[1]});setStatus('ready');}
     }).catch(()=>{if(active)setStatus('failed');});
     return()=>{active=false;};
-  },[ready,authenticated,fetchOne]);
+  },[ready,authenticated,fetchOne,paperVisible]);
 
   // Live UI refresh only; strategy execution remains fully server-side.
   useEffect(()=>{
-    if(!ready||!authenticated)return;
+    if(!ready||!authenticated||!paperVisible)return;
     let cancelled=false;
     let inFlight=false;
     const refresh=async()=>{
@@ -53,7 +62,7 @@ function PersonalDemo({t}) {
     };
     const timer=setInterval(refresh,20000);
     return()=>{cancelled=true;clearInterval(timer);};
-  },[ready,authenticated,fetchOne,busy]);
+  },[ready,authenticated,fetchOne,busy,paperVisible]);
 
   const command=async action=>{
     if(busy||!ready||!authenticated)return;
@@ -77,6 +86,7 @@ function PersonalDemo({t}) {
   };
   const current=data[asset]||empty;
   const position=current.position||{};
+  if(!paperVisible)return null;
   return <section className="privy-hwm-box personal-paper" aria-label={t.personalDemoTitle}>
     <div className="privy-hwm-title"><strong>{t.personalDemoTitle}</strong></div>
     <p className="privy-wallet-description">{t.personalDemoNote}</p>
