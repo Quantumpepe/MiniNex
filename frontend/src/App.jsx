@@ -10,6 +10,7 @@ import {
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
 import HelpCenter from './HelpCenter.jsx';
+import ActivityReport from './ActivityReport.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
 import {
   API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
@@ -328,7 +329,8 @@ export default function App() {
         </>}
 
         {page==='activity'&&<>
-          <section className="page-heading"><h1>{t.activity}</h1><p>{t.noRealTrades}</p></section>
+          <section className="page-heading"><h1>{t.activity}</h1></section>
+          <ActivityReport t={t}/>
         </>}
 
         {page==='settings'&&<>
