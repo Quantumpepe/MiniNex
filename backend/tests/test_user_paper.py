@@ -97,14 +97,16 @@ def test_fail_closed_invalid_assets_and_states():
         user_paper._restore("ETH","USDT",{"trade_count":True},user_paper.PAPER_START_USD)
 
 
-def test_15min_and_1h_strategy_do_not_require_full_window_before_first_signal():
-    """Actual observed 180s momentum is mandatory, full horizon is not."""
+def test_all_selected_horizons_have_no_artificial_wait():
+    """History is real Binance candle data, not time spent in a session."""
     import inspect
     src=inspect.getsource(user_paper.step_user_paper)
-    assert '"15m":(190.0,900.0)' in src
-    assert '"1h":(190.0,3600.0)' in src
-    assert '"5m":(190.0,300.0)' in src
-    assert '"24h"' in src and '24H_HISTORY_NOT_AVAILABLE' in src
+    assert 'warmup_seconds=0.0' in src
+    assert '"5m":300.0' in src
+    assert '"15m":900.0' in src
+    assert '"1h":3600.0' in src
+    assert '"24h":86400.0' in src
+    assert '24H_HISTORY_NOT_AVAILABLE' not in src
 
 
 def test_three_minute_history_is_enough_for_conservative_signal_evaluation():
