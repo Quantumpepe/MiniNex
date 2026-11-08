@@ -30,6 +30,7 @@ DEFAULT_WS = (
 )
 DEFAULT_REFERENCE_URL = "https://api.kraken.com/0/public/Ticker"
 DEFAULT_PRIMARY_REST_URL = "https://data-api.binance.vision/api/v3/ticker/price"
+DEFAULT_CANDLES_URL = "https://data-api.binance.vision/api/v3/klines"
 
 
 def utc_iso(timestamp: float | None) -> str | None:
@@ -116,6 +117,9 @@ class MarketDataService:
         self._primary: dict[str, dict[str, Any]] = {}
         self._reference: dict[str, dict[str, Any]] = {}
         self._history: dict[str, deque] = {asset: deque(maxlen=3600) for asset in ASSETS}
+        self._historical: dict[str, list[dict]] = {asset: [] for asset in ASSETS}
+        self.history_loaded_at: dict[str,float|None] = {asset: None for asset in ASSETS}
+        self.last_history_error: str | None = None
         self.primary_connected = False
         self.last_primary_error: str | None = None
         self.last_rest_error: str | None = None
@@ -130,6 +134,7 @@ class MarketDataService:
             asyncio.create_task(self._primary_loop(), name="market-binance"),
             asyncio.create_task(self._reference_loop(), name="market-kraken"),
             asyncio.create_task(self._rest_backup_loop(), name="market-binance-rest-backup"),
+            asyncio.create_task(self._history_loop(), name="market-history-preload"),
         ]
 
     async def stop(self) -> None:
@@ -237,6 +242,87 @@ class MarketDataService:
                                    self.last_rest_error)
                 await asyncio.sleep(5.0)
 
+    @staticmethod
+    def _parse_closed_candles(payload: Any, now: float, interval_seconds: int) -> list[dict]:
+        """Strictly validated, already-closed spot candles; never fabricated."""
+        if not isinstance(payload,list) or not payload or len(payload)>500:
+            raise ValueError("Invalid historical candle batch")
+        parsed=[]
+        last_open=-1.0
+        for item in payload:
+            if not isinstance(item,list) or len(item)<7:
+                raise ValueError("Invalid historical candle")
+            try:
+                opened=float(item[0])/1000
+                closed=float(item[6])/1000
+            except (TypeError,ValueError,OverflowError):
+                raise ValueError("Invalid candle timestamp") from None
+            price=positive_price(item[4])
+            if (price is None or not math.isfinite(opened) or not math.isfinite(closed)
+                or opened<=last_open or closed-opened<interval_seconds-1.1
+                or closed-opened>interval_seconds+1.1 or closed>=now
+                or opened<now-90000 or opened>now):
+                raise ValueError("Invalid, future or incomplete candle")
+            parsed.append({"timestamp":closed,"price_usdt":price})
+            last_open=opened
+        return parsed
+
+    def ingest_historical_candles(
+        self, asset: str, one_minute: Any, five_minute: Any,
+        *, now: float | None = None,
+    ) -> int:
+        """Atomically replace an asset's historical cache with verified timestamps.
+
+        1m candles give 60/180s momentum, 5m candles give real 24h context.
+        Public Binance history is NEVER independently executable prices:
+        the most recent live quote still requires a fresh Kraken cross-check.
+        """
+        if asset not in ASSETS:
+            raise ValueError("Unsupported historical asset")
+        at=self._clock() if now is None else now
+        fine=self._parse_closed_candles(one_minute,at,60)
+        coarse=self._parse_closed_candles(five_minute,at,300)
+        if (len(fine)<4 or len(coarse)<200
+            or at-fine[-1]["timestamp"]>180
+            or at-coarse[-1]["timestamp"]>900
+            or coarse[0]["timestamp"]>at-84000):
+            raise ValueError("Historical coverage incomplete or stale")
+        cutoff=fine[0]["timestamp"]
+        merged=[p for p in coarse if p["timestamp"]<cutoff]+fine
+        # Never append old snapshots on top of fresh WebSocket data.
+        self._historical[asset]=merged
+        self.history_loaded_at[asset]=at
+        return len(merged)
+
+    async def _history_loop(self) -> None:
+        """Fetch actual closed Binance candles on boot and renew every 5m."""
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0),
+                                     follow_redirects=False) as client:
+            while True:
+                for asset in ASSETS:
+                    try:
+                        symbol=f"{asset}USDT"
+                        one=await client.get(DEFAULT_CANDLES_URL,params={
+                            "symbol":symbol,"interval":"1m","limit":240
+                        })
+                        one.raise_for_status()
+                        five=await client.get(DEFAULT_CANDLES_URL,params={
+                            "symbol":symbol,"interval":"5m","limit":300
+                        })
+                        five.raise_for_status()
+                        count=self.ingest_historical_candles(
+                            asset,one.json(),five.json()
+                        )
+                        self.last_history_error=None
+                        LOGGER.info("Loaded %d real historical %s spot samples",count,asset)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        self.last_history_error=f"{type(exc).__name__}: {str(exc)[:160]}"
+                        LOGGER.warning("Spot history preload unavailable for %s: %s",
+                                       asset,self.last_history_error)
+                await asyncio.sleep(300.0)
+
     def ingest_reference(self, payload: dict[str, Any], *, now: float | None = None) -> bool:
         prices = parse_kraken_ticker(payload)
         if not prices:
@@ -292,13 +378,21 @@ class MarketDataService:
             "execution_enabled": False,
             "primary_ws_connected": self.primary_connected,
             "rest_backup_active": any(v.get("primary_source")=="Binance Spot REST" and v.get("market_data_valid") for v in markets.values()),
+            "historical_samples":{a:len(self._historical[a]) for a in ASSETS},
+            "history_loaded_at":{a:utc_iso(self.history_loaded_at[a]) for a in ASSETS},
             "markets": markets,
         }
 
     def history(self, asset: str, *, limit: int = 120) -> list[dict[str, Any]]:
         if asset not in ASSETS:
             raise ValueError("BTC or ETH required")
-        return list(self._history[asset])[-max(1, min(limit, 3600)):]
+        now=self._clock()
+        # Raw ticks take precedence over any historical candle with the
+        # same timestamp; all samples remain actual public exchange data.
+        points=[p for p in self._historical[asset] if 0<=now-p["timestamp"]<=90000]
+        points.extend(p for p in self._history[asset] if 0<=now-p["timestamp"]<=90000)
+        points.sort(key=lambda p:p["timestamp"])
+        return points[-max(1,min(limit,3600)):]
 
     async def _primary_loop(self) -> None:
         retry_seconds = 1.0
