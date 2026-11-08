@@ -80,3 +80,15 @@ def test_backup_with_kraken_price_divergence_fails_closed():
     assert state["BTC"]["reason"]=="PRICE_DIVERGENCE"
     assert state["BTC"]["market_data_valid"] is False
     assert state["ETH"]["market_data_valid"] is True
+
+
+def test_binance_multi_symbol_query_contains_no_spaces():
+    # Binance rejects percent-encoded JSON arrays with a whitespace separator
+    # on some deployments. Keep the symbols argument canonical and compact.
+    from inspect import getsource
+    from backend.market_data import MarketDataService
+    source=getsource(MarketDataService._rest_backup_loop)
+    assert 'json.dumps(list(SYMBOL_TO_ASSET),separators=(",",":"))' in source
+    import json
+    value=json.dumps(["BTCUSDT","ETHUSDT"],separators=(",",":"))
+    assert value=='["BTCUSDT","ETHUSDT"]'
