@@ -141,3 +141,36 @@ async def websocket_market(websocket: WebSocket):
             await asyncio.sleep(1.0)
     except (WebSocketDisconnect, RuntimeError, OSError):
         pass
+
+
+@app.get("/api/trading/capabilities")
+def trading_capabilities(authorization: str | None = Header(default=None)):
+    """Authenticated, read-only capability contract. Never authorizes trading."""
+    verify_privy_bearer(authorization)
+    return JSONResponse({
+        "mode": "PREPARATION_ONLY",
+        "real_trading_enabled": False,
+        "automated_signing_enabled": False,
+        "deposits_enabled": False,
+        "withdrawals_enabled": False,
+        "routes": {
+            "BTC": {
+                "wallet_chain": "bitcoin",
+                "native_asset": "BTC",
+                "settlement_options": ["USDC", "USDT"],
+                "cross_chain_settlement_required": True,
+                "execution_provider_configured": False,
+                "authorization_configured": False,
+                "ready": False
+            },
+            "ETH": {
+                "wallet_chain": "ethereum",
+                "native_asset": "ETH",
+                "settlement_options": ["USDC", "USDT"],
+                "cross_chain_settlement_required": False,
+                "execution_provider_configured": False,
+                "authorization_configured": False,
+                "ready": False
+            }
+        }
+    }, headers={"Cache-Control": "no-store"})
