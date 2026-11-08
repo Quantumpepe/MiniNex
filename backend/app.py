@@ -345,6 +345,13 @@ def user_paper_start(asset: str, authorization: str | None = Header(default=None
     return JSONResponse(start_user_paper(did,asset),headers={"Cache-Control":"private, no-store"})
 
 
+@app.post("/api/user-paper/{asset}/evaluate")
+def user_paper_evaluate(asset: str, authorization: str | None = Header(default=None)):
+    """Single manual evaluation against verified shared market data, not background live trading."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(step_user_paper(did,asset,market,time.time()),
+                        headers={"Cache-Control":"private, no-store"})
+
 @app.post("/api/user-paper/{asset}/{action}")
 def user_paper_action(asset: str, action: str,
                       authorization: str | None = Header(default=None)):
@@ -353,10 +360,3 @@ def user_paper_action(asset: str, action: str,
     return JSONResponse(set_user_paper_status(did,asset,action),
                         headers={"Cache-Control":"private, no-store"})
 
-
-@app.post("/api/user-paper/{asset}/evaluate")
-def user_paper_evaluate(asset: str, authorization: str | None = Header(default=None)):
-    """Single manual evaluation against verified shared market data, not background live trading."""
-    did=verify_privy_bearer(authorization)["user_id"]
-    return JSONResponse(step_user_paper(did,asset,market,time.time()),
-                        headers={"Cache-Control":"private, no-store"})
