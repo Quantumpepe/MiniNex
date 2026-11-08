@@ -86,7 +86,7 @@ def make_csv(rows: list[dict], year: int) -> bytes:
         sanitized = {}
         for key in FIELDS:
             value = str(row.get(key, ""))
-            if value.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")):
+            if key in ("network", "tx_hash", "record_id", "source", "type", "asset", "verification") and value.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")):
                 value = "'" + value
             sanitized[key] = value
         writer.writerow(sanitized)
