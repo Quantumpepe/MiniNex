@@ -97,12 +97,18 @@ class PaperRules:
     cooldown_seconds: float = 90.0
     min_buy_budget_usd: float = 30.0
     min_coin_units: float = 1e-10
+    early_rebound_prior_drop_pct: float = 0.25
+    early_rebound_recovery_pct: float = 0.10
+    early_rebound_60s_pct: float = 0.035
+    spot_short_decline_60s_pct: float = -0.08
+    spot_short_decline_180s_pct: float = -0.18
 
 
 @dataclass
 class PaperPortfolio:
     asset: str
     settlement: str
+    strategy_mode: str = "LONG"
     stable_cash: float = 0.0
     coin_quantity: float = 0.0
     cost_basis: float = 0.0
@@ -117,6 +123,7 @@ class PaperPortfolio:
     last_decision: str = "INITIALIZING"
     last_reason: str = "WAITING_FOR_VERIFIED_DATA"
     last_signal_summary: str = ""
+    last_sold_quantity: float | None = None
     realized_profit: float = 0.0
     accumulated_buy_costs: float = 0.0
     accumulated_sell_costs: float = 0.0
@@ -252,6 +259,9 @@ class PaperAutoEngine:
                         if now - p["timestamp"] <= min(self.rules.price_window_seconds,900)]
         local_high = max(local_window) if local_window else high
         local_mean = sum(local_window)/len(local_window) if local_window else price
+        short_window = [p["price_usdt"] for p in points if now-p["timestamp"] <= 240]
+        short_low = min(short_window) if short_window else low
+        short_high = max(short_window) if short_window else high
         mom600 = (price / p600 - 1) * 100 if p600 else None
         mom60 = (price / p60 - 1) * 100
         mom180 = (price / p180 - 1) * 100
@@ -264,6 +274,8 @@ class PaperAutoEngine:
                 "prior_max_drawdown_pct": clean(prior_max_drawdown_pct, 4),
                 "recent_mean_price": clean(recent_mean),
                 "local_high": clean(local_high),
+                "short_window_low": clean(short_low),
+                "short_window_high": clean(short_high),
                 "local_mean": clean(local_mean),
                 "momentum_600s_pct": clean(mom600,4) if mom600 is not None else None,
                 "window_high": clean(high), "window_low": clean(low)}
@@ -333,6 +345,19 @@ class PaperAutoEngine:
             if not sale:
                 p.last_decision, p.last_reason = "WAIT", "SALE_QUOTE_UNECONOMIC"
                 return
+            # Spot-downtrend is SELL OWNED COINS / REBUY, never leveraged short.
+            # Do not apply long-only profit-trailing thresholds to this mode.
+            if p.strategy_mode == "SPOT_SHORT":
+                bearish = (
+                    sig["momentum_60s_pct"] <= self.rules.spot_short_decline_60s_pct
+                    and sig["momentum_180s_pct"] <= self.rules.spot_short_decline_180s_pct
+                    and price < sig.get("recent_mean_price", price)
+                )
+                if bearish:
+                    self._paper_sell(p,sale,now,price,"SPOT_DOWNTREND_EXIT")
+                else:
+                    p.last_decision,p.last_reason="HOLD","SPOT_AWAITING_DOWNTREND"
+                return
             net_gain = sale["net_proceeds"] - p.cost_basis
             gain_pct = net_gain / p.cost_basis * 100 if p.cost_basis > 0 else -math.inf
             peak_drop_pct = (1 - price / (p.peak_price or price)) * 100
@@ -364,6 +389,19 @@ class PaperAutoEngine:
                                sig["fall_from_window_high_pct"]) >= self.rules.min_prior_drop_pct
                        and sig["rebound_from_window_low_pct"] >= self.rules.min_rebound_pct
                        and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct)
+            # Fast local recovery: a 15m high may be far away even when
+            # the market has already reversed from the latest short-term low.
+            short_high=sig.get("short_window_high",sig["window_high"])
+            short_low=sig.get("short_window_low",sig["window_low"])
+            recent_drop=((1-short_low/short_high)*100 if short_high>0 else 0)
+            recent_recovery=((price/short_low-1)*100 if short_low>0 else 0)
+            early_rebound=(
+                recent_drop >= self.rules.early_rebound_prior_drop_pct
+                and recent_recovery >= self.rules.early_rebound_recovery_pct
+                and sig["momentum_60s_pct"] >= self.rules.early_rebound_60s_pct
+                and price >= sig.get("recent_mean_price",price)
+            )
+            rebound=rebound or early_rebound
             breakout = (sig["momentum_60s_pct"] >= self.rules.min_breakout_60s_pct
                         and sig["momentum_180s_pct"] >= self.rules.min_breakout_180s_pct
                         and price >= sig["window_high"] * 0.999)
@@ -391,9 +429,28 @@ class PaperAutoEngine:
                             if p.last_exit_price > 0 else 0)
                 recovered = ((price / (p.post_exit_low or price) - 1) * 100
                              if (p.post_exit_low or price) > 0 else 0)
-                rebound = (discount >= self.rules.reentry_drop_pct
-                           and recovered >= self.rules.reentry_rebound_pct
-                           and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct)
+                # A spot-downtrend cycle may rebuy earlier, but only if the
+                # actual current buy quote can acquire MORE BTC/ETH than sold.
+                # This inherently accounts for estimated fees, slippage and
+                # the remaining stablecoin budget.
+                recovery_ok = (
+                    recovered >= self.rules.early_rebound_recovery_pct
+                    and sig["momentum_60s_pct"] >= self.rules.early_rebound_60s_pct
+                ) if p.strategy_mode == "SPOT_SHORT" else (
+                    recovered >= self.rules.reentry_rebound_pct
+                    and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct
+                )
+                rebound = discount >= (
+                    self.rules.early_rebound_prior_drop_pct
+                    if p.strategy_mode == "SPOT_SHORT" else self.rules.reentry_drop_pct
+                ) and recovery_ok
+                if rebound and p.strategy_mode == "SPOT_SHORT":
+                    proposed=self._buy_quote(asset,p.stable_cash,price)
+                    if not proposed or (
+                        p.last_sold_quantity is not None
+                        and proposed["quantity"] <= p.last_sold_quantity
+                    ):
+                        rebound=False
                 breakout = False
                 trend_continuation = False
                 gradual_trend = False
@@ -423,6 +480,7 @@ class PaperAutoEngine:
         p.peak_price = price
         p.last_exit_price = None
         p.post_exit_low = None
+        p.last_sold_quantity = None
         p.last_trade_at = at
         p.trade_count += 1
         p.accumulated_buy_costs += quote["venue_fee"] + quote["network_fee"] + quote["spread_and_slippage_cost"]
@@ -436,6 +494,7 @@ class PaperAutoEngine:
     def _paper_sell(self, p: PaperPortfolio, quote: dict[str, float], at: float, price: float, reason: str) -> None:
         basis = p.cost_basis
         qty = p.coin_quantity
+        p.last_sold_quantity=qty
         profit = quote["net_proceeds"] - basis
         p.stable_cash += quote["net_proceeds"]
         p.coin_quantity = 0.0
