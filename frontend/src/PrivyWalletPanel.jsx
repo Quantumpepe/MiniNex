@@ -4,6 +4,7 @@ import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/e
 import {Copy, LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
 import {API_BASE} from './data.js';
+import TradingSetupPreview from './TradingSetupPreview.jsx';
 
 
 // Copies the complete public address. It never invokes a wallet signer or
@@ -323,6 +324,7 @@ function ConnectedPrivyWallet({t}) {
           disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
         <div className="privy-hwm-disclaimer">{t.privyBudgetNote}</div>
       </div>}
+      {authenticated && <TradingSetupPreview t={t}/>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
         <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong><span>{t.privyTradingLocked}</span></div>
         {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
