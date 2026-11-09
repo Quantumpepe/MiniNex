@@ -5,6 +5,7 @@ import {Copy, LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
 import {API_BASE} from './data.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
+import WalletBalances from './WalletBalances.jsx';
 
 
 // Copies the complete public address. It never invokes a wallet signer or
@@ -289,6 +290,8 @@ function ConnectedPrivyWallet({t}) {
 
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
+      {authenticated && identityStatus==='verified' && databaseStatus==='stored' &&
+        <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
       {authenticated && <div className="privy-hwm-box" aria-label={t.privyBudgetTitle}>
         <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong></div>
         {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
