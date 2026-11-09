@@ -31,6 +31,10 @@ jobs:
           packages: 'platform-tools'
       - name: Install frontend and Capacitor dependencies
         run: npm install --no-audit --no-fund
+      - name: Compute native compatibility fingerprint
+        run: |
+          echo "MININEX_NATIVE_ABI=$(node scripts/native-abi.mjs)" >> "$GITHUB_ENV"
+          echo "MININEX_BUILD_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
       - name: Unit tests
         run: npm test
       - name: Build bundled app (no static-site hosting)
@@ -39,6 +43,9 @@ jobs:
           VITE_API_BASE_URL: https://mininex-backend.onrender.com
           # Public app ID must match backend JWT audience and existing user wallets.
           VITE_PRIVY_APP_ID: cmw7sb7ty013o0gl55aqyzi3y
+          VITE_MININEX_NATIVE_ABI: ${{ env.MININEX_NATIVE_ABI }}
+          VITE_MININEX_BUILD_SHA: ${{ github.sha }}
+          VITE_MININEX_BUILD_AT: ${{ env.MININEX_BUILD_AT }}
       - name: Create native Android project
         run: npx cap add android
       - name: Sync bundled assets
