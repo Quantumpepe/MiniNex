@@ -422,3 +422,7 @@
   cursor:pointer}
 .update-check-button:hover,.update-check-button:focus-visible{background:#1b6654}
 .update-check-button:disabled{cursor:default;opacity:.58}
+
+/* Verified real-wallet balances are strictly separated from PAPER sessions. */
+.privy-balance-network{display:inline-block;opacity:.6;font-size:11px;margin-left:6px}
+.privy-hwm-title strong:has(> svg){display:inline-flex;align-items:center;gap:6px}
