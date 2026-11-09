@@ -9,7 +9,6 @@ on:
   pull_request:
     paths:
       - 'frontend/**'
-      - 'frontend/**'
       - '.github/workflows/frontend-check.yml'
   workflow_dispatch:
 
@@ -19,7 +18,7 @@ permissions:
 jobs:
   frontend-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 22
     defaults:
       run:
         working-directory: frontend
@@ -30,6 +29,10 @@ jobs:
           node-version: '22'
       - name: Install dependencies (no private credentials)
         run: npm install --no-audit --no-fund
+      - name: Compute native compatibility fingerprint
+        run: |
+          echo "MININEX_NATIVE_ABI=$(node scripts/native-abi.mjs)" >> "$GITHUB_ENV"
+          echo "MININEX_BUILD_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
       - name: Unit tests
         run: npm test
       - name: Validate production bundle
@@ -37,3 +40,79 @@ jobs:
         env:
           VITE_API_BASE_URL: https://mininex-backend.onrender.com
           VITE_PRIVY_APP_ID: ${{ vars.MININEX_PRIVY_APP_ID }}
+          VITE_MININEX_NATIVE_ABI: ${{ env.MININEX_NATIVE_ABI }}
+          VITE_MININEX_BUILD_SHA: ${{ github.sha }}
+          VITE_MININEX_BUILD_AT: ${{ env.MININEX_BUILD_AT }}
+      - name: Check Capgo bundle ZIP format (no Capgo account required)
+        run: |
+          npx --yes @capgo/cli@8.95.1 bundle zip com.mininex.preview --path dist --bundle 0.8.1 --name mininex-web --json
+          find . -maxdepth 3 -type f -name '*.zip' -not -path './node_modules/*' -print
+
+  # Only a tested main-branch web bundle can become a public OTA release.
+  # APKs, native code, private wallet state and GitHub secrets are NEVER released.
+  publish-ota:
+    needs: frontend-check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    concurrency:
+      group: mininex-ota-publish-main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies (no private credentials)
+        run: npm install --no-audit --no-fund
+      - name: Compute native compatibility fingerprint
+        run: |
+          echo "MININEX_NATIVE_ABI=$(node scripts/native-abi.mjs)" >> "$GITHUB_ENV"
+          echo "MININEX_BUILD_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+      - name: Build approved web assets
+        env:
+          VITE_API_BASE_URL: https://mininex-backend.onrender.com
+          VITE_PRIVY_APP_ID: ${{ vars.MININEX_PRIVY_APP_ID }}
+          VITE_MININEX_NATIVE_ABI: ${{ env.MININEX_NATIVE_ABI }}
+          VITE_MININEX_BUILD_SHA: ${{ github.sha }}
+          VITE_MININEX_BUILD_AT: ${{ env.MININEX_BUILD_AT }}
+        run: npm run build
+      - name: Prepare immutable update ZIP and checksum
+        env:
+          MININEX_OTA_VERSION: 0.8.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          npx --yes @capgo/cli@8.95.1 bundle zip com.mininex.preview --path dist --bundle "$MININEX_OTA_VERSION" --name mininex-web --json
+          mapfile -t archives < <(find . -maxdepth 3 -type f -name '*.zip' -not -path './node_modules/*' -print)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one Capgo bundle ZIP, got ${#archives[@]}"
+            exit 1
+          fi
+          cp "${archives[0]}" "$RUNNER_TEMP/mininex-web.zip"
+          unzip -Z1 "$RUNNER_TEMP/mininex-web.zip" | grep -Eq '(^|/)index\.html$'
+          test "$(stat -c '%s' "$RUNNER_TEMP/mininex-web.zip")" -lt 41943040
+          sha256sum "$RUNNER_TEMP/mininex-web.zip" | cut -d ' ' -f1 > "$RUNNER_TEMP/mininex-web.sha256"
+      - name: Publish passed web-only OTA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MININEX_OTA_VERSION: 0.8.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # Avoid publishing an outdated release if main has advanced during CI.
+          git fetch origin main --quiet
+          if [ "$(git rev-parse refs/remotes/origin/main)" != "$GITHUB_SHA" ]; then
+            echo "A newer main commit exists; publishing skipped."
+            exit 0
+          fi
+          TAG="mininex-ota-v$MININEX_OTA_VERSION"
+          SUM="$(cat "$RUNNER_TEMP/mininex-web.sha256")"
+          printf 'Verified MiniNex web-only update. No native APK or private wallet data.\nnative-abi: %s\nsource-commit: %s\nsha256: %s\n' \
+            "$MININEX_NATIVE_ABI" "$GITHUB_SHA" "$SUM" > "$RUNNER_TEMP/mininex-ota-notes.txt"
+          gh release create "$TAG" "$RUNNER_TEMP/mininex-web.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "MiniNex web update $MININEX_OTA_VERSION" --notes-file "$RUNNER_TEMP/mininex-ota-notes.txt"
