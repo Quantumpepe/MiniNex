@@ -412,3 +412,13 @@
 .settings-activity-chevron{
   margin-left:auto;transform:rotate(-90deg);
 }
+
+/* OTA diagnostics: a visible check action without changing wallet or trading UI. */
+.update-status-details{min-width:0;flex:1}
+.update-status-details .small-note{margin:7px 0;color:#94b7b5;line-height:1.5;overflow-wrap:anywhere}
+.update-check-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:10px 14px;margin:12px 0 10px;border:1px solid #3da88c;
+  border-radius:10px;background:#164b3f;color:#c1ffe4;font-weight:750;
+  cursor:pointer}
+.update-check-button:hover,.update-check-button:focus-visible{background:#1b6654}
+.update-check-button:disabled{cursor:default;opacity:.58}
