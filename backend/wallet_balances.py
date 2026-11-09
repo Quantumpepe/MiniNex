@@ -24,6 +24,7 @@ MAX_UINT256 = 2**256 - 1
 SATOSHIS = Decimal(100_000_000)
 WEI = Decimal(10**18)
 STABLE_UNITS = Decimal(10**6)
+ETH_RPC = "https://ethereum-rpc.publicnode.com"  # Ethereum mainnet only, read-only JSON-RPC
 
 def _units(value: object, divisor: Decimal) -> str:
     if isinstance(value,bool) or not isinstance(value,(str,int)):
@@ -122,6 +123,60 @@ async def _get_json(client: httpx.AsyncClient, url: str) -> object:
         raise ValueError("Mainnet explorer unavailable") from None
 
 
+def _rpc_quantity(payload: object) -> int:
+    """Validate unsigned Ethereum JSON-RPC quantity; reject errors and false 0."""
+    if not isinstance(payload,dict) or payload.get("jsonrpc")!="2.0" or "error" in payload:
+        raise ValueError("Ethereum RPC error")
+    value=payload.get("result")
+    if not isinstance(value,str) or not re.fullmatch(r"0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)",value):
+        raise ValueError("Invalid Ethereum RPC response")
+    number=int(value,16)
+    if number>MAX_UINT256:
+        raise ValueError("Ethereum RPC uint256 overflow")
+    return number
+
+
+async def _eth_rpc_call(client: httpx.AsyncClient, method: str, params: list, req_id: int) -> int:
+    try:
+        response=await client.post(
+            ETH_RPC, json={"jsonrpc":"2.0","method":method,"params":params,"id":req_id},
+            headers={"Accept":"application/json","Content-Type":"application/json"},
+        )
+        response.raise_for_status()
+        payload=response.json()
+        if not isinstance(payload,dict) or payload.get("id")!=req_id:
+            raise ValueError("Ethereum RPC response mismatch")
+        return _rpc_quantity(payload)
+    except (httpx.HTTPError,ValueError,TypeError,AttributeError):
+        raise ValueError("Ethereum mainnet RPC unavailable") from None
+
+
+async def _ethereum_fallback(client: httpx.AsyncClient, address: str,
+                             need_eth: bool, need_tokens: bool) -> dict[str,str]:
+    """Read chain-verified Ethereum balances even for never-used addresses.
+
+    Blockscout may return coin_balance:null when an address has no activity.
+    Only a successful mainnet JSON-RPC response may establish zero as fact.
+    """
+    if not ETH_RE.fullmatch(address):
+        raise ValueError("Invalid EVM address")
+    if await _eth_rpc_call(client,"eth_chainId",[],1)!=1:
+        raise ValueError("RPC provider is not Ethereum mainnet")
+    result={}
+    if need_eth:
+        wei=await _eth_rpc_call(client,"eth_getBalance",[address,"latest"],2)
+        result["ETH"]=_units(wei,WEI)
+    if need_tokens:
+        selector="0x70a08231"  # ERC-20 balanceOf(address); a read-only eth_call
+        calldata=selector+("0"*24)+address[2:].lower()
+        for req_id,(token,contract) in enumerate(CONTRACTS.items(),start=3):
+            amount=await _eth_rpc_call(client,"eth_call",[
+                {"to":contract,"data":calldata},"latest",
+            ],req_id)
+            result[token]=_units(amount,STABLE_UNITS)
+    return result
+
+
 async def get_wallet_balances(did: str) -> dict:
     user=await fetch_privy_user(did)
     try:
@@ -152,28 +207,45 @@ async def get_wallet_balances(did: str) -> dict:
                 responses=await asyncio.gather(*[
                     _get_json(client,url) for _,url in requests
                 ],return_exceptions=True)
+                for (source,_),payload in zip(requests,responses):
+                    if isinstance(payload,BaseException):
+                        continue
+                    try:
+                        if source=="BTC":
+                            balances["BTC"]["balance"]=parse_btc_balance(payload)
+                            balances["BTC"]["status"]="verified"
+                        elif source=="ETH":
+                            balances["ETH"]["balance"]=parse_eth_balance(payload)
+                            balances["ETH"]["status"]="verified"
+                        elif source=="TOKENS":
+                            tokens=parse_stable_balances(payload)
+                            for token in ("USDC","USDT"):
+                                balances[token]["balance"]=tokens[token]
+                                balances[token]["status"]="verified"
+                    except (ValueError,TypeError,OverflowError):
+                        # A malformed explorer response only invalidates that
+                        # source; zero must never be invented on exceptions.
+                        continue
+                if eth and (balances["ETH"]["status"]=="unavailable"
+                            or balances["USDC"]["status"]=="unavailable"
+                            or balances["USDT"]["status"]=="unavailable"):
+                    # Unused Ethereum addresses often have coin_balance:null.
+                    # Ask a known mainnet JSON-RPC for actual zero / token
+                    # balances instead of marking the whole wallet missing.
+                    try:
+                        fallback=await _ethereum_fallback(
+                            client,eth,
+                            balances["ETH"]["status"]=="unavailable",
+                            balances["USDC"]["status"]=="unavailable"
+                            or balances["USDT"]["status"]=="unavailable",
+                        )
+                        for asset,quantity in fallback.items():
+                            balances[asset]["balance"]=quantity
+                            balances[asset]["status"]="verified"
+                    except (ValueError,httpx.HTTPError):
+                        pass  # Keep "unavailable" if the fallback also fails.
         except (httpx.HTTPError,ValueError,TypeError,OverflowError):
-            # Global explorer transport initialization also fails closed.
-            responses=[ValueError("Provider unavailable")] * len(requests)
-        for (source,_),payload in zip(requests,responses):
-            if isinstance(payload,BaseException):
-                continue
-            try:
-                if source=="BTC":
-                    balances["BTC"]["balance"]=parse_btc_balance(payload)
-                    balances["BTC"]["status"]="verified"
-                elif source=="ETH":
-                    balances["ETH"]["balance"]=parse_eth_balance(payload)
-                    balances["ETH"]["status"]="verified"
-                elif source=="TOKENS":
-                    tokens=parse_stable_balances(payload)
-                    for token in ("USDC","USDT"):
-                        balances[token]["balance"]=tokens[token]
-                        balances[token]["status"]="verified"
-            except (ValueError,TypeError,OverflowError):
-                # A malformed explorer response only invalidates that source.
-                # Never show a guessed zero or overwrite a verified balance.
-                continue
+            pass  # Never label unknown explorer balances as verified zero.
 
     return {
         "mode":"VERIFIED_READ_ONLY",
