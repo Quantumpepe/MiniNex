@@ -310,12 +310,14 @@ class PaperAutoEngine:
                 and price >= sig.get("recent_mean_price", price))
 
     def _deployment_target(self, sig: dict[str, Any], price: float,
-                           reason: str, *, adding: bool = False) -> float:
-        """Paper capital weighting: weaker entries reserve cash for later."""
-        if self._strong_uptrend(sig, price):
-            return 1.0
-        # Continuously adapt exposure to independent trend horizons and
-        # observed volatility; percentages are not rigid per-signal tiers.
+                           reason: str, *, adding: bool = False,
+                           additions_done: int = 0) -> float:
+        """Risk-aware LONG exposure. Reserve cash for confirmed subsequent adds.
+
+        A strong 1m/3m candle alone must not bypass the volatility reserve
+        and turn the entire 5,000 USD PAPER account into a coin position.
+        This affects position sizing only, not profit trailing or spot-short.
+        """
         m60 = max(0.0, float(sig.get("momentum_60s_pct") or 0.0))
         m180 = max(0.0, float(sig.get("momentum_180s_pct") or 0.0))
         m600 = max(0.0, float(sig.get("momentum_600s_pct") or 0.0))
@@ -326,10 +328,47 @@ class PaperAutoEngine:
         low = float(sig.get("window_low") or price)
         volatility = (high / low - 1) * 100 if low > 0 and high >= low else 0.0
         volatility_reserve = min(0.12, max(0.0, volatility - 0.8) * 0.02)
-        target = 0.34 + 0.66 * strength - volatility_reserve
-        if adding:
-            target += 0.25
-        return min(0.95, max(0.25, target))
+
+        if self._strong_uptrend(sig, price):
+            # Still deploy aggressively into sustained momentum, but do not
+            # mistake short-only 5m evidence for a fully confirmed trend.
+            target = 0.86 + 0.12 * strength - volatility_reserve
+            if sig.get("momentum_600s_pct") is None:
+                target -= 0.03
+        else:
+            target = 0.34 + 0.66 * strength - volatility_reserve
+
+        if not adding:
+            return min(0.93 - 0.40 * volatility_reserve,
+                       max(0.25, target))
+
+        # Release reserves progressively, only after a confirmed ADD_TREND or
+        # ADD_REBOUND. Higher observed volatility keeps a larger buffer even
+        # after several additions. No hardcoded fixed profit thresholds.
+        stage = min(max(0, additions_done), 2)
+        floor = (0.90, 0.94, 0.98)[stage] - volatility_reserve
+        ceiling = (0.94, 0.97, 0.995)[stage] - 0.40 * volatility_reserve
+        target += 0.07 if reason == "ADD_TREND" else 0.17
+        return min(ceiling, max(0.25, floor, target))
+
+    def _trend_add_has_room(self, sig: dict[str, Any], price: float,
+                            anchor: float) -> bool:
+        """Do not repeatedly buy the same rally at essentially one price.
+
+        Momentum must advance from the previous buy enough to clear estimated
+        spot execution friction or a volatility-sensitive step, whichever is
+        larger. This preserves cash for a genuine rebound or a new leg.
+        """
+        if not math.isfinite(anchor) or anchor <= 0 or price <= anchor:
+            return False
+        high = float(sig.get("window_high") or price)
+        low = float(sig.get("window_low") or price)
+        volatility = (high / low - 1) * 100 if low > 0 and high >= low else 0.0
+        estimated_roundtrip_friction = (
+            self.costs.rate + 2 * self.costs.execution_markup) * 100
+        required_advance = max(estimated_roundtrip_friction,
+                               0.10 * volatility)
+        return (price / anchor - 1) * 100 >= required_advance
 
     def _allocation_budget(self, p: PaperPortfolio, price: float, target: float) -> float:
         """All-in trade allowance, never exceeds available simulated stable cash."""
@@ -415,7 +454,10 @@ class PaperAutoEngine:
                            and sig.get("rebound_from_window_low_pct", 0) >= self.rules.early_rebound_recovery_pct
                            and sig.get("momentum_180s_pct", -math.inf) > -1.0
                            and price >= sig.get("recent_mean_price", price))
-                add_reason = "ADD_TREND" if strong else "ADD_REBOUND" if rebound else None
+                # A prior strong signal cannot spend all remaining cash on
+                # identical-price rechecks every 90 seconds.
+                trend_add = strong and self._trend_add_has_room(sig, price, anchor)
+                add_reason = "ADD_TREND" if trend_add else "ADD_REBOUND" if rebound else None
             else:
                 add_reason = None
             # Spot-downtrend is SELL OWNED COINS / REBUY, never leveraged short.
@@ -457,7 +499,9 @@ class PaperAutoEngine:
                 return
             if add_reason and p.add_count < self.rules.max_additions:
                 budget = self._allocation_budget(
-                    p, price, self._deployment_target(sig, price, add_reason, adding=True))
+                    p, price, self._deployment_target(
+                        sig, price, add_reason, adding=True,
+                        additions_done=p.add_count))
                 buy = self._buy_quote(asset, budget, price)
                 if buy:
                     self._paper_buy(p, buy, now, price, add_reason)
