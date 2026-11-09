@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
+import {summarizePaperSessions} from './paperPortfolio.js';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
@@ -236,6 +237,50 @@ function usePersonalPaperTrades(asset, paperVisible, refreshNonce) {
   return trades;
 }
 
+/** Private PAPER-only portfolio snapshots for the compact Home card. */
+function usePaperPortfolioHome(paperVisible, refreshNonce) {
+  const {ready,authenticated,getAccessToken}=usePrivy();
+  const [summary,setSummary]=useState(null);
+  const [samples,setSamples]=useState([]);
+  useEffect(()=>{
+    let active=true, inFlight=false;
+    setSummary(null);setSamples([]);
+    if (!paperVisible || !ready || !authenticated) return ()=>{active=false;};
+    const sync=async()=>{
+      if(inFlight)return;
+      inFlight=true;
+      try{
+        const token=await getAccessToken();
+        if(!token)throw new Error('Login required');
+        const rows=await Promise.all(['BTC','ETH'].map(async asset=>{
+          const response=await fetch(API_BASE+'/api/user-paper/'+asset,{
+            headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+          });
+          if(!response.ok)throw new Error('Private paper data unavailable');
+          return [asset,await response.json()];
+        }));
+        if(!active)return;
+        const next=summarizePaperSessions(Object.fromEntries(rows));
+        setSummary(next);
+        if(next){
+          setSamples(existing=>{
+            const at=Date.now();
+            if(existing.length && at-existing[existing.length-1].at<12000)return existing;
+            return [...existing,{at,value:next.equity}].slice(-90);
+          });
+        }
+      }catch{
+        // Never display stale totals as a verified real wallet balance.
+        if(active)setSummary(null);
+      }finally{inFlight=false;}
+    };
+    sync();
+    const interval=window.setInterval(sync,20000);
+    return ()=>{active=false;window.clearInterval(interval);};
+  },[ready,authenticated,getAccessToken,paperVisible,refreshNonce]);
+  return {summary,samples,authenticated:ready&&authenticated};
+}
+
 function Navigation({page,setPage,t,mobile=false}) {
   return <nav className={mobile?'mobile-navigation':'side-navigation'} aria-label="Navigation">
     {NAV.map(({key,icon:Icon})=><button type="button" key={key} className={`nav-item ${page===key?'nav-item--active':''}`} onClick={()=>setPage(key)} aria-current={page===key?'page':undefined}>
@@ -346,6 +391,7 @@ export default function App() {
   },[]);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
   const personalTrades=usePersonalPaperTrades(asset,paperVisible,refreshNonce);
+  const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
   const valid=validMarket(mk) && Date.now()-syncedAt<FRESH_MS;
@@ -390,6 +436,7 @@ export default function App() {
           <CompactOverview
             t={t} lang={language} chooseLang={chooseLang} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
             history={history} trades={personalTrades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
+             portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
