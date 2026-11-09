@@ -1,7 +1,7 @@
 import {Capacitor} from '@capacitor/core';
 import {App as NativeApp} from '@capacitor/app';
 import {CapacitorUpdater} from '@capgo/capacitor-updater';
-import {activeOtaVersion,parseOtaRelease,shouldInstallOta} from './otaRelease.js';
+import {activeOtaVersion,isVerifiedDownloadedBundle,parseOtaRelease,shouldInstallOta} from './otaRelease.js';
 
 const RELEASE_URL='https://api.github.com/repos/Quantumpepe/MiniNex/releases/latest';
 const NATIVE_ABI=String(import.meta.env?.VITE_MININEX_NATIVE_ABI||'').toLowerCase();
@@ -78,8 +78,11 @@ export async function checkMiniNexUpdates({force=false}={}) {
     const bundle=await CapacitorUpdater.download({
       version:candidate.version,url:candidate.url,checksum:candidate.checksum
     });
-    if(!bundle?.id||bundle?.version!==candidate.version||bundle?.status!=='success')
-      throw Error('Bundle not verified');
+    // Capgo 8 returns "pending" for a fully downloaded, checksum-verified ZIP.
+    // "success" is the installed state. Rejecting "pending" previously
+    // prevented every valid Android OTA from ever reaching next().
+    if(!isVerifiedDownloadedBundle(bundle,candidate.version))
+      throw Error('Downloaded bundle is not ready for activation');
     phase='activation';
     await CapacitorUpdater.next({id:bundle.id});
     // App keeps running; update is loaded on next restart, not during a trade.
