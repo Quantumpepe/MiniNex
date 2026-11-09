@@ -1,7 +1,8 @@
 """Bounded, fail-closed, durable per-account simulation scheduler.
 
-The API process ticks existing ACTIVE demo sessions only. PostgreSQL row locks
-serialize evaluations across workers/restarts; no session auto-starts.
+The API process ticks existing ACTIVE sessions and only pending liquidation
+of already PAUSED sessions. PostgreSQL row locks serialize evaluations across
+workers/restarts; no session auto-starts or new entries while paused.
 Paper events stay outside the verified real-activity/tax ledger.
 """
 from __future__ import annotations
@@ -40,7 +41,9 @@ def active_session_keys(limit: int = BATCH_LIMIT) -> list[tuple[str,str]]:
         with conn.cursor(row_factory=dict_row) as cur:
             # Oldest processed sessions first => fairness for multiple users.
             cur.execute("""SELECT privy_did,asset
-                FROM mininex_user_paper_sessions WHERE status='ACTIVE'
+                FROM mininex_user_paper_sessions
+                WHERE status='ACTIVE'
+                   OR (status='PAUSED' AND state_json->>'pause_exit_pending'='true')
                 ORDER BY updated_at ASC,privy_did,asset
                 LIMIT %s""",(min(max(1,limit),BATCH_LIMIT),))
             return [(row["privy_did"],row["asset"]) for row in cur.fetchall()]

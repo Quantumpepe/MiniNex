@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 import math
+import time
 from typing import Any
 
 import psycopg
@@ -87,13 +88,53 @@ def _reconcile_virtual_budget(p: PaperPortfolio, current: Decimal, requested: De
     return True
 
 
+# Server-owned runtime/PAUSED-exit metadata persists through normal ticks.
+_RUNTIME_FIELDS=("runtime_started_at","runtime_active_since","runtime_elapsed_seconds")
+
+def _paper_state_with_runtime(p: PaperPortfolio, stored: dict | None,
+                              now: float, *, active: bool=False) -> dict:
+    data=_state_of(p)
+    original=stored if isinstance(stored,dict) else {}
+    for field in _RUNTIME_FIELDS:
+        value=original.get(field)
+        if type(value) in (int,float) and math.isfinite(value) and value>=0:
+            data[field]=float(value)
+    if "runtime_started_at" not in data:
+        data["runtime_started_at"]=now
+    if "runtime_elapsed_seconds" not in data:
+        data["runtime_elapsed_seconds"]=0.0
+    if active and "runtime_active_since" not in data:
+        data["runtime_active_since"]=now
+    if original.get("pause_exit_pending") is True:
+        data["pause_exit_pending"]=True
+    return data
+
+
+def _active_runtime_seconds(row: dict, state: dict) -> tuple[int,bool]:
+    elapsed=state.get("runtime_elapsed_seconds")
+    active_since=state.get("runtime_active_since")
+    if type(elapsed) not in (float,int) or not math.isfinite(elapsed) or elapsed<0:
+        return 0,False
+    if row["status"]=="ACTIVE" and type(active_since) in (float,int) and math.isfinite(active_since):
+        elapsed+=max(0.0,time.time()-active_since)
+    return max(0,int(elapsed)),True
+
+
 def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
     if row is None:
         return {"status":"NOT_STARTED","paper_only":True,"real_trading_enabled":False,
-                "wallet_funds_used":False,"trades":[]}
+                "wallet_funds_used":False,"trades":[],
+                "runtime_active_seconds":None,"runtime_tracked":False,
+                "pause_exit_pending":False,"pause_exit_completed":False}
     state=row["state_json"] or {}
+    runtime_seconds,runtime_tracked=_active_runtime_seconds(row,state)
     return {
         "asset":row["asset"],"status":row["status"],
+        "runtime_active_seconds":runtime_seconds if runtime_tracked else None,
+        "runtime_tracked":runtime_tracked,
+        "pause_exit_pending":state.get("pause_exit_pending") is True,
+        "pause_exit_completed":row["status"]=="PAUSED" and state.get("pause_exit_pending") is not True
+                               and float(state.get("coin_quantity",0))==0,
         "settlement":row["settlement"],"strategy_mode":row["strategy_mode"],
         "horizon":row["horizon"],"budget_percent":row["budget_percent"],
         "demo_start_cash":str(row["initial_demo_cash"]),
@@ -308,13 +349,17 @@ def start_user_paper(did: str,asset: str,market: Any | None = None) -> dict:
                     p.stable_cash=0.0
                     p.entry_price=price
                     p.peak_price=price
+                started_at=time.time()
+                state={**_state_of(p),"runtime_started_at":started_at,
+                       "runtime_active_since":started_at,
+                       "runtime_elapsed_seconds":0.0}
                 cur.execute("""INSERT INTO mininex_user_paper_sessions
                     (privy_did,asset,status,settlement,strategy_mode,horizon,
                      budget_percent,initial_demo_cash,state_json)
                     VALUES (%s,%s,'ACTIVE',%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (privy_did,asset) DO NOTHING""",
                     (did,asset,settings["stable"],settings["mode"],settings["horizon"],
-                     settings["percent"],simulated,Jsonb(_state_of(p))))
+                     settings["percent"],simulated,Jsonb(state)))
                 if cur.rowcount!=1:
                     raise HTTPException(409,"Personal simulation already exists")
                 row=_session_row(cur,did,asset)
@@ -324,25 +369,95 @@ def start_user_paper(did: str,asset: str,market: Any | None = None) -> dict:
         raise HTTPException(503,"Personal simulation unavailable") from None
 
 
-def set_user_paper_status(did: str,asset: str,action: str) -> dict:
+def _settle_pending_pause(cur, row: dict, did: str, asset: str,
+                          market: Any | None, now: float) -> dict:
+    """Sell simulated native holdings with an independently verified quote.
+
+    User is already PAUSED before attempting the sale. An invalid/offline
+    market leaves the position untouched and pending for automatic retry.
+    Same row-level lock as engine buys, so no duplicate or race with fills.
+    """
+    stored=row["state_json"] or {}
+    if row["status"]!="PAUSED" or stored.get("pause_exit_pending") is not True:
+        return row
+    p=_restore(asset,row["settlement"],stored,row["initial_demo_cash"])
+    updated=_paper_state_with_runtime(p,stored,now,active=False)
+    if p.coin_quantity>0:
+        if market is None:
+            return row
+        try:
+            price_feed=market.snapshot(now=now)["markets"][asset]
+            price=price_feed.get("price_usdt")
+            if (price_feed.get("market_data_valid") is not True or
+                type(price) not in (int,float) or
+                not math.isfinite(price) or price<=0):
+                return row
+            engine=PaperAutoEngine(market)
+            quote=engine._sell_quote(asset,p.coin_quantity,float(price))
+            if quote is None:
+                return row  # Negative proceeds after costs: keep pending.
+        except Exception:
+            # An unavailable/invalid market must NEVER undo the pause itself.
+            # No SQL or ledger mutations have occurred at this point.
+            return row
+        engine._paper_sell(p,quote,now,float(price),"USER_PAUSE_TO_STABLE")
+        event=p.trade_history[-1]
+        cur.execute("""INSERT INTO mininex_user_paper_trades
+            (privy_did,asset,event_id,occurred_at,event_json)
+            VALUES (%s,%s,%s,%s,%s)
+            ON CONFLICT (privy_did,asset,event_id) DO NOTHING""",
+            (did,asset,p.trade_count,datetime.fromisoformat(event["at"]),Jsonb(event)))
+        updated=_paper_state_with_runtime(p,stored,now,active=False)
+    updated.pop("pause_exit_pending",None)
+    cur.execute("""UPDATE mininex_user_paper_sessions
+        SET state_json=%s,revision=revision+1,updated_at=now()
+        WHERE privy_did=%s AND asset=%s AND status='PAUSED'
+        RETURNING *""",(Jsonb(updated),did,asset))
+    return cur.fetchone()
+
+
+def set_user_paper_status(did: str,asset: str,action: str,
+                          market: Any | None = None,now: float | None = None) -> dict:
     did=_safe_did(did)
     asset=_asset(asset)
     if action not in ("pause","resume"):
         raise HTTPException(404,"Unknown simulation action")
+    at=time.time() if now is None else now
+    if type(at) not in (int,float) or not math.isfinite(at) or at<=0:
+        raise HTTPException(422,"Invalid session clock")
     before,after=("ACTIVE","PAUSED") if action=="pause" else ("PAUSED","ACTIVE")
     try:
         url=_db_url();_ensure_schema(url)
         with psycopg.connect(url,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 _prepare_rows(cur,did)
-                cur.execute("""UPDATE mininex_user_paper_sessions
-                    SET status=%s,revision=revision+1,updated_at=now()
-                    WHERE privy_did=%s AND asset=%s AND status=%s
-                    RETURNING *""",(after,did,asset,before))
-                row=cur.fetchone()
-                if row is None:
+                row=_session_row(cur,did,asset,lock=True)
+                if not row or row["status"]!=before:
                     raise HTTPException(409,"Session not in required state")
-                return _session_data(row,_trades(cur,did,asset))
+                stored=row["state_json"] or {}
+                if action=="resume" and stored.get("pause_exit_pending") is True:
+                    raise HTTPException(409,"Pause settlement must finish before resume")
+                p=_restore(asset,row["settlement"],stored,row["initial_demo_cash"])
+                state=_paper_state_with_runtime(p,stored,at,active=action=="resume")
+                if action=="pause":
+                    started=state.pop("runtime_active_since",None)
+                    if started is not None:
+                        state["runtime_elapsed_seconds"]+=max(0.0,at-started)
+                    if p.coin_quantity>0:
+                        state["pause_exit_pending"]=True
+                    else:
+                        state.pop("pause_exit_pending",None)
+                else:
+                    state["runtime_active_since"]=at
+                    state.pop("pause_exit_pending",None)
+                cur.execute("""UPDATE mininex_user_paper_sessions
+                    SET status=%s,state_json=%s,revision=revision+1,updated_at=now()
+                    WHERE privy_did=%s AND asset=%s AND status=%s
+                    RETURNING *""",(after,Jsonb(state),did,asset,before))
+                updated=cur.fetchone()
+                if action=="pause" and state.get("pause_exit_pending") is True:
+                    updated=_settle_pending_pause(cur,updated,did,asset,market,at)
+                return _session_data(updated,_trades(cur,did,asset))
     except psycopg.Error:
         LOG.warning("MiniNex personal paper status unavailable")
         raise HTTPException(503,"Personal simulation unavailable") from None
@@ -359,6 +474,9 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
             with conn.cursor(row_factory=dict_row) as cur:
                 _prepare_rows(cur,did)
                 row=_session_row(cur,did,asset,lock=True)
+                if row and row["status"]=="PAUSED" and (row["state_json"] or {}).get("pause_exit_pending") is True:
+                    completed=_settle_pending_pause(cur,row,did,asset,market,now)
+                    return _session_data(completed,_trades(cur,did,asset))
                 if not row or row["status"]!="ACTIVE":
                     raise HTTPException(409,"Start or resume the personal simulation first")
                 # Shared market snapshot, individual portfolio. We do not connect
@@ -384,7 +502,7 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                             SET state_json=%s,initial_demo_cash=%s,budget_percent=%s,
                                 revision=revision+1,updated_at=now()
                             WHERE privy_did=%s AND asset=%s RETURNING *""",
-                            (Jsonb(_state_of(p)),new_initial,new_percent,did,asset))
+                            (Jsonb(_paper_state_with_runtime(p,row["state_json"],now,active=True)),new_initial,new_percent,did,asset))
                         row=cur.fetchone()
                     return _session_data(row,_trades(cur,did,asset))
                 engine.portfolios={asset:p}
@@ -415,7 +533,7 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                     SET state_json=%s,initial_demo_cash=%s,budget_percent=%s,
                         revision=revision+1,updated_at=now()
                     WHERE privy_did=%s AND asset=%s RETURNING *""",
-                    (Jsonb(_state_of(p)),new_initial,new_percent,did,asset))
+                    (Jsonb(_paper_state_with_runtime(p,row["state_json"],now,active=True)),new_initial,new_percent,did,asset))
                 updated=cur.fetchone()
                 return _session_data(updated,_trades(cur,did,asset))
     except psycopg.Error:

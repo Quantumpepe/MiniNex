@@ -555,3 +555,36 @@
   .privy-asset-toggle-price strong{font-size:13px}
   .privy-asset-toggle-price small{font-size:9px}
 }
+
+
+/* Account-scoped PAPER stop and runtime inside the independent coin cards. */
+.privy-paper-action{
+  display:grid;gap:10px;margin-top:2px;padding-top:12px;
+  border-top:1px solid #2a5655;
+}
+.privy-paper-action-top{
+  display:grid;grid-template-columns:auto 1fr;align-items:baseline;
+  column-gap:10px;row-gap:5px;color:#b7d9cf;font-size:12px;
+}
+.privy-paper-action-top>strong{
+  color:#e8fff4;font-variant-numeric:tabular-nums;text-align:right;
+  font-size:15px;letter-spacing:.1px;
+}
+.privy-paper-action-state{
+  grid-column:1/-1;color:#92b6aa;font-size:11px;
+}
+.privy-paper-stop{
+  background:#64322f;border:1px solid #e28b76;color:#fff2ee;
+  font-weight:750;min-height:42px;
+}
+.privy-paper-stop:hover,.privy-paper-stop:focus-visible{
+  background:#864039;border-color:#ffb097;
+}
+.privy-paper-action .privy-wallet-description{
+  margin:0;line-height:1.45;font-size:11px;
+}
+.privy-paper-retry{
+  display:inline-block;margin-left:8px;border:0;padding:0;
+  background:transparent;color:#7cf1c4;text-decoration:underline;
+  font:inherit;cursor:pointer;
+}

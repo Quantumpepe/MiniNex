@@ -22,7 +22,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget,marketSnapshot,syncedAt,lang='de'}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget,renderSessionControls,marketSnapshot,syncedAt,lang='de'}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -160,6 +160,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
               (['mode','stable','horizon'].every(key=>settings[asset][key]===saved[asset][key]))}
             onClick={()=>save(asset)}>{t.privyBudgetSave} {asset}</button>
           {renderBudget?.(asset)}
+          {renderSessionControls?.(asset)}
         </div>
       </section>;
     })}

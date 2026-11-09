@@ -5,6 +5,7 @@ import {Copy, LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
 import {API_BASE} from './data.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
+import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 
 
@@ -292,6 +293,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
       disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
   </div>;
 
+  const renderSessionControls = asset =>
+    <AssetPaperControl asset={asset} t={t} getAccessToken={getAccessToken}
+      enabled={identityStatus==='verified' && databaseStatus==='stored'}/>;
+
   return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2></div>
     <div className="privy-panel-body privy-wallet-layout">
@@ -323,7 +328,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
 
           <TradingSetupPreview t={t} getAccessToken={getAccessToken}
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
-            renderBudget={renderBudget}
+            renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
           <details className="privy-disclosure privy-technical-section">

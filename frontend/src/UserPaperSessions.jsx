@@ -101,6 +101,10 @@ function PersonalDemo({t,lang}) {
       <p className="privy-wallet-description">
         {t.personalDemoStatus}: {current.status||'NOT_STARTED'} · {current.settlement||'USDC'} · {current.strategy_mode||'LONG'} · {current.horizon||'15m'}
       </p>
+      {current.runtime_tracked===true&&Number.isFinite(current.runtime_active_seconds)&&
+        <p className="privy-wallet-description">{t.privyPaperRuntime}: {Math.floor(current.runtime_active_seconds/3600)}:{String(Math.floor(current.runtime_active_seconds%3600/60)).padStart(2,'0')}:{String(current.runtime_active_seconds%60).padStart(2,'0')}</p>}
+      {current.status==='PAUSED'&&current.pause_exit_pending===true&&
+        <p className="privy-wallet-description" role="status">{t.privyPaperPendingInfo} {current.settlement}.</p>}
       {current.status!=='NOT_STARTED'&&<p className="privy-wallet-description">
         {t.personalDemoLastCheck}: {position.last_evaluated_at?
           formatTimestamp(position.last_evaluated_at,undefined,{year:'numeric',month:'2-digit',day:'2-digit'}):'—'} · {position.last_reason||'WAIT'}
@@ -147,7 +151,7 @@ function PersonalDemo({t,lang}) {
         {current.status==='ACTIVE'&&<>
           <button type="button" disabled={busy} onClick={()=>command('pause')}>{t.personalDemoPause}</button>
         </>}
-        {current.status==='PAUSED'&&<button type="button" disabled={busy}
+        {current.status==='PAUSED'&&current.pause_exit_pending!==true&&<button type="button" disabled={busy}
           onClick={()=>command('resume')}>{t.personalDemoResume}</button>}
         {status==='failed'&&<button type="button" disabled={busy}
           onClick={async()=>{
