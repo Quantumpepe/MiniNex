@@ -25,6 +25,16 @@ test('BTC, ETH, USDC and USDT each have a validated mainnet balance',()=>{
   missing.balances.BTC.balance=null;
   missing.balances.BTC.status='wallet_missing';
   assert.equal(validateWalletBalanceResponse(missing),true);
+  const unavailable=valid();
+  unavailable.balances.ETH={balance:null,status:'unavailable',network:'ethereum-mainnet'};
+  assert.equal(validateWalletBalanceResponse(unavailable),true);
+  assert.equal(unavailable.balances.BTC.balance,'0.00000123');
+  const allZero=valid();
+  for(const asset of ASSETS){
+    allZero.balances[asset].balance='0';
+    allZero.balances[asset].status='verified';
+  }
+  assert.equal(validateWalletBalanceResponse(allZero),true);
 });
 
 test('never equate missing verification or live signing authority with read-only',()=>{
@@ -39,6 +49,8 @@ test('never equate missing verification or live signing authority with read-only
     value=>{value.balances.USDC.network='polygon-mainnet';},
     value=>{value.balances.USDT.status='unverified';},
     value=>{value.balances.ETH.balance='NaN';},
+    value=>{value.balances.ETH.status='unavailable';value.balances.ETH.balance='0';},
+    value=>{value.balances.USDC.status='verified';value.balances.USDC.balance=null;},
     value=>{value.balances.ETH.balance='1e100';},
     value=>{value.balances.USDC.balance='-25';},
     value=>{value.balances.USDC.balance=null;},
@@ -71,4 +83,16 @@ test('wallet balances are requested only with bearer auth and never sent to trad
   assert.match(i18n,/Echte Wallet-Guthaben · nur lesen/);
   assert.match(i18n,/Real wallet balances · read-only/);
   assert.match(i18n,/NICHT dein PAPER-Budget/);
+});
+
+test('verified zero is rendered as zero; only failed source as unavailable',()=>{
+  const wallet=readFileSync(new URL('../src/WalletBalances.jsx',import.meta.url),'utf8');
+  const i18n=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
+  assert.match(wallet,/balances\[asset\]\.status==='verified'/);
+  assert.match(wallet,/balances\[asset\]\.balance\+' '\+asset/);
+  assert.match(wallet,/t\.privyBalancesUnavailable/);
+  assert.match(wallet,/t\.privyBalancesPrivySetup/);
+  assert.match(wallet,/t\.privyBalancesPrivyFailed/);
+  assert.match(i18n,/Der private Privy-Zugang fehlt im Backend/);
+  assert.match(i18n,/Vorübergehend nicht verfügbar/);
 });
