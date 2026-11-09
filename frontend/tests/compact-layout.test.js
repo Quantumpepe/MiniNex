@@ -40,3 +40,24 @@ test('Mobile home aligns logo, language switch and settings in one row',()=>{
   assert.match(css,/\.app-shell--home \.topbar \.header-actions\{display:none\}/);
   assert.match(css,/\.compact-home-actions\{display:flex;align-items:center/);
 });
+
+test('mobile Home shows private paper portfolio before BTC and ETH cards',()=>{
+  assert.match(compact,/function PaperPortfolioCard\(/);
+  assert.match(compact,/portfolioSummary=\{null\}|portfolioSummary=null/);
+  assert.match(compact,/<PaperPortfolioCard t=\{t\}/);
+  assert.ok(compact.indexOf('<PaperPortfolioCard') < compact.indexOf('className="compact-price-cards"'));
+  assert.match(compact,/compact-wallet-curve/);
+  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce\)/);
+  assert.match(app,/portfolioSummary=\{paperHome.summary\}/);
+  assert.match(css,/\.compact-wallet-portfolio\{/);
+  assert.match(css,/\.compact-chart-large,\.compact-chart-empty\{height:120px/);
+});
+
+test('wallet card does not imply real wallet trading or fabricate a history',()=>{
+  assert.match(compact,/paperAvailable\?'PAPER':'LIVE/);
+  assert.match(compact,/aria-disabled="true"/);
+  assert.match(compact,/compact-market-modes/);
+  assert.match(compact,/summary&&chart/);
+  assert.match(compact,/paperSparkline\(samples\)/);
+  assert.doesNotMatch(compact,/LIVE.*\d{3,}/);
+});
