@@ -633,16 +633,23 @@
 }
 
 
-/* A downloaded OTA is not yet active: show calm, concrete restart guidance. */
-.update-activation-note{
-  margin:12px 0 14px;padding:9px 0 9px 13px;
-  border-left:3px solid #57caaa;
-  color:#b8d8d0;
+/* Clear OTA state: spinning while checking/downloading/waiting for
+   activation; green only once Capacitor reports the latest version active. */
+.update-progress-icon{color:#66e1c3}
+.update-progress-icon.is-spinning svg{
+  animation:mininex-ota-spin 1.4s linear infinite;
 }
-.update-activation-note strong{
-  display:block;font-size:12px;line-height:1.5;color:#d6fff0;
+.update-progress-icon.is-complete{
+  background:#124c39;border:1px solid #278b6a;color:#79f0ba;
 }
-.update-activation-note p{
-  margin:8px 0 0;font-size:12px;line-height:1.55;
-  overflow-wrap:anywhere;
+@keyframes mininex-ota-spin{
+  to{transform:rotate(360deg)}
+}
+.update-status-details .update-activation-note{
+  margin:10px 0 12px;padding:9px 0 9px 12px;
+  border-left:2px solid #57caaa;
+  color:#b8d8d0;line-height:1.55;
+}
+@media(prefers-reduced-motion:reduce){
+  .update-progress-icon.is-spinning svg{animation:none}
 }
