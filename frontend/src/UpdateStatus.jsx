@@ -13,7 +13,7 @@ export default function UpdateStatus({lang}) {
     current:de?'Kein neueres Update gefunden':'No newer update found',
     checking:de?'Prüfe GitHub auf Updates …':'Checking GitHub for updates…',
     downloading:de?'Geprüftes Update wird heruntergeladen …':'Downloading verified update…',
-    ready:de?'Update bereit – App schliessen und neu öffnen':'Update ready – close and reopen the app',
+    ready:de?'Update heruntergeladen – Aktivierung noch ausstehend':'Update downloaded – activation still pending',
     unavailable:de?'Kein kompatibles Update verfügbar':'No compatible update available',
     error:de?'Update-Prüfung oder Installation fehlgeschlagen':'Update check or installation failed'
   };
@@ -38,6 +38,18 @@ export default function UpdateStatus({lang}) {
         {status.version&&<p className="small-note">{de?'Installierte Webversion: ':'Installed web version: '}{status.version==='builtin'?(de?'APK-Version':'APK version'):status.version}</p>}
         {status.availableVersion&&<p className="small-note">{de?'Neueste geprüfte Version: ':'Latest verified version: '}{status.availableVersion}</p>}
         {checked&&<p className="small-note">{de?'Letzte Prüfung: ':'Last checked: '}{checked}</p>}
+        {status.stage==='ready'&&<div className="update-activation-note" role="note">
+          <strong>{de?'Das Update ist sicher heruntergeladen, aber noch nicht aktiv.':'The update is safely downloaded but not yet active.'}</strong>
+          <p>{de
+            ? 'Die Aktivierung kann etwas dauern. MiniNex vollständig schliessen (auch aus der Android-App-Übersicht entfernen) und erneut öffnen. Falls nötig nochmals schliessen und öffnen.'
+            : 'Activation may take some time. Fully close MiniNex (including removing it from Android recent apps) and reopen it. Repeat if needed.'}</p>
+          <p>{de
+            ? 'Die bisherige Version läuft bis dahin weiter. Bitte MiniNex nicht deinstallieren: Wallet und PAPER-Daten bleiben erhalten.'
+            : 'The previous version keeps working in the meantime. Do not uninstall MiniNex: wallet and PAPER data are preserved.'}</p>
+          <p>{de
+            ? 'Erst wenn „Installierte Webversion“ die neueste geprüfte Version anzeigt, ist das Update aktiviert.'
+            : 'The update is active only when “Installed web version” matches the latest verified version.'}</p>
+        </div>}
         {supported&&<button type="button" className="update-check-button"
           onClick={()=>{void checkMiniNexUpdates({force:true});}}
           disabled={working} aria-label={de?'Jetzt nach Updates suchen':'Check for updates now'}>

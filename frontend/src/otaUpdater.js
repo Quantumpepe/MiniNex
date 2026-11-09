@@ -86,7 +86,10 @@ export async function checkMiniNexUpdates({force=false}={}) {
     phase='activation';
     await CapacitorUpdater.next({id:bundle.id});
     // App keeps running; update is loaded on next restart, not during a trade.
-    publish({stage:'ready',version:candidate.version,reason:null});
+    // The downloaded bundle is queued, NOT installed yet. Report the actual
+    // running version until CapacitorUpdater.current() confirms activation.
+    // Otherwise the settings screen falsely implies activation has finished.
+    publish({stage:'ready',version:installed,availableVersion:candidate.version,reason:null});
   }catch{
     // Fail closed. Running app and paper trading remain unchanged if offline.
     // Show which part failed rather than incorrectly claiming 'up to date'.
