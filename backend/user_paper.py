@@ -23,7 +23,7 @@ from .auto_engine import PaperAutoEngine, PaperPortfolio
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did, ASSETS
 
 LOG=logging.getLogger("mininex.user_paper")
-PAPER_START_USD=Decimal("1000.00")
+PAPER_START_USD=Decimal("5000.00")
 _STATE_FIELDS=(
     "stable_cash","coin_quantity","cost_basis","initial_equity","entry_price",
     "peak_price","last_exit_price","post_exit_low","last_trade_at","last_evaluated_at","last_decision",
@@ -65,6 +65,25 @@ def _restore(asset: str, settlement: str, state: dict, initial: Decimal) -> Pape
     if p.stable_cash<0 or p.coin_quantity<0 or p.cost_basis<0:
         raise ValueError("Invalid negative paper state")
     return p
+
+
+def _reconcile_virtual_budget(p: PaperPortfolio, current: Decimal, requested: Decimal) -> bool:
+    """Rebase PAPER cash without rewriting fills, positions or realized PnL.
+
+    Increases credit virtual stable cash. Decreases are deferred if capital is
+    locked in a position, rather than forcing a sale or negative cash balance.
+    This never accesses a real wallet or grants trading permission.
+    """
+    if requested < 0:
+        raise ValueError("Negative virtual budget")
+    delta = float(requested - current)
+    if not math.isfinite(delta):
+        raise ValueError("Invalid virtual budget")
+    if delta < 0 and p.stable_cash + delta < -1e-7:
+        return False
+    p.stable_cash = max(0.0, p.stable_cash + delta)
+    p.initial_equity = float(requested)
+    return True
 
 
 def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
@@ -228,7 +247,7 @@ def market_feed_for_paper_start(asset: str, market: Any | None = None) -> dict:
 
 
 def start_user_paper(did: str,asset: str,market: Any | None = None) -> dict:
-    """Opt-in to 1,000 *virtual* USD baseline, scaled by user's saved percent."""
+    """Opt-in to 5,000 *virtual* USD baseline, scaled by user's saved percent."""
     did=_safe_did(did)
     asset=_asset(asset)
     try:
@@ -319,7 +338,26 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                 engine=PaperAutoEngine(market)
                 p=_restore(asset,row["settlement"],row["state_json"],row["initial_demo_cash"])
                 p.strategy_mode=row["strategy_mode"]
+                # Apply saved percentage to this session, including on a new baseline.
+                # The session row lock prevents duplicate credits across workers.
+                cur.execute("""SELECT percent FROM mininex_budget_preferences
+                    WHERE privy_did=%s AND asset=%s""",(did,asset))
+                preference=cur.fetchone()
+                if preference is None:
+                    raise HTTPException(503,"Personal demo budget unavailable")
+                previous=Decimal(row["initial_demo_cash"])
+                requested=PAPER_START_USD*Decimal(preference["percent"])/Decimal(100)
+                applied=_reconcile_virtual_budget(p,previous,requested)
+                new_initial=requested if applied else previous
+                new_percent=int(preference["percent"]) if applied else row["budget_percent"]
                 if p.last_evaluated_at is not None and now-p.last_evaluated_at<12:
+                    if new_initial != previous or new_percent != row["budget_percent"]:
+                        cur.execute("""UPDATE mininex_user_paper_sessions
+                            SET state_json=%s,initial_demo_cash=%s,budget_percent=%s,
+                                revision=revision+1,updated_at=now()
+                            WHERE privy_did=%s AND asset=%s RETURNING *""",
+                            (Jsonb(_state_of(p)),new_initial,new_percent,did,asset))
+                        row=cur.fetchone()
                     return _session_data(row,_trades(cur,did,asset))
                 engine.portfolios={asset:p}
                 feed=market.snapshot(now=now)["markets"][asset]
@@ -346,9 +384,10 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                         ON CONFLICT (privy_did,asset,event_id) DO NOTHING""",
                         (did,asset,event_id,timestamp,Jsonb(event)))
                 cur.execute("""UPDATE mininex_user_paper_sessions
-                    SET state_json=%s,revision=revision+1,updated_at=now()
+                    SET state_json=%s,initial_demo_cash=%s,budget_percent=%s,
+                        revision=revision+1,updated_at=now()
                     WHERE privy_did=%s AND asset=%s RETURNING *""",
-                    (Jsonb(_state_of(p)),did,asset))
+                    (Jsonb(_state_of(p)),new_initial,new_percent,did,asset))
                 updated=cur.fetchone()
                 return _session_data(updated,_trades(cur,did,asset))
     except psycopg.Error:
