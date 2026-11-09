@@ -28,9 +28,12 @@ test('no transfers/delegations or private credentials in client wallet',()=>{
   assert.doesNotMatch(auth,/sendTransaction\s*\(|transfer\s*\(|privateKey|appSecret|delegateWallet|signMessage\s*\(/);
   assert.doesNotMatch(cfg,/VITE_PRIVY_APP_SECRET|privateKey|appSecret/);
 });
-test('frontend CI only validates; never publishes an APK',()=>{
+test('frontend CI publishes only tested web bundles, never a signed APK',()=>{
   assert.match(workflow,/npm run build/);
-  assert.doesNotMatch(workflow,/gh release|upload-artifact|assembleDebug/);
+  assert.match(workflow,/needs: frontend-check/);
+  assert.match(workflow,/gh release create/);
+  assert.match(workflow,/mininex-web\.zip/);
+  assert.doesNotMatch(workflow,/upload-artifact|assembleDebug|\.apk/);
 });
 
 test('native BTC placeholder cannot be mistaken for an EVM receiving address',()=>{
