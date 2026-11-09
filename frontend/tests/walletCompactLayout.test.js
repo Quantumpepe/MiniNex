@@ -27,7 +27,8 @@ test('wallet starts with verified balances, then collapsible addresses',()=>{
 });
 
 test('BTC and ETH settings each contain exactly their own budget slider',()=>{
-  assert.match(setup,/\['BTC','ETH'\]\.map\(asset=><section key=\{asset\}/);
+  assert.match(setup,/\['BTC','ETH'\]\.map\(asset=>\{/);
+  assert.match(setup,/return <section key=\{asset\}/);
   assert.match(setup,/\{renderBudget\?\.\(asset\)\}/);
   assert.match(wallet,/renderBudget=\{renderBudget\}/);
   assert.match(wallet,/const renderBudget = asset =>/);

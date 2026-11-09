@@ -469,7 +469,7 @@ export default function App() {
 
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
-          <PrivyWalletPanel t={t}/>
+          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt}/>
           <UserPaperSessions t={t} lang={language}/>
         </>}
 
