@@ -149,16 +149,41 @@ def add_paper_mark_to_market(result: dict, market: Any) -> dict:
            "pricing_basis":"PAPER_ESTIMATE_ONLY"}
     result["position"]["valuation"]=empty
     try:
+        coin=float(position.get("coin_quantity") or 0)
+        cash=float(position.get("stable_cash") or 0)
+        basis=float(position.get("cost_basis") or 0)
+        if not all(math.isfinite(x) for x in (coin,cash,basis)):
+            return result
+        if coin<0 or cash<0 or basis<0:
+            return result
+        # Pure stablecoin PAPER balances have a verifiable cash value even if
+        # BTC/ETH data is offline. Do not fabricate a coin quote, or suppress
+        # legitimate user cash because the public market feed is stale.
+        if coin == 0:
+            if basis != 0:
+                return result  # inconsistent ledger: never invent equity
+            empty.update({
+                "quote_valid":True,
+                "price_usdt":None,
+                "estimated_sale_gross_usd":0.0,
+                "estimated_sale_costs_usd":0.0,
+                "estimated_sale_fee_usd":0.0,
+                "estimated_sale_spread_slippage_usd":0.0,
+                "estimated_sale_network_fee_usd":0.0,
+                "estimated_exit_net_usd":0.0,
+                "unrealized_net_pnl_usd":0.0,
+                "unrealized_net_pct":0.0,
+                "estimated_total_equity_usd":round(cash,6),
+                "pricing_basis":"PAPER_CASH_ONLY_NO_MARKET_QUOTE",
+            })
+            return result
+        # An open BTC/ETH position must still have a fresh cross-checked
+        # executable-looking reference before estimated liquidation PnL.
         feed=market.snapshot()["markets"][asset]
         if not feed.get("market_data_valid"):
             return result
         price=float(feed["price_usdt"])
-        coin=float(position.get("coin_quantity") or 0)
-        cash=float(position.get("stable_cash") or 0)
-        basis=float(position.get("cost_basis") or 0)
-        if not all(math.isfinite(x) for x in (price,coin,cash,basis)):
-            return result
-        if price<=0 or coin<0 or cash<0 or basis<0:
+        if not math.isfinite(price) or price<=0:
             return result
         engine=PaperAutoEngine(market)
         sale=engine._sell_quote(asset,coin,price) if coin>engine.rules.min_coin_units else None
