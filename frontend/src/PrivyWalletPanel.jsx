@@ -121,7 +121,7 @@ function NativeBtcWallet({user, t}) {
 
 // Deliberately no sendTransaction, withdrawal or delegation path here.
 // The existing backend is PAPER-only, even when a user signs in to Privy.
-function ConnectedPrivyWallet({t}) {
+function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
   const {ready, authenticated, user, login, logout, getAccessToken} = usePrivy();
   const {wallets, ready:walletsReady} = useWallets();
   const [error,setError]=useState(false);
@@ -323,7 +323,8 @@ function ConnectedPrivyWallet({t}) {
 
           <TradingSetupPreview t={t} getAccessToken={getAccessToken}
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
-            renderBudget={renderBudget}/>
+            renderBudget={renderBudget}
+            marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
           <details className="privy-disclosure privy-technical-section">
             <summary>
@@ -352,7 +353,7 @@ function ConnectedPrivyWallet({t}) {
     </div>
   </section>;
 }
-export default function PrivyWalletPanel({t}) {
+export default function PrivyWalletPanel({t,lang,marketSnapshot,syncedAt}) {
   if(!PRIVY_APP_ID) return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
     <div className="privy-panel-body">
@@ -360,5 +361,5 @@ export default function PrivyWalletPanel({t}) {
 
     </div>
   </section>;
-  return <ConnectedPrivyWallet t={t}/>;
+  return <ConnectedPrivyWallet t={t} lang={lang} marketSnapshot={marketSnapshot} syncedAt={syncedAt}/>;
 }
