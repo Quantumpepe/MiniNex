@@ -8,10 +8,14 @@ const NATIVE_ABI=String(import.meta.env?.VITE_MININEX_NATIVE_ABI||'').toLowerCas
 const NATIVE_SHA=String(import.meta.env?.VITE_MININEX_BUILD_SHA||'').toLowerCase();
 const NATIVE_BUILT_AT=String(import.meta.env?.VITE_MININEX_BUILD_AT||'');
 const CHECK_INTERVAL_MS=60*60*1000;
+const ERROR_RETRY_INTERVAL_MS=2*60*1000;
+const TRANSIENT_RETRY_DELAY_MS=5000;
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 let lastCheck=0;
 let checking=false;
 let started=false;
+let retryScheduled=false;
 let state={stage:'inactive',version:null,availableVersion:null,lastChecked:null,reason:null};
 const subscribers=new Set();
 const publish=next=>{
@@ -40,19 +44,45 @@ export function notifyMiniNexReady() {
 export async function checkMiniNexUpdates({force=false}={}) {
   if(!otaIsSupported()||checking)return;
   const now=Date.now();
-  if(!force&&now-lastCheck<CHECK_INTERVAL_MS)return;
+  const interval=state.stage==='error'&&state.reason!=='release-rate-limit'
+    ? ERROR_RETRY_INTERVAL_MS:CHECK_INTERVAL_MS;
+  if(!force&&now-lastCheck<interval)return;
   checking=true;
   lastCheck=now;
-  publish({stage:'checking',lastChecked:now,reason:null});
+  publish({stage:'checking',lastChecked:now,reason:null,httpStatus:null});
   let phase='release';
   try{
-    const response=await fetch(RELEASE_URL,{
+    const request=()=>fetch(RELEASE_URL,{
       method:'GET',headers:{Accept:'application/vnd.github+json'},cache:'no-store'
     });
+    let response;
+    try {response=await request();}
+    catch(err){
+      if(err instanceof TypeError)throw Object.assign(new Error('Network error'),{otaReason:'release-network'});
+      throw err;
+    }
+    // A brief bounded retry for transient upstream errors, never on 403/429.
+    if([502,503,504].includes(response.status)){
+      await wait(TRANSIENT_RETRY_DELAY_MS);
+      try {response=await request();}
+      catch(err){
+        if(err instanceof TypeError)throw Object.assign(new Error('Network error'),{otaReason:'release-network'});
+        throw err;
+      }
+    }
     // First installation before the first published release.
     if(response.status===404){publish({stage:'unavailable',reason:'no-release'});return;}
-    if(!response.ok)throw Error('Release lookup unavailable');
-    const release=await response.json();
+    if(!response.ok){
+      const limited=response.status===429||
+        (response.status===403&&(response.headers.get('x-ratelimit-remaining')==='0'||
+          response.headers.get('retry-after')!==null));
+      throw Object.assign(new Error('GitHub release HTTP '+response.status),{
+        otaReason:limited?'release-rate-limit':'release-http',httpStatus:response.status
+      });
+    }
+    let release;
+    try {release=await response.json();}
+    catch {throw Object.assign(new Error('Invalid GitHub response'),{otaReason:'release-invalid-response'});}
     const candidate=parseOtaRelease(release,NATIVE_ABI);
     if(!candidate){publish({stage:'unavailable',reason:'incompatible-release'});return;}
     publish({availableVersion:candidate.version});
@@ -90,10 +120,11 @@ export async function checkMiniNexUpdates({force=false}={}) {
     // running version until CapacitorUpdater.current() confirms activation.
     // Otherwise the settings screen falsely implies activation has finished.
     publish({stage:'ready',version:installed,availableVersion:candidate.version,reason:null});
-  }catch{
-    // Fail closed. Running app and paper trading remain unchanged if offline.
-    // Show which part failed rather than incorrectly claiming 'up to date'.
-    publish({stage:'error',reason:phase});
+  }catch(error){
+    // Fail closed: show the real release lookup failure, not a generic outage.
+    // Never expose wallet data or error body, only a safe HTTP status code.
+    const reason=phase==='release'?(error?.otaReason||'release-network'):phase;
+    publish({stage:'error',reason,httpStatus:phase==='release'?(error?.httpStatus||null):null});
   }finally{checking=false;}
 }
 
