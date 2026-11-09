@@ -305,3 +305,40 @@
   .compact-home-brand strong{font-size:19px}
   .compact-home-brand img{width:27px;height:27px}
 }
+
+/* Home portfolio: genuine private PAPER valuation only, no fabricated wallet funds. */
+@media(max-width:780px){
+  .compact-wallet-portfolio{
+    display:flex;flex-direction:column;gap:8px;min-width:0;
+    padding:12px 13px 10px;border:1px solid #297763;border-radius:17px;
+    background:linear-gradient(120deg,#123e35,#0b2428 80%);
+    box-shadow:inset 0 1px 0 #5ff1bf12;
+  }
+  .compact-wallet-top,.compact-wallet-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .compact-wallet-top>span{font-size:11px;color:#9dcac2;font-weight:750}
+  .compact-wallet-open{display:grid;place-items:center;background:#134b3e;color:#75f2bf;border:1px solid #286b56;border-radius:9px;width:29px;height:29px;flex-shrink:0}
+  .compact-wallet-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,42%);gap:8px;align-items:center;min-height:48px}
+  .compact-wallet-values{display:flex;flex-direction:column;gap:7px;min-width:0}
+  .compact-wallet-values strong{font-size:clamp(19px,5.4vw,29px);font-weight:850;letter-spacing:-.7px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .compact-wallet-values>span{font-size:12px;font-weight:800;white-space:nowrap}
+  .compact-wallet-values small{color:#9ab7b3;font-size:10px;line-height:1.3}
+  .compact-wallet-curve{display:grid;align-items:center;height:54px;min-width:0}
+  .compact-wallet-curve svg{width:100%;height:54px;display:block}
+  .compact-wallet-no-curve{font-size:10px;text-align:center;color:#709d94}
+  .compact-wallet-foot{color:#78aa9e;font-size:9px}
+  .compact-wallet-foot span:last-child{text-align:right}
+  /* Make room for the new wallet panel without sacrificing price legibility. */
+  .compact-quote-card{gap:9px;padding:11px 11px 12px}
+  .compact-quote-card .compact-token{width:26px;height:26px}
+  .compact-quote-change{font-size:13px}
+  .compact-main-chart{min-height:242px;gap:9px;padding:13px 12px}
+  .compact-chart-large,.compact-chart-empty{height:120px;min-height:110px}
+  .compact-chart-price strong{font-size:clamp(20px,5.2vw,29px)}
+}
+@media(max-width:365px){
+  .compact-wallet-portfolio{padding:10px}
+  .compact-wallet-body{grid-template-columns:minmax(0,1fr) minmax(70px,36%)}
+  .compact-wallet-values strong{font-size:18px}
+  .compact-wallet-values>span{font-size:11px}
+  .compact-wallet-foot{font-size:8px}
+}
