@@ -101,11 +101,6 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
       </div>
     </div>
     <PaperPortfolioCard t={t} lang={lang} summary={portfolioSummary} samples={portfolioSamples} authenticated={portfolioAuthenticated} paperAvailable={showSimulatedTrades} goTo={goTo}/>
-    <div className="compact-market-modes" role="group" aria-label={t.compactMode}>
-      <span className={'compact-market-mode'+(portfolioSummary?.runningAssets>0?' is-running':'')} title={lang==='de'?'Automatische Simulation':'Automatic paper simulation'}><Activity size={14}/>{t.compactAuto}<small>{portfolioSummary?.runningAssets>0?(lang==='de'?'Läuft':'Running'):(lang==='de'?'Inaktiv':'Inactive')}</small></span>
-      <span className={'compact-market-mode'+(showSimulatedTrades?' is-selected':'')}><span className="compact-mode-dot"/>{'PAPER'}<small>{showSimulatedTrades?(lang==='de'?'Simulation':'Simulation'):(lang==='de'?'Aus':'Off')}</small></span>
-      <span className="compact-market-mode is-locked" aria-disabled="true" title={lang==='de'?'Echtgeldhandel noch nicht freigeschaltet':'Live trading not yet enabled'}><Wallet size={13}/>{'LIVE'}<small>{lang==='de'?'Gesperrt':'Locked'}</small></span>
-    </div>
     <div className="compact-price-cards" role="tablist" aria-label={t.compactChooseAsset}>
       {['BTC','ETH'].map(a=>{
         const quote=marketSnapshot?.[a];
@@ -119,6 +114,11 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
           <span className={'compact-quote-change '+(movement!=null?(Number(movement)>=0?'text-positive':'text-negative'):'')}>{formatChange(movement)} <small>24h</small></span>
         </button>;
       })}
+    </div>
+    <div className="compact-market-modes" role="group" aria-label={t.compactMode}>
+      <span className={'compact-market-mode'+(portfolioSummary?.runningAssets>0?' is-running':'')} title={lang==='de'?'Automatische Simulation':'Automatic paper simulation'}><Activity size={14}/>{t.compactAuto}<small>{portfolioSummary?.runningAssets>0?(lang==='de'?'Läuft':'Running'):(lang==='de'?'Inaktiv':'Inactive')}</small></span>
+      <span className={'compact-market-mode'+(showSimulatedTrades?' is-selected':'')}><span className="compact-mode-dot"/>{'PAPER'}<small>{showSimulatedTrades?(lang==='de'?'Simulation':'Simulation'):(lang==='de'?'Aus':'Off')}</small></span>
+      <span className="compact-market-mode is-locked" aria-disabled="true" title={lang==='de'?'Echtgeldhandel noch nicht freigeschaltet':'Live trading not yet enabled'}><Wallet size={13}/>{'LIVE'}<small>{lang==='de'?'Gesperrt':'Locked'}</small></span>
     </div>
     <section className="compact-main-chart" aria-label={t.market}>
       <div className="compact-chart-top">
