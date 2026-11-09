@@ -312,3 +312,145 @@ def test_spot_short_does_not_sell_on_unverified_feed():
     engine.process_asset("BTC",{"market_data_valid":False,
         "price_usdt":70000,"reason":"PRIMARY_MISSING_OR_STALE"},1000)
     assert engine.portfolios["BTC"].trade_count==0
+
+def _allocation_signal(*, strong=False, falling=False):
+    return {
+        "ready": True, "window_high": 103.0, "window_low": 96.0,
+        "short_window_high": 102.0, "short_window_low": 97.0,
+        "momentum_60s_pct": 0.60 if strong else -0.35 if falling else 0.12,
+        "momentum_180s_pct": 0.85 if strong else -0.80 if falling else 0.15,
+        "momentum_600s_pct": 0.35, "rebound_from_window_low_pct": 0.32,
+        "fall_from_window_high_pct": 0.8, "recent_mean_price": 99.0,
+    }
+
+
+def test_first_buy_reserves_capital_on_cautious_signal_for_both_assets():
+    for asset in ("BTC", "ETH"):
+        engine=PaperAutoEngine(Market())
+        engine.portfolios[asset]=PaperPortfolio(asset=asset,settlement="USDC",stable_cash=5000.0)
+        engine._signal=lambda asset,now,price:_allocation_signal()
+        engine.process_asset(asset,verified(100.0),1000)
+        p=engine.portfolios[asset]
+        assert p.trade_count==1
+        assert 2000 < p.cost_basis < 4000
+        assert 1000 < p.stable_cash < 3000
+        assert p.trade_history[-1]["quantity"]==round(p.coin_quantity,12)
+
+
+def test_confirmed_strong_uptrend_can_use_essentially_all_5000():
+    for asset in ("BTC", "ETH"):
+        engine=PaperAutoEngine(Market())
+        engine.portfolios[asset]=PaperPortfolio(asset=asset,settlement="USDC",stable_cash=5000.0)
+        engine._signal=lambda asset,now,price:{
+            **_allocation_signal(strong=True),"window_high":100.0,"recent_mean_price":99.5}
+        engine.process_asset(asset,verified(100.0),1000)
+        p=engine.portfolios[asset]
+        assert p.trade_count==1
+        assert p.cost_basis>=4990
+        assert 0 <= p.stable_cash < 10
+        assert p.cost_basis+p.stable_cash <= 5000.000001
+
+
+def test_confirmed_recovery_can_add_to_eth_below_previous_buy():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="ETH",settlement="USDC",stable_cash=5000.0)
+    engine.portfolios["ETH"]=p
+    engine._signal=lambda asset,now,price:_allocation_signal()
+    engine.process_asset("ETH",verified(100.0),1000)
+    qty=p.coin_quantity
+    basis=p.cost_basis
+    remaining=p.stable_cash
+    engine._signal=lambda asset,now,price:{
+        **_allocation_signal(),"momentum_60s_pct":0.15,"momentum_180s_pct":-0.20,
+        "window_high":100.0,"window_low":97.5,
+        "rebound_from_window_low_pct":0.20,"recent_mean_price":97.8}
+    engine.process_asset("ETH",verified(98.0),1100)
+    assert p.trade_count==2 and p.add_count==1
+    assert p.coin_quantity>qty
+    assert p.cost_basis>basis and p.stable_cash<remaining
+    assert 0 <= p.stable_cash
+    assert p.entry_price<100
+    assert p.trade_history[-1]["reason"]=="ADD_REBOUND"
+    assert p.trade_history[-1]["quantity"]==round(p.coin_quantity-qty,12)
+    assert p.trade_history[-1]["position_quantity"]==round(p.coin_quantity,12)
+
+
+def test_small_decline_is_not_a_forced_exit_or_blind_buy():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=3000.0,
+        coin_quantity=20.0,cost_basis=2000.0,entry_price=100.0,
+        last_buy_price=100.0,last_trade_at=0.0)
+    engine.portfolios["BTC"]=p
+    engine._signal=lambda asset,now,price:{
+        **_allocation_signal(falling=True),"recent_mean_price":98.0,
+        "rebound_from_window_low_pct":0.0}
+    engine.process_asset("BTC",verified(97.5),1000)
+    assert p.trade_count==0
+    assert p.coin_quantity==20.0 and p.stable_cash==3000.0
+
+
+def test_severe_downtrend_exits_instead_of_unbounded_averaging():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=3000.0,
+        coin_quantity=20.0,cost_basis=2000.0,entry_price=100.0,last_trade_at=0.0)
+    engine.portfolios["BTC"]=p
+    engine._signal=lambda asset,now,price:{
+        **_allocation_signal(falling=True),"recent_mean_price":98.0,
+        "rebound_from_window_low_pct":0.0}
+    engine.process_asset("BTC",verified(96.0),1000)
+    assert p.last_reason=="RISK_TREND_BREAKDOWN"
+    assert p.coin_quantity==0 and p.stable_cash>3000
+    assert p.trade_history[-1]["realized_net_profit"]<0
+
+
+def test_emergency_gap_sells_without_waiting_for_historical_signals():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="ETH",settlement="USDC",stable_cash=3000.0,
+        coin_quantity=20.0,cost_basis=2000.0,entry_price=100.0)
+    engine.portfolios["ETH"]=p
+    engine._signal=lambda asset,now,price:{"ready":False,"reason":"SIGNAL_HISTORY_STALE"}
+    engine.process_asset("ETH",verified(93.0),1000)
+    assert p.last_reason=="RISK_EMERGENCY_EXIT"
+    assert p.coin_quantity==0
+
+
+def test_rally_adds_reserved_cash_up_to_budget_ceiling():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=2800.0,
+        coin_quantity=22.0,cost_basis=2200.0,entry_price=100.0,
+        last_buy_price=100.0,last_trade_at=0.0)
+    engine.portfolios["BTC"]=p
+    engine._signal=lambda asset,now,price:{
+        **_allocation_signal(strong=True),"window_high":101.0,"recent_mean_price":100.0}
+    engine.process_asset("BTC",verified(101.0),1000)
+    assert p.last_reason=="ADD_TREND"
+    assert p.add_count==1 and p.stable_cash<10
+    assert p.coin_quantity>22
+
+
+def test_post_exit_strong_breakout_can_reenter_without_dip():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=5000.0,
+        last_exit_price=100.0,post_exit_low=100.0,last_trade_at=0.0)
+    engine.portfolios["BTC"]=p
+    engine._signal=lambda asset,now,price:{
+        **_allocation_signal(strong=True),"window_high":100.5,
+        "recent_mean_price":100.2,"rebound_from_window_low_pct":0.0}
+    engine.process_asset("BTC",verified(100.5),1000)
+    assert p.last_reason=="BREAKOUT"
+    assert p.coin_quantity>0
+
+
+def test_flat_bounce_does_not_justify_repeated_buying():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="ETH",settlement="USDC",stable_cash=3000.0,
+        coin_quantity=20.0,cost_basis=2000.0,entry_price=100.0,
+        last_buy_price=100.0,last_trade_at=0.0)
+    engine.portfolios["ETH"]=p
+    engine._signal=lambda asset,now,price:{
+        **_allocation_signal(),"momentum_60s_pct":-0.02,
+        "momentum_180s_pct":-0.7,"rebound_from_window_low_pct":0.02,
+        "recent_mean_price":97.0}
+    engine.process_asset("ETH",verified(97.5),1000)
+    assert p.trade_count==0
+    assert p.last_reason=="TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"

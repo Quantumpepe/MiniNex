@@ -27,7 +27,8 @@ PAPER_START_USD=Decimal("5000.00")
 _STATE_FIELDS=(
     "stable_cash","coin_quantity","cost_basis","initial_equity","entry_price",
     "peak_price","last_exit_price","post_exit_low","last_trade_at","last_evaluated_at","last_decision",
-    "last_reason","last_signal_summary","last_sold_quantity","realized_profit","accumulated_buy_costs",
+    "last_reason","last_signal_summary","last_sold_quantity","last_buy_price","add_count",
+    "realized_profit","accumulated_buy_costs",
     "accumulated_sell_costs","trade_count",
 )
 
@@ -51,7 +52,7 @@ def _restore(asset: str, settlement: str, state: dict, initial: Decimal) -> Pape
         if key in ("last_decision","last_reason","last_signal_summary"):
             if type(value) is not str or len(value)>160:
                 raise ValueError("Invalid stored decision")
-        elif key=="trade_count":
+        elif key in ("trade_count","add_count"):
             if type(value) is not int or value<0 or value>10**12:
                 raise ValueError("Invalid stored trade count")
         elif value is not None and (
@@ -112,6 +113,8 @@ def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
                                  if isinstance(state.get("last_evaluated_at"),(int,float))
                                  and state["last_evaluated_at"]>0 else None),
             "trade_count":state.get("trade_count",0),
+            "add_count":state.get("add_count",0),
+            "last_buy_price":state.get("last_buy_price"),
         },
         "trades":trades or [],
         "paper_only":True,"real_trading_enabled":False,"wallet_funds_used":False,

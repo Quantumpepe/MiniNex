@@ -1,4 +1,5 @@
 import React, {useMemo} from 'react';
+import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import {Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
 import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
@@ -38,7 +39,12 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
   return <section className="compact-home compact-home--market" aria-label={t.overview}>
-    <div className="compact-welcome"><h1>MiniNex</h1><span className="compact-home-label">{t.market}</span></div>
+    <div className="compact-welcome">
+      <button className="compact-home-brand" type="button" onClick={()=>goTo('overview')} aria-label="MiniNex">
+        <img src={`data:image/webp;base64,${miniNexLogoData.trim()}`} alt="" aria-hidden="true"/>
+        <strong>mini<span>nex</span></strong>
+      </button>
+    </div>
     <div className="compact-price-cards" role="tablist" aria-label={t.compactChooseAsset}>
       {['BTC','ETH'].map(a=>{
         const quote=marketSnapshot?.[a];

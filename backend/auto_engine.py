@@ -93,7 +93,12 @@ class PaperRules:
     # After an exit, watch a meaningful decline and confirmation of recovery.
     reentry_drop_pct: float = 0.70
     reentry_rebound_pct: float = 0.20
+    # -2.5% triggers a risk review, not an automatic exit.
     risk_exit_loss_pct: float = 2.50
+    bearish_exit_loss_pct: float = 3.50
+    emergency_exit_loss_pct: float = 6.00
+    max_additions: int = 3
+    min_add_discount_pct: float = 0.60
     cooldown_seconds: float = 90.0
     min_buy_budget_usd: float = 30.0
     min_coin_units: float = 1e-10
@@ -124,6 +129,8 @@ class PaperPortfolio:
     last_reason: str = "WAITING_FOR_VERIFIED_DATA"
     last_signal_summary: str = ""
     last_sold_quantity: float | None = None
+    last_buy_price: float | None = None
+    add_count: int = 0
     realized_profit: float = 0.0
     accumulated_buy_costs: float = 0.0
     accumulated_sell_costs: float = 0.0
@@ -287,6 +294,51 @@ class PaperAutoEngine:
             self.process_asset(asset, snap["markets"][asset], at)
         self.last_tick_at = at
 
+    def _strong_uptrend(self, sig: dict[str, Any], price: float) -> bool:
+        """Persistent positive momentum near the verified high, not a single spike."""
+        fast = (sig.get("momentum_60s_pct", -math.inf) >= self.rules.strong_trend_60s_pct
+                and sig.get("momentum_180s_pct", -math.inf) >= self.rules.strong_trend_180s_pct)
+        # A steady 10-minute rise can also warrant full allocation; it need
+        # not contain an explosive one-minute candle.
+        sustained = (sig.get("momentum_600s_pct") is not None
+                     and sig["momentum_600s_pct"] >= 0.40
+                     and sig.get("momentum_180s_pct", -math.inf) >= 0.15
+                     and sig.get("momentum_60s_pct", -math.inf) >= 0.05)
+        return (sig.get("ready") is True
+                and (fast or sustained)
+                and price >= sig.get("window_high", math.inf) * 0.997
+                and price >= sig.get("recent_mean_price", price))
+
+    def _deployment_target(self, sig: dict[str, Any], price: float,
+                           reason: str, *, adding: bool = False) -> float:
+        """Paper capital weighting: weaker entries reserve cash for later."""
+        if self._strong_uptrend(sig, price):
+            return 1.0
+        # Continuously adapt exposure to independent trend horizons and
+        # observed volatility; percentages are not rigid per-signal tiers.
+        m60 = max(0.0, float(sig.get("momentum_60s_pct") or 0.0))
+        m180 = max(0.0, float(sig.get("momentum_180s_pct") or 0.0))
+        m600 = max(0.0, float(sig.get("momentum_600s_pct") or 0.0))
+        strength = (0.40 * min(1.0, m60 / 0.30)
+                    + 0.40 * min(1.0, m180 / 0.60)
+                    + 0.20 * min(1.0, m600 / 0.80))
+        high = float(sig.get("window_high") or price)
+        low = float(sig.get("window_low") or price)
+        volatility = (high / low - 1) * 100 if low > 0 and high >= low else 0.0
+        volatility_reserve = min(0.12, max(0.0, volatility - 0.8) * 0.02)
+        target = 0.34 + 0.66 * strength - volatility_reserve
+        if adding:
+            target += 0.25
+        return min(0.95, max(0.25, target))
+
+    def _allocation_budget(self, p: PaperPortfolio, price: float, target: float) -> float:
+        """All-in trade allowance, never exceeds available simulated stable cash."""
+        if not (math.isfinite(target) and 0 < target <= 1 and price > 0):
+            return 0.0
+        held = max(0.0, p.coin_quantity * price)
+        desired = max(0.0, target * (p.stable_cash + held) - held)
+        return min(p.stable_cash, desired) if desired >= self.rules.min_buy_budget_usd else 0.0
+
     def process_asset(self, asset: str, feed: dict[str, Any], now: float) -> None:
         p = self.portfolios[asset]
         raw = feed.get("price_usdt")
@@ -320,13 +372,20 @@ class PaperAutoEngine:
             p.last_signal_summary=str(sig.get("reason","UNAVAILABLE"))
         if p.coin_quantity > self.rules.min_coin_units:
             p.peak_price = max(price, p.peak_price or price)
-            # Emergency loss protection must NOT wait for warmup, cooldown or momentum data.
-            # Risk exits may legitimately realise a loss; they are not counted as profits.
-            entry_loss_pct = (1 - price / (p.entry_price or price)) * 100
-            if entry_loss_pct >= self.rules.risk_exit_loss_pct:
+            loss_pct = (1 - price / (p.entry_price or price)) * 100
+            bearish = (sig.get("ready") is True
+                       and sig.get("momentum_60s_pct", 0) <= -0.30
+                       and sig.get("momentum_180s_pct", 0) <= -0.70
+                       and price < sig.get("recent_mean_price", price))
+            emergency = loss_pct >= self.rules.emergency_exit_loss_pct
+            breakdown = loss_pct >= self.rules.bearish_exit_loss_pct and bearish
+            # Do not sell blindly at -2.5%. A severe breakdown still overrides
+            # cooldown; an emergency price gap does not wait for fresh history.
+            if emergency or breakdown:
                 sale = self._sell_quote(asset, p.coin_quantity, price)
                 if sale:
-                    self._paper_sell(p, sale, now, price, "RISK_EXIT_MAY_REALIZE_LOSS")
+                    self._paper_sell(p, sale, now, price,
+                                     "RISK_EMERGENCY_EXIT" if emergency else "RISK_TREND_BREAKDOWN")
                 else:
                     p.last_decision, p.last_reason = "WAIT", "RISK_EXIT_QUOTE_UNECONOMIC"
                 return
@@ -345,6 +404,20 @@ class PaperAutoEngine:
             if not sale:
                 p.last_decision, p.last_reason = "WAIT", "SALE_QUOTE_UNECONOMIC"
                 return
+            # A held LONG position may be topped up only on a confirmed
+            # recovery from below the last buy, or a verified strong uptrend.
+            if p.strategy_mode == "LONG":
+                strong = self._strong_uptrend(sig, price)
+                anchor = p.last_buy_price or p.entry_price or price
+                discounted = (1 - price / anchor) * 100 >= self.rules.min_add_discount_pct
+                rebound = (discounted
+                           and sig.get("momentum_60s_pct", -math.inf) >= self.rules.early_rebound_60s_pct
+                           and sig.get("rebound_from_window_low_pct", 0) >= self.rules.early_rebound_recovery_pct
+                           and sig.get("momentum_180s_pct", -math.inf) > -1.0
+                           and price >= sig.get("recent_mean_price", price))
+                add_reason = "ADD_TREND" if strong else "ADD_REBOUND" if rebound else None
+            else:
+                add_reason = None
             # Spot-downtrend is SELL OWNED COINS / REBUY, never leveraged short.
             # Do not apply long-only profit-trailing thresholds to this mode.
             if p.strategy_mode == "SPOT_SHORT":
@@ -381,8 +454,15 @@ class PaperAutoEngine:
             reversal_confirmed = sig["momentum_60s_pct"] <= 0 or not strong_trend
             if trailing_armed and enough_gain and reversal_confirmed and peak_drop_pct >= pullback_trigger:
                 self._paper_sell(p, sale, now, price, "DYNAMIC_NET_PROFIT_TRAILING")
-            else:
-                p.last_decision, p.last_reason = "HOLD", "TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"
+                return
+            if add_reason and p.add_count < self.rules.max_additions:
+                budget = self._allocation_budget(
+                    p, price, self._deployment_target(sig, price, add_reason, adding=True))
+                buy = self._buy_quote(asset, budget, price)
+                if buy:
+                    self._paper_buy(p, buy, now, price, add_reason)
+                    return
+            p.last_decision, p.last_reason = "HOLD", "TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"
         else:
             # A rebound after a meaningful pullback, or a confirmed short-term breakout.
             rebound = (sig.get("prior_max_drawdown_pct",
@@ -451,43 +531,66 @@ class PaperAutoEngine:
                         and proposed["quantity"] <= p.last_sold_quantity
                     ):
                         rebound=False
-                breakout = False
+                # Allow confirmed strong breakouts even after a prior exit;
+                # SPOT_SHORT always requires a cheaper, cost-aware rebuy.
+                breakout = (p.strategy_mode == "LONG"
+                            and self._strong_uptrend(sig, price)
+                            and price >= p.last_exit_price * 1.003)
                 trend_continuation = False
                 gradual_trend = False
-                if not rebound:
+                if not (rebound or breakout):
                     p.last_decision, p.last_reason = "WAIT", "AWAITING_POST_EXIT_REBOUND"
                     return
             elif not (rebound or breakout or trend_continuation or gradual_trend):
                 p.last_decision, p.last_reason = "WAIT", "NO_CONFIRMED_ENTRY_SIGNAL"
                 return
-            buy = self._buy_quote(asset, p.stable_cash, price)
+            reason = ("REBOUND" if rebound else "BREAKOUT" if breakout
+                      else "GRADUAL_TREND" if gradual_trend else "TREND_CONTINUATION")
+            # SPOT_SHORT rebuy remains all-in to compare purchased coin quantity
+            # with the quantity sold; LONG uses dynamic reserve allocation.
+            target = (1.0 if p.strategy_mode == "SPOT_SHORT"
+                      else self._deployment_target(sig, price, reason))
+            buy = self._buy_quote(asset, self._allocation_budget(p, price, target), price)
             if not buy:
                 p.last_decision, p.last_reason = "WAIT", "BUDGET_TOO_SMALL_AFTER_ALL_COSTS"
                 return
-            reason = ("REBOUND" if rebound else "BREAKOUT" if breakout
-                      else "GRADUAL_TREND" if gradual_trend else "TREND_CONTINUATION")
             self._paper_buy(p, buy, now, price, reason)
 
-    def _paper_buy(self, p: PaperPortfolio, quote: dict[str, float], at: float, price: float, reason: str) -> None:
-        if p.coin_quantity > self.rules.min_coin_units:
-            raise ValueError("Only one paper spot position per asset")
+    def _paper_buy(self, p: PaperPortfolio, quote: dict[str, float], at: float,
+                   price: float, reason: str) -> None:
+        adding = p.coin_quantity > self.rules.min_coin_units
+        if adding and (p.strategy_mode != "LONG" or p.add_count >= self.rules.max_additions):
+            raise ValueError("Paper position addition not permitted")
         if quote["total_spent"] > p.stable_cash + 1e-7:
             raise ValueError("All-in paper budget exceeded")
+        old_qty = p.coin_quantity
+        new_qty = old_qty + quote["quantity"]
+        old_reference = p.entry_price or price
         p.stable_cash -= quote["total_spent"]
-        p.coin_quantity = quote["quantity"]
-        p.cost_basis = quote["total_spent"]
-        p.entry_price = price
+        p.coin_quantity = new_qty
+        p.cost_basis += quote["total_spent"]
+        # Quantity-weighted reference: all-in cost basis includes buy fees.
+        p.entry_price = (old_qty * old_reference + quote["quantity"] * price) / new_qty
         p.peak_price = price
-        p.last_exit_price = None
-        p.post_exit_low = None
-        p.last_sold_quantity = None
+        p.last_buy_price = price
+        if adding:
+            p.add_count += 1
+        else:
+            p.add_count = 0
+            p.last_exit_price = None
+            p.post_exit_low = None
+            p.last_sold_quantity = None
         p.last_trade_at = at
         p.trade_count += 1
         p.accumulated_buy_costs += quote["venue_fee"] + quote["network_fee"] + quote["spread_and_slippage_cost"]
         p.last_decision, p.last_reason = "PAPER_BUY", reason
         p.trade_history.append({"at": iso(at), "kind": "PAPER_BUY", "asset": p.asset,
-                                "settlement": p.settlement, "reason": reason, "price_reference": clean(price),
-                                "quantity": clean(p.coin_quantity, 12), "total_spent": clean(quote["total_spent"]),
+                                "settlement": p.settlement, "reason": reason,
+                                "price_reference": clean(price),
+                                "quantity": clean(quote["quantity"], 12),
+                                "position_quantity": clean(p.coin_quantity, 12),
+                                "total_spent": clean(quote["total_spent"]),
+                                "position_cost_basis": clean(p.cost_basis),
                                 "estimated_costs": self._cost_breakdown(quote),
                                 "cash_reserved_for_exit": clean(p.stable_cash), "real_trade": False})
 
@@ -499,6 +602,8 @@ class PaperAutoEngine:
         p.stable_cash += quote["net_proceeds"]
         p.coin_quantity = 0.0
         p.cost_basis = 0.0
+        p.last_buy_price = None
+        p.add_count = 0
         p.entry_price = None
         p.peak_price = None
         p.last_exit_price = price
