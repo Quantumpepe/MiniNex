@@ -489,6 +489,15 @@ export default function App() {
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Wifi size={21}/></span><div><h2>{t.apiStatus}</h2></div></div>
             <div className="settings-state"><Pill tone={syncedAt&&Date.now()-syncedAt<FRESH_MS?'teal':'orange'} icon={syncedAt?Check:WifiOff}>{syncedAt&&Date.now()-syncedAt<FRESH_MS?t.apiConnected:t.apiDisconnected}</Pill></div>
           </section>
+          <section className="panel settings-panel">
+            <div className="settings-row">
+              <span className="settings-icon"><History size={21}/></span>
+              <div><h2>{t.activity}</h2></div>
+            </div>
+            <button className="settings-activity-link" type="button" onClick={()=>navigate('activity')}>
+              <History size={17}/>{t.activity}<ChevronDown size={16} className="settings-activity-chevron"/>
+            </button>
+          </section>
           <UpdateStatus lang={language}/>
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><LockKeyhole size={21}/></span><div><h2>{t.tradingUnavailable}</h2></div></div></section>
         </>}
