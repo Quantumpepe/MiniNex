@@ -14,7 +14,7 @@ export function validateWalletBalanceResponse(result) {
   return ASSETS.every(asset=>{
     const entry=result.balances[asset];
     return entry&&entry.network===EXPECTED_NETWORK[asset]&&(
-      (entry.status==='wallet_missing'&&entry.balance===null)||
+      ((entry.status==='wallet_missing'||entry.status==='unavailable')&&entry.balance===null)||
       (entry.status==='verified'&&typeof entry.balance==='string'&&
        entry.balance.length<=85&&UNITS.test(entry.balance))
     );

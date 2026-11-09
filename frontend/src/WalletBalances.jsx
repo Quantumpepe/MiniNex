@@ -22,7 +22,22 @@ export default function WalletBalances({t,getAccessToken,userId}) {
           headers:{Authorization:'Bearer '+token,Accept:'application/json'},
           cache:'no-store'
         });
-        if(!response.ok)throw new Error('Wallet balance source unavailable');
+        if(!response.ok){
+          // These explicit server errors identify configuration/Privy problems,
+          // distinct from a verifiable on-chain zero balance.
+          const problem=await response.json().catch(()=>null);
+          if(!current)return;
+          const detail=problem?.detail;
+          if(response.status===503&&detail==='Private Privy wallet verification not configured'){
+            setStatus('privy-setup');return;
+          }
+          if(response.status===503&&
+             (detail==='Could not independently verify Privy wallet'||
+              detail==='Verified wallet selection unavailable')){
+            setStatus('privy-failed');return;
+          }
+          throw new Error('Wallet balance source unavailable');
+        }
         const data=await response.json();
         if(!validateWalletBalanceResponse(data))
           throw new Error('Unverified wallet balances');
@@ -40,12 +55,16 @@ export default function WalletBalances({t,getAccessToken,userId}) {
     <p className="privy-wallet-description">{t.privyBalancesNote}</p>
     {loading&&<p className="privy-wallet-description" role="status">{t.privyBalancesLoading}</p>}
     {status==='failed'&&<p className="privy-wallet-description" role="alert">{t.privyBalancesFailed}</p>}
+    {status==='privy-setup'&&<p className="privy-wallet-description" role="alert">{t.privyBalancesPrivySetup}</p>}
+    {status==='privy-failed'&&<p className="privy-wallet-description" role="alert">{t.privyBalancesPrivyFailed}</p>}
     {status==='ready'&&<div className="privy-hwm-ledger">
       {ASSETS.map(asset=><div className="privy-hwm-row" key={asset}>
         <span><strong>{asset}</strong> <small className="privy-balance-network">{asset==='BTC'?'Bitcoin':'Ethereum'}</small></span>
         <strong>{balances[asset].status==='verified'
           ? balances[asset].balance+' '+asset
-          : t.privyBalancesMissing}</strong>
+          : balances[asset].status==='wallet_missing'
+            ? t.privyBalancesMissing
+            : t.privyBalancesUnavailable}</strong>
       </div>)}
     </div>}
     <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
