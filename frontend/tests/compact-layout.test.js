@@ -16,10 +16,13 @@ test('Market quote denomination is USDT, not demo settlement token',()=>{
  assert.match(compact,/\{asset\}\/USDT/);
  assert.match(compact,/price_usdt/);
 });
-test('Compact buttons lead to actual Wallet/Trade sections, not fake live orders',()=>{
- assert.match(compact,/goTo\('activity'\)/);
+test('Portfolio wallet shortcut remains, but bottom Home buttons are removed',()=>{
  assert.match(compact,/goTo\('wallet'\)/);
+ assert.doesNotMatch(compact,/className="compact-actions"/);
+ assert.doesNotMatch(compact,/goTo\('activity'\)/);
+ assert.doesNotMatch(compact,/className="compact-market-modes"/);
  assert.doesNotMatch(compact,/onClick\s*=\s*\{[^}]+trade/i);
+ assert.match(app,/className="settings-activity-link"[^\n]*navigate\('activity'\)/);
 });
 test('Native build stays manual and distributes only a temporary debug artifact',()=>{
  assert.match(workflow,/workflow_dispatch:/);
@@ -38,7 +41,9 @@ test('Mobile home aligns logo, language switch and settings in one row',()=>{
   assert.match(compact,/onClick=\{\(\)=>goTo\('settings'\)\}/);
   assert.match(app,/chooseLang=\{chooseLang\}/);
   assert.match(css,/\.app-shell--home \.topbar \.header-actions\{display:none\}/);
-  assert.match(css,/\.compact-home-actions\{display:flex;align-items:center/);
+  assert.match(css,/\.compact-welcome > \.compact-home-actions \{/);
+  assert.match(css,/\.compact-welcome > \.compact-home-actions \.lang-switch\{/);
+  assert.match(css,/\.compact-welcome > \.compact-home-actions \.compact-settings-btn\{/);
 });
 
 test('mobile Home shows private paper portfolio before BTC and ETH cards',()=>{
@@ -53,10 +58,9 @@ test('mobile Home shows private paper portfolio before BTC and ETH cards',()=>{
   assert.match(css,/\.compact-chart-large,\.compact-chart-empty\{height:120px/);
 });
 
-test('wallet card does not imply real wallet trading or fabricate a history',()=>{
+test('portfolio remains while redundant AUTO/PAPER/LIVE controls disappear',()=>{
   assert.match(compact,/paperAvailable\?'PAPER':'LIVE/);
-  assert.match(compact,/aria-disabled="true"/);
-  assert.match(compact,/compact-market-modes/);
+  assert.doesNotMatch(compact,/className="compact-market-modes"/);
   assert.match(compact,/summary&&chart/);
   assert.match(compact,/paperSparkline\(samples\)/);
   assert.doesNotMatch(compact,/LIVE.*\d{3,}/);
