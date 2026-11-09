@@ -1,6 +1,6 @@
 import React, {useMemo} from 'react';
 import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
-import {Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
+import {ArrowDownLeft, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
 import {paperSparkline} from './paperPortfolio.js';
 import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
@@ -115,11 +115,6 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         </button>;
       })}
     </div>
-    <div className="compact-market-modes" role="group" aria-label={t.compactMode}>
-      <span className={'compact-market-mode'+(portfolioSummary?.runningAssets>0?' is-running':'')} title={lang==='de'?'Automatische Simulation':'Automatic paper simulation'}><Activity size={14}/>{t.compactAuto}<small>{portfolioSummary?.runningAssets>0?(lang==='de'?'Läuft':'Running'):(lang==='de'?'Inaktiv':'Inactive')}</small></span>
-      <span className={'compact-market-mode'+(showSimulatedTrades?' is-selected':'')}><span className="compact-mode-dot"/>{'PAPER'}<small>{showSimulatedTrades?(lang==='de'?'Simulation':'Simulation'):(lang==='de'?'Aus':'Off')}</small></span>
-      <span className="compact-market-mode is-locked" aria-disabled="true" title={lang==='de'?'Echtgeldhandel noch nicht freigeschaltet':'Live trading not yet enabled'}><Wallet size={13}/>{'LIVE'}<small>{lang==='de'?'Gesperrt':'Locked'}</small></span>
-    </div>
     <section className="compact-main-chart" aria-label={t.market}>
       <div className="compact-chart-top">
         <div className="compact-chart-title"><strong>{asset}/USDT</strong><span className={'compact-data-dot '+(valid?'valid':'')}/></div>
@@ -150,9 +145,5 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         })}
       </div> : <p className="compact-trade-empty">{t.noRecentTrades}</p>}
     </section>}
-    <div className="compact-actions">
-      <button type="button" onClick={()=>goTo('activity')}><Activity size={18}/>{t.activity}<ArrowRight size={15}/></button>
-      <button type="button" onClick={()=>goTo('wallet')}><Wallet size={18}/>{t.wallet}</button>
-    </div>
   </section>;
 }
