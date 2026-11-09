@@ -2,6 +2,7 @@ import React, {useMemo} from 'react';
 import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import {Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
+import {paperSparkline} from './paperPortfolio.js';
 import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
 
 function AssetIcon({asset}) {
@@ -34,7 +35,52 @@ function MarketChart({history,period,valid,t,asset}) {
   </svg>;
 }
 
-export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo,showSimulatedTrades=true}) {
+
+function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo}) {
+  const chart=useMemo(()=>paperSparkline(samples),[samples]);
+  const positive=summary?.pnl>=0;
+  const color=positive?'#5bf2b6':'#ff9388';
+  const label=lang==='de'?'Simuliertes Portfolio':'Paper portfolio';
+  const chartLabel=lang==='de'?'Beobachteter Verlauf seit App-Start':'Observed since opening the app';
+  const prompt=authenticated
+    ? (lang==='de'?'Simulation starten oder Kursdaten prüfen':'Start a simulation or check market quotes')
+    : (lang==='de'?'Zum Anzeigen anmelden':'Sign in to view paper portfolio');
+  return <section className="compact-wallet-portfolio" aria-label={label}>
+    <div className="compact-wallet-top">
+      <span>{label} · BTC + ETH</span>
+      <button type="button" className="compact-wallet-open" onClick={()=>goTo('wallet')} aria-label={t.wallet} title={t.wallet}><Wallet size={16}/></button>
+    </div>
+    <div className="compact-wallet-body">
+      <div className="compact-wallet-values">
+        <strong>{summary?formatMoney(summary.equity,lang):'—'}</strong>
+        {summary
+          ? <span className={positive?'text-positive':'text-negative'}>
+              {formatSigned(summary.pnl,lang)} ({summary.pnlPct>=0?'+':''}{formatNumber(summary.pnlPct,lang,2)}%)
+            </span>
+          : <small>{prompt}</small>}
+      </div>
+      <div className="compact-wallet-curve">
+        {summary&&chart
+          ? <svg viewBox="0 0 200 50" role="img" aria-label={chartLabel} preserveAspectRatio="none">
+              <defs><linearGradient id="paper-equity-fill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity=".24"/>
+                <stop offset="100%" stopColor={color} stopOpacity="0"/>
+              </linearGradient></defs>
+              <path d={chart.area} fill="url(#paper-equity-fill)"/>
+              <path d={chart.line} fill="none" stroke={chart.positive?'#5bf2b6':'#ff9388'} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="192" cy={chart.lastY} r="3.5" fill={chart.positive?'#5bf2b6':'#ff9388'}/>
+            </svg>
+          : <span className="compact-wallet-no-curve">{lang==='de'?'Verlauf wird gesammelt':'Collecting portfolio history'}</span>}
+      </div>
+    </div>
+    <div className="compact-wallet-foot">
+      <span>PAPER · {lang==='de'?'kein Echtgeld':'no real funds'}</span>
+      <span>{chart ? chartLabel : (lang==='de'?'Werte nach geschätzten Verkaufskosten':'After estimated exit costs')}</span>
+    </div>
+  </section>;
+}
+
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -52,6 +98,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         <button className="icon-btn compact-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>goTo('settings')}><Settings2 size={17}/></button>
       </div>
     </div>
+    {showSimulatedTrades&&<PaperPortfolioCard t={t} lang={lang} summary={portfolioSummary} samples={portfolioSamples} authenticated={portfolioAuthenticated} goTo={goTo}/>}
     <div className="compact-price-cards" role="tablist" aria-label={t.compactChooseAsset}>
       {['BTC','ETH'].map(a=>{
         const quote=marketSnapshot?.[a];
