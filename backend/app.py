@@ -23,6 +23,7 @@ from .wallet_balances import get_wallet_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .treasury import treasury_status
+from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 
 market = MarketDataService()
@@ -79,6 +80,26 @@ def home():
 def health():
     # Deployment health != independently verified market data.
     return {"status": "ok"}
+
+
+@app.get("/api/updates/latest")
+async def latest_verified_ota_release():
+    """Public read-only release metadata cached centrally on Render.
+
+    Phones never call GitHub REST directly. The client still strictly verifies
+    native ABI, source commit, release ZIP URL and SHA-256 before downloading.
+    """
+    try:
+        release, stale = await ota_release_cache.latest()
+    except ReleaseUnavailable:
+        return JSONResponse({"detail": "Update service temporarily unavailable"},
+                            status_code=503, headers={"Cache-Control": "no-store",
+                                                      "X-Content-Type-Options": "nosniff"})
+    return JSONResponse(release, headers={
+        "Cache-Control": "public, max-age=60",
+        "X-Content-Type-Options": "nosniff",
+        "X-MiniNex-OTA-Cache": "stale" if stale else "fresh",
+    })
 
 
 @app.get("/api/auth/me")
