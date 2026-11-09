@@ -268,19 +268,52 @@ function ConnectedPrivyWallet({t}) {
     finally{setBudgetBusy(false);}
   };
 
+  // Each budget control is rendered next to the SAME coin's saved trading
+  // preferences. There is still one authenticated, revision-checked budget
+  // request per asset; moving the controls does not change authorization.
+  const renderBudget = asset => <div className="privy-asset-budget"
+    aria-label={asset+' '+t.privyBudgetTitle}>
+    <label className="privy-asset-budget-label">
+      <span className="privy-asset-budget-caption">
+        <strong>{t.privyBudgetShortTitle}</strong>
+        <strong>{previewBudgets[asset]} %</strong>
+      </span>
+      <input type="range" min="0" max="100" step="5"
+        value={previewBudgets[asset]}
+        disabled={budgetStatus!=='ready' || budgetBusy}
+        onChange={event=>setPreviewBudgets(old=>({...old,[asset]:Number(event.target.value)}))}
+        aria-label={asset+' '+t.privyBudgetTitle}/>
+    </label>
+    <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
+      disabled={budgetStatus!=='ready' || budgetBusy || previewBudgets[asset]===savedBudgets?.[asset]?.percent}
+      onClick={()=>saveBudget(asset)}>{t.privyBudgetSave} {asset}</button>
+    {budgetStatus==='failed' && <div className="privy-wallet-description" role="alert">{t.privyBudgetFailed}</div>}
+    {budgetStatus==='failed' && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+      disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
+  </div>;
+
   return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2></div>
-    <div className="privy-panel-body">
+    <div className="privy-panel-body privy-wallet-layout">
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
-        !authenticated ? <>
-          <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button>
-          
-        </> : <>
-          <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
-          {address && <CopyWalletAddress address={address} network="ETH" t={t}/> }
-          {identityStatus==='verified' && databaseStatus==='stored'
-            ? <NativeBtcWallet user={user} t={t}/>
-            : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
+        !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
+          {identityStatus==='verified' && databaseStatus==='stored' &&
+            <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
+
+          <details className="privy-disclosure privy-addresses-section">
+            <summary>
+              <span>{t.privyAddressesTitle}</span>
+              <small>{t.privyAddressesHint}</small>
+            </summary>
+            <div className="privy-disclosure-body">
+              <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
+              {address && <CopyWalletAddress address={address} network="ETH" t={t}/> }
+              {identityStatus==='verified' && databaseStatus==='stored'
+                ? <NativeBtcWallet user={user} t={t}/>
+                : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
+            </div>
+          </details>
+
           {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
             <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}
           {(identityStatus==='failed' || identityStatus==='setup' ||
@@ -288,45 +321,33 @@ function ConnectedPrivyWallet({t}) {
             <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
               onClick={()=>setRetryNonce(n=>n+1)}>{t.privyRetryConnection}</button>}
 
-          <button className="privy-wallet-action privy-wallet-action--secondary" type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
+          <TradingSetupPreview t={t} getAccessToken={getAccessToken}
+            enabled={identityStatus==='verified' && databaseStatus==='stored'}
+            renderBudget={renderBudget}/>
+
+          <details className="privy-disclosure privy-technical-section">
+            <summary>
+              <span>{t.privyTechnicalTitle}</span>
+              <small>{t.privyTechnicalHint}</small>
+            </summary>
+            <div className="privy-disclosure-body">
+              <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
+                <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong></div>
+                <p className="privy-wallet-description">{t.privyTradingNote}</p>
+              </div>
+              <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
+                <div className="privy-hwm-title"><strong>{t.privyHwmTitle} · 5 %</strong></div>
+                {databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
+                  {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
+                    <b>{asset}</b><span>{t.privyHwmValue}: {formatHwmUsd(assetLedger[asset]?.high_water_mark_usd)} USD</span>
+                  </div>)}
+                </div>}
+              </div>
+            </div>
+          </details>
+          <button className="privy-wallet-action privy-wallet-action--secondary privy-wallet-logout"
+            type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
-      {authenticated && identityStatus==='verified' && databaseStatus==='stored' &&
-        <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
-      {authenticated && <div className="privy-hwm-box" aria-label={t.privyBudgetTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyBudgetTitle}</strong></div>
-        {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
-          <label style={{display:'flex',flexDirection:'column',gap:8,width:'100%'}}>
-            <span style={{display:'flex',justifyContent:'space-between',gap:12}}>
-              <strong>{asset}</strong><span>{previewBudgets[asset]} %</span>
-            </span>
-            <input type="range" min="0" max="100" step="5"
-              value={previewBudgets[asset]}
-              disabled={budgetStatus!=='ready' || budgetBusy}
-              onChange={event=>setPreviewBudgets(old=>({...old,[asset]:Number(event.target.value)}))}
-              aria-label={asset+' '+t.privyBudgetTitle}/>
-          </label>
-          <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
-            disabled={budgetStatus!=='ready' || budgetBusy || previewBudgets[asset]===savedBudgets?.[asset]?.percent}
-            onClick={()=>saveBudget(asset)}>{t.privyBudgetSave} {asset}</button>
-        </div>)}
-        {budgetStatus==='failed' && <div className="privy-wallet-description" role="alert">{t.privyBudgetFailed}</div>}
-        {budgetStatus==='failed' && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
-          disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
-
-      </div>}
-      {authenticated && <TradingSetupPreview t={t} getAccessToken={getAccessToken} enabled={identityStatus==='verified' && databaseStatus==='stored'}/>}
-      {authenticated && <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong></div>
-      </div>}
-      <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
-        <div className="privy-hwm-title"><strong>{t.privyHwmTitle} · 5 %</strong></div>
-        {authenticated && databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
-          {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
-            <b>{asset}</b><span>{t.privyHwmValue}: {formatHwmUsd(assetLedger[asset]?.high_water_mark_usd)} USD</span>
-          </div>)}
-        </div>}
-
-      </div>
       {error&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
     </div>
   </section>;
