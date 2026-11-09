@@ -14,6 +14,7 @@ export function summarizePaperSessions(sessions) {
   let equity = 0;
   let startingCapital = 0;
   let activeAssets = 0;
+  let runningAssets = 0;
   for (const asset of ASSETS) {
     const row = sessions[asset];
     if (!row || row.status === 'NOT_STARTED') continue;
@@ -33,6 +34,7 @@ export function summarizePaperSessions(sessions) {
     equity += estimated;
     startingCapital += initial;
     activeAssets++;
+    if (row.status === 'ACTIVE') runningAssets++;
   }
   if (!activeAssets) return null;
   const pnl = equity - startingCapital;
@@ -42,6 +44,7 @@ export function summarizePaperSessions(sessions) {
     pnl: Math.round(pnl * 100) / 100,
     pnlPct: startingCapital > 0 ? pnl / startingCapital * 100 : 0,
     assetCount: activeAssets,
+    runningAssets,
     mode: 'PAPER'
   };
 }
