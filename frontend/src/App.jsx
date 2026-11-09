@@ -295,9 +295,13 @@ function StatBox({label,value,sub,tone='',icon:Icon}) {
 }
 
 function ActivityList({trades,t,lang,asset,compact=false}) {
-  const shown=(Array.isArray(trades)?[...trades]:[]).reverse().slice(0,compact?4:40);
+  const shown=(Array.isArray(trades)?[...trades]:[]).reverse().slice(0,40);
+  const hasMoreTrades=compact&&shown.length>4;
   if(!shown.length) return <div className="empty-activity"><div className="empty-activity-icon"><Activity size={24}/></div><strong>{t.emptyActivity}</strong><span>{t.emptyActivitySub}</span></div>;
-  return <div className="trade-list">{shown.map((trade,i)=>{
+  return <div className={'trade-list'+(hasMoreTrades?' trade-list--scroll':'')}
+    tabIndex={hasMoreTrades?0:undefined}
+    role={hasMoreTrades?'region':undefined}
+    aria-label={hasMoreTrades?t.recentTrades+' · '+asset:undefined}>{shown.map((trade,i)=>{
     const buy=trade.kind==='PAPER_BUY';const pnl=trade.realized_net_profit;
     return <div key={`${trade.at||i}-${i}`} className="trade-row">
       <span className={`trade-icon ${buy?'trade-icon--buy':'trade-icon--sell'}`}>{buy?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>}</span>

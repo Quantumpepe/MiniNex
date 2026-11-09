@@ -588,3 +588,46 @@
   background:transparent;color:#7cf1c4;text-decoration:underline;
   font:inherit;cursor:pointer;
 }
+
+
+/* Home PAPER buys/sells: exactly four rows in view. From the fifth row,
+   the trade history scrolls INSIDE its existing card without visible bars.
+   The Activity page remains a complete, normally scrolling history. */
+.compact-trade-row{
+  box-sizing:border-box;
+  height:66px;
+  flex:0 0 66px;
+}
+.compact-trade-list--scroll{
+  max-height:264px; /* 4 x 66px; row 5+ is reachable by swipe/wheel */
+}
+.recent-panel .trade-row{
+  box-sizing:border-box;
+  min-height:68px;
+  height:68px;
+}
+.recent-panel .trade-list--scroll{
+  max-height:272px; /* 4 x 68px */
+}
+.compact-trade-list--scroll,
+.recent-panel .trade-list--scroll{
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  scrollbar-width:none; /* Firefox */
+  -ms-overflow-style:none;
+}
+.compact-trade-list--scroll::-webkit-scrollbar,
+.recent-panel .trade-list--scroll::-webkit-scrollbar{
+  display:none; /* Android WebView / Chrome / Safari */
+  width:0;
+  height:0;
+}
+.compact-trade-list--scroll:focus-visible,
+.recent-panel .trade-list--scroll:focus-visible{
+  outline:2px solid #64eabb;
+  outline-offset:-2px;
+  border-radius:6px;
+}
