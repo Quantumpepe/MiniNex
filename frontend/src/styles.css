@@ -361,3 +361,12 @@
   .compact-market-mode{padding:5px 6px;font-size:9px}
   .compact-market-mode small{font-size:8px}
 }
+
+/* Avoid a second, now-empty header row on Home while respecting phone safe area. */
+@media(max-width:780px){
+  .app-shell--home .topbar{
+    height:env(safe-area-inset-top);
+    min-height:env(safe-area-inset-top);
+    padding:0;border-bottom:0;background:transparent;backdrop-filter:none;
+  }
+}
