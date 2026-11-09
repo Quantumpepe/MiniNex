@@ -28,7 +28,7 @@ test('wheel becomes green check only after native current() confirms installed l
   assert.match(status,/const installedLatest=status\.stage==='current'&&/);
   assert.match(status,/status\.version===status\.availableVersion/);
   assert.match(status,/installedLatest\?<CheckCircle2 size=\{22\}\/>:<RefreshCcw size=\{22\}\/>/);
-  assert.match(status,/installedLatest\?'Update aktiviert · aktuell':'Update active · up to date'/);
+  assert.match(status,/installedLatest\?\(de\?'Update aktiviert · aktuell':'Update active · up to date'\)/);
   assert.match(status,/installedLatest\?' is-complete':''/);
   assert.match(styles,/\.update-progress-icon\.is-complete\{/);
   assert.match(styles,/color:#79f0ba/);
