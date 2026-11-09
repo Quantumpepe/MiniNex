@@ -6,5 +6,15 @@
     "hostname": "localhost",
     "androidScheme": "https",
     "iosScheme": "capacitor"
+  },
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "statsUrl": "",
+      "appReadyTimeout": 20000,
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": false,
+      "resetWhenUpdate": true
+    }
   }
 }
