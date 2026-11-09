@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 import math
+import time
 from typing import Any
 
 import psycopg
@@ -87,13 +88,53 @@ def _reconcile_virtual_budget(p: PaperPortfolio, current: Decimal, requested: De
     return True
 
 
+# Server-owned runtime/PAUSED-exit metadata persists through normal ticks.
+_RUNTIME_FIELDS=("runtime_started_at","runtime_active_since","runtime_elapsed_seconds")
+
+def _paper_state_with_runtime(p: PaperPortfolio, stored: dict | None,
+                              now: float, *, active: bool=False) -> dict:
+    data=_state_of(p)
+    original=stored if isinstance(stored,dict) else {}
+    for field in _RUNTIME_FIELDS:
+        value=original.get(field)
+        if type(value) in (int,float) and math.isfinite(value) and value>=0:
+            data[field]=float(value)
+    if "runtime_started_at" not in data:
+        data["runtime_started_at"]=now
+    if "runtime_elapsed_seconds" not in data:
+        data["runtime_elapsed_seconds"]=0.0
+    if active and "runtime_active_since" not in data:
+        data["runtime_active_since"]=now
+    if original.get("pause_exit_pending") is True:
+        data["pause_exit_pending"]=True
+    return data
+
+
+def _active_runtime_seconds(row: dict, state: dict) -> tuple[int,bool]:
+    elapsed=state.get("runtime_elapsed_seconds")
+    active_since=state.get("runtime_active_since")
+    if type(elapsed) not in (float,int) or not math.isfinite(elapsed) or elapsed<0:
+        return 0,False
+    if row["status"]=="ACTIVE" and type(active_since) in (float,int) and math.isfinite(active_since):
+        elapsed+=max(0.0,time.time()-active_since)
+    return max(0,int(elapsed)),True
+
+
 def _session_data(row: dict | None, trades: list[dict] | None = None) -> dict:
     if row is None:
         return {"status":"NOT_STARTED","paper_only":True,"real_trading_enabled":False,
-                "wallet_funds_used":False,"trades":[]}
+                "wallet_funds_used":False,"trades":[],
+                "runtime_active_seconds":None,"runtime_tracked":False,
+                "pause_exit_pending":False,"pause_exit_completed":False}
     state=row["state_json"] or {}
+    runtime_seconds,runtime_tracked=_active_runtime_seconds(row,state)
     return {
         "asset":row["asset"],"status":row["status"],
+        "runtime_active_seconds":runtime_seconds if runtime_tracked else None,
+        "runtime_tracked":runtime_tracked,
+        "pause_exit_pending":state.get("pause_exit_pending") is True,
+        "pause_exit_completed":row["status"]=="PAUSED" and state.get("pause_exit_pending") is not True
+                               and float(state.get("coin_quantity",0))==0,
         "settlement":row["settlement"],"strategy_mode":row["strategy_mode"],
         "horizon":row["horizon"],"budget_percent":row["budget_percent"],
         "demo_start_cash":str(row["initial_demo_cash"]),
@@ -308,13 +349,17 @@ def start_user_paper(did: str,asset: str,market: Any | None = None) -> dict:
                     p.stable_cash=0.0
                     p.entry_price=price
                     p.peak_price=price
+                started_at=time.time()
+                state={**_state_of(p),"runtime_started_at":started_at,
+                       "runtime_active_since":started_at,
+                       "runtime_elapsed_seconds":0.0}
                 cur.execute("""INSERT INTO mininex_user_paper_sessions
                     (privy_did,asset,status,settlement,strategy_mode,horizon,
                      budget_percent,initial_demo_cash,state_json)
                     VALUES (%s,%s,'ACTIVE',%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (privy_did,asset) DO NOTHING""",
                     (did,asset,settings["stable"],settings["mode"],settings["horizon"],
-                     settings["percent"],simulated,Jsonb(_state_of(p))))
+                     settings["percent"],simulated,Jsonb(state)))
                 if cur.rowcount!=1:
                     raise HTTPException(409,"Personal simulation already exists")
                 row=_session_row(cur,did,asset)
