@@ -342,3 +342,22 @@
   .compact-wallet-values>span{font-size:11px}
   .compact-wallet-foot{font-size:8px}
 }
+
+/* Future LIVE layout is already visible in the PAPER app. The mode chips
+   are informational, never action controls and never enable wallet signing. */
+@media(max-width:780px){
+  .compact-market-modes{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .compact-market-mode{display:inline-flex;align-items:center;gap:5px;min-width:0;
+    background:#112c34;border:1px solid #355a5d;border-radius:8px;color:#adcac7;
+    padding:6px 8px;font-size:10px;font-weight:780}
+  .compact-market-mode small{font-size:9px;font-weight:650;opacity:.8}
+  .compact-market-mode.is-running,.compact-market-mode.is-selected{
+    background:#123e35;border-color:#398a6d;color:#72efb7}
+  .compact-market-mode.is-locked{color:#a0adb5;border-color:#344651;opacity:.8}
+  .compact-mode-dot{display:inline-block;height:6px;width:6px;border-radius:50%;background:currentColor}
+}
+@media(max-width:365px){
+  .compact-market-modes{gap:4px}
+  .compact-market-mode{padding:5px 6px;font-size:9px}
+  .compact-market-mode small{font-size:8px}
+}
