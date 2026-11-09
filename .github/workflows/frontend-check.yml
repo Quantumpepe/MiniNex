@@ -46,7 +46,8 @@ jobs:
       - name: Check Capgo bundle ZIP format (no Capgo account required)
         run: |
           npx --yes @capgo/cli@8.95.1 bundle zip com.mininex.preview --path dist --bundle 0.8.1 --name mininex-web --json
-          find . -maxdepth 3 -type f -name '*.zip' -not -path './node_modules/*' -print
+          python3 scripts/make_ota_bundle.py --source dist --output "$RUNNER_TEMP/mininex-web.zip"
+          unzip -Z1 "$RUNNER_TEMP/mininex-web.zip" | grep -Fxq 'index.html'
 
   # Only a tested main-branch web bundle can become a public OTA release.
   # APKs, native code, private wallet state and GitHub secrets are NEVER released.
@@ -88,13 +89,8 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes @capgo/cli@8.95.1 bundle zip com.mininex.preview --path dist --bundle "$MININEX_OTA_VERSION" --name mininex-web --json
-          mapfile -t archives < <(find . -maxdepth 3 -type f -name '*.zip' -not -path './node_modules/*' -print)
-          if [ "${#archives[@]}" -ne 1 ]; then
-            echo "::error::Expected exactly one Capgo bundle ZIP, got ${#archives[@]}"
-            exit 1
-          fi
-          cp "${archives[0]}" "$RUNNER_TEMP/mininex-web.zip"
-          unzip -Z1 "$RUNNER_TEMP/mininex-web.zip" | grep -Eq '(^|/)index\.html$'
+          python3 scripts/make_ota_bundle.py --source dist --output "$RUNNER_TEMP/mininex-web.zip"
+          unzip -Z1 "$RUNNER_TEMP/mininex-web.zip" | grep -Fxq 'index.html'
           test "$(stat -c '%s' "$RUNNER_TEMP/mininex-web.zip")" -lt 41943040
           sha256sum "$RUNNER_TEMP/mininex-web.zip" | cut -d ' ' -f1 > "$RUNNER_TEMP/mininex-web.sha256"
       - name: Publish passed web-only OTA release
