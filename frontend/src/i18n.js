@@ -135,6 +135,8 @@ export const DICTIONARY = {
     privyBalancesFailed: 'Balances unavailable. Private Privy verification or public mainnet explorer is not ready. No amount has been estimated.',
     privyBalancesMissing: 'Wallet not yet created',
     privyBalancesUnavailable: 'Temporarily unavailable',
+    privyBalancesPrivySetup: 'Backend Privy secret is not configured. Wallet balances cannot be verified yet.',
+    privyBalancesPrivyFailed: 'Privy server verification failed. Please check the backend configuration.'
     privyBalancesRefresh: 'Refresh balances',
     privyTitle: 'Your MiniNex wallet', privyUnavailable: 'Privy setup pending',
     privyUnavailableNote: 'Add the public Privy App ID to the MiniNex build. This demo does not create a wallet.',
@@ -343,6 +345,8 @@ export const DICTIONARY = {
     privyBalancesFailed: 'Guthaben nicht verfügbar. Privy-Verifizierung oder öffentlicher Blockchain-Explorer ist nicht bereit. Es wird kein Betrag geschätzt.',
     privyBalancesMissing: 'Wallet noch nicht erstellt',
     privyBalancesUnavailable: 'Vorübergehend nicht verfügbar',
+    privyBalancesPrivySetup: 'Der private Privy-Zugang fehlt im Backend. Wallet-Guthaben können noch nicht geprüft werden.',
+    privyBalancesPrivyFailed: 'Die Privy-Serverprüfung ist fehlgeschlagen. Bitte Backend-Konfiguration prüfen.'
     privyBalancesRefresh: 'Guthaben aktualisieren',
     privyTitle: 'Deine MiniNex-Wallet', privyUnavailable: 'Privy noch nicht eingerichtet',
     privyUnavailableNote: 'Die öffentliche Privy App ID muss noch in MiniNex hinterlegt werden. Diese Demo erstellt keine Wallet.',
