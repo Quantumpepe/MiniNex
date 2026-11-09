@@ -86,6 +86,10 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
+  // Keep every verified account-bound PAPER trade supplied by the API.
+  // Only the visible viewport is capped at four rows; the rest scrolls inside.
+  const recentTrades=Array.isArray(trades)?[...trades].reverse():[];
+  const hasMoreTrades=recentTrades.length>4;
   return <section className="compact-home compact-home--market" aria-label={t.overview}>
     <div className="compact-welcome">
       <button className="compact-home-brand" type="button" onClick={()=>goTo('overview')} aria-label="MiniNex">
@@ -132,8 +136,11 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
     </section>
     {showSimulatedTrades&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
       <div className="compact-recent-heading"><strong>{t.recentTrades} · {asset}</strong><span>{t.simulatedTradeLabel}</span></div>
-      {Array.isArray(trades)&&trades.length ? <div className="compact-trade-list">
-        {[...trades].reverse().slice(0,4).map((trade,index)=>{
+      {recentTrades.length ? <div className={'compact-trade-list'+(hasMoreTrades?' compact-trade-list--scroll':'')}
+        tabIndex={hasMoreTrades?0:undefined}
+        role={hasMoreTrades?'region':undefined}
+        aria-label={hasMoreTrades?t.recentTrades+' · '+asset:undefined}>
+        {recentTrades.map((trade,index)=>{
           const buy=trade.kind==='PAPER_BUY';
           const amount=buy?trade.total_spent:trade.net_proceeds;
           const pnl=!buy&&trade.realized_net_profit!=null?Number(trade.realized_net_profit):null;
