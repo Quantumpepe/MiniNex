@@ -67,3 +67,17 @@ export function shouldInstallOta(candidate,{currentVersion='builtin',pendingVers
   const active=otaBuildNumber(currentVersion);
   return active!==null&&candidate.buildNumber>active;
 }
+
+/**
+ * Capgo v8 saves a verified download as BundleStatus.PENDING until it becomes
+ * active; 'success' may also occur for an already activated bundle. Both
+ * statuses mean the download itself completed. Reject downloading/error,
+ * malformed or unrelated bundles before scheduling activation.
+ */
+export function isVerifiedDownloadedBundle(bundle,expectedVersion) {
+  return Boolean(bundle&&typeof bundle==='object'&&
+    typeof bundle.id==='string'&&bundle.id.length>0&&
+    bundle.id!=='builtin'&&
+    bundle.version===expectedVersion&&
+    (bundle.status==='pending'||bundle.status==='success'));
+}
