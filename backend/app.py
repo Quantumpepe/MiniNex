@@ -439,9 +439,9 @@ def user_paper_evaluate(asset: str, authorization: str | None = Header(default=N
 @app.post("/api/user-paper/{asset}/{action}")
 def user_paper_action(asset: str, action: str,
                       authorization: str | None = Header(default=None)):
-    """Only pause or resume an existing simulation; never wallet execution."""
+    """Pause PAPER immediately and settle simulated coins to USDC/USDT; no real swaps."""
     _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
-    return JSONResponse(set_user_paper_status(did,asset,action),
+    return JSONResponse(set_user_paper_status(did,asset,action,market,time.time()),
                         headers={"Cache-Control":"private, no-store"})
 
