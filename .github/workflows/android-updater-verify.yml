@@ -1,0 +1,50 @@
+name: MiniNex native updater compatibility check
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/package.json'
+      - 'frontend/capacitor.config.json'
+      - 'frontend/src/otaUpdater.js'
+      - 'frontend/src/main.jsx'
+      - '.github/workflows/android-updater-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-native-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install frontend and native plugins
+        run: npm install --no-audit --no-fund
+      - name: Build web bundle for native shell
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://mininex-backend.onrender.com
+          VITE_PRIVY_APP_ID: ${{ vars.MININEX_PRIVY_APP_ID }}
+      - name: Generate Capacitor Android shell
+        run: npx cap add android
+      - name: Sync updater native plugin
+        run: npx cap sync android
+      - name: Compile unsigned debug-validation APK (no artifact, no secrets)
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew --no-daemon assembleDebug
