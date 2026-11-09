@@ -1,6 +1,6 @@
 """Public, bounded, server-side cache for the MiniNex OTA GitHub Release.
 
-One Render process checks GitHub at most once per 15 minutes, regardless of the
+One Render process checks GitHub at most once per 5 minutes, regardless of the
 number of phones. No GitHub token, wallet secret or trading endpoint is exposed.
 """
 import asyncio
@@ -10,7 +10,7 @@ import time
 import httpx
 
 RELEASE_URL = "https://api.github.com/repos/Quantumpepe/MiniNex/releases/latest"
-CACHE_SECONDS = 15 * 60
+CACHE_SECONDS = 5 * 60
 ERROR_RETRY_SECONDS = 2 * 60
 MAX_RESPONSE_BYTES = 1024 * 1024
 
