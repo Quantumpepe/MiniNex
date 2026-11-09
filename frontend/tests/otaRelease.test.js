@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
-import {activeOtaVersion,parseOtaRelease,shouldInstallOta,otaBuildNumber} from '../src/otaRelease.js';
+import {activeOtaVersion,isVerifiedDownloadedBundle,parseOtaRelease,shouldInstallOta,otaBuildNumber} from '../src/otaRelease.js';
 
 const ABI='a'.repeat(64),SHA='b'.repeat(40),CHECKSUM='c'.repeat(64);
 const tag='mininex-ota-v0.8.253';
@@ -134,4 +134,24 @@ test('OTA status shows current installed version, latest release, and an actiona
   assert.doesNotMatch(updater,/current\?\.bundle\?\.version\|\|'builtin'/);
   assert.match(updater,/stage:'downloading'/);
   assert.match(updater,/stage:'ready'/);
+});
+
+test('Capgo v8 pending is a SUCCESSFUL download awaiting activation, not a failure',()=>{
+  // Android v8.54.2 finishDownload() creates BundleInfo with status PENDING;
+  // the downloaded ZIP was already checked against expected SHA-256.
+  const pending={id:'abc1234567',version:'0.8.173',status:'pending',checksum:CHECKSUM};
+  assert.equal(isVerifiedDownloadedBundle(pending,'0.8.173'),true);
+  assert.equal(isVerifiedDownloadedBundle({...pending,status:'success'},'0.8.173'),true);
+  assert.equal(isVerifiedDownloadedBundle({...pending,status:'downloading'},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle({...pending,status:'error'},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle({...pending,status:'deleted'},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle({...pending,status:null},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle({...pending,id:'builtin'},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle({...pending,id:''},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle({...pending,version:'0.8.169'},'0.8.173'),false);
+  assert.equal(isVerifiedDownloadedBundle(null,'0.8.173'),false);
+  const updater=readFileSync(new URL('../src/otaUpdater.js',import.meta.url),'utf8');
+  assert.match(updater,/isVerifiedDownloadedBundle\(bundle,candidate\.version\)/);
+  assert.match(updater,/CapacitorUpdater\.next\(\{id:bundle\.id\}\)/);
+  assert.doesNotMatch(updater,/bundle\?\.status!=='success'/);
 });
