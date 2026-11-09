@@ -518,3 +518,40 @@
   .privy-balances-grid{grid-template-columns:1fr}
   .privy-asset-budget{grid-template-columns:1fr}
 }
+
+
+/* Wallet settings: tap the coin/price BUTTON to toggle. No arrow/chevron.
+   Changing a select, slider, or Save does not close the card. */
+.privy-asset-settings{padding:0;gap:0;overflow:hidden}
+.privy-asset-toggle{
+  display:flex;align-items:center;gap:12px;
+  width:100%;min-width:0;min-height:70px;
+  border:0;border-radius:14px;background:transparent;
+  padding:13px 14px;color:#e4fcf3;text-align:left;
+  cursor:pointer;font:inherit;
+}
+.privy-asset-toggle:hover{background:rgba(66,221,168,.065)}
+.privy-asset-toggle:focus-visible{outline:2px solid #62e8ba;outline-offset:-3px}
+.privy-asset-toggle[aria-expanded="true"]{background:rgba(66,221,168,.09)}
+.privy-asset-toggle .compact-token{flex-shrink:0}
+.privy-asset-toggle-name{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.privy-asset-toggle-name strong{font-size:15px;line-height:1.2}
+.privy-asset-toggle-name small{color:#91b4af;font-size:11px;line-height:1.35}
+.privy-asset-toggle-price{
+  display:flex;flex-direction:column;gap:4px;
+  align-items:flex-end;justify-content:center;
+  min-width:0;flex-shrink:0;font-variant-numeric:tabular-nums;
+}
+.privy-asset-toggle-price strong{font-size:clamp(14px,4vw,17px);white-space:nowrap;letter-spacing:-.2px}
+.privy-asset-toggle-price small{color:#92b4ae;font-size:10px}
+.privy-asset-settings-content{
+  display:grid;gap:12px;padding:14px;
+  border-top:1px solid #2d5e5a;
+}
+.privy-asset-settings-content[hidden]{display:none!important}
+@media(max-width:355px){
+  .privy-asset-toggle{gap:8px;padding:12px 10px}
+  .privy-asset-toggle-name strong{font-size:13px}
+  .privy-asset-toggle-price strong{font-size:13px}
+  .privy-asset-toggle-price small{font-size:9px}
+}
