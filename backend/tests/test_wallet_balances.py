@@ -362,6 +362,6 @@ def test_wrong_chain_or_invalid_rpc_results_cannot_invent_zero(monkeypatch):
 
 def test_erc20_eth_call_requires_padded_32_byte_word():
     assert w._rpc_quantity({"jsonrpc":"2.0","result":"0x"+"0"*64},fixed_word=True)==0
-    assert w._rpc_quantity({"jsonrpc":"2.0","result":"0x"+"0"*60+"f423"},fixed_word=True)==62531
+    assert w._rpc_quantity({"jsonrpc":"2.0","result":"0x"+"0"*60+"f423"},fixed_word=True)==62499
     with pytest.raises(ValueError):
         w._rpc_quantity({"jsonrpc":"2.0","result":"0x0"},fixed_word=True)
