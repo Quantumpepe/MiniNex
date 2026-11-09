@@ -426,3 +426,95 @@
 /* Verified real-wallet balances are strictly separated from PAPER sessions. */
 .privy-balance-network{display:inline-block;opacity:.6;font-size:11px;margin-left:6px}
 .privy-hwm-title strong:has(> svg){display:inline-flex;align-items:center;gap:6px}
+
+
+/* Wallet V0.8: compact information hierarchy; no change to PAPER or Privy. */
+.privy-wallet-layout{gap:12px}
+.privy-wallet-layout .privy-balances-card{padding:15px;gap:10px}
+.privy-wallet-layout .privy-balances-card .privy-wallet-description{margin:0;line-height:1.45}
+.privy-balances-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;border-top:1px solid #2a5655;padding-top:10px;
+}
+.privy-balance-item{
+  display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;
+  gap:5px;min-width:0;min-height:65px;padding:10px 11px;
+  border:1px solid #2a5553;border-radius:11px;background:rgba(4,27,31,.33);
+}
+.privy-balance-asset{display:flex;align-items:baseline;gap:5px;min-width:0}
+.privy-balance-asset strong{font-size:13px;color:#e6fff6}
+.privy-balance-item .privy-balance-network{margin:0;font-size:10px}
+.privy-balance-value{
+  font-size:16px;color:#d9fff0;line-height:1.3;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+}
+.privy-balance-refresh{display:inline-flex;align-items:center;gap:7px}
+.privy-disclosure{
+  min-width:0;border:1px solid #2a5655;border-radius:13px;
+  background:linear-gradient(145deg,#103237,#0b2530);
+}
+.privy-disclosure>summary{
+  min-height:57px;padding:13px 14px;display:flex;flex-direction:column;justify-content:center;
+  gap:3px;list-style:none;cursor:pointer;position:relative;padding-right:42px;
+  font-weight:800;color:#e3f8f0;font-size:14px;
+}
+.privy-disclosure>summary::-webkit-details-marker{display:none}
+.privy-disclosure>summary::after{
+  content:'';width:9px;height:9px;position:absolute;right:19px;top:24px;
+  border-right:2px solid #73eac0;border-bottom:2px solid #73eac0;
+  transform:rotate(45deg);transition:transform .15s;
+}
+.privy-disclosure[open]>summary::after{transform:rotate(225deg)}
+.privy-disclosure>summary:focus-visible{outline:2px solid #65e9b9;outline-offset:3px}
+.privy-disclosure>summary small{color:#91b5b2;font-weight:500;font-size:11px}
+.privy-disclosure-body{
+  display:flex;flex-direction:column;gap:12px;
+  padding:0 14px 14px;border-top:1px solid #28504f;
+}
+.privy-addresses-section .privy-disclosure-body{padding-top:12px}
+.privy-copy-address{display:grid;gap:6px}
+.privy-copy-address .privy-wallet-description:empty{display:none}
+.privy-btc-wallet{display:grid;gap:7px;border-top:1px solid #2a5655;padding-top:10px}
+.privy-trading-settings{display:grid;gap:11px}
+.privy-trading-settings-heading{font-size:13px;font-weight:800;color:#a6c8c2;padding:1px 2px}
+.privy-asset-settings{
+  display:grid;gap:12px;min-width:0;
+  border:1px solid #2d5e5a;border-radius:15px;
+  padding:15px;background:linear-gradient(145deg,#113838,#0a252f);
+}
+.privy-asset-settings-heading{font-size:16px;color:#e6fff4}
+.privy-asset-settings-fields{display:grid;gap:10px}
+.privy-asset-settings-fields label{
+  display:grid;grid-template-columns:minmax(100px,.8fr) minmax(0,1.2fr);
+  align-items:center;gap:12px;min-width:0;
+  font-size:12px;color:#b6d5d0;
+}
+.privy-asset-settings-fields select{
+  min-width:0;max-width:100%;width:100%;padding:10px 9px;
+  min-height:44px;border:1px solid #376462;border-radius:9px;
+  background:#0e2c35;color:#e7fff6;font-size:12px;
+}
+.privy-asset-settings-fields select:focus-visible{outline:2px solid #62e8ba;outline-offset:2px}
+.privy-asset-budget{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  gap:9px;align-items:end;min-width:0;padding-top:11px;
+  border-top:1px solid #2a5655;
+}
+.privy-asset-budget-label{display:grid;gap:7px;min-width:0}
+.privy-asset-budget-caption{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:10px;color:#bcdad2;font-size:12px;
+}
+.privy-asset-budget input[type="range"]{width:100%;min-width:0;accent-color:#4de4ae}
+.privy-asset-budget>.privy-wallet-action{align-self:end;white-space:nowrap}
+.privy-asset-budget>[role="alert"]{grid-column:1/-1}
+.privy-technical-section .privy-disclosure-body{padding-top:12px}
+.privy-wallet-logout{margin-top:2px;justify-self:start}
+@media(max-width:480px){
+  .privy-asset-settings-fields label{grid-template-columns:minmax(0,1fr);gap:5px}
+  .privy-asset-settings-fields select{min-width:0;width:100%}
+}
+@media(max-width:355px){
+  .privy-balances-grid{grid-template-columns:1fr}
+  .privy-asset-budget{grid-template-columns:1fr}
+}
