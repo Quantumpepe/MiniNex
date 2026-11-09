@@ -28,3 +28,15 @@ test('Native build stays manual and distributes only a temporary debug artifact'
  assert.match(workflow,/retention-days: 7/);
  assert.match(workflow,/app-debug\.apk/);
 });
+
+test('Mobile home aligns logo, language switch and settings in one row',()=>{
+  assert.match(compact,/className="compact-welcome"/);
+  assert.match(compact,/className="compact-home-brand"/);
+  assert.match(compact,/className="compact-home-actions"/);
+  assert.match(compact,/onClick=\{\(\)=>chooseLang\('de'\)\}/);
+  assert.match(compact,/onClick=\{\(\)=>chooseLang\('en'\)\}/);
+  assert.match(compact,/onClick=\{\(\)=>goTo\('settings'\)\}/);
+  assert.match(app,/chooseLang=\{chooseLang\}/);
+  assert.match(css,/\.app-shell--home \.topbar \.header-actions\{display:none\}/);
+  assert.match(css,/\.compact-home-actions\{display:flex;align-items:center/);
+});

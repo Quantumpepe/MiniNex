@@ -388,7 +388,7 @@ export default function App() {
       <main className="main-body">
         {page==='overview'&&<>
           <CompactOverview
-            t={t} lang={language} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
+            t={t} lang={language} chooseLang={chooseLang} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
             history={history} trades={personalTrades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />

@@ -1,6 +1,6 @@
 import React, {useMemo} from 'react';
 import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
-import {Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin, Wallet} from 'lucide-react';
+import {Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
 import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
 
@@ -34,7 +34,7 @@ function MarketChart({history,period,valid,t,asset}) {
   </svg>;
 }
 
-export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo,showSimulatedTrades=true}) {
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo,showSimulatedTrades=true}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -44,6 +44,13 @@ export default function CompactOverview({t,lang,asset,setAsset,period,setPeriod,
         <img src={`data:image/webp;base64,${miniNexLogoData.trim()}`} alt="" aria-hidden="true"/>
         <strong>mini<span>nex</span></strong>
       </button>
+      <div className="compact-home-actions">
+        <div className="lang-switch" role="group" aria-label={t.language}>
+          <button type="button" className={lang==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={lang==='de'}>DE</button>
+          <button type="button" className={lang==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={lang==='en'}>EN</button>
+        </div>
+        <button className="icon-btn compact-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>goTo('settings')}><Settings2 size={17}/></button>
+      </div>
     </div>
     <div className="compact-price-cards" role="tablist" aria-label={t.compactChooseAsset}>
       {['BTC','ETH'].map(a=>{
