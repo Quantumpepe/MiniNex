@@ -1,12 +1,12 @@
 import React, {useCallback,useEffect,useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
-import {API_BASE,formatTimestamp} from './data.js';
+import {API_BASE,formatTimestamp,formatNumber,formatSigned} from './data.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
 
 const ASSETS=['BTC','ETH'];
 const empty={status:'NOT_STARTED',paper_only:true,trades:[]};
 
-function PersonalDemo({t}) {
+function PersonalDemo({t,lang}) {
   const {ready,authenticated,getAccessToken}=usePrivy();
   const [asset,setAsset]=useState('BTC');
   const [data,setData]=useState({BTC:empty,ETH:empty});
@@ -110,9 +110,9 @@ function PersonalDemo({t}) {
           {String(position.last_signal_summary)}
         </p>}
       {current.status!=='NOT_STARTED'&&<div className="balance-grid">
-        <div className="balance-line"><span>{t.personalDemoCash}</span><b>{position.stable_cash||'0'} {current.settlement}</b></div>
-        <div className="balance-line"><span>{t.personalDemoCoin}</span><b>{position.coin_quantity||'0'} {asset}</b></div>
-        <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{position.realized_net_profit||'0'}</b></div>
+        <div className="balance-line"><span>{t.personalDemoCash}</span><b>{formatNumber(position.stable_cash??0,lang,2)} {current.settlement}</b></div>
+        <div className="balance-line"><span>{t.personalDemoCoin}</span><b>{formatNumber(position.coin_quantity??0,lang,asset==='BTC'?8:6)} {asset}</b></div>
+        <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{formatSigned(position.realized_net_profit??0,lang,current.settlement)}</b></div>
         {position.valuation?.quote_valid===true&&Number(position.coin_quantity)>0&&<>
           <div className="balance-line">
             <span>{t.personalDemoExitNet}</span>
@@ -168,6 +168,6 @@ function PersonalDemo({t}) {
   </section>;
 }
 
-export default function UserPaperSessions({t}) {
-  return PRIVY_APP_ID?<PersonalDemo t={t}/>:null;
+export default function UserPaperSessions({t,lang}) {
+  return PRIVY_APP_ID?<PersonalDemo t={t} lang={lang}/>:null;
 }
