@@ -130,36 +130,50 @@ async def get_wallet_balances(did: str) -> dict:
         raise HTTPException(503,"Verified wallet selection unavailable") from None
     btc,eth=wallets["BTC"],wallets["ETH"]
     balances={
-        asset:{"balance":None,"status":"wallet_missing",
+        asset:{"balance":None,
+               "status":"unavailable" if wallets["BTC" if asset=="BTC" else "ETH"] else "wallet_missing",
                "network":"bitcoin-mainnet" if asset=="BTC" else "ethereum-mainnet"}
         for asset in ("BTC","ETH","USDC","USDT")
     }
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(9.0),follow_redirects=False) as client:
-            requests=[]
-            if btc:
-                requests.append(_get_json(client,f"{BTC_API}/address/{btc}"))
-            if eth:
-                requests.extend([
-                    _get_json(client,f"{ETH_API}/addresses/{eth}"),
-                    _get_json(client,f"{ETH_API}/addresses/{eth}/token-balances"),
-                ])
-            responses=await asyncio.gather(*requests)
-        index=0
-        if btc:
-            balances["BTC"]={"balance":parse_btc_balance(responses[index]),
-                             "status":"verified","network":"bitcoin-mainnet"}
-            index+=1
-        if eth:
-            balances["ETH"]={"balance":parse_eth_balance(responses[index]),
-                             "status":"verified","network":"ethereum-mainnet"}
-            index+=1
-            tokens=parse_stable_balances(responses[index])
-            for token in ("USDC","USDT"):
-                balances[token]={"balance":tokens[token],"status":"verified",
-                                 "network":"ethereum-mainnet"}
-    except (ValueError,TypeError,OverflowError):
-        raise HTTPException(503,"Read-only blockchain balances temporarily unavailable") from None
+    # Each public explorer resource must fail independently. ETH holdings
+    # must not disappear because Bitcoin or ERC-20 data is offline (or vice
+    # versa). Failed requests never masquerade as verified zero balances.
+    requests=[]
+    if btc:
+        requests.append(("BTC",f"{BTC_API}/address/{btc}"))
+    if eth:
+        requests.extend([
+            ("ETH",f"{ETH_API}/addresses/{eth}"),
+            ("TOKENS",f"{ETH_API}/addresses/{eth}/token-balances"),
+        ])
+    if requests:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(9.0),follow_redirects=False) as client:
+                responses=await asyncio.gather(*[
+                    _get_json(client,url) for _,url in requests
+                ],return_exceptions=True)
+        except (httpx.HTTPError,ValueError,TypeError,OverflowError):
+            # Global explorer transport initialization also fails closed.
+            responses=[ValueError("Provider unavailable")] * len(requests)
+        for (source,_),payload in zip(requests,responses):
+            if isinstance(payload,BaseException):
+                continue
+            try:
+                if source=="BTC":
+                    balances["BTC"]["balance"]=parse_btc_balance(payload)
+                    balances["BTC"]["status"]="verified"
+                elif source=="ETH":
+                    balances["ETH"]["balance"]=parse_eth_balance(payload)
+                    balances["ETH"]["status"]="verified"
+                elif source=="TOKENS":
+                    tokens=parse_stable_balances(payload)
+                    for token in ("USDC","USDT"):
+                        balances[token]["balance"]=tokens[token]
+                        balances[token]["status"]="verified"
+            except (ValueError,TypeError,OverflowError):
+                # A malformed explorer response only invalidates that source.
+                # Never show a guessed zero or overwrite a verified balance.
+                continue
 
     return {
         "mode":"VERIFIED_READ_ONLY",
@@ -168,6 +182,7 @@ async def get_wallet_balances(did: str) -> dict:
         "automatic_signing_enabled":False,
         "wallet_funds_used_for_paper":False,
         "pricing":"NATIVE_UNITS_ONLY",
+        "provider_status":"partial" if any(v["status"]=="unavailable" for v in balances.values()) else "complete",
         "as_of":datetime.now(timezone.utc).isoformat(),
         "wallets":wallets,
         "balances":balances,
