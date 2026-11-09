@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
-import {parseOtaRelease,shouldInstallOta,otaBuildNumber} from '../src/otaRelease.js';
+import {activeOtaVersion,parseOtaRelease,shouldInstallOta,otaBuildNumber} from '../src/otaRelease.js';
 
 const ABI='a'.repeat(64),SHA='b'.repeat(40),CHECKSUM='c'.repeat(64);
 const tag='mininex-ota-v0.8.253';
@@ -94,4 +94,44 @@ test('APK boot readiness and release publisher protect native layout and secrets
   assert.match(ci,/gh release create/);
   assert.match(android,/VITE_MININEX_NATIVE_ABI/);
   assert.doesNotMatch(android,/gh release create/);
+});
+
+test('Capgo builtin is identified by bundle ID, not native version like 1.0',()=>{
+  const candidate=parseOtaRelease(good(),ABI);
+  const installed=activeOtaVersion({id:'builtin',version:'1.0'});
+  assert.equal(installed,'builtin');
+  assert.equal(activeOtaVersion({id:'builtin',version:'0.8.10'}),'builtin');
+  assert.equal(shouldInstallOta(candidate,{
+    currentVersion:installed,nativeBuildSha:'a'.repeat(40),
+    nativeBuildAt:'2026-11-09T19:00:00Z'
+  }),true);
+  // Previous code incorrectly treated '1.0' as a non-OTA version, rejecting update.
+  assert.equal(shouldInstallOta(candidate,{
+    currentVersion:'1.0',nativeBuildSha:'a'.repeat(40),
+    nativeBuildAt:'2026-11-09T19:00:00Z'
+  }),false);
+});
+
+test('downloaded OTA versions are comparable but corrupted native state is not',()=>{
+  assert.equal(activeOtaVersion({id:'x1',version:'0.8.252'}),'0.8.252');
+  assert.equal(activeOtaVersion({id:'x1',version:'not-an-ota-version'}),null);
+  assert.equal(activeOtaVersion({version:'0.8.252'}),null);
+  assert.equal(activeOtaVersion(null),null);
+  const candidate=parseOtaRelease(good(),ABI);
+  assert.equal(shouldInstallOta(candidate,{currentVersion:activeOtaVersion({id:'x1',version:'0.8.252'})}),true);
+  assert.equal(shouldInstallOta(candidate,{currentVersion:activeOtaVersion({id:'x1',version:'0.8.254'})}),false);
+});
+
+test('OTA status shows current installed version, latest release, and an actionable check',()=>{
+  const ui=readFileSync(new URL('../src/UpdateStatus.jsx',import.meta.url),'utf8');
+  const updater=readFileSync(new URL('../src/otaUpdater.js',import.meta.url),'utf8');
+  assert.match(ui,/Jetzt prüfen/);
+  assert.match(ui,/checkMiniNexUpdates\(\{force:true\}\)/);
+  assert.match(ui,/status\.availableVersion/);
+  assert.match(ui,/status\.version/);
+  assert.match(ui,/status\.reason/);
+  assert.match(updater,/activeOtaVersion\(current\?\.bundle\)/);
+  assert.doesNotMatch(updater,/current\?\.bundle\?\.version\|\|'builtin'/);
+  assert.match(updater,/stage:'downloading'/);
+  assert.match(updater,/stage:'ready'/);
 });
