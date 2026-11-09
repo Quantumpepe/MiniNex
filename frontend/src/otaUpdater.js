@@ -1,7 +1,7 @@
 import {Capacitor} from '@capacitor/core';
 import {App as NativeApp} from '@capacitor/app';
 import {CapacitorUpdater} from '@capgo/capacitor-updater';
-import {parseOtaRelease,shouldInstallOta} from './otaRelease.js';
+import {activeOtaVersion,parseOtaRelease,shouldInstallOta} from './otaRelease.js';
 
 const RELEASE_URL='https://api.github.com/repos/Quantumpepe/MiniNex/releases/latest';
 const NATIVE_ABI=String(import.meta.env?.VITE_MININEX_NATIVE_ABI||'').toLowerCase();
@@ -12,7 +12,7 @@ const CHECK_INTERVAL_MS=60*60*1000;
 let lastCheck=0;
 let checking=false;
 let started=false;
-let state={stage:'inactive',version:null,lastChecked:null};
+let state={stage:'inactive',version:null,availableVersion:null,lastChecked:null,reason:null};
 const subscribers=new Set();
 const publish=next=>{
   state={...state,...next};
@@ -43,41 +43,51 @@ export async function checkMiniNexUpdates({force=false}={}) {
   if(!force&&now-lastCheck<CHECK_INTERVAL_MS)return;
   checking=true;
   lastCheck=now;
-  publish({stage:'checking',lastChecked:now});
+  publish({stage:'checking',lastChecked:now,reason:null});
+  let phase='release';
   try{
     const response=await fetch(RELEASE_URL,{
       method:'GET',headers:{Accept:'application/vnd.github+json'},cache:'no-store'
     });
     // First installation before the first published release.
-    if(response.status===404){publish({stage:'current'});return;}
+    if(response.status===404){publish({stage:'unavailable',reason:'no-release'});return;}
     if(!response.ok)throw Error('Release lookup unavailable');
     const release=await response.json();
     const candidate=parseOtaRelease(release,NATIVE_ABI);
-    if(!candidate){publish({stage:'current'});return;}
+    if(!candidate){publish({stage:'unavailable',reason:'incompatible-release'});return;}
+    publish({availableVersion:candidate.version});
+    phase='installed-version';
     const [current,next]=await Promise.all([
       CapacitorUpdater.current(),CapacitorUpdater.getNextBundle()
     ]);
+    // Capgo's builtin bundle often reports the native appVersion as its
+    // 'version' (e.g. 1.0), while bundle.id is literally 'builtin'.
+    const installed=activeOtaVersion(current?.bundle);
+    if(!installed)throw Error('Native installed bundle unavailable');
     if(!shouldInstallOta(candidate,{
-      currentVersion:current?.bundle?.version||'builtin',
+      currentVersion:installed,
       pendingVersion:next?.version||null,
       nativeBuildSha:NATIVE_SHA,nativeBuildAt:NATIVE_BUILT_AT
     })){
       publish({stage:next?.version===candidate.version?'ready':'current',
-        version:current?.bundle?.version||'builtin'});
+        version:installed,reason:null});
       return;
     }
-    publish({stage:'downloading',version:candidate.version});
+    phase='download';
+    publish({stage:'downloading',version:installed,availableVersion:candidate.version});
     const bundle=await CapacitorUpdater.download({
       version:candidate.version,url:candidate.url,checksum:candidate.checksum
     });
     if(!bundle?.id||bundle?.version!==candidate.version||bundle?.status!=='success')
       throw Error('Bundle not verified');
+    phase='activation';
     await CapacitorUpdater.next({id:bundle.id});
     // App keeps running; update is loaded on next restart, not during a trade.
-    publish({stage:'ready',version:candidate.version});
+    publish({stage:'ready',version:candidate.version,reason:null});
   }catch{
     // Fail closed. Running app and paper trading remain unchanged if offline.
-    publish({stage:'error'});
+    // Show which part failed rather than incorrectly claiming 'up to date'.
+    publish({stage:'error',reason:phase});
   }finally{checking=false;}
 }
 
@@ -86,7 +96,7 @@ export async function checkMiniNexUpdates({force=false}={}) {
 export function startMiniNexUpdates() {
   if(started||!otaIsSupported())return;
   started=true;
-  publish({stage:'current'});
+  publish({stage:'checking'});
   void checkMiniNexUpdates({force:true});
   NativeApp.addListener('appStateChange',({isActive})=>{
     if(isActive)void checkMiniNexUpdates();
