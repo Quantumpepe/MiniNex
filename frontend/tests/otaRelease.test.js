@@ -168,6 +168,8 @@ test('OTA GitHub failure diagnosis is specific and safe for users',()=>{
   assert.match(updater,/\[502,503,504\]/);
   assert.match(updater,/ERROR_RETRY_INTERVAL_MS/);
   assert.match(ui,/HTTP \$\{status\.httpStatus\}/);
-  assert.match(ui,/GitHub-Anfragelimit erreicht/);
+  assert.match(ui,/Update-Dienst vorübergehend ausgelastet/);
+  assert.match(updater,/API_BASE\+'\/api\/updates\/latest'/);
+  assert.doesNotMatch(updater,/api\.github\.com\/repos\/Quantumpepe\/MiniNex\/releases\/latest/);
   assert.doesNotMatch(ui,/GitHub konnte nicht erreicht werden/);
 });
