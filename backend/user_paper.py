@@ -396,16 +396,18 @@ def _settle_pending_pause(cur, row: dict, did: str, asset: str,
             quote=engine._sell_quote(asset,p.coin_quantity,float(price))
             if quote is None:
                 return row  # Negative proceeds after costs: keep pending.
-            engine._paper_sell(p,quote,now,float(price),"USER_PAUSE_TO_STABLE")
-            event=p.trade_history[-1]
-            cur.execute("""INSERT INTO mininex_user_paper_trades
-                (privy_did,asset,event_id,occurred_at,event_json)
-                VALUES (%s,%s,%s,%s,%s)
-                ON CONFLICT (privy_did,asset,event_id) DO NOTHING""",
-                (did,asset,p.trade_count,datetime.fromisoformat(event["at"]),Jsonb(event)))
-            updated=_paper_state_with_runtime(p,stored,now,active=False)
-        except (KeyError,TypeError,ValueError,AttributeError,OverflowError):
-            return row  # Never count an unverified sale as completed.
+        except Exception:
+            # An unavailable/invalid market must NEVER undo the pause itself.
+            # No SQL or ledger mutations have occurred at this point.
+            return row
+        engine._paper_sell(p,quote,now,float(price),"USER_PAUSE_TO_STABLE")
+        event=p.trade_history[-1]
+        cur.execute("""INSERT INTO mininex_user_paper_trades
+            (privy_did,asset,event_id,occurred_at,event_json)
+            VALUES (%s,%s,%s,%s,%s)
+            ON CONFLICT (privy_did,asset,event_id) DO NOTHING""",
+            (did,asset,p.trade_count,datetime.fromisoformat(event["at"]),Jsonb(event)))
+        updated=_paper_state_with_runtime(p,stored,now,active=False)
     updated.pop("pause_exit_pending",None)
     cur.execute("""UPDATE mininex_user_paper_sessions
         SET state_json=%s,revision=revision+1,updated_at=now()
