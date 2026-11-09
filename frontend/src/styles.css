@@ -276,3 +276,14 @@
 .personal-paper-controls{display:flex;flex-wrap:wrap;gap:8px}
 .personal-paper-controls button{flex:1 1 auto}
 .personal-paper .balance-grid{display:grid;gap:9px}
+
+/* Mobile home: controls stay in the top bar; one logo/name moves below. */
+@media(max-width:780px){
+  .app-shell--home .topbar .mobile-brand{display:none}
+  .app-shell--home .topbar .header-actions{margin-left:auto}
+  .compact-home--market .compact-welcome{align-items:center;padding:4px 1px}
+}
+.compact-home-brand{display:inline-flex;gap:9px;align-items:center;background:none;border:0;padding:0;color:#f1fff8;cursor:pointer;text-align:left}
+.compact-home-brand img{width:31px;height:31px;object-fit:cover;border-radius:50%}
+.compact-home-brand strong{font-size:22px;font-weight:830;letter-spacing:-1.3px;line-height:1}
+.compact-home-brand strong span{color:var(--green)}
