@@ -155,3 +155,19 @@ test('Capgo v8 pending is a SUCCESSFUL download awaiting activation, not a failu
   assert.match(updater,/CapacitorUpdater\.next\(\{id:bundle\.id\}\)/);
   assert.doesNotMatch(updater,/bundle\?\.status!=='success'/);
 });
+
+
+test('OTA GitHub failure diagnosis is specific and safe for users',()=>{
+  const updater=readFileSync(new URL('../src/otaUpdater.js',import.meta.url),'utf8');
+  const ui=readFileSync(new URL('../src/UpdateStatus.jsx',import.meta.url),'utf8');
+  assert.match(updater,/response\.status===429/);
+  assert.match(updater,/x-ratelimit-remaining/);
+  assert.match(updater,/release-rate-limit/);
+  assert.match(updater,/release-network/);
+  assert.match(updater,/release-invalid-response/);
+  assert.match(updater,/\[502,503,504\]/);
+  assert.match(updater,/ERROR_RETRY_INTERVAL_MS/);
+  assert.match(ui,/HTTP \$\{status\.httpStatus\}/);
+  assert.match(ui,/GitHub-Anfragelimit erreicht/);
+  assert.doesNotMatch(ui,/GitHub konnte nicht erreicht werden/);
+});

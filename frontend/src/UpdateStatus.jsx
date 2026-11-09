@@ -27,7 +27,11 @@ export default function UpdateStatus({lang}) {
   const reasonLabels={
     'no-release':de?'Noch kein Update veröffentlicht':'No update published yet',
     'incompatible-release':de?'GitHub-Version passt nicht zur installierten APK':'GitHub release is incompatible with this APK',
-    release:de?'GitHub konnte nicht erreicht werden':'Could not reach GitHub',
+    'release-network':de?'Keine Netzwerkverbindung zu GitHub':'Network connection to GitHub failed',
+    'release-http':de?'GitHub hat die Anfrage abgelehnt':'GitHub rejected the request',
+    'release-rate-limit':de?'GitHub-Anfragelimit erreicht – später erneut prüfen':'GitHub rate limit reached – check again later',
+    'release-invalid-response':de?'Ungültige Antwort von GitHub':'Invalid response from GitHub',
+    release:de?'GitHub-Release konnte nicht geprüft werden':'Could not check GitHub release',
     'installed-version':de?'Installierte Version konnte nicht gelesen werden':'Could not read installed version',
     download:de?'Download oder Prüfsumme fehlgeschlagen':'Download or checksum validation failed',
     activation:de?'Aktivierung konnte nicht vorgemerkt werden':'Could not schedule activation'
@@ -48,7 +52,7 @@ export default function UpdateStatus({lang}) {
           {installedLatest?(de?'Update aktiviert · aktuell':'Update active · up to date'):
             labels[status.stage]||labels.inactive}
         </p>
-        {status.reason&&<p className="small-note">{reasonLabels[status.reason]||reasonLabels.release}</p>}
+        {status.reason&&<p className="small-note">{reasonLabels[status.reason]||reasonLabels.release}{status.reason==='release-http'&&Number.isInteger(status.httpStatus)?` (HTTP ${status.httpStatus})`:''}</p>}
         {status.version&&<p className="small-note">{de?'Installierte Webversion: ':'Installed web version: '}{status.version==='builtin'?(de?'APK-Version':'APK version'):status.version}</p>}
         {status.availableVersion&&<p className="small-note">{de?'Neueste geprüfte Version: ':'Latest verified version: '}{status.availableVersion}</p>}
         {checked&&<p className="small-note">{de?'Letzte Prüfung: ':'Last checked: '}{checked}</p>}
