@@ -6,6 +6,11 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-check.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'frontend/**'
+      - '.github/workflows/frontend-check.yml'
   workflow_dispatch:
 
 permissions:
