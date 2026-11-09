@@ -4,6 +4,10 @@ import App from './App.jsx';
 import './styles.css';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { PRIVY_APP_ID, PRIVY_PROVIDER_CONFIG } from './privyConfig.js';
+import {notifyMiniNexReady,startMiniNexUpdates} from './otaUpdater.js';
+
+// Confirm the native web bundle loaded before any network request; permits rollback.
+notifyMiniNexReady();
 
 // The public app ID enables wallet login. Never put a Privy app secret or
 // backend authorization key inside an Android/iOS bundle.
@@ -12,3 +16,6 @@ createRoot(document.getElementById('root')).render(
     ? <PrivyProvider appId={PRIVY_APP_ID} config={PRIVY_PROVIDER_CONFIG}><App /></PrivyProvider>
     : <App />
 );
+
+// Download approved UI bundles in background. Activation waits until next launch.
+startMiniNexUpdates();
