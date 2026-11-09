@@ -18,7 +18,7 @@ export default function UpdateStatus({lang}) {
   const labels={
     inactive:de?'Nur in der installierten Android-/iOS-App':'Only in the installed Android/iOS app',
     current:de?'Kein neueres Update gefunden':'No newer update found',
-    checking:de?'Prüfe GitHub auf Updates …':'Checking GitHub for updates…',
+    checking:de?'Prüfe auf Updates …':'Checking for updates…',
     downloading:de?'Geprüftes Update wird heruntergeladen …':'Downloading verified update…',
     ready:de?'Update heruntergeladen – Aktivierung noch ausstehend':'Update downloaded – activation still pending',
     unavailable:de?'Kein kompatibles Update verfügbar':'No compatible update available',
@@ -27,11 +27,11 @@ export default function UpdateStatus({lang}) {
   const reasonLabels={
     'no-release':de?'Noch kein Update veröffentlicht':'No update published yet',
     'incompatible-release':de?'GitHub-Version passt nicht zur installierten APK':'GitHub release is incompatible with this APK',
-    'release-network':de?'Keine Netzwerkverbindung zu GitHub':'Network connection to GitHub failed',
-    'release-http':de?'GitHub hat die Anfrage abgelehnt':'GitHub rejected the request',
-    'release-rate-limit':de?'GitHub-Anfragelimit erreicht – später erneut prüfen':'GitHub rate limit reached – check again later',
-    'release-invalid-response':de?'Ungültige Antwort von GitHub':'Invalid response from GitHub',
-    release:de?'GitHub-Release konnte nicht geprüft werden':'Could not check GitHub release',
+    'release-network':de?'Update-Dienst nicht erreichbar':'Update service unavailable',
+    'release-http':de?'Update-Dienst antwortet mit Fehler':'Update service returned an error',
+    'release-rate-limit':de?'Update-Dienst vorübergehend ausgelastet':'Update service temporarily busy',
+    'release-invalid-response':de?'Ungültige Antwort vom Update-Dienst':'Invalid response from update service',
+    release:de?'Update konnte nicht geprüft werden':'Could not check update',
     'installed-version':de?'Installierte Version konnte nicht gelesen werden':'Could not read installed version',
     download:de?'Download oder Prüfsumme fehlgeschlagen':'Download or checksum validation failed',
     activation:de?'Aktivierung konnte nicht vorgemerkt werden':'Could not schedule activation'
