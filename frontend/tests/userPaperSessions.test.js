@@ -8,7 +8,7 @@ const dict=read('../src/i18n.js');
 
 test('wallet provides identity-scoped BTC and ETH personal paper sessions',()=>{
   assert.match(app,/import UserPaperSessions from/);
-  assert.match(app,/<UserPaperSessions t=\{t\}\/>/);
+  assert.match(app,/<UserPaperSessions t=\{t\} lang=\{language\}\/>/);
   assert.match(ui,/const ASSETS=\['BTC','ETH'\]/);
   assert.match(ui,/\/api\/user-paper\//);
   assert.match(ui,/Authorization:'Bearer '\+token/);
