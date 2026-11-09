@@ -26,7 +26,8 @@
     "@solana-program/system": "^0.8.0",
     "@solana-program/token": "^0.6.0",
     "@solana-program/memo": "^0.8.0",
-    "@solana/kit": "^3.0.3"
+    "@solana/kit": "^3.0.3",
+    "@capgo/capacitor-updater": "8.54.2"
   },
   "devDependencies": {
     "vite": "^6.1.0",
