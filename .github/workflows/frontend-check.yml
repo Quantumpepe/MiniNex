@@ -100,8 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           # Avoid publishing an outdated release if main has advanced during CI.
-          git fetch origin main --quiet
-          if [ "$(git rev-parse refs/remotes/origin/main)" != "$GITHUB_SHA" ]; then
+          if [ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]; then
             echo "A newer main commit exists; publishing skipped."
             exit 0
           fi
