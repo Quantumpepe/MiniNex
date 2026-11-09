@@ -42,6 +42,18 @@ export function parseOtaRelease(release,nativeAbi) {
   return {version,buildNumber,url:exactUrl,checksum,sourceSha:sha.toLowerCase(),publishedAt:date};
 }
 
+/**
+ * Capgo current().bundle.id is 'builtin' until the first OTA succeeds,
+ * but its version may be the Android appVersion (often 1.0), NOT 'builtin'.
+ * Compare bundle ID first. Unknown bundle responses fail closed.
+ */
+export function activeOtaVersion(bundle) {
+  if (!bundle || typeof bundle !== 'object') return null;
+  if (bundle.id === 'builtin') return 'builtin';
+  if (typeof bundle.id !== 'string' || !bundle.id.trim()) return null;
+  return otaBuildNumber(bundle.version) !== null ? bundle.version : null;
+}
+
 export function shouldInstallOta(candidate,{currentVersion='builtin',pendingVersion=null,nativeBuildSha='',nativeBuildAt=''}={}) {
   if(!candidate||!Number.isSafeInteger(candidate.buildNumber))return false;
   const pending=otaBuildNumber(pendingVersion);
