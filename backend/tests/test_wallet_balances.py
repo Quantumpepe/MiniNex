@@ -310,7 +310,7 @@ def test_ethereum_rpc_token_fallback_checks_mainnet_and_known_contracts(monkeypa
         async def post(self,url,**kwargs):
             request=kwargs["json"];seen.append(request)
             output={"eth_chainId":"0x1","eth_getBalance":hex(WEI)}
-            amount=("0x"+format(500000 if request["id"]==3 else 2000000,"x"))
+            amount=("0x"+format(500000 if request["id"]==3 else 2000000,"064x"))
             return Reply({"id":request["id"],"jsonrpc":"2.0",
                           "result":output.get(request["method"],amount)})
     monkeypatch.setattr(w.httpx,"AsyncClient",Client)
@@ -359,3 +359,9 @@ def test_wrong_chain_or_invalid_rpc_results_cannot_invent_zero(monkeypatch):
     ]:
         with pytest.raises(ValueError):
             w._rpc_quantity(response)
+
+def test_erc20_eth_call_requires_padded_32_byte_word():
+    assert w._rpc_quantity({"jsonrpc":"2.0","result":"0x"+"0"*64},fixed_word=True)==0
+    assert w._rpc_quantity({"jsonrpc":"2.0","result":"0x"+"0"*60+"f423"},fixed_word=True)==62531
+    with pytest.raises(ValueError):
+        w._rpc_quantity({"jsonrpc":"2.0","result":"0x0"},fixed_word=True)
