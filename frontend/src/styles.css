@@ -280,10 +280,28 @@
 /* Mobile home: controls stay in the top bar; one logo/name moves below. */
 @media(max-width:780px){
   .app-shell--home .topbar .mobile-brand{display:none}
-  .app-shell--home .topbar .header-actions{margin-left:auto}
+  /* Keep the existing top safe-area spacing and brand position; move controls into its row. */
+  .app-shell--home .topbar .header-actions{display:none}
   .compact-home--market .compact-welcome{align-items:center;padding:4px 1px}
 }
 .compact-home-brand{display:inline-flex;gap:9px;align-items:center;background:none;border:0;padding:0;color:#f1fff8;cursor:pointer;text-align:left}
 .compact-home-brand img{width:31px;height:31px;object-fit:cover;border-radius:50%}
 .compact-home-brand strong{font-size:22px;font-weight:830;letter-spacing:-1.3px;line-height:1}
 .compact-home-brand strong span{color:var(--green)}
+
+/* Mobile overview: MiniNex brand, language and settings share one row. */
+@media(max-width:780px){
+  .compact-home--market .compact-welcome{gap:8px}
+  .compact-home-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-shrink:0}
+  .compact-home-actions .lang-switch{padding:3px}
+  .compact-home-actions .lang-switch button{min-width:33px;padding:5px 7px;font-size:11px}
+  .compact-home-actions .icon-btn{height:34px;width:34px}
+  .compact-home-brand{min-width:0;flex-shrink:1}
+}
+@media(max-width:365px){
+  .compact-home-actions{gap:5px}
+  .compact-home-actions .lang-switch button{min-width:29px;padding:5px}
+  .compact-home-brand{gap:6px}
+  .compact-home-brand strong{font-size:19px}
+  .compact-home-brand img{width:27px;height:27px}
+}
