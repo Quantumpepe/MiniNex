@@ -19,6 +19,7 @@ test('total includes independent BTC and ETH paper equity including estimated ex
   assert.equal(x.pnl,-20);
   assert.equal(x.pnlPct,-0.2);
   assert.equal(x.assetCount,2);
+  assert.equal(x.runningAssets,2);
   assert.equal(x.mode,'PAPER');
 });
 
@@ -47,4 +48,13 @@ test('sparkline requires actual observed equity snapshots',()=>{
   assert.match(result.line,/M/);
   assert.match(result.line,/L/);
   assert.equal(result.positive,false);
+});
+
+test('paused paper sessions count toward equity but do not display AUTO as running',()=>{
+  const paused=row('ETH',3000,1.2,4920);
+  paused.status='PAUSED';
+  const x=summarizePaperSessions({BTC:{status:'NOT_STARTED'},ETH:paused});
+  assert.equal(x.assetCount,1);
+  assert.equal(x.runningAssets,0);
+  assert.equal(x.equity,4920);
 });
