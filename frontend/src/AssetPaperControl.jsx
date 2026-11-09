@@ -3,7 +3,8 @@ import {API_BASE} from './data.js';
 
 // All commands target the authenticated user's existing PAPER session.
 // No wallet signer, key, allowance, real exchange or LIVE route exists here.
-const validSession=(data,asset)=>data&&data.asset===asset&&
+const validSession=(data,asset)=>data&&
+  (data.status==='NOT_STARTED'||data.asset===asset)&&
   data.paper_only===true&&data.real_trading_enabled===false&&
   data.wallet_funds_used===false&&
   ['NOT_STARTED','ACTIVE','PAUSED'].includes(data.status)&&
