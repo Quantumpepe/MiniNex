@@ -36,9 +36,9 @@ def address_in_privy_user(data: dict, *, did: str, asset: str, address: str) -> 
     return False
 
 
-async def verify_wallet_address(did: str, asset: str, address: str) -> None:
+async def fetch_privy_user(did: str) -> dict:
+    """Fetch independently from Privy; client-selected addresses have no authority."""
     _safe_did(did)
-    validate_request(asset,address)
     secret=os.environ.get("MININEX_PRIVY_APP_SECRET","").strip()
     if not secret:
         raise HTTPException(503,"Private Privy wallet verification not configured")
@@ -51,7 +51,15 @@ async def verify_wallet_address(did: str, asset: str, address: str) -> None:
             )
             response.raise_for_status()
             data=response.json()
+        if not isinstance(data,dict) or data.get("id")!=did:
+            raise ValueError("Identity mismatch")
+        return data
     except (httpx.HTTPError,ValueError):
         raise HTTPException(503,"Could not independently verify Privy wallet") from None
+
+
+async def verify_wallet_address(did: str, asset: str, address: str) -> None:
+    validate_request(asset,address)
+    data=await fetch_privy_user(did)
     if not address_in_privy_user(data,did=did,asset=asset,address=address):
         raise HTTPException(403,"Wallet is not verified for this MiniNex account")

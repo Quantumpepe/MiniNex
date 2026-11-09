@@ -19,6 +19,7 @@ from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_ye
 from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
+from .wallet_balances import get_wallet_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .treasury import treasury_status
@@ -105,6 +106,21 @@ def account_status(authorization: str | None = Header(default=None)):
     """Create/read only the account proven by a Privy token; no wallet authority."""
     did = verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(get_account_summary(did), headers={"Cache-Control":"no-store"})
+
+
+@app.get("/api/wallet/balances")
+async def verified_read_only_wallet_balances(
+    authorization: str | None = Header(default=None),
+):
+    """Fetch public mainnet balances only for server-verified Privy wallets.
+
+    No address or chain is taken from a client parameter. Never signs or
+    authorizes a trade, never reads a PAPER position, never creates a deposit.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(await get_wallet_balances(did),
+                        headers={"Cache-Control":"private, no-store",
+                                 "X-Content-Type-Options":"nosniff"})
 
 
 @app.get("/api/market/prices")
