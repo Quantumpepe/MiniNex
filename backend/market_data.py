@@ -29,6 +29,10 @@ DEFAULT_WS = (
     "btcusdt@miniTicker/ethusdt@miniTicker"
 )
 DEFAULT_REFERENCE_URL = "https://api.kraken.com/0/public/Ticker"
+# Fixed, independent spot-exchange reference when Kraken returns 503.
+# Bitstamp market ticker: https://www.bitstamp.net/api/#tag/Tickers
+DEFAULT_BITSTAMP_TICKER_URL = "https://www.bitstamp.net/api/v2/ticker"
+BITSTAMP_SYMBOLS = {"BTC": "btcusd", "ETH": "ethusd"}
 DEFAULT_PRIMARY_REST_URL = "https://data-api.binance.vision/api/v3/ticker/price"
 DEFAULT_CANDLES_URL = "https://data-api.binance.vision/api/v3/klines"
 
@@ -100,6 +104,34 @@ def parse_kraken_ticker(payload: dict[str, Any]) -> dict[str, float]:
         if bid is not None and ask is not None and ask >= bid:
             prices[asset] = (bid + ask) / 2.0
     return prices
+
+
+def parse_bitstamp_ticker(payload: Any, *, now: float) -> float | None:
+    """Validate an independent, recent BTC/USD or ETH/USD spot bid/ask.
+
+    Bitstamp reports exchange-time Unix seconds; reject stale, future,
+    crossed, invalid or absurdly wide books. No `last` fallback and no
+    fabricated quote if an endpoint is unavailable.
+    """
+    if not isinstance(payload, dict) or not math.isfinite(now):
+        return None
+    bid = positive_price(payload.get("bid"))
+    ask = positive_price(payload.get("ask"))
+    try:
+        raw = payload.get("timestamp")
+        if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+            return None
+        raw = str(raw)
+        if not raw.isdigit() or len(raw) > 12:
+            return None
+        timestamp = int(raw)
+    except (ValueError, OverflowError):
+        return None
+    if (bid is None or ask is None or ask < bid
+        or not -5 <= now - timestamp <= 90
+        or (ask / bid - 1) * 100 > 1.5):
+        return None
+    return (bid + ask) / 2.0
 
 
 class MarketDataService:
@@ -358,7 +390,27 @@ class MarketDataService:
             return False
         at = self._clock() if now is None else now
         for asset, price in prices.items():
-            self._reference[asset] = {"price": price, "received_at": at}
+            self._reference[asset] = {
+                "price": price, "received_at": at, "source": "Kraken Spot",
+            }
+        return True
+
+    def ingest_bitstamp_reference(
+        self, asset: str, payload: Any, *, now: float | None = None
+    ) -> bool:
+        """Recover only one independently verified asset; never affect the other."""
+        if asset not in ASSETS:
+            return False
+        at = self._clock() if now is None else now
+        price = parse_bitstamp_ticker(payload, now=at)
+        if price is None:
+            return False
+        current = self._reference.get(asset)
+        if current and current["received_at"] > at:
+            return False
+        self._reference[asset] = {
+            "price": price, "received_at": at, "source": "Bitstamp Spot",
+        }
         return True
 
     def snapshot(self, *, now: float | None = None) -> dict[str, Any]:
@@ -393,7 +445,7 @@ class MarketDataService:
                 "primary_source": source,
                 "primary_at": utc_iso(primary["event_at"]) if primary else None,
                 "reference_price_usd": reference["price"] if reference_fresh else None,
-                "reference_source": "Kraken Spot",
+                "reference_source": reference.get("source", "Kraken Spot") if reference_fresh else None,
                 "reference_at": utc_iso(reference["received_at"]) if reference else None,
                 "price_divergence_pct": round(divergence, 4) if divergence is not None else None,
                 "market_data_valid": verified,
@@ -457,17 +509,69 @@ class MarketDataService:
             retry_seconds = min(30.0, retry_seconds * 2)
 
     async def _reference_loop(self) -> None:
+        """Continue independently checking both assets if Kraken goes offline.
+
+        The reference must remain an actual public *other exchange* bid/ask,
+        with independent timestamps and the usual 1.5% Binance divergence
+        guard. Fail closed if BOTH providers have no fresh quote.
+        """
         async with httpx.AsyncClient(timeout=httpx.Timeout(8.0), follow_redirects=False) as client:
             while True:
                 try:
-                    response = await client.get(self.reference_url, params={"pair": "XBTUSD,ETHUSD"})
-                    response.raise_for_status()
-                    if not self.ingest_reference(response.json()):
-                        raise ValueError("Kraken returned no valid BTC/USD or ETH/USD bid/ask")
-                    self.last_reference_error = None
+                    verified_from_kraken: set[str] = set()
+                    kraken_error = None
+                    try:
+                        response = await client.get(
+                            self.reference_url, params={"pair": "XBTUSD,ETHUSD"}
+                        )
+                        response.raise_for_status()
+                        packet = response.json()
+                        prices = parse_kraken_ticker(packet)
+                        if not prices:
+                            raise ValueError("Kraken returned no valid BTC/USD or ETH/USD bid/ask")
+                        self.ingest_reference(packet)
+                        verified_from_kraken = set(prices)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        kraken_error = f"{type(exc).__name__}: {str(exc)[:135]}"
+                        LOGGER.warning("Independent Kraken price check failed: %s", kraken_error)
+                    missing = [asset for asset in ASSETS if asset not in verified_from_kraken]
+                    failures = []
+                    if missing:
+                        async def fetch_bitstamp(asset: str) -> bool:
+                            market = BITSTAMP_SYMBOLS[asset]
+                            response = await client.get(
+                                f"{DEFAULT_BITSTAMP_TICKER_URL}/{market}/"
+                            )
+                            response.raise_for_status()
+                            return self.ingest_bitstamp_reference(asset, response.json())
+
+                        results = await asyncio.gather(
+                            *(fetch_bitstamp(asset) for asset in missing),
+                            return_exceptions=True,
+                        )
+                        for asset, result in zip(missing, results):
+                            if isinstance(result, BaseException) or result is not True:
+                                failures.append(
+                                    asset + ": " + (
+                                        f"{type(result).__name__}: {str(result)[:60]}"
+                                        if isinstance(result, BaseException) else "invalid Bitstamp ticker"
+                                    )
+                                )
+                    if failures:
+                        self.last_reference_error = (
+                            (kraken_error + "; " if kraken_error else "")
+                            + "Bitstamp fallback: " + "; ".join(failures)
+                        )[:300]
+                        LOGGER.warning("Independent reference unavailable: %s", self.last_reference_error)
+                    else:
+                        # Kraken is allowed to be offline if independent
+                        # Bitstamp spot quotes for BOTH assets are confirmed.
+                        self.last_reference_error = None
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     self.last_reference_error = f"{type(exc).__name__}: {str(exc)[:160]}"
-                    LOGGER.warning("Independent Kraken price check failed: %s", self.last_reference_error)
+                    LOGGER.warning("Independent reference loop failed: %s", self.last_reference_error)
                 await asyncio.sleep(self.reference_period_seconds)

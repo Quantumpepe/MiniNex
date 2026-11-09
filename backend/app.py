@@ -142,6 +142,11 @@ def market_status():
         "rest_backup_active":snap["rest_backup_active"],
         "rest_backup_error":market.last_rest_error,
         "primary_sources":{k:v["primary_source"] for k,v in snap["markets"].items()},
+        "reference_sources":{k:v["reference_source"] for k,v in snap["markets"].items()},
+        "reference_fallback_active":{
+            k:v["reference_source"]=="Bitstamp Spot" and v["market_data_valid"]
+            for k,v in snap["markets"].items()
+        },
         "primary_sample_ages_sec":{
             k:round(max(0.0,time.time()-market._primary[k]["received_at"]),1)
               if k in market._primary else None
