@@ -422,7 +422,7 @@ export default function App() {
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
           <PrivyWalletPanel t={t}/>
-          <UserPaperSessions t={t}/>
+          <UserPaperSessions t={t} lang={language}/>
         </>}
 
         {page==='activity'&&<>
