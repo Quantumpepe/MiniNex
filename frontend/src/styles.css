@@ -631,3 +631,18 @@
   outline-offset:-2px;
   border-radius:6px;
 }
+
+
+/* A downloaded OTA is not yet active: show calm, concrete restart guidance. */
+.update-activation-note{
+  margin:12px 0 14px;padding:9px 0 9px 13px;
+  border-left:3px solid #57caaa;
+  color:#b8d8d0;
+}
+.update-activation-note strong{
+  display:block;font-size:12px;line-height:1.5;color:#d6fff0;
+}
+.update-activation-note p{
+  margin:8px 0 0;font-size:12px;line-height:1.55;
+  overflow-wrap:anywhere;
+}
