@@ -1,9 +1,11 @@
 import {Capacitor} from '@capacitor/core';
+import {API_BASE} from './data.js';
 import {App as NativeApp} from '@capacitor/app';
 import {CapacitorUpdater} from '@capgo/capacitor-updater';
 import {activeOtaVersion,isVerifiedDownloadedBundle,parseOtaRelease,shouldInstallOta} from './otaRelease.js';
 
-const RELEASE_URL='https://api.github.com/repos/Quantumpepe/MiniNex/releases/latest';
+// The Render backend caches GitHub Releases, avoiding per-device REST API limits.
+const RELEASE_URL=API_BASE+'/api/updates/latest';
 const NATIVE_ABI=String(import.meta.env?.VITE_MININEX_NATIVE_ABI||'').toLowerCase();
 const NATIVE_SHA=String(import.meta.env?.VITE_MININEX_BUILD_SHA||'').toLowerCase();
 const NATIVE_BUILT_AT=String(import.meta.env?.VITE_MININEX_BUILD_AT||'');
@@ -53,7 +55,7 @@ export async function checkMiniNexUpdates({force=false}={}) {
   let phase='release';
   try{
     const request=()=>fetch(RELEASE_URL,{
-      method:'GET',headers:{Accept:'application/vnd.github+json'},cache:'no-store'
+      method:'GET',headers:{Accept:'application/json'},cache:'no-store'
     });
     let response;
     try {response=await request();}
@@ -70,19 +72,18 @@ export async function checkMiniNexUpdates({force=false}={}) {
         throw err;
       }
     }
-    // First installation before the first published release.
-    if(response.status===404){publish({stage:'unavailable',reason:'no-release'});return;}
+    // Public Render OTA metadata endpoint returns 503 while its cache is empty.
     if(!response.ok){
       const limited=response.status===429||
         (response.status===403&&(response.headers.get('x-ratelimit-remaining')==='0'||
           response.headers.get('retry-after')!==null));
-      throw Object.assign(new Error('GitHub release HTTP '+response.status),{
+      throw Object.assign(new Error('OTA metadata HTTP '+response.status),{
         otaReason:limited?'release-rate-limit':'release-http',httpStatus:response.status
       });
     }
     let release;
     try {release=await response.json();}
-    catch {throw Object.assign(new Error('Invalid GitHub response'),{otaReason:'release-invalid-response'});}
+    catch {throw Object.assign(new Error('Invalid OTA response'),{otaReason:'release-invalid-response'});}
     const candidate=parseOtaRelease(release,NATIVE_ABI);
     if(!candidate){publish({stage:'unavailable',reason:'incompatible-release'});return;}
     publish({availableVersion:candidate.version});
@@ -137,7 +138,7 @@ export async function checkMiniNexUpdates({force=false}={}) {
   }finally{checking=false;}
 }
 
-// Use the hosted release API only, no Capgo telemetry, custom update server,
+// Read release metadata through our Render backend cache; no Capgo telemetry,
 // wallet credentials or private keys. Foreground checks are rate limited.
 export function startMiniNexUpdates() {
   if(started||!otaIsSupported())return;
