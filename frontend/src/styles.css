@@ -370,3 +370,45 @@
     padding:0;border-bottom:0;background:transparent;backdrop-filter:none;
   }
 }
+
+/* Home: language group and settings stay side by side, never stacked by
+   the legacy .compact-welcome > div grid rule. */
+@media(max-width:780px){
+  .compact-welcome > .compact-home-actions {
+    display:flex;
+    flex-direction:row;
+    flex-wrap:nowrap;
+    justify-content:flex-end;
+    align-items:center;
+    gap:8px;
+    flex:0 0 auto;
+    min-width:0;
+  }
+  .compact-welcome > .compact-home-actions .lang-switch{
+    display:flex;
+    align-items:center;
+    flex-wrap:nowrap;
+    flex:0 0 auto;
+  }
+  .compact-welcome > .compact-home-actions .compact-settings-btn{
+    display:grid;
+    place-items:center;
+    flex:0 0 34px;
+  }
+}
+@media(max-width:365px){
+  .compact-welcome > .compact-home-actions{gap:5px}
+}
+.settings-activity-link{
+  width:100%;display:flex;align-items:center;gap:10px;
+  padding:12px 14px;margin-top:15px;
+  border:1px solid #3c7770;border-radius:12px;
+  background:#123734;color:#bcffe5;
+  font-size:13px;font-weight:750;cursor:pointer;
+}
+.settings-activity-link:hover,.settings-activity-link:focus-visible{
+  background:#185144;border-color:#55dcb1;
+}
+.settings-activity-chevron{
+  margin-left:auto;transform:rotate(-90deg);
+}
