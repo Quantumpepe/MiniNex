@@ -2,6 +2,11 @@ name: MiniNex Android validation (manual only)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - build/android-render-ota-20261110
+    paths:
+      - '.github/workflows/android-debug.yml'
 
 permissions:
   contents: read
