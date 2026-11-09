@@ -21,7 +21,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -99,41 +99,46 @@ export default function TradingSetupPreview({t,getAccessToken,enabled}) {
     finally{setBusy(false);}
   };
 
-  return <section className="privy-hwm-box" aria-label={t.privySetupTitle}>
-    <div className="privy-hwm-title"><strong>{t.privySetupTitle}</strong></div>
-    {['BTC','ETH'].map(asset=><div key={asset} className="privy-setup-asset"
-      style={{display:'flex',flexDirection:'column',gap:10,marginBottom:18}}>
-      <strong>{asset}</strong>
-      <label style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
-        <span>{t.privySetupMode}</span>
-        <select value={settings[asset].mode} disabled={status!=='ready'||busy}
-          onChange={event=>change(asset,'mode',event.target.value)}>
-          <option value="LONG">{t.privySetupLong}</option>
-          <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
-        </select>
-      </label>
-      <label style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
-        <span>{t.privySetupStable}</span>
-        <select value={settings[asset].stable} disabled={status!=='ready'||busy}
-          onChange={event=>change(asset,'stable',event.target.value)}>
-          {STABLES.map(value=><option key={value} value={value}>{value}</option>)}
-        </select>
-      </label>
-      <label style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
-        <span>{t.privySetupHorizon}</span>
-        <select value={settings[asset].horizon} disabled={status!=='ready'||busy}
-          onChange={event=>change(asset,'horizon',event.target.value)}>
-          <option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option>
-          <option value="24h">24h</option>
-        </select>
-      </label>
+  return <div className="privy-trading-settings" aria-label={t.privySetupTitle}>
+    <div className="privy-trading-settings-heading">{t.privySetupTitle}</div>
+    {['BTC','ETH'].map(asset=><section key={asset} className="privy-asset-settings"
+      aria-label={asset+' '+t.privyAssetSettings}>
+      <div className="privy-asset-settings-heading">
+        <strong>{asset} · {t.privyAssetSettings}</strong>
+      </div>
+      <div className="privy-asset-settings-fields">
+        <label>
+          <span>{t.privySetupMode}</span>
+          <select value={settings[asset].mode} disabled={status!=='ready'||busy}
+            onChange={event=>change(asset,'mode',event.target.value)}>
+            <option value="LONG">{t.privySetupLong}</option>
+            <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
+          </select>
+        </label>
+        <label>
+          <span>{t.privySetupStable}</span>
+          <select value={settings[asset].stable} disabled={status!=='ready'||busy}
+            onChange={event=>change(asset,'stable',event.target.value)}>
+            {STABLES.map(value=><option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>{t.privySetupHorizon}</span>
+          <select value={settings[asset].horizon} disabled={status!=='ready'||busy}
+            onChange={event=>change(asset,'horizon',event.target.value)}>
+            <option value="5m">5m</option><option value="15m">15m</option><option value="1h">1h</option>
+            <option value="24h">24h</option>
+          </select>
+        </label>
+      </div>
       <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
         disabled={status!=='ready'||busy||!saved?.[asset]||
           (['mode','stable','horizon'].every(key=>settings[asset][key]===saved[asset][key]))}
         onClick={()=>save(asset)}>{t.privyBudgetSave} {asset}</button>
-    </div>)}
+      {renderBudget?.(asset)}
+    </section>)}
     {status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
     {status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       onClick={reload} disabled={busy}>{t.privyBudgetReload}</button>}
-  </section>;
+  </div>;
 }
