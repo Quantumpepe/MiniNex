@@ -146,3 +146,11 @@ def test_virtual_budget_shrink_does_not_liquidate_positions():
     assert p.cost_basis == 490.0
     assert p.initial_equity == 500.0
     assert p.trade_count == 1
+
+def test_multi_buy_state_survives_personal_paper_roundtrip():
+    p=PaperPortfolio(asset="ETH",settlement="USDC",stable_cash=1500.0,
+        coin_quantity=1.6,cost_basis=3450.0,entry_price=2150.0,
+        last_buy_price=2085.0,add_count=2,trade_count=3)
+    q=user_paper._restore("ETH","USDC",user_paper._state_of(p),user_paper.PAPER_START_USD)
+    assert q.add_count==2 and q.last_buy_price==2085.0
+    assert q.cost_basis==3450.0 and q.trade_count==3
