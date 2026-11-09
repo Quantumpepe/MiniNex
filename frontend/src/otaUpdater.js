@@ -125,6 +125,15 @@ export async function checkMiniNexUpdates({force=false}={}) {
     // Never expose wallet data or error body, only a safe HTTP status code.
     const reason=phase==='release'?(error?.otaReason||'release-network'):phase;
     publish({stage:'error',reason,httpStatus:phase==='release'?(error?.httpStatus||null):null});
+    // Retry one failed check after a short delay without retrying GitHub rate limits.
+    // Keep the active native/PAPER bundle untouched on all failures.
+    if(reason!=='release-rate-limit'&&!retryScheduled){
+      retryScheduled=true;
+      setTimeout(()=>{
+        retryScheduled=false;
+        if(state.stage==='error')void checkMiniNexUpdates();
+      },ERROR_RETRY_INTERVAL_MS);
+    }
   }finally{checking=false;}
 }
 
