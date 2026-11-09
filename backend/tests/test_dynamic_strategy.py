@@ -1,3 +1,4 @@
+import pytest
 """Regression tests for MiniNex's deliberately non-executing BTC/ETH paper strategy."""
 from backend.auto_engine import PaperAutoEngine, PaperPortfolio, PaperRules
 
@@ -337,7 +338,7 @@ def test_first_buy_reserves_capital_on_cautious_signal_for_both_assets():
         assert p.trade_history[-1]["quantity"]==round(p.coin_quantity,12)
 
 
-def test_confirmed_strong_uptrend_can_use_essentially_all_5000():
+def test_confirmed_strong_uptrend_buys_aggressively_but_keeps_cash_reserve():
     for asset in ("BTC", "ETH"):
         engine=PaperAutoEngine(Market())
         engine.portfolios[asset]=PaperPortfolio(asset=asset,settlement="USDC",stable_cash=5000.0)
@@ -346,9 +347,9 @@ def test_confirmed_strong_uptrend_can_use_essentially_all_5000():
         engine.process_asset(asset,verified(100.0),1000)
         p=engine.portfolios[asset]
         assert p.trade_count==1
-        assert p.cost_basis>=4990
-        assert 0 <= p.stable_cash < 10
-        assert p.cost_basis+p.stable_cash <= 5000.000001
+        assert 3000 < p.cost_basis < 4650
+        assert 350 < p.stable_cash < 2000
+        assert p.cost_basis+p.stable_cash == pytest.approx(5000.0,abs=0.000001)
 
 
 def test_confirmed_recovery_can_add_to_eth_below_previous_buy():
@@ -414,7 +415,7 @@ def test_emergency_gap_sells_without_waiting_for_historical_signals():
     assert p.coin_quantity==0
 
 
-def test_rally_adds_reserved_cash_up_to_budget_ceiling():
+def test_rally_adds_cash_in_stages_without_draining_all_reserves():
     engine=PaperAutoEngine(Market())
     p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=2800.0,
         coin_quantity=22.0,cost_basis=2200.0,entry_price=100.0,
@@ -424,7 +425,7 @@ def test_rally_adds_reserved_cash_up_to_budget_ceiling():
         **_allocation_signal(strong=True),"window_high":101.0,"recent_mean_price":100.0}
     engine.process_asset("BTC",verified(101.0),1000)
     assert p.last_reason=="ADD_TREND"
-    assert p.add_count==1 and p.stable_cash<10
+    assert p.add_count==1 and 100 < p.stable_cash < 2800
     assert p.coin_quantity>22
 
 
@@ -454,3 +455,115 @@ def test_flat_bounce_does_not_justify_repeated_buying():
     engine.process_asset("ETH",verified(97.5),1000)
     assert p.trade_count==0
     assert p.last_reason=="TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"
+
+
+def _clean_strong_signal(price, *, ten_minute=False, high_volatility=False):
+    return {
+        "ready":True,
+        "window_high":price,
+        "window_low":price*(0.90 if high_volatility else 0.99),
+        "momentum_60s_pct":0.55,
+        "momentum_180s_pct":0.80,
+        "momentum_600s_pct":0.60 if ten_minute else None,
+        "recent_mean_price":price*0.999,
+        "rebound_from_window_low_pct":0.6,
+        "fall_from_window_high_pct":0.0,
+        "prior_max_drawdown_pct":0.25,
+        "short_window_high":price,
+        "short_window_low":price*0.99,
+    }
+
+
+def test_short_5m_momentum_cannot_deploy_all_cash_on_one_signal():
+    for asset in ("BTC","ETH"):
+        engine=PaperAutoEngine(Market())
+        p=PaperPortfolio(asset=asset,settlement="USDC",stable_cash=5000)
+        engine.portfolios[asset]=p
+        engine._signal=lambda asset,now,price:_clean_strong_signal(price)
+        engine.process_asset(asset,verified(100),1000)
+        assert p.last_decision=="PAPER_BUY"
+        assert 3500 < p.cost_basis < 4700
+        assert p.stable_cash > 300
+        assert p.initial_equity is None  # no false funded-wallet state
+
+
+def test_high_volatility_reserves_more_even_with_strong_fast_momentum():
+    engine=PaperAutoEngine(Market())
+    calm=_clean_strong_signal(100)
+    turbulent=_clean_strong_signal(100,high_volatility=True)
+    calm_target=engine._deployment_target(calm,100,"BREAKOUT")
+    turbulent_target=engine._deployment_target(turbulent,100,"BREAKOUT")
+    assert 0.70 < turbulent_target < calm_target < 1.0
+    assert calm_target-turbulent_target > 0.08
+
+
+def test_a_second_strong_signal_without_real_price_progress_is_not_an_add():
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="ETH",settlement="USDC",stable_cash=5000)
+    engine.portfolios["ETH"]=p
+    engine._signal=lambda asset,now,price:_clean_strong_signal(price)
+    engine.process_asset("ETH",verified(100),1000)
+    initial_qty=p.coin_quantity
+    initial_cash=p.stable_cash
+    engine.process_asset("ETH",verified(100),1200)
+    assert p.trade_count==1
+    assert p.add_count==0
+    assert p.coin_quantity==initial_qty
+    assert p.stable_cash==initial_cash
+    assert p.last_reason=="TREND_ACTIVE_OR_NET_EXIT_NOT_PROFITABLE"
+
+
+def test_progressive_real_rally_uses_three_adds_and_never_overdraws_cash():
+    for asset in ("BTC","ETH"):
+        engine=PaperAutoEngine(Market())
+        p=PaperPortfolio(asset=asset,settlement="USDC",stable_cash=5000)
+        engine.portfolios[asset]=p
+        engine._signal=lambda asset,now,price:_clean_strong_signal(price,ten_minute=True)
+        cash=[]
+        for i,price in enumerate((100.0,100.8,101.6,102.4)):
+            engine.process_asset(asset,verified(price),1000+i*120)
+            cash.append(p.stable_cash)
+        assert p.trade_count==4
+        assert p.add_count==3
+        assert all(cash[i]>cash[i+1] for i in range(3))
+        assert cash[-1]>0
+        assert p.stable_cash+p.cost_basis > 0
+        assert all(t["kind"]=="PAPER_BUY" for t in p.trade_history)
+        assert sum(t["total_spent"] for t in p.trade_history)==pytest.approx(5000-cash[-1],abs=0.00001)
+        engine.process_asset(asset,verified(103.2),1600)
+        assert p.trade_count==4
+
+
+def test_rebased_500_to_5000_budget_preserves_add_cash_not_100_pct_drain():
+    from decimal import Decimal
+    from backend.user_paper import _reconcile_virtual_budget
+    engine=PaperAutoEngine(Market())
+    p=PaperPortfolio(asset="BTC",settlement="USDC",stable_cash=500)
+    engine.portfolios["BTC"]=p
+    first=engine._buy_quote("BTC",490,100)
+    engine._paper_buy(p,first,1000,100,"BREAKOUT")
+    assert _reconcile_virtual_budget(p,Decimal("500"),Decimal("5000"))
+    assert p.initial_equity==5000
+    engine._signal=lambda asset,now,price:_clean_strong_signal(price)
+    engine.process_asset("BTC",verified(101),1200)
+    assert p.trade_count==2
+    assert p.last_reason=="ADD_TREND"
+    assert p.stable_cash>200
+    assert 0 < p.coin_quantity
+    assert p.cost_basis+p.stable_cash==pytest.approx(5000,abs=0.000001)
+
+
+def test_spot_short_all_in_rebuy_keeps_coin_quantity_comparison():
+    engine=PaperAutoEngine(Market())
+    # Preserve spot-downtrend semantics: native BTC/ETH -> stable -> more native,
+    # rather than applying LONG capital reserve to a full spot-short rebuy.
+    p=PaperPortfolio(asset="BTC",settlement="USDC",strategy_mode="SPOT_SHORT",
+        stable_cash=5000,last_exit_price=110,post_exit_low=100,
+        last_sold_quantity=40.0,last_trade_at=0)
+    engine.portfolios["BTC"]=p
+    engine._signal=lambda asset,now,price:{
+        **_clean_strong_signal(price),"momentum_60s_pct":0.15}
+    engine.process_asset("BTC",verified(101),1000)
+    assert p.last_decision=="PAPER_BUY"
+    assert p.coin_quantity>40
+    assert 0 <= p.stable_cash < 5
