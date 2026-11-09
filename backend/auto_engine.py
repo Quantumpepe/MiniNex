@@ -296,9 +296,16 @@ class PaperAutoEngine:
 
     def _strong_uptrend(self, sig: dict[str, Any], price: float) -> bool:
         """Persistent positive momentum near the verified high, not a single spike."""
+        fast = (sig.get("momentum_60s_pct", -math.inf) >= self.rules.strong_trend_60s_pct
+                and sig.get("momentum_180s_pct", -math.inf) >= self.rules.strong_trend_180s_pct)
+        # A steady 10-minute rise can also warrant full allocation; it need
+        # not contain an explosive one-minute candle.
+        sustained = (sig.get("momentum_600s_pct") is not None
+                     and sig["momentum_600s_pct"] >= 0.40
+                     and sig.get("momentum_180s_pct", -math.inf) >= 0.15
+                     and sig.get("momentum_60s_pct", -math.inf) >= 0.05)
         return (sig.get("ready") is True
-                and sig.get("momentum_60s_pct", -math.inf) >= self.rules.strong_trend_60s_pct
-                and sig.get("momentum_180s_pct", -math.inf) >= self.rules.strong_trend_180s_pct
+                and (fast or sustained)
                 and price >= sig.get("window_high", math.inf) * 0.997
                 and price >= sig.get("recent_mean_price", price))
 
@@ -307,11 +314,22 @@ class PaperAutoEngine:
         """Paper capital weighting: weaker entries reserve cash for later."""
         if self._strong_uptrend(sig, price):
             return 1.0
+        # Continuously adapt exposure to independent trend horizons and
+        # observed volatility; percentages are not rigid per-signal tiers.
+        m60 = max(0.0, float(sig.get("momentum_60s_pct") or 0.0))
+        m180 = max(0.0, float(sig.get("momentum_180s_pct") or 0.0))
+        m600 = max(0.0, float(sig.get("momentum_600s_pct") or 0.0))
+        strength = (0.40 * min(1.0, m60 / 0.30)
+                    + 0.40 * min(1.0, m180 / 0.60)
+                    + 0.20 * min(1.0, m600 / 0.80))
+        high = float(sig.get("window_high") or price)
+        low = float(sig.get("window_low") or price)
+        volatility = (high / low - 1) * 100 if low > 0 and high >= low else 0.0
+        volatility_reserve = min(0.12, max(0.0, volatility - 0.8) * 0.02)
+        target = 0.34 + 0.66 * strength - volatility_reserve
         if adding:
-            return 0.78 if reason == "ADD_REBOUND" else 0.85
-        if reason in ("BREAKOUT", "TREND_CONTINUATION"):
-            return 0.70
-        return 0.45 if reason == "REBOUND" else 0.40
+            target += 0.25
+        return min(0.95, max(0.25, target))
 
     def _allocation_budget(self, p: PaperPortfolio, price: float, target: float) -> float:
         """All-in trade allowance, never exceeds available simulated stable cash."""
