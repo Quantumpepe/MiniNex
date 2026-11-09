@@ -44,7 +44,7 @@ test('Mobile home aligns logo, language switch and settings in one row',()=>{
 test('mobile Home shows private paper portfolio before BTC and ETH cards',()=>{
   assert.match(compact,/function PaperPortfolioCard\(/);
   assert.match(compact,/portfolioSummary=\{null\}|portfolioSummary=null/);
-  assert.match(compact,/showSimulatedTrades&&<PaperPortfolioCard/);
+  assert.match(compact,/<PaperPortfolioCard t=\{t\}/);
   assert.ok(compact.indexOf('<PaperPortfolioCard') < compact.indexOf('className="compact-price-cards"'));
   assert.match(compact,/compact-wallet-curve/);
   assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce\)/);
@@ -54,7 +54,9 @@ test('mobile Home shows private paper portfolio before BTC and ETH cards',()=>{
 });
 
 test('wallet card does not imply real wallet trading or fabricate a history',()=>{
-  assert.match(compact,/PAPER ·/);
+  assert.match(compact,/paperAvailable\?'PAPER':'LIVE/);
+  assert.match(compact,/aria-disabled="true"/);
+  assert.match(compact,/compact-market-modes/);
   assert.match(compact,/summary&&chart/);
   assert.match(compact,/paperSparkline\(samples\)/);
   assert.doesNotMatch(compact,/LIVE.*\d{3,}/);
