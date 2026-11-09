@@ -45,7 +45,9 @@ export default function WalletBalances({t,getAccessToken,userId}) {
         <span><strong>{asset}</strong> <small className="privy-balance-network">{asset==='BTC'?'Bitcoin':'Ethereum'}</small></span>
         <strong>{balances[asset].status==='verified'
           ? balances[asset].balance+' '+asset
-          : t.privyBalancesMissing}</strong>
+          : balances[asset].status==='wallet_missing'
+            ? t.privyBalancesMissing
+            : t.privyBalancesUnavailable}</strong>
       </div>)}
     </div>}
     <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
