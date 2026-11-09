@@ -123,12 +123,18 @@ async def _get_json(client: httpx.AsyncClient, url: str) -> object:
         raise ValueError("Mainnet explorer unavailable") from None
 
 
-def _rpc_quantity(payload: object) -> int:
-    """Validate unsigned Ethereum JSON-RPC quantity; reject errors and false 0."""
+def _rpc_quantity(payload: object, *, fixed_word: bool = False) -> int:
+    """Validate Ethereum RPC result, including ABI-padded ERC-20 uint256."""
     if not isinstance(payload,dict) or payload.get("jsonrpc")!="2.0" or "error" in payload:
         raise ValueError("Ethereum RPC error")
     value=payload.get("result")
-    if not isinstance(value,str) or not re.fullmatch(r"0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)",value):
+    if not isinstance(value,str):
+        raise ValueError("Invalid Ethereum RPC response")
+    # eth_call returns a 32-byte ABI hex word, unlike quantity responses
+    # from eth_getBalance/eth_chainId, which prohibit leading zeros.
+    valid=(re.fullmatch(r"0x[0-9a-fA-F]{64}",value) if fixed_word else
+           re.fullmatch(r"0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)",value))
+    if not valid:
         raise ValueError("Invalid Ethereum RPC response")
     number=int(value,16)
     if number>MAX_UINT256:
@@ -146,7 +152,7 @@ async def _eth_rpc_call(client: httpx.AsyncClient, method: str, params: list, re
         payload=response.json()
         if not isinstance(payload,dict) or payload.get("id")!=req_id:
             raise ValueError("Ethereum RPC response mismatch")
-        return _rpc_quantity(payload)
+        return _rpc_quantity(payload,fixed_word=method=="eth_call")
     except (httpx.HTTPError,ValueError,TypeError,AttributeError):
         raise ValueError("Ethereum mainnet RPC unavailable") from None
 
