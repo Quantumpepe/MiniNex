@@ -107,3 +107,13 @@ settlements and twelve mandatory safety gates. Every engine and the future
 single operator GO LIVE action remain locked. The existing BTC/ETH PAPER
 features, account schema and ETH quote development are not reclassified as
 LIVE. See [the seven-chain rollout specification](backend/LIVE_SEVEN_CHAIN_ROLLOUT.md).
+
+### ETH LIVE stage 7 – unsigned Uniswap swap preview
+
+An authenticated `POST /api/live/eth/swap-plan` can check an actual USDC/USDT
+approval, request a fresh Uniswap ETH quote and request a simulated unsigned
+swap using Universal Router 2.1.2. The backend only returns validated
+outer-transaction metadata, NEVER raw calldata, signer authorization, or a
+broadcasted transaction. Nested router command validation and real mainnet
+receipt handling still block GO LIVE. See
+[ETH LIVE integration](backend/LIVE_ETH_INTEGRATION.md).

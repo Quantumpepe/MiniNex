@@ -224,6 +224,46 @@ min-out and the wallet owner immediately before sending.
 Privacy: Never log private Privy credentials or user identity in policy
 verification errors; policy contents are not exposed in the API response.
 
+## Stage 7: real Uniswap ETH unsigned transaction preview (not tradable)
+
+The new authenticated `POST /api/live/eth/swap-plan` accepts the same strict
+input body as `/api/live/eth/quote`: `side` BUY/SELL, `stable`
+USDC/USDT and exact input `amount`.
+
+It reads the user wallet directly from Privy and checks the wallet-specific
+mainnet balances. For stablecoin BUYs it uses Uniswap `/check_approval` to
+detect any outstanding ERC-20 approval or Permit2 permission. The endpoint
+returns **APPROVAL_OR_PERMIT_REQUIRED** without approving or signing
+anything when required. For eligible no-permit CLASSIC V3 quotes, it calls
+`/quote` and `/swap` with `simulateTransaction:true`, then validates
+the unsigned outer Ethereum transaction against:
+- Mainnet chain ID 1, exact user's wallet as sender, and allowlisted
+  Uniswap Universal Router 2.1.2 at
+  `0x23617e59A5925b2A4Bf75d73ff6711cD0b29De85`.
+- Router `execute(bytes,bytes[],uint256)` function selector, bounded
+  calldata length, strict ETH input value, gas-limit and maximum
+  possible gas exposure, and an extra ETH reserve.
+- Exact quote input/output tokens, base units, recipient, 0.50% slippage
+  maximum and no unapproved provider fee.
+
+The preview returns sanitized route and fee metadata **without calldata,
+permit signatures, approval instructions, transaction submission or any
+wallet authorization**. All results always contain `can_submit:false`
+and `execution_enabled:false`.
+
+Do not use this preview as permission to trade: Uniswap Universal Router
+contains nested commands that are **not yet decoded**. Production must
+verify every inner command (including all token addresses, amounts,
+recipient and minimum output), re-quote immediately before actual send,
+independently simulate via trusted RPC, verify user signer delegation and
+spending caps, persist nonce/idempotency under DB locks, and reconcile
+actual chain receipt and token deltas.
+
+The API key is `MININEX_UNISWAP_API_KEY` on Render, never in the frontend.
+Uniswap official docs:
+- https://developers.uniswap.org/docs/trading/swapping-api/supported-chains
+- https://developers.uniswap.org/docs/api-reference/create_swap_transaction
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
