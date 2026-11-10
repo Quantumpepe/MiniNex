@@ -29,6 +29,7 @@ from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES a
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 from .privy_live_signer import get_eth_signer_status
+from .privy_eth_policy import get_eth_policy_review
 from .live_orders import get_live_order_history
 
 market = MarketDataService()
@@ -308,6 +309,17 @@ class LiveEthLimitsRequest(BaseModel):
     max_order_usd: str
     max_daily_turnover_usd: str
     expected_revision: StrictInt
+
+
+@app.get("/api/live/eth/policy")
+async def eth_privy_policy_status(authorization: str | None = Header(default=None)):
+    """Read independently retrieved Privy policy rules, never allow enrollment."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    review = await get_eth_policy_review(did)
+    return JSONResponse(review, headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.get("/api/live/eth/authorization")

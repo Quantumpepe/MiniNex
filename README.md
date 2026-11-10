@@ -86,3 +86,14 @@ terminal failure/cancellation states. The authenticated
 cannot be blindly retried as a new transaction. Actual order creation,
 wallet signing and live execution remain hard-disabled until the separate
 authorization and receipt-verification engine is implemented.
+
+### ETH LIVE stage 6 – Privy restricted policy inspection
+
+Authenticated `GET /api/live/eth/policy` can independently retrieve Privy's
+real ETH signer policy rules and compare them with an operator-pinned SHA-256,
+strict Ethereum mainnet, recipient, calldata, amount, router and expiry checks.
+The checks are deliberately conservative, not an external security audit:
+**one shared policy is not sufficient for every user's wallet without binding
+their own recipient and budget.** Adding signers and sending trades are still
+disabled until user-specific policies, full authorization and the live
+transaction executor are securely completed.
