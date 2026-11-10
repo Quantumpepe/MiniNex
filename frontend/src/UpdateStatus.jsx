@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {CheckCircle2,RefreshCcw} from 'lucide-react';
-import {checkMiniNexUpdates,otaIsSupported,subscribeOtaStatus} from './otaUpdater.js';
+import {activateMiniNexUpdate,checkMiniNexUpdates,otaIsSupported,subscribeOtaStatus} from './otaUpdater.js';
 
 export default function UpdateStatus({lang}) {
   const [status,setStatus]=useState({stage:'inactive'});
@@ -9,18 +9,20 @@ export default function UpdateStatus({lang}) {
   const supported=otaIsSupported();
   const working=status.stage==='checking'||status.stage==='downloading';
   const pending=status.stage==='ready';
+  const activating=status.stage==='activating';
   // Green only when the running version actually matches the verified release.
   // A queued / downloaded update is not an installed update.
   const installedLatest=status.stage==='current'&&
     !!status.version&&!!status.availableVersion&&
     status.version===status.availableVersion;
-  const spinning=working||pending;
+  const spinning=working||activating;
   const labels={
     inactive:de?'Nur in der installierten Android-/iOS-App':'Only in the installed Android/iOS app',
     current:de?'Kein neueres Update gefunden':'No newer update found',
     checking:de?'Prüfe auf Updates …':'Checking for updates…',
     downloading:de?'Geprüftes Update wird heruntergeladen …':'Downloading verified update…',
-    ready:de?'Update heruntergeladen – Aktivierung noch ausstehend':'Update downloaded – activation still pending',
+    ready:de?'Update bereit · jetzt aktivieren':'Update ready · activate now',
+    activating:de?'MiniNex wird mit dem Update neu gestartet …':'Restarting MiniNex with the update…',
     unavailable:de?'Kein kompatibles Update verfügbar':'No compatible update available',
     error:de?'Update-Prüfung oder Installation fehlgeschlagen':'Update check or installation failed'
   };
@@ -58,12 +60,22 @@ export default function UpdateStatus({lang}) {
         {checked&&<p className="small-note">{de?'Letzte Prüfung: ':'Last checked: '}{checked}</p>}
         {pending&&<p className="small-note update-activation-note" role="note">
           {de
-            ? 'Die Aktivierung kann etwas dauern. App vollständig schliessen und erneut öffnen, falls nötig wiederholen. Nicht deinstallieren – Wallet und PAPER-Daten bleiben erhalten.'
-            : 'Activation can take some time. Fully close and reopen the app; repeat if needed. Do not uninstall – wallet and PAPER data stay safe.'}
+            ? 'Der Download ist abgeschlossen. Auf «Jetzt aktivieren» tippen: MiniNex startet neu. Ungespeicherte Eingaben vorher sichern. Alternativ App vollständig schliessen und neu öffnen. Nicht deinstallieren.'
+            : 'Download complete. Tap «Activate now» to restart MiniNex with the update. Save unsaved edits first. Alternatively, fully close and reopen the app. Do not uninstall.'}
+        </p>}
+        {supported&&pending&&<button type="button"
+          className="update-check-button update-activate-button"
+          onClick={()=>{void activateMiniNexUpdate();}}
+          aria-label={de?'Update jetzt aktivieren':'Activate update now'}>
+          <CheckCircle2 size={17} aria-hidden="true"/>
+          {de?'Update jetzt aktivieren':'Activate update now'}
+        </button>}
+        {supported&&activating&&<p className="small-note" role="status">
+          {de?'MiniNex startet neu. Bitte nicht mehrfach drücken.':'MiniNex is restarting. Do not tap repeatedly.'}
         </p>}
         {supported&&<button type="button" className="update-check-button"
           onClick={()=>{void checkMiniNexUpdates({force:true});}}
-          disabled={working} aria-label={de?'Jetzt nach Updates suchen':'Check for updates now'}>
+          disabled={working||activating} aria-label={de?'Jetzt nach Updates suchen':'Check for updates now'}>
           <RefreshCcw size={15}/>{working?(de?'Prüfe …':'Checking…'):(de?'Jetzt prüfen':'Check now')}
         </button>}
         <p className="small-note">{de?'Nur geprüfte Oberflächen-Updates; native Änderungen brauchen weiterhin eine APK.':'Verified interface updates only; native changes still require an APK.'}</p>
