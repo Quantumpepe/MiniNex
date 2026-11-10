@@ -734,3 +734,18 @@
   .mininex-coin-details strong{font-size:11px}
   .mininex-coin-details small{font-size:8px}
 }
+
+/* The selected native coin owns its wallet address; no separate address card.
+   Public addresses may be shown/copied here only when Privy has provided them. */
+.mininex-coin-wallet-address{
+  display:grid;gap:8px;min-width:0;padding:10px 11px;
+  border:1px solid #2a5854;border-radius:11px;
+  background:rgba(6,34,36,.7);
+}
+.mininex-coin-wallet-address .privy-copy-address{min-width:0}
+.mininex-coin-wallet-address .privy-wallet-address{
+  overflow-wrap:anywhere;word-break:break-all;
+}
+.mininex-coin-wallet-address .privy-wallet-description{
+  margin:0;font-size:12px;
+}
