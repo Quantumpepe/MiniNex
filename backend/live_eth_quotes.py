@@ -78,7 +78,8 @@ def _read_quote(payload: object, *, token_in: str, token_out: str,
     output = _valid_units(destination.get("amount"))
     minimum = _valid_units(destination.get("minimumAmount"))
     # A provider cannot relax the configured 0.50% minimum received.
-    if minimum > output or minimum + 1 < int(Decimal(output) * Decimal("0.995")):
+    # Maximum quote slippage is 0.50%: min >= floor(199/200 * expected) - 1 base unit.
+    if minimum > output or (minimum + 1) * 200 < output * 199:
         raise ValueError("Invalid minimum output")
     if quote.get("portionBips") not in (None, 0, "0"):
         raise ValueError("Unexpected additional route fee")
@@ -125,7 +126,8 @@ async def quote_eth_mainnet(did: str, *, side: str, stable: str, amount: str) ->
 
     # Read actual blockchain balances. Unavailable data is NOT a zero balance.
     verified_balance_snapshot = await get_wallet_balances(did)
-    if verified_balance_snapshot.get("wallets", {}).get("ETH", "").lower() != address.lower():
+    snapshot_wallet = verified_balance_snapshot.get("wallets", {}).get("ETH")
+    if not isinstance(snapshot_wallet, str) or snapshot_wallet.lower() != address.lower():
         raise HTTPException(503, "Wallet identity changed during balance verification")
     balances = verified_balance_snapshot.get("balances", {})
     spending = balances.get(input_symbol, {})
