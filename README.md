@@ -75,3 +75,14 @@ removeSigners removes all additional signers**; the screen warns before action.
 There is no grant/enrollment button until the policy contents and execution
 engine have passed security checks. ETH LIVE trading is not yet active.
 Frontend changes are checked by GitHub CI with npm tests and a Vite build.
+
+### LIVE stage 5 – shared BTC/ETH order history and reconciliation states
+
+A new per-Privy-account, PostgreSQL-backed **LIVE order intent ledger** provides
+a shared lifecycle for ETH and future native BTC execution:
+RESERVED, SENDING, RECONCILIATION_REQUIRED, SUBMITTED, CONFIRMED, and
+terminal failure/cancellation states. The authenticated
+`GET /api/live/orders/{ETH|BTC}` API is **read-only**. A timed-out broadcast
+cannot be blindly retried as a new transaction. Actual order creation,
+wallet signing and live execution remain hard-disabled until the separate
+authorization and receipt-verification engine is implemented.
