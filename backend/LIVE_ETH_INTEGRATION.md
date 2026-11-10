@@ -68,6 +68,49 @@ registration/revocation, atomic live order-intent reservations, Uniswap
 `check_approval`/swap transaction validation, nonce tracking, submission,
 receipts and cost accounting. These must be integrated before any activation.
 
+## Stage 3: independent Privy ETH additional signer inspection (read-only)
+
+MiniNex can use Privy's **additional signers** for user-authorized offline trading.
+Unlike merely validating a JWT, the signer must exist in Privy's **server-side**
+wallet metadata for the independently verified owner and address.
+
+New endpoint: `GET /api/live/eth/authorization`. The endpoint:
+- Identifies the unique embedded Ethereum wallet from Privy's server-fetched
+  user record, not from a frontend address or wallet identifier.
+- Rejects a non-delegated wallet; fetches that wallet's metadata from
+  `GET https://api.privy.io/v1/wallets/{wallet_id}` on Privy's servers.
+- Verifies precise wallet owner, chain, address, expected additional signer
+  quorum and **exact one matching override policy ID**.
+- Distinguishes `policy_reference_verified` from
+  `policy_contents_verified`. **Policy contents are not audited here.**
+- Never returns a signer private key, creates additional signers, revokes an
+  on-chain approval, unpauses LIVE or broadcasts an order.
+- Explicitly returns `execution_enabled:false` even if a matching signer
+  and policy reference already exist. If Privy metadata differs from the
+  expected documented shape, detection fails closed.
+
+Render environment (private server configuration, not frontend source):
+- `MININEX_PRIVY_ETH_SIGNER_ID`: ID of MiniNex's own additional signer
+  authorization-key quorum generated and registered with Privy.
+- `MININEX_PRIVY_ETH_POLICY_ID`: ID of a *separately created and audited*
+  policy restricting allowed chain, swap contracts, token permissions,
+  calldata/typed data, spend amounts and signer lifetime.
+- The **authorization key private material must never be stored in GitHub
+  or the mobile client**. It is NOT created or transmitted by this PR.
+
+A matching policy **ID** alone does not prove an adequately restricted
+policy; before enrollment and LIVE activation we must fetch/audit policy rules
+and implement frontend user-owned `useSigners().addSigners(...)` and
+`removeSigners(...)` flows, plus a distinct backend LIVE intent/receipt
+system. Privy requires the wallet owner to consent once to this limited grant;
+the old PAPER budget slider provides no consent and must not be reused.
+Revoke must stop new orders even if wallet-level signer removal fails.
+
+Docs:
+- https://docs.privy.io/wallets/using-wallets/signers/add-signers
+- https://docs.privy.io/wallets/using-wallets/signers/remove-signers
+- https://docs.privy.io/controls/policies/overview
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer

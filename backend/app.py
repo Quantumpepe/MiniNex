@@ -28,6 +28,7 @@ from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
+from .privy_live_signer import get_eth_signer_status
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -306,6 +307,17 @@ class LiveEthLimitsRequest(BaseModel):
     max_order_usd: str
     max_daily_turnover_usd: str
     expected_revision: StrictInt
+
+
+@app.get("/api/live/eth/authorization")
+async def eth_signer_authorization_status(authorization: str | None = Header(default=None)):
+    """Independently inspect Privy signer + policy; never grant signer access."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    status = await get_eth_signer_status(did)
+    return JSONResponse(status, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.get("/api/live/eth/limits")

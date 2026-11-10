@@ -55,3 +55,13 @@ caps and a `POST /api/live/eth/stop` kill switch. A saved limit is NOT a Privy
 wallet authorization: all accounts start paused and no endpoint may enable
 trading. See [LIVE ETH plan](backend/LIVE_ETH_INTEGRATION.md). The Android
 frontend and the BTC/ETH simulation are unchanged.
+
+### ETH LIVE stage 3 – server-verified Privy signer (read-only)
+
+`GET /api/live/eth/authorization` now inspects the independent user-owned
+Ethereum wallet and its exact additional signer / override-policy **ID**
+directly in Privy's server records. A matching ID **does not prove the policy
+rules are safe**, and the endpoint never enables trading. Before real
+execution, MiniNex still needs an audited restrictive policy, explicit
+user consent/revocation, an authenticated intent/order lifecycle, and
+receipt reconciliation. See [ETH LIVE integration](backend/LIVE_ETH_INTEGRATION.md).
