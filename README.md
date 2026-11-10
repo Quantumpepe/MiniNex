@@ -97,3 +97,13 @@ The checks are deliberately conservative, not an external security audit:
 their own recipient and budget.** Adding signers and sending trades are still
 disabled until user-specific policies, full authorization and the live
 transaction executor are securely completed.
+
+### Seven-coin LIVE roadmap and central GO LIVE gate
+
+MiniNex's planned native LIVE order is **BTC, ETH, BNB, SOL, XRP, ADA and
+TRX last**. USDC/USDT remain settlement assets, not trading engines. The
+authenticated `GET /api/live/readiness` lists each native network, candidate
+settlements and twelve mandatory safety gates. Every engine and the future
+single operator GO LIVE action remain locked. The existing BTC/ETH PAPER
+features, account schema and ETH quote development are not reclassified as
+LIVE. See [the seven-chain rollout specification](backend/LIVE_SEVEN_CHAIN_ROLLOUT.md).
