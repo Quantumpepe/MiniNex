@@ -28,6 +28,7 @@ from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
+from .live_btc_quotes import quote_native_btc
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
@@ -273,6 +274,29 @@ def trading_capabilities(authorization: str | None = Header(default=None)):
             }
         }
     }, headers={"Cache-Control": "no-store"})
+
+
+class NativeBtcQuoteRequest(BaseModel):
+    """No user-selected destination, Bitcoin memo, wrapped token or provider."""
+    model_config = ConfigDict(extra="forbid")
+    side: Literal["BUY", "SELL"]
+    stable: Literal["USDC", "USDT"]
+    amount: str
+
+
+@app.post("/api/live/btc/quote")
+async def btc_native_crosschain_quote(
+    request: NativeBtcQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Indicative native BTC ↔ Ethereum stable price, NEVER a deposit order."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    price = await quote_native_btc(
+        did,side=request.side,stable=request.stable,amount=request.amount)
+    return JSONResponse(price,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 class EthLiveQuoteRequest(BaseModel):
