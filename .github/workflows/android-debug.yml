@@ -2,6 +2,10 @@ name: MiniNex Android validation (manual only)
 
 on:
   workflow_dispatch:
+  # One-time signed recovery APK if the existing OTA WebView stays stuck.
+  # This trigger exists only on the temporary recovery branch, NOT on main.
+  push:
+    branches: [ota-recovery-2026-11-10]
 
 permissions:
   contents: read
