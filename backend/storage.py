@@ -65,6 +65,36 @@ SCHEMA = (
                (planned_capital_usd > 0 AND max_order_usd > 0 AND
                 max_daily_turnover_usd > 0))
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_order_intents (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        chain_network TEXT NOT NULL CHECK (chain_network IN ('bitcoin-mainnet','ethereum-mainnet')),
+        intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 8 AND 96),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        state TEXT NOT NULL DEFAULT 'RESERVED'
+            CHECK (state IN ('RESERVED','SENDING','RECONCILIATION_REQUIRED',
+                             'SUBMITTED','CONFIRMED','REVERTED','REORG_PENDING',
+                             'CANCELLED','EXPIRED')),
+        reserved_notional_usd NUMERIC(28,6) NOT NULL
+            CHECK (reserved_notional_usd > 0 AND reserved_notional_usd < 10000000),
+        tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        submitted_at TIMESTAMPTZ,
+        finalized_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset,intent_key),
+        CHECK ((asset='BTC' AND chain_network='bitcoin-mainnet') OR
+               (asset='ETH' AND chain_network='ethereum-mainnet')),
+        CHECK (tx_hash IS NULL OR
+               (length(tx_hash) BETWEEN 64 AND 66)),
+        CHECK ((state NOT IN ('SUBMITTED','CONFIRMED','REVERTED','REORG_PENDING'))
+               OR tx_hash IS NOT NULL),
+        CHECK (state NOT IN ('CONFIRMED','REVERTED','CANCELLED','EXPIRED')
+               OR finalized_at IS NOT NULL)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_live_orders_by_account
+       ON mininex_live_order_intents(privy_did,asset,created_at DESC)""",
     """CREATE TABLE IF NOT EXISTS mininex_trade_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
