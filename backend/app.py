@@ -27,6 +27,7 @@ from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
+from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -296,6 +297,43 @@ async def eth_mainnet_quote(request: EthLiveQuoteRequest,
         did, side=request.side, stable=request.stable, amount=request.amount)
     return JSONResponse(quote, headers={"Cache-Control": "private, no-store",
                                        "X-Content-Type-Options": "nosniff"})
+
+
+class LiveEthLimitsRequest(BaseModel):
+    """Explicit LIVE risk-limit preferences, never a delegated wallet grant."""
+    model_config = ConfigDict(extra="forbid")
+    planned_capital_usd: str
+    max_order_usd: str
+    max_daily_turnover_usd: str
+    expected_revision: StrictInt
+
+
+@app.get("/api/live/eth/limits")
+def eth_live_limits_status(authorization: str | None = Header(default=None)):
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_live_eth_limits(did), headers={"Cache-Control": "private, no-store"})
+
+
+@app.put("/api/live/eth/limits")
+def eth_live_limits_update(body: LiveEthLimitsRequest,
+                           authorization: str | None = Header(default=None)):
+    """Set spending limits, but keep trading PAUSED and signer unauthorized."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    limits = save_live_eth_limits(
+        did,
+        capital=body.planned_capital_usd,
+        order=body.max_order_usd,
+        daily=body.max_daily_turnover_usd,
+        expected_revision=body.expected_revision,
+    )
+    return JSONResponse(limits, headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/api/live/eth/stop")
+def eth_live_stop(authorization: str | None = Header(default=None)):
+    """Stop future ETH LIVE sends; does not cancel any on-chain transaction."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(stop_live_eth(did), headers={"Cache-Control": "private, no-store"})
 
 
 class BudgetPreferenceRequest(BaseModel):
