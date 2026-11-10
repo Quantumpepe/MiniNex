@@ -77,8 +77,11 @@ def _read_quote(payload: object, *, token_in: str, token_out: str,
         raise ValueError("Quoted input differs from requested input")
     output = _valid_units(destination.get("amount"))
     minimum = _valid_units(destination.get("minimumAmount"))
-    if minimum > output:
+    # A provider cannot relax the configured 0.50% minimum received.
+    if minimum > output or minimum + 1 < int(Decimal(output) * Decimal("0.995")):
         raise ValueError("Invalid minimum output")
+    if quote.get("portionBips") not in (None, 0, "0"):
+        raise ValueError("Unexpected additional route fee")
     return str(output), str(minimum)
 
 
@@ -121,7 +124,10 @@ async def quote_eth_mainnet(did: str, *, side: str, stable: str, amount: str) ->
         raise HTTPException(409, "Verified Ethereum wallet missing")
 
     # Read actual blockchain balances. Unavailable data is NOT a zero balance.
-    balances = (await get_wallet_balances(did)).get("balances", {})
+    verified_balance_snapshot = await get_wallet_balances(did)
+    if verified_balance_snapshot.get("wallets", {}).get("ETH", "").lower() != address.lower():
+        raise HTTPException(503, "Wallet identity changed during balance verification")
+    balances = verified_balance_snapshot.get("balances", {})
     spending = balances.get(input_symbol, {})
     gas = balances.get("ETH", {})
     if spending.get("status") != "verified" or gas.get("status") != "verified":
@@ -131,7 +137,7 @@ async def quote_eth_mainnet(did: str, *, side: str, stable: str, amount: str) ->
         eth_available = Decimal(gas["balance"])
     except (InvalidOperation, ValueError, TypeError, KeyError):
         raise HTTPException(503, "Invalid verified balance") from None
-    if available < 0 or eth_available < 0:
+    if not available.is_finite() or not eth_available.is_finite() or available < 0 or eth_available < 0:
         raise HTTPException(503, "Invalid verified balance")
     if value > available:
         raise HTTPException(409, "Insufficient verified input balance")
