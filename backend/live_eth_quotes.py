@@ -143,7 +143,7 @@ async def quote_eth_mainnet(did: str, *, side: str, stable: str, amount: str) ->
         raise HTTPException(503, "Invalid verified balance")
     if value > available:
         raise HTTPException(409, "Insufficient verified input balance")
-    if eth_available - (value if side == "SELL" else 0) < ETH_GAS_RESERVE:
+    if eth_available - (value if side == "SELL" else 0) <= ETH_GAS_RESERVE:
         raise HTTPException(409, "Ethereum balance insufficient for gas reserve")
 
     token_in = STABLES[stable] if side == "BUY" else ETH_NATIVE
