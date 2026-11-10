@@ -138,7 +138,8 @@ def test_server_observed_grant_and_policy_still_do_not_enable_trades(
     assert calls == [("user", DID), ("wallet", WALLET_ID)]
     assert outcome["wallet_delegated"] is True
     assert outcome["signer_verified"] is True
-    assert outcome["policy_verified"] is True
+    assert outcome["policy_reference_verified"] is True
+    assert outcome["policy_contents_verified"] is False
     assert outcome["trading_approved"] is False
     assert outcome["automated_signing_enabled"] is False
     assert outcome["execution_enabled"] is False
@@ -165,7 +166,7 @@ def test_user_not_delegated_or_wrong_policy_fails_closed(monkeypatch, ready_conf
     monkeypatch.setattr(verifier, "fetch_privy_wallet_metadata", wrong)
     status = asyncio.run(verifier.get_eth_signer_status(DID))
     assert status["wallet_delegated"] is True
-    assert status["policy_verified"] is False
+    assert status["policy_reference_verified"] is False
     assert status["signer_verified"] is False
 
 
