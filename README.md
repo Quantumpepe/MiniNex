@@ -172,3 +172,24 @@ available" warning, never a fabricated or wrong-network deposit address.
 Some EVM coins may reuse the ETH-address after their chain and signer
 capabilities are proven, but this update does **not** enable deposits,
 approvals or live trading.
+
+### OTA activation fix: pending download does not mean installed
+
+The manual Capgo flow intentionally uses `next({id})` after downloading a
+checksum-verified GitHub ZIP; this only queues the new UI bundle for activation
+when the app backgrounds, fully restarts or reloads. Keeping MiniNex open in
+Settings could leave "activation pending" visible indefinitely. This is a
+lifecycle/UX issue, **not** a second download.
+
+Settings now offers **"Update jetzt aktivieren" / "Activate update now"**
+once the already verified bundle is queued. A deliberate tap checks
+`current()` and `getNextBundle()` again, verifies the queued bundle matches
+the expected version, then calls Capgo `reload()` for an immediate controlled
+WebView restart. The freshly loaded app confirms the active version from
+native `current()`. This action never signs transactions, deposits funds,
+changes native plugins or selects an arbitrary local bundle. Save unsaved
+inputs before activation. Background/restart remains an alternative. A
+pending update no longer shows a misleading endless loading spinner.
+
+This improvement will only be available **after the first OTA containing it
+has itself been activated** on a device running the older UI.
