@@ -69,19 +69,25 @@ function findNativeBtcWallet(user) {
 
 // This component is mounted only after Privy identity and account persistence
 // are confirmed. No BTC signing, transactions or transfers are enabled.
-function NativeBtcWallet({user, t}) {
+function useNativeBtcWallet(user, enabled) {
   const {createWallet} = useCreateExtendedWallet();
+  // Keep provisioning mounted while the wallet page is open even if no coin
+  // details are expanded. Never reuse a newly-created address across accounts.
   const [createdWallet,setCreatedWallet] = useState(null);
   const [state,setState] = useState('checking');
   const [retry,setRetry] = useState(0);
   const attemptedFor = React.useRef(null);
   const existing = findNativeBtcWallet(user);
-  const address = existing?.address || (isNativeBtcAddress(createdWallet?.address) ? createdWallet.address : null);
+  const createdForUser = createdWallet?.userId===user?.id
+    ? createdWallet.wallet : null;
+  const address = existing?.address ||
+    (isNativeBtcAddress(createdForUser?.address)?createdForUser.address:null);
 
   useEffect(()=>{
     const userId = user?.id;
-    if (!userId || address) {
-      if (address) setState('created');
+    if (!enabled || !userId) return;
+    if (address) {
+      setState('created');
       return;
     }
     const attemptKey = userId + ':' + retry;
@@ -91,34 +97,25 @@ function NativeBtcWallet({user, t}) {
     setState('creating');
     (async()=>{
       try {
-        // No signer or server authorization is granted here.
+        // Creates a user-owned native BTC address. No trade signing granted.
         const result = await createWallet({chainType: 'bitcoin-segwit'});
         if (!active) return;
         const wallet = result?.wallet;
-        if (!wallet || wallet.chainType !== 'bitcoin-segwit' || !isNativeBtcAddress(wallet.address)) {
+        if (!wallet || wallet.chainType !== 'bitcoin-segwit' ||
+            !isNativeBtcAddress(wallet.address)) {
           setState('failed');
           return;
         }
-        setCreatedWallet(wallet);
+        setCreatedWallet({userId,wallet});
         setState('created');
       } catch {
         if (active) setState('failed');
       }
     })();
-    return ()=>{active=false};
-  },[user?.id, address, createWallet, retry]);
+    return ()=>{active=false;};
+  },[enabled,user?.id,address,createWallet,retry]);
 
-  return <div className="privy-btc-wallet">
-    <div className="privy-wallet-description"><strong>{t.privyBtcTitle}</strong> · {
-      address ? t.privyBtcCreated :
-      state==='creating' ? t.privyBtcCreating :
-      state==='failed' ? t.privyBtcFailed : t.privyBtcPending
-    }</div>
-    {address && <CopyWalletAddress address={address} network="BTC" t={t}/> }
-    {state==='failed' && !address && <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
-      onClick={()=>setRetry(n=>n+1)}>{t.privyBtcRetry}</button>}
-    
-  </div>;
+  return {address,state,retry:()=>setRetry(n=>n+1)};
 }
 
 // Deliberately no sendTransaction, withdrawal or delegation path here.
@@ -136,6 +133,9 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
   const [savedBudgets,setSavedBudgets]=useState(null);
   const [budgetStatus,setBudgetStatus]=useState('idle');
   const [budgetBusy,setBudgetBusy]=useState(false);
+  const btcWallet = useNativeBtcWallet(
+    user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
+
   useEffect(()=>{
     if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);setRouteCapabilities(null);setSavedBudgets(null);setPreviewBudgets({BTC:0,ETH:0});setBudgetStatus('idle');return;}
     let active=true;
@@ -294,6 +294,32 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
       disabled={budgetBusy} onClick={reloadBudgets}>{t.privyBudgetReload}</button>}
   </div>;
 
+  // The address belongs to the coin's own open settings panel. No central
+  // wallet-address section and no address from an unverified native chain.
+  const renderCoinAddress = asset => {
+    if(asset==='BTC')return <div className="mininex-coin-wallet-address">
+      <div className="privy-wallet-description"><strong>{t.privyBtcTitle}</strong> · {
+        btcWallet.address?t.privyBtcCreated:
+        btcWallet.state==='creating'?t.privyBtcCreating:
+        btcWallet.state==='failed'?t.privyBtcFailed:t.privyBtcPending
+      }</div>
+      {btcWallet.address &&
+        <CopyWalletAddress address={btcWallet.address} network="BTC" t={t}/>}
+      {btcWallet.state==='failed'&&!btcWallet.address&&
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          onClick={btcWallet.retry}>{t.privyBtcRetry}</button>}
+    </div>;
+    if(asset==='ETH')return <div className="mininex-coin-wallet-address">
+      <div className="privy-wallet-description">
+        {address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}
+      </div>
+      {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
+    </div>;
+    return <div className="mininex-coin-wallet-address" role="status">
+      <div className="privy-wallet-description">{t.coinAddressPending}</div>
+    </div>;
+  };
+
   const renderSessionControls = asset =>
     <AssetPaperControl asset={asset} t={t} getAccessToken={getAccessToken}
       enabled={identityStatus==='verified' && databaseStatus==='stored'}/>;
@@ -306,20 +332,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
           {identityStatus==='verified' && databaseStatus==='stored' &&
             <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
 
-          <details className="privy-disclosure privy-addresses-section">
-            <summary>
-              <span>{t.privyAddressesTitle}</span>
-              <small>{t.privyAddressesHint}</small>
-            </summary>
-            <div className="privy-disclosure-body">
-              <div className="privy-wallet-description">{address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}</div>
-              {address && <CopyWalletAddress address={address} network="ETH" t={t}/> }
-              {identityStatus==='verified' && databaseStatus==='stored'
-                ? <NativeBtcWallet user={user} t={t}/>
-                : <div className="privy-wallet-description">{t.privyBtcTitle} · {t.privyBtcPending}</div>}
-            </div>
-          </details>
-
           {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
             <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}
           {(identityStatus==='failed' || identityStatus==='setup' ||
@@ -330,6 +342,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
           <TradingSetupPreview t={t} getAccessToken={getAccessToken}
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
+            renderCoinAddress={renderCoinAddress}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
           <LiveEthControls t={t} user={user} address={address}
