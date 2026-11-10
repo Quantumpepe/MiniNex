@@ -749,3 +749,13 @@
 .mininex-coin-wallet-address .privy-wallet-description{
   margin:0;font-size:12px;
 }
+
+/* OTA: once Capgo has a verified queued bundle, the user can choose an
+   immediate controlled WebView restart instead of watching a spinner. */
+.update-activate-button{
+  background:#205e4b;border-color:#55d6a8;color:#e8fff4;
+  font-weight:800;
+}
+.update-activate-button:hover,.update-activate-button:focus-visible{
+  background:#287155;border-color:#81f1c5;
+}
