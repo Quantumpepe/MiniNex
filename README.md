@@ -117,3 +117,14 @@ outer-transaction metadata, NEVER raw calldata, signer authorization, or a
 broadcasted transaction. Nested router command validation and real mainnet
 receipt handling still block GO LIVE. See
 [ETH LIVE integration](backend/LIVE_ETH_INTEGRATION.md).
+
+### BTC LIVE stage 1 – native cross-chain quote (no transfers)
+
+`POST /api/live/btc/quote` can request a **read-only indicative**
+THORChain quote between native BTC and Ethereum USDC/USDT. The provider
+never receives a wallet destination address and MiniNex never receives a
+spendable deposit address or memo. The server checks each user's verified
+Privy BTC/Ethereum wallets, balance/fee reserves, quote denominations
+and excessive price impact. This is **not BTC LIVE**: no automatic signing,
+fees guaranteed, receipt verification or transactions. The public quote
+API is rate-limited and must be replaced or supplemented for production.

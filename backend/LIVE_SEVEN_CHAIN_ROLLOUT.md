@@ -56,6 +56,44 @@ There is NO generalized `transfer`, `approve`, `sign`, `swap` or `activate`
 route exposed by this registry. It is a backend implementation contract,
 not a claim that seven LIVE trading engines exist.
 
+## BTC stage 1: independent native BTC indicative cross-chain quote
+
+The authenticated `POST /api/live/btc/quote` supports:
+
+```json
+{"side":"SELL","stable":"USDC","amount":"0.1"}
+```
+
+- A SELL gets a **native Bitcoin** BTC.BTC → ETH.USDC / ETH.USDT
+  indicative THORChain quote, not an Ethereum wrapped-BTC token.
+- A BUY reverses the flow: ETH.USDC / ETH.USDT → BTC.BTC.
+- Amounts are validated exactly at Bitcoin's 8 decimal places or the
+  selected stablecoin's 6 decimal places, then converted to the THORChain
+  public quote format (always 1e8 units).
+- The server verifies **both** the user's BTC wallet and Ethereum
+  settlement wallet from Privy and checks independently verified source
+  balances and native-gas reserves.
+- It uses the documented, read-only public
+  `https://swap.thorchain.org/mcp` `get_swap_quote` method with no
+  `destination`. Therefore it never obtains or exposes a usable
+  deposit address or memo; no transaction can be constructed or sent.
+- Output is indicative, not minimum received. High quote price impact,
+  missing amounts, unexpected assets, executable deposit instructions
+  and uncertain provider responses fail closed.
+
+The public MCP has a per-IP rate limit (60 requests / 10 minutes), so it
+is suitable only for validation, NOT automated production quoting. Before
+LIVE BTC: an accountable production aggregator contract, quote expiry,
+memos/refunds, UTXO selection and chain confirmation depth, user-owned
+Privy native BTC signing, approvals on the ERC20 ETH side, actual
+minimum-out and network cost checks, and reconciled multi-chain receipt
+tracking are mandatory. BTC may remain on a different network from
+USDC/USDT between trades; MiniNex must explicitly track BOTH balances.
+
+Official route docs:
+- https://swap.thorchain.org/developers/quickstart
+- https://swap.thorchain.org/developers/mcp
+
 ## Existing modules remain unchanged
 
 BTC/ETH simulated strategies remain separate. The existing ETH quote
