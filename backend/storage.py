@@ -47,6 +47,24 @@ SCHEMA = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (privy_did,asset)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_limits (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        planned_capital_usd NUMERIC(28,6) NOT NULL DEFAULT 0
+            CHECK (planned_capital_usd >= 0 AND planned_capital_usd < 10000000),
+        max_order_usd NUMERIC(28,6) NOT NULL DEFAULT 0
+            CHECK (max_order_usd >= 0 AND max_order_usd < 10000000),
+        max_daily_turnover_usd NUMERIC(28,6) NOT NULL DEFAULT 0
+            CHECK (max_daily_turnover_usd >= 0 AND max_daily_turnover_usd < 10000000),
+        trading_paused BOOLEAN NOT NULL DEFAULT TRUE,
+        revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK (max_order_usd <= planned_capital_usd),
+        CHECK (max_order_usd <= max_daily_turnover_usd),
+        CHECK ((planned_capital_usd = 0 AND max_order_usd = 0 AND
+                max_daily_turnover_usd = 0) OR
+               (planned_capital_usd > 0 AND max_order_usd > 0 AND
+                max_daily_turnover_usd > 0))
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_trade_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
@@ -199,6 +217,13 @@ def _prepare_rows(cur, did: str) -> None:
                VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
             (did,asset),
         )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
     # Strategy settings are user preferences, never trading authorization.
     for asset in ASSETS:
         cur.execute(
