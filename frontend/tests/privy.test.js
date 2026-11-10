@@ -48,19 +48,24 @@ test('verified account automatically provisions a separate BTC wallet with no si
   assert.match(auth, /useCreateWallet as useCreateExtendedWallet/);
   assert.match(auth, /@privy-io\/react-auth\/extended-chains/);
   assert.match(auth, /createWallet\(\{chainType: 'bitcoin-segwit'\}\)/);
-  assert.match(auth, /identityStatus==='verified' && databaseStatus==='stored'/);
+  assert.match(auth, /identityStatus==='verified'&&databaseStatus==='stored'/);
   assert.match(auth, /findNativeBtcWallet\(user\)/);
   assert.match(auth, /isNativeBtcAddress\(wallet.address\)/);
+  assert.match(auth, /const btcWallet = useNativeBtcWallet/);
+  assert.match(auth, /createdWallet\?\.userId===user\?\.id/);
   assert.doesNotMatch(auth, /sendBitcoin\s*\(|signRaw\s*\(|sendTransaction\s*\(/);
 });
 
 test('ETH and native BTC can copy their full public address without signing',()=>{
   assert.match(auth,/function CopyWalletAddress\(\{address, network, t\}\)/);
   assert.match(auth,/navigator\.clipboard\.writeText\(address\)/);
-  assert.match(auth,/<CopyWalletAddress address=\{address\} network="BTC" t=\{t\}\/>/);
+  assert.match(auth,/<CopyWalletAddress address=\{btcWallet.address\} network="BTC" t=\{t\}\/>/);
   assert.match(auth,/<CopyWalletAddress address=\{address\} network="ETH" t=\{t\}\/>/);
   assert.match(auth,/privyAddressCopied/);
   assert.match(auth,/privyCopyFailed/);
+  assert.match(auth,/renderCoinAddress=\{renderCoinAddress\}/);
+  assert.doesNotMatch(auth,/privy-addresses-section/);
+  assert.match(auth,/coinAddressPending/);
   assert.doesNotMatch(auth,/sendTransaction\s*\(|sendBitcoin\s*\(|signMessage\s*\(/);
 });
 

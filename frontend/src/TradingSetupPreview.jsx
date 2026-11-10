@@ -23,7 +23,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget,renderSessionControls,marketSnapshot,syncedAt,lang='de'}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de'}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -118,6 +118,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
         <strong>{selectedCoin.glyph} {selectedCoin.name} · {selectedCoin.symbol}</strong>
         <span>{selectedCoin.paperSettingsReady?t.coinExistingSettings:t.coinPreparing}</span>
       </div>
+      {renderCoinAddress?.(opened)}
       {selectedSettings ? <>
         <div className="privy-asset-settings-fields">
           <label>

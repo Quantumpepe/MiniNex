@@ -156,3 +156,19 @@ the additional chains are deliberately unavailable until each chain's
 wallet and balance verification is integrated. This is a frontend/UI
 milestone, not a live trading launch. No new backend execution route,
 grant, deposit or operator GO LIVE control was introduced.
+
+### Wallet addresses now shown per coin
+
+The separate `Wallet-Adressen` accordion has been removed. Each of the
+eight coin buttons opens its own information panel; **BTC and ETH**
+show their own Privy-linked public address there, with existing
+show-full-address and copy controls. BTC auto-wallet provisioning stays
+active when an authenticated user opens Wallet, even without expanding
+the BTC coin. The component scopes any freshly created BTC address to
+the Privy user who created it to avoid account-switch mixups.
+
+BNB, POL, SOL, XRP, ADA and TRX show a clear "wallet address not yet
+available" warning, never a fabricated or wrong-network deposit address.
+Some EVM coins may reuse the ETH-address after their chain and signer
+capabilities are proven, but this update does **not** enable deposits,
+approvals or live trading.
