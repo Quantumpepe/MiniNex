@@ -142,6 +142,51 @@ Frontend unit tests use integer micro-USD parsing and verify fail-closed
 limits/authentication indicators. GitHub Actions runs `npm test` and
 `npm run build` for frontend changes, in addition to existing backend tests.
 
+## Stage 5: shared LIVE order intent and reconciliation ledger (ETH + BTC)
+
+The PostgreSQL schema now includes `mininex_live_order_intents` for **both**
+native BTC and ETH. It is separate from the PAPER tables and scoped to the
+verified Privy DID, asset and unique idempotency key. The schema enforces
+chain/asset consistency, valid states and immutable audit identifiers.
+
+Read-only account endpoint:
+
+- `GET /api/live/orders/ETH`
+- `GET /api/live/orders/BTC`
+- Optional `?limit=1..50`, default 30. Missing/invalid user token fails
+  authentication; another user's orders are never returned.
+
+State design:
+
+`RESERVED → SENDING → SUBMITTED → CONFIRMED`
+
+A timed-out send becomes `RECONCILIATION_REQUIRED`. It must **not** be
+cancelled, re-signed or retried until the blockchain has been independently
+reconciled. A reverted transaction, pre-send cancellation or chain reorg is
+tracked explicitly. A merely submitted transaction is not a confirmed fill.
+The schema can later be used by the separate BTC engine without remodeling
+account history.
+
+Pure risk helper `build_risk_snapshot` checks caps using exact USD decimals
+and includes all outstanding orders within rolling 24h spending; its caller
+must obtain those amounts from trusted on-chain fills and PostgreSQL rows
+while holding the relevant DB lock. The real reservation method is
+**hard-disabled** (`LIVE_RESERVATION_ACTIVATED = False`). There are no HTTP
+write/execute routes. No LIVE order is sent, reserved, signed or broadcast
+by this stage.
+
+A newly discovered dependency issue in fresh PostgreSQL bootstrapping was
+also corrected: `mininex_fee_events` is now created before
+`mininex_treasury_obligations`, which references it by foreign key.
+The integration still needs a real PostgreSQL migration smoke test.
+
+**Next required actual execution work:** independently audited Privy signer
+policy; user-owned explicit once-off grant; trusted market quotes and
+token-decimal validation; atomic order reservation and nonce locking;
+provider-specific ETH swap transaction simulation and signing; broadcast
+reconciliation, actual receipts and cost basis; and safe asset liquidation.
+Never enable with only a budget slider or matching Privy policy ID.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
