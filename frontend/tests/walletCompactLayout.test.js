@@ -9,22 +9,26 @@ const balances=source('../src/WalletBalances.jsx');
 const styles=source('../src/styles.css');
 const labels=source('../src/i18n.js');
 
-test('wallet starts with verified balances, then collapsible addresses',()=>{
+test('wallet puts native BTC and ETH addresses in each coin instead of an extra field',()=>{
   const balance=wallet.indexOf('<WalletBalances t={t}');
-  const addresses=wallet.indexOf('<details className="privy-disclosure privy-addresses-section">');
   const trading=wallet.indexOf('<TradingSetupPreview t={t}');
   const technical=wallet.indexOf('<details className="privy-disclosure privy-technical-section">');
   const logout=wallet.indexOf('privy-wallet-logout');
-  assert.ok(balance>0 && balance<addresses);
-  assert.ok(addresses<trading && trading<technical && technical<logout);
-  assert.match(wallet,/<summary>[\s\S]*?t\.privyAddressesTitle/);
-  assert.match(wallet,/t\.privyAddressesHint/);
-  assert.match(wallet,/t\.privyTechnicalTitle/);
+  assert.ok(balance>0&&balance<trading);
+  assert.ok(trading<technical&&technical<logout);
+  assert.doesNotMatch(wallet,/privy-addresses-section/);
+  assert.doesNotMatch(wallet,/t\.privyAddressesTitle|t\.privyAddressesHint/);
+  assert.match(wallet,/renderCoinAddress=\{renderCoinAddress\}/);
+  assert.match(setup,/\{renderCoinAddress\?\.\(opened\)\}/);
+  assert.match(wallet,/const renderCoinAddress = asset =>/);
   assert.match(wallet,/onClick=\{\(\)=>act\(logout\)\}/);
   assert.match(wallet,/navigator\?\.clipboard\?\.writeText/);
-  assert.match(wallet,/<NativeBtcWallet user=\{user\} t=\{t\}\/>/);
+  assert.match(wallet,/btcWallet\.address &&/);
+  assert.match(wallet,/<CopyWalletAddress address=\{btcWallet.address\} network="BTC" t=\{t\}\/>/);
   assert.match(wallet,/<CopyWalletAddress address=\{address\} network="ETH" t=\{t\}\/>/);
+  assert.match(wallet,/t\.privyTechnicalTitle/);
 });
+
 
 test('BTC and ETH retain separate budget sliders within the selected eight-coin panel',()=>{
   assert.match(setup,/selectedSettings=opened==='BTC'\|\|opened==='ETH'\?settings\[opened\]:null/);
@@ -57,11 +61,11 @@ test('read-only wallet data, PAPER settings and HWM stay separate',()=>{
 });
 
 test('compact bilingual UI preserves mobile access and wallet network explanations',()=>{
-  for(const item of ['privyAddressesTitle','privyAssetSettings','privyBudgetShortTitle',
+  for(const item of ['coinAddressPending','privyAssetSettings','privyBudgetShortTitle',
                      'privyTechnicalTitle','privyBalancesCompactNote']){
     assert.equal((labels.match(new RegExp(item+':','g'))||[]).length,2,item);
   }
-  assert.match(labels,/Wallet-Adressen/);
+  assert.match(labels,/Wallet-Adresse noch nicht verfügbar/);
   assert.match(labels,/Handelseinstellungen/);
   assert.match(labels,/nicht PAPER/);
   assert.match(styles,/\.privy-balances-grid\{/);
