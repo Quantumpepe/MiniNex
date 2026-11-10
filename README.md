@@ -47,3 +47,11 @@ route/recipient checks. Requires a secret `MININEX_UNISWAP_API_KEY` on Render.
 No transaction is sent, no live trade authority is granted and the demo trading
 logic is unchanged. See [the full integration plan](backend/LIVE_ETH_INTEGRATION.md)
 for the eight still-required LIVE execution components and safety gates.
+
+### ETH LIVE stage 2 – independent risk controls (still disabled)
+
+The backend also has dedicated user-scoped LIVE ETH capital/order/daily spending
+caps and a `POST /api/live/eth/stop` kill switch. A saved limit is NOT a Privy
+wallet authorization: all accounts start paused and no endpoint may enable
+trading. See [LIVE ETH plan](backend/LIVE_ETH_INTEGRATION.md). The Android
+frontend and the BTC/ETH simulation are unchanged.
