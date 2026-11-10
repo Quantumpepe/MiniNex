@@ -6,6 +6,7 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, StrictInt
+from typing import Literal
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,6 +26,7 @@ from .personal_paper_worker import PersonalPaperWorker
 from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
+from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -265,6 +267,35 @@ def trading_capabilities(authorization: str | None = Header(default=None)):
             }
         }
     }, headers={"Cache-Control": "no-store"})
+
+
+class EthLiveQuoteRequest(BaseModel):
+    """Strict input: no client-selected wallet, recipient, chain or router."""
+    model_config = ConfigDict(extra="forbid")
+    side: Literal["BUY", "SELL"]
+    stable: Literal["USDC", "USDT"]
+    amount: str
+
+
+@app.get("/api/live/eth/readiness")
+def eth_quote_readiness(authorization: str | None = Header(default=None)):
+    """Check independent quote preparation status; never grants live authority."""
+    verify_privy_bearer(authorization)
+    return JSONResponse(quote_readiness(), headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/api/live/eth/quote")
+async def eth_mainnet_quote(request: EthLiveQuoteRequest,
+                            authorization: str | None = Header(default=None)):
+    """Fetch a REAL market quote for user's independently verified Privy wallet.
+
+    No transactions, approvals, order construction or signing can occur here.
+    """
+    did = verify_privy_bearer(authorization)["user_id"]
+    quote = await quote_eth_mainnet(
+        did, side=request.side, stable=request.stable, amount=request.amount)
+    return JSONResponse(quote, headers={"Cache-Control": "private, no-store",
+                                       "X-Content-Type-Options": "nosniff"})
 
 
 class BudgetPreferenceRequest(BaseModel):
