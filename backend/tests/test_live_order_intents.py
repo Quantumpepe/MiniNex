@@ -171,6 +171,10 @@ def test_live_orders_sql_constraints_are_strict_and_separate_from_paper():
     assert "state NOT IN ('SUBMITTED','CONFIRMED','REVERTED','REORG_PENDING')" in sql
     assert "mininex_user_paper_sessions" in sql
     assert "mininex_live_eth_limits" in sql
+    # Fresh PostgreSQL bootstrap must create referenced tables before the FK.
+    assert sql.index("CREATE TABLE IF NOT EXISTS mininex_fee_events") < sql.index(
+        "CREATE TABLE IF NOT EXISTS mininex_treasury_obligations")
+
     assert "SEND" not in inspect.getsource(api.live_order_history).upper().split("def live_order_history")[0]
 
 
