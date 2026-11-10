@@ -111,6 +111,37 @@ Docs:
 - https://docs.privy.io/wallets/using-wallets/signers/remove-signers
 - https://docs.privy.io/controls/policies/overview
 
+## Stage 4: ETH LIVE controls in the mobile wallet
+
+The Android/iOS React wallet panel now contains a separate, expandable
+`ETH LIVE` safety section. This section is **not** the PAPER budget slider.
+
+- Loads both `GET /api/live/eth/limits` and
+  `GET /api/live/eth/authorization` under the authenticated Privy DID.
+  Any missing/malformed response fails closed.
+- Lets the user prepare exact USD capital, per-order and daily-turnover caps,
+  using `PUT /api/live/eth/limits` with revision protection. Even after a
+  successful save, backend orders and signing remain **disabled**.
+- Exposes an explicit `POST /api/live/eth/stop` action. This prevents
+  new future execution, but **does not** cancel broadcast transactions,
+  sell positions or convert balances to USDC/USDT.
+- When the user's own linked Privy Ethereum wallet has additional signers,
+  offers a two-step, explicit **Remove wallet signers** action. It attempts the
+  backend stop first, and calls Privy's supported
+  `useSigners().removeSigners({address})` for wallet-owned revocation.
+  The frontend clearly warns that Privy removes **all additional signers**,
+  including third-party application signers, and that this does not swap funds.
+  A failing backend does not prevent the user from attempting independent
+  wallet revocation. Partial failures are communicated accurately.
+- The app **does not** call `addSigners` yet. Enrollment stays locked until
+  the real scoped policy is independently audited, tested, and the execution
+  and reconciliation subsystem is ready. Even a matching policy ID is NOT
+  permission to activate trading.
+
+Frontend unit tests use integer micro-USD parsing and verify fail-closed
+limits/authentication indicators. GitHub Actions runs `npm test` and
+`npm run build` for frontend changes, in addition to existing backend tests.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
