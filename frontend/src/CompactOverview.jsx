@@ -4,6 +4,8 @@ import {ArrowDownLeft, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from
 import {compactChartData} from './compact.js';
 import {paperSparkline} from './paperPortfolio.js';
 import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
+import CoinGrid from './CoinGrid.jsx';
+import {coinBySymbol} from './coins.js';
 
 function AssetIcon({asset}) {
   return <span className={'compact-token compact-token--'+asset.toLowerCase()} aria-hidden="true">
@@ -82,7 +84,7 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,paperAvai
   </section>;
 }
 
-export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false}) {
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -105,20 +107,15 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
       </div>
     </div>
     <PaperPortfolioCard t={t} lang={lang} summary={portfolioSummary} samples={portfolioSamples} authenticated={portfolioAuthenticated} paperAvailable={showSimulatedTrades} goTo={goTo}/>
-    <div className="compact-price-cards" role="tablist" aria-label={t.compactChooseAsset}>
-      {['BTC','ETH'].map(a=>{
-        const quote=marketSnapshot?.[a];
-        const fresh=validMarket(quote);
-        const movement=fresh?quote.change_24h_pct:null;
-        return <button key={a} type="button" role="tab" aria-selected={asset===a}
-          className={'compact-quote-card'+(asset===a?' active':'')}
-          onClick={()=>{setAsset(a);setPeriod('m15');}}>
-          <span className="compact-quote-heading"><AssetIcon asset={a}/><strong>{a==='BTC'?'Bitcoin':'Ethereum'}</strong><small>{a}</small></span>
-          <strong className="compact-quote-price">{formatMoney(fresh?quote.price_usdt:null,lang)}</strong>
-          <span className={'compact-quote-change '+(movement!=null?(Number(movement)>=0?'text-positive':'text-negative'):'')}>{formatChange(movement)} <small>24h</small></span>
-        </button>;
-      })}
-    </div>
+    <CoinGrid t={t} lang={lang} selected={asset}
+      markets={marketSnapshot} syncedAt={syncedAt} kind="home"
+      onSelect={symbol=>{
+        if(coinBySymbol(symbol)?.paperSettingsReady){
+          setAsset(symbol);setPeriod('m15');
+        }else{
+          goTo('wallet');
+        }
+      }}/>
     <section className="compact-main-chart" aria-label={t.market}>
       <div className="compact-chart-top">
         <div className="compact-chart-title"><strong>{asset}/USDT</strong><span className={'compact-data-dot '+(valid?'valid':'')}/></div>

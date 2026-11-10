@@ -13,7 +13,8 @@ test('BTC and ETH settings each include authenticated stop-to-selected-stable PA
   assert.match(wallet,/const renderSessionControls = asset =>/);
   assert.match(wallet,/<AssetPaperControl asset=\{asset\} t=\{t\} getAccessToken=\{getAccessToken\}/);
   assert.match(wallet,/renderSessionControls=\{renderSessionControls\}/);
-  assert.match(setup,/\{renderSessionControls\?\.\(asset\)\}/);
+  assert.match(setup,/\{renderSessionControls\?\.\(opened\)\}/);
+  assert.match(setup,/const selectedSettings=opened==='BTC'\|\|opened==='ETH'\?settings\[opened\]:null/);
   assert.match(control,/API_BASE\+'\/api\/user-paper\/'\+asset/);
   assert.match(control,/headers:\{Authorization:'Bearer '\+token,Accept:'application\/json'\}/);
   assert.match(control,/command\('pause'\)/);
@@ -27,12 +28,12 @@ test('BTC and ETH settings each include authenticated stop-to-selected-stable PA
 });
 
 test('pause keeps settings panel open, even while selecting mode, budget, save or pausing',()=>{
-  assert.match(setup,/const \[opened,setOpened\]=useState\(\{BTC:false,ETH:false\}\)/);
-  assert.match(setup,/const toggleAsset = asset => setOpened/);
-  assert.equal([...setup.matchAll(/toggleAsset\(asset\)/g)].length,1);
+  assert.match(setup,/const \[opened,setOpened\]=useState\(null\)/);
+  assert.match(setup,/const toggleAsset = asset => setOpened\(current=>current===asset\?null:asset\)/);
+  assert.match(setup,/onSelect=\{toggleAsset\}/);
   assert.equal([...setup.matchAll(/setOpened\(/g)].length,1);
-  assert.match(setup,/hidden=\{!open\}/);
-  assert.match(setup,/onClick=\{\(\)=>save\(asset\)\}/);
+  assert.match(setup,/\{selectedCoin&&<section/);
+  assert.match(setup,/onClick=\{\(\)=>save\(opened\)\}/);
   assert.match(wallet,/onClick=\{\(\)=>saveBudget\(asset\)\}/);
   assert.doesNotMatch(control,/toggleAsset|setOpened|onClose|closeModal/);
   assert.doesNotMatch(control,/sendTransaction|sendBitcoin|signMessage|privateKey/);

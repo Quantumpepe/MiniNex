@@ -138,3 +138,21 @@ balance summary. Each coin opens only its own settings. Current BTC/ETH UI,
 PAPER settings, trading capital and user funds remain unchanged until native
 wallet and execution adapters for each added coin are proven. **POL is
 registered for LIVE preparation, not enabled for trades or wallet deposits.**
+
+### Eight-coin compact phone UI – implemented in frontend, trading unaffected
+
+Wallet trading preferences and the Home coin picker now use one shared 4×2
+button grid in the exact order BTC, ETH, BNB, POL, SOL, XRP, ADA, TRX.
+Each button stays clickable; the selector has its own bounded scrolling
+viewport and hidden scrollbar. Selecting a coin opens a separate area
+below it; clicking it again closes it, while typing or saving never closes
+the settings. The existing account-bound BTC/ETH PAPER mode, budget and
+stop controls are unchanged; the other six coins show **in preparation**,
+with no fictitious prices, wallet balances or funding instructions.
+
+The real verified-wallet balances card is now tap-to-expand, showing the
+same blockchain-verified BTC/ETH/USDC/USDT units as before. Balances for
+the additional chains are deliberately unavailable until each chain's
+wallet and balance verification is integrated. This is a frontend/UI
+milestone, not a live trading launch. No new backend execution route,
+grant, deposit or operator GO LIVE control was introduced.

@@ -46,11 +46,13 @@ test('Mobile home aligns logo, language switch and settings in one row',()=>{
   assert.match(css,/\.compact-welcome > \.compact-home-actions \.compact-settings-btn\{/);
 });
 
-test('mobile Home shows private paper portfolio before BTC and ETH cards',()=>{
+test('mobile Home shows private paper portfolio before compact eight-coin picker',()=>{
   assert.match(compact,/function PaperPortfolioCard\(/);
   assert.match(compact,/portfolioSummary=\{null\}|portfolioSummary=null/);
   assert.match(compact,/<PaperPortfolioCard t=\{t\}/);
-  assert.ok(compact.indexOf('<PaperPortfolioCard') < compact.indexOf('className="compact-price-cards"'));
+  assert.ok(compact.indexOf('<PaperPortfolioCard') < compact.indexOf('<CoinGrid t={t}'));
+  assert.match(compact,/kind="home"/);
+  assert.match(compact,/coinBySymbol\(symbol\)\?\.paperSettingsReady/);
   assert.match(compact,/compact-wallet-curve/);
   assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce\)/);
   assert.match(app,/portfolioSummary=\{paperHome.summary\}/);

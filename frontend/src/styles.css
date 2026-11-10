@@ -653,3 +653,84 @@
 @media(prefers-reduced-motion:reduce){
   .update-progress-icon.is-spinning svg{animation:none}
 }
+
+/* MiniNex eight native coins: an independent 4x2 selector viewport.
+   Scroll here without scrolling the whole Wallet form or showing scrollbars.
+   No fake coin prices, no disabled button that looks like an active trade. */
+.mininex-coins-window{
+  max-height:162px;min-height:0;max-width:100%;min-width:0;
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;touch-action:pan-y;
+  scrollbar-width:none;-ms-overflow-style:none;
+  border:1px solid #295954;border-radius:14px;
+  background:linear-gradient(135deg,#0c2a30,#09202a);
+  padding:7px;
+}
+.mininex-coins-window::-webkit-scrollbar{display:none;width:0;height:0}
+.mininex-coins-window:focus-visible{outline:2px solid #5df2bb;outline-offset:2px}
+.mininex-coins-grid{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;
+}
+.mininex-coin-button{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  box-sizing:border-box;gap:4px;min-height:67px;min-width:0;
+  padding:7px 3px;border:1px solid #315a56;border-radius:10px;
+  background:#122e34;color:#d2f6ed;cursor:pointer;text-align:center;font:inherit;
+}
+.mininex-coin-button.is-selected{
+  background:#164b3c;border-color:#5beab5;box-shadow:inset 0 0 0 1px #286d53;
+}
+.mininex-coin-button.is-planned{border-color:#2d4d54;color:#9ebbb7}
+.mininex-coin-button:focus-visible{outline:2px solid #a4fbd8;outline-offset:1px}
+.mininex-coin-glyph{
+  display:grid;place-items:center;width:25px;height:25px;border-radius:50%;
+  background:#1d4140;font-size:19px;font-weight:850;line-height:1;
+}
+.mininex-coin-glyph--btc{background:#e5a03e;color:#201711}
+.mininex-coin-glyph--eth{background:#6676c5;color:#f0efff}
+.mininex-coin-glyph--bnb{background:#e6ba32;color:#23200a}
+.mininex-coin-glyph--pol{background:#803fe3;color:#fff}
+.mininex-coin-glyph--sol{background:#294756;color:#7ff2ca}
+.mininex-coin-glyph--xrp{background:#34454e;color:#eaf9f8}
+.mininex-coin-glyph--ada{background:#2856a6;color:#f2faff}
+.mininex-coin-glyph--trx{background:#a63946;color:#fff}
+.mininex-coin-details{display:grid;justify-items:center;gap:2px;max-width:100%;min-width:0}
+.mininex-coin-details strong{font-size:12px;font-weight:850;line-height:1.1}
+.mininex-coin-details small{
+  max-width:100%;color:#9dbbb7;font-size:clamp(8px,2.25vw,10px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-variant-numeric:tabular-nums;
+}
+.mininex-coins-window--home{margin-bottom:14px}
+.mininex-selected-asset{gap:12px;min-width:0}
+.mininex-selected-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:7px}
+.mininex-selected-header strong{font-size:15px;color:#ebfff8}
+.mininex-selected-header span{font-size:11px;color:#9cc7ba}
+.mininex-selected-asset .privy-wallet-description{line-height:1.5}
+
+/* The real balance summary is clickable. Real values render only on expand;
+   unrelated native-chain balances remain explicitly unavailable. */
+.privy-balances-card.mininex-real-balances{display:block}
+.mininex-balance-summary{
+  display:grid;gap:4px;position:relative;cursor:pointer;list-style:none;
+  padding:1px 24px 1px 1px;
+}
+.mininex-balance-summary::-webkit-details-marker{display:none}
+.mininex-balance-summary::after{
+  content:'+';position:absolute;right:2px;top:1px;
+  font-size:22px;line-height:1;color:#70eabd;
+}
+.mininex-real-balances[open]>.mininex-balance-summary::after{content:'−'}
+.mininex-balance-summary span{display:flex;align-items:center;gap:7px;font-size:14px;color:#dffbed}
+.mininex-balance-summary small{font-size:11px;color:#8fb9ae}
+.mininex-balance-summary:focus-visible{outline:2px solid #65e9b9;outline-offset:4px}
+.mininex-balance-expanded{display:grid;gap:12px;margin-top:13px;padding-top:12px;border-top:1px solid #2b5554}
+.mininex-balance-expanded .privy-balance-refresh{justify-self:start}
+@media(max-width:390px){
+  .mininex-coins-window{padding:5px;max-height:149px}
+  .mininex-coins-grid{gap:4px}
+  .mininex-coin-button{min-height:63px;padding:6px 2px}
+  .mininex-coin-glyph{width:22px;height:22px;font-size:17px}
+  .mininex-coin-details strong{font-size:11px}
+  .mininex-coin-details small{font-size:8px}
+}
