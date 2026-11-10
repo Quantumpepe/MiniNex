@@ -69,7 +69,7 @@ def valid_order_key(key: object) -> str:
     return key
 
 
-def valid_notional(raw: object) -> Decimal:
+def valid_notional(raw: object, *, allow_zero: bool = False) -> Decimal:
     """Only six-digit exact USD amounts, no float rounding/scientific notation."""
     if type(raw) is not str or len(raw) > 48 or not _BUDGET_USD.fullmatch(raw):
         raise ValueError("Invalid exact USD notional")
@@ -77,7 +77,7 @@ def valid_notional(raw: object) -> Decimal:
         amount = Decimal(raw)
     except InvalidOperation:
         raise ValueError("Invalid exact USD notional") from None
-    if not amount.is_finite() or not 0 < amount < 10_000_000:
+    if not amount.is_finite() or amount < 0 or (amount == 0 and not allow_zero) or amount >= 10_000_000:
         raise ValueError("USD notional outside supported range")
     return amount
 
@@ -184,9 +184,7 @@ def build_risk_snapshot(controls: dict, *, unfilled_total_usd: object,
             value = str(value)
         if type(value) is not str:
             raise ValueError("Internal notional must not be an approximate float")
-        if zero and value == "0":
-            return value
-        return str(valid_notional(value))
+        return str(valid_notional(value, allow_zero=zero))
 
     budget = {
         "trading_paused": controls.get("trading_paused"),
