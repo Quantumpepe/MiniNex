@@ -37,3 +37,13 @@ On your Render MiniNex backend **Shell**, run `python -m backend.diagnostics`. I
 3. An isolated temporary PostgreSQL account with separate BTC/ETH zeroed HWM rows.
 4. Reading those rows from a fresh database connection, then deleting the temporary account.
 The diagnostic **does not** prove that a real user can log in via Privy inside an Android/iOS Capacitor app; that still needs a real device with login allowed origins. It never accesses the user's wallet, makes trades, or collects fees. Actual schema is initialized by the prior DB setup.
+
+## LIVE roadmap – ETH step 1 (quote preflight)
+
+The backend now offers an authenticated, **read-only real Uniswap V3 Ethereum
+mainnet quote** endpoint for ETH ⇄ USDC/USDT, with verified Privy wallet
+ownership, independently fetched balances, exact base-unit input and strict
+route/recipient checks. Requires a secret `MININEX_UNISWAP_API_KEY` on Render.
+No transaction is sent, no live trade authority is granted and the demo trading
+logic is unchanged. See [the full integration plan](backend/LIVE_ETH_INTEGRATION.md)
+for the eight still-required LIVE execution components and safety gates.
