@@ -138,6 +138,41 @@ export async function checkMiniNexUpdates({force=false}={}) {
   }finally{checking=false;}
 }
 
+// Apply a *verified already queued* update only after a deliberate user tap.
+// next() never activates while the app stays foregrounded; reload() does.
+// Never load a random stored bundle or reload with a missing/mismatched queue.
+// This operation intentionally restarts the JS/WebView and may drop unsaved UI
+// edits, so it must never be called automatically during an active session.
+export async function activateMiniNexUpdate() {
+  if(!otaIsSupported()||checking||state.stage!=='ready'||!state.availableVersion)
+    return;
+  checking=true;
+  const target=state.availableVersion;
+  publish({stage:'activating',reason:null});
+  try {
+    const [current,next]=await Promise.all([
+      CapacitorUpdater.current(),CapacitorUpdater.getNextBundle()
+    ]);
+    const installed=activeOtaVersion(current?.bundle);
+    if(installed===target){
+      publish({stage:'current',version:installed,availableVersion:target,reason:null});
+      return;
+    }
+    if(!installed||!next||typeof next.id!=='string'||!next.id||
+       next.id==='builtin'||next.version!==target)
+      throw new Error('Verified pending update not found');
+    // Capgo v8 explicitly documents reload() as applying a bundle queued
+    // via next(); unlike set(), this never selects an arbitrary bundle ID.
+    await CapacitorUpdater.reload();
+    // On success the native WebView reloads; a fresh startup confirms current().
+    // Do not claim success before that independent native verification.
+  }catch {
+    publish({stage:'error',reason:'activation',version:null});
+  }finally {
+    checking=false;
+  }
+}
+
 // Read release metadata through our Render backend cache; no Capgo telemetry,
 // wallet credentials or private keys. Foreground checks are rate limited.
 export function startMiniNexUpdates() {

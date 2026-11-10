@@ -7,17 +7,22 @@ const status=source('../src/UpdateStatus.jsx');
 const updater=source('../src/otaUpdater.js');
 const styles=source('../src/styles.css');
 
-test('pending OTA shows rotating wheel and brief explanation, without calling a download installed',()=>{
+test('pending OTA offers an explicit controlled activation rather than an endless spinner',()=>{
   assert.match(status,/import \{CheckCircle2,RefreshCcw\} from 'lucide-react'/);
   assert.match(status,/const pending=status\.stage==='ready'/);
-  assert.match(status,/const spinning=working\|\|pending/);
+  assert.match(status,/const spinning=working\|\|activating/);
+  assert.match(status,/const pending=status\.stage==='ready'/);
+  assert.match(status,/const activating=status\.stage==='activating'/);
   assert.match(status,/spinning\?' is-spinning':''/);
   assert.match(status,/pending&&<p className="small-note update-activation-note"/);
-  assert.match(status,/Die Aktivierung kann etwas dauern/);
-  assert.match(status,/App vollständig schliessen und erneut öffnen/);
+  assert.match(status,/Der Download ist abgeschlossen/);
+  assert.match(status,/Update jetzt aktivieren/);
+  assert.match(status,/App vollständig schliessen und neu öffnen/);
   assert.match(status,/Nicht deinstallieren/);
-  assert.match(status,/Wallet und PAPER-Daten bleiben erhalten/);
-  assert.match(status,/Activation can take some time/);
+  assert.match(status,/Ungespeicherte Eingaben vorher sichern/);
+  assert.match(status,/Download complete/);
+  assert.match(status,/Activate update now/);
+  assert.match(status,/onClick=\{\(\)=>\{void activateMiniNexUpdate\(\);\}\}/);
   assert.match(styles,/\.update-progress-icon\.is-spinning svg/);
   assert.match(styles,/animation:mininex-ota-spin/);
   assert.match(styles,/@keyframes mininex-ota-spin/);
@@ -39,4 +44,16 @@ test('wheel becomes green check only after native current() confirms installed l
   assert.match(updater,/const installed=activeOtaVersion\(current\?\.bundle\)/);
   assert.match(status,/status\.version==='builtin'/);
   assert.match(status,/status\.availableVersion/);
+});
+
+test('activation uses Capgo reload only for the verified pending bundle on user action',()=>{
+  assert.match(updater,/export async function activateMiniNexUpdate\(\)/);
+  assert.match(updater,/state\.stage!=='ready'/);
+  assert.match(updater,/await Promise\.all\(\[\s*CapacitorUpdater\.current\(\),CapacitorUpdater\.getNextBundle\(\)/);
+  assert.match(updater,/next\.id==='builtin'\|\|next\.version!==target/);
+  assert.match(updater,/await CapacitorUpdater\.reload\(\)/);
+  assert.match(updater,/publish\(\{stage:'activating',reason:null\}\)/);
+  assert.doesNotMatch(updater,/CapacitorUpdater\.set\(/);
+  assert.match(status,/supported&&pending&&<button type="button"/);
+  assert.match(status,/disabled=\{working\|\|activating\}/);
 });
