@@ -17,6 +17,8 @@ import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
+import CoinGrid from './CoinGrid.jsx';
+import {coinBySymbol} from './coins.js';
 import UserPaperSessions from './UserPaperSessions.jsx';
 import UpdateStatus from './UpdateStatus.jsx';
 import {
@@ -440,17 +442,19 @@ export default function App() {
         {page==='overview'&&<>
           <CompactOverview
             t={t} lang={language} chooseLang={chooseLang} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
-            history={history} trades={personalTrades} market={mk} marketSnapshot={market?.markets} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
+            history={history} trades={personalTrades} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
              portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
           <section className="welcome-head"><h1>MiniNex</h1></section>
-          <div className="asset-switch" role="tablist" aria-label="Asset">
-            {ASSETS.map(a=><button type="button" key={a} role="tab" aria-selected={asset===a} className={`asset-tab ${asset===a?'asset-tab--active':''}`} onClick={()=>{setAsset(a);setPeriod('m15');}}>
-              <AssetSymbol asset={a} size="sm"/><span>{a==='BTC'?'Bitcoin':'Ethereum'}</span>
-            </button>)}
-          </div>
+          <CoinGrid t={t} lang={language} selected={asset} markets={market?.markets}
+            syncedAt={syncedAt} kind="home"
+            onSelect={symbol=>{
+              if(coinBySymbol(symbol)?.paperSettingsReady){
+                setAsset(symbol);setPeriod('m15');
+              }else navigate('wallet');
+            }}/>
 
           <div className="overview-grid">
             <div className="overview-main">
