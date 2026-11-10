@@ -8,43 +8,38 @@ const wallet=read('../src/PrivyWalletPanel.jsx');
 const app=read('../src/App.jsx');
 const style=read('../src/styles.css');
 const labels=read('../src/i18n.js');
+const grid=read('../src/CoinGrid.jsx');
+const catalog=read('../src/coins.js');
 
-test('BTC and ETH render independent real buttons with icons and verified live prices but no chevrons',()=>{
-  assert.match(setup,/\['BTC','ETH'\]\.map\(asset=>\{/);
-  assert.match(setup,/<button type="button" className="privy-asset-toggle"/);
-  assert.match(setup,/onClick=\{\(\)=>toggleAsset\(asset\)\}/);
-  assert.match(setup,/aria-expanded=\{open\}/);
-  assert.match(setup,/aria-controls=\{'mininex-wallet-settings-'\+asset\}/);
-  assert.match(setup,/<Bitcoin size=\{21\}\/>/);
-  assert.match(setup,/className="compact-eth">◆/);
-  assert.match(setup,/asset==='BTC'\?'Bitcoin':'Ethereum'/);
-  assert.match(setup,/formatMoney\(quote\.price_usdt,lang\)/);
-  assert.match(setup,/validMarket\(quote\)/);
-  assert.match(setup,/Date\.now\(\)-syncedAt<20000/);
-  assert.match(setup,/fresh\?t\.privyPriceLive:t\.privyPriceUnavailable/);
-  assert.doesNotMatch(setup,/Chevron|chevron|ArrowDown|ArrowUp|RotateCcw/);
+
+test('all eight coin buttons have native symbols, verified-only prices and no chevrons',()=>{
+  assert.match(catalog,/symbol:'POL',name:'Polygon'/);
+  assert.match(setup,/<CoinGrid t=\{t\} lang=\{lang\} selected=\{opened\}/);
+  assert.match(grid,/COINS\.map\(coin=>\{/);
+  assert.match(grid,/aria-pressed=\{isSelected\}/);
+  assert.match(grid,/onClick=\{\(\)=>onSelect\(coin\.symbol\)\}/);
+  assert.match(grid,/coinMarketSnapshot\(coin\.symbol,markets,syncedAt\)/);
+  assert.match(grid,/t\.coinPreparing/);
+  assert.doesNotMatch(grid,/Chevron|chevron|ArrowDown|ArrowUp|RotateCcw/);
   assert.match(app,/marketSnapshot=\{market\?\.markets\} syncedAt=\{syncedAt\}/);
   assert.match(wallet,/marketSnapshot=\{marketSnapshot\} syncedAt=\{syncedAt\} lang=\{lang\}/);
 });
 
-test('editing and saving settings never close an expanded asset',()=>{
-  assert.match(setup,/useState\(\{BTC:false,ETH:false\}\)/);
-  assert.match(setup,/const toggleAsset = asset => setOpened\(old=>\(\{\.\.\.old,\[asset\]:!old\[asset\]\}\)\)/);
-  // Only the coin button calls toggleAsset. Changing select, slider or saving
-  // preferences cannot affect the open/closed state.
-  const toggles=[...setup.matchAll(/toggleAsset\(asset\)/g)];
-  assert.equal(toggles.length,1);
+test('editing or saving BTC/ETH settings cannot close selected coin panel',()=>{
+  assert.match(setup,/useState\(null\)/);
+  assert.match(setup,/const toggleAsset = asset => setOpened\(current=>current===asset\?null:asset\)/);
+  assert.match(setup,/onSelect=\{toggleAsset\}/);
   assert.equal([...setup.matchAll(/setOpened\(/g)].length,1);
-  assert.match(setup,/onChange=\{event=>change\(asset,'mode',event\.target\.value\)\}/);
-  assert.match(setup,/onChange=\{event=>change\(asset,'stable',event\.target\.value\)\}/);
-  assert.match(setup,/onChange=\{event=>change\(asset,'horizon',event\.target\.value\)\}/);
-  assert.match(setup,/onClick=\{\(\)=>save\(asset\)\}/);
+  for(const field of ['mode','stable','horizon']){
+    assert.match(setup,new RegExp("onChange=\\{event=>change\\(opened,'"+field+"',event.target.value\\)\\}"));
+  }
+  assert.match(setup,/onClick=\{\(\)=>save\(opened\)\}/);
+  assert.match(setup,/\{renderBudget\?\.\(opened\)\}/);
+  assert.match(setup,/\{renderSessionControls\?\.\(opened\)\}/);
   assert.match(wallet,/onClick=\{\(\)=>saveBudget\(asset\)\}/);
   assert.match(wallet,/onChange=\{event=>setPreviewBudgets/);
-  // Controlled form remains mounted when hidden; no remount on price refresh.
-  assert.match(setup,/hidden=\{!open\}/);
-  assert.match(style,/\.privy-asset-settings-content\[hidden\]\{display:none!important\}/);
-  assert.match(setup,/<div id=\{'mininex-wallet-settings-'\+asset\}/);
+  assert.match(setup,/\{selectedCoin&&<section/);
+  assert.match(setup,/const selectedSettings=opened==='BTC'\|\|opened==='ETH'/);
   assert.ok(setup.indexOf('const [opened,setOpened]')<setup.indexOf('const change='));
 });
 
