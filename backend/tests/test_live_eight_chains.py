@@ -1,4 +1,4 @@
-"""Seven native-coin roadmap, bounded stablecoin routes, and disabled GO LIVE."""
+"""Eight native-coin roadmap, bounded stablecoin routes, and disabled GO LIVE."""
 import time
 
 import jwt
@@ -29,13 +29,14 @@ def headers(monkeypatch):
 
 
 def test_exact_coin_order_native_networks_and_immutable_registry():
-    assert reg.ASSET_ORDER == ("BTC","ETH","BNB","SOL","XRP","ADA","TRX")
+    assert reg.ASSET_ORDER == ("BTC","ETH","BNB","POL","SOL","XRP","ADA","TRX")
     assert tuple(row.symbol for row in reg.REGISTRY)==reg.ASSET_ORDER
-    assert len(reg.BY_SYMBOL)==len(reg.ASSET_ORDER)==7
+    assert len(reg.BY_SYMBOL)==len(reg.ASSET_ORDER)==8
     expected={
         "BTC":("bitcoin-mainnet","bitcoin-utxo",None),
         "ETH":("ethereum-mainnet","evm",1),
         "BNB":("bsc-mainnet","evm",56),
+        "POL":("polygon-pos-mainnet","evm",137),
         "SOL":("solana-mainnet","solana",None),
         "XRP":("xrpl-mainnet","xrpl",None),
         "ADA":("cardano-mainnet","cardano-eutxo",None),
@@ -46,7 +47,7 @@ def test_exact_coin_order_native_networks_and_immutable_registry():
         assert (coin.blockchain,coin.execution_family,coin.chain_id)==(
             chain,route,chain_id)
         assert coin.symbol==symbol
-    for symbol in ("DOGE","POL","BTC-BEP20","WRAPPED_BTC","USDT","USDC",""):
+    for symbol in ("DOGE","MATIC","BTC-BEP20","WRAPPED_BTC","USDT","USDC",""):
         with pytest.raises(HTTPException) as err:
             reg.get_asset(symbol)
         assert err.value.status_code==404
@@ -64,6 +65,10 @@ def test_stablecoin_network_issuer_edges_do_not_get_mislabeled():
     assert "USDC" not in coins["TRX"].stablecoin_candidates
     assert coins["BNB"].chain_id==56
     assert "USDC" not in coins["BNB"].stablecoin_candidates
+    assert coins["POL"].stablecoin_candidates==("USDC",)
+    assert coins["POL"].chain_id==137
+    assert coins["POL"].wallet_approach.startswith("Privy EVM")
+    assert "bridged USDC.e" in coins["POL"].special_requirements
 
 
 def test_no_env_var_can_enable_global_or_per_asset_trades(monkeypatch):
@@ -85,7 +90,7 @@ def test_no_env_var_can_enable_global_or_per_asset_trades(monkeypatch):
     assert "test-private-api-key" not in str(report)
 
 
-def test_dispatch_stays_locked_for_all_seven_coins():
+def test_dispatch_stays_locked_for_all_eight_coins():
     for asset in reg.ASSET_ORDER:
         with pytest.raises(HTTPException) as error:
             reg.require_live_engine(asset)

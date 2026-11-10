@@ -98,15 +98,15 @@ their own recipient and budget.** Adding signers and sending trades are still
 disabled until user-specific policies, full authorization and the live
 transaction executor are securely completed.
 
-### Seven-coin LIVE roadmap and central GO LIVE gate
+### Eight-coin LIVE roadmap and central GO LIVE gate
 
-MiniNex's planned native LIVE order is **BTC, ETH, BNB, SOL, XRP, ADA and
+MiniNex's planned native LIVE order is **BTC, ETH, BNB, POL, SOL, XRP, ADA and
 TRX last**. USDC/USDT remain settlement assets, not trading engines. The
 authenticated `GET /api/live/readiness` lists each native network, candidate
 settlements and twelve mandatory safety gates. Every engine and the future
 single operator GO LIVE action remain locked. The existing BTC/ETH PAPER
 features, account schema and ETH quote development are not reclassified as
-LIVE. See [the seven-chain rollout specification](backend/LIVE_SEVEN_CHAIN_ROLLOUT.md).
+LIVE. See [the eight-chain rollout specification](backend/LIVE_EIGHT_CHAIN_ROLLOUT.md).
 
 ### ETH LIVE stage 7 – unsigned Uniswap swap preview
 
@@ -128,3 +128,13 @@ Privy BTC/Ethereum wallets, balance/fee reserves, quote denominations
 and excessive price impact. This is **not BTC LIVE**: no automatic signing,
 fees guaranteed, receipt verification or transactions. The public quote
 API is rate-limited and must be replaced or supplemented for production.
+
+### Compact eight-coin wallet layout (planned)
+
+Target selection order: **BTC · ETH · BNB · POL / SOL · XRP · ADA · TRX**.
+The eventual Wallet trading selector uses a **4×2 grid** with a compact
+scrollable area (no visible scrollbar) and a separately expandable real-wallet
+balance summary. Each coin opens only its own settings. Current BTC/ETH UI,
+PAPER settings, trading capital and user funds remain unchanged until native
+wallet and execution adapters for each added coin are proven. **POL is
+registered for LIVE preparation, not enabled for trades or wallet deposits.**

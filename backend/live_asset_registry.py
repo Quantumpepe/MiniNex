@@ -1,6 +1,6 @@
 """Authoritative MiniNex LIVE asset registry and global readiness gate.
 
-The user-facing seven assets are native coins, not interchangeable wrapped
+The user-facing eight assets are native coins, not interchangeable wrapped
 representations. Stablecoin tickers do NOT imply that an issuer supports
 the same asset on every chain. All trading stays disabled until individually
 verified native routes and one separately authenticated operator rollout.
@@ -15,7 +15,7 @@ import os
 from fastapi import HTTPException
 
 # Keep TRX last as requested; BTC + ETH are the first LIVE engines.
-ASSET_ORDER = ("BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "TRX")
+ASSET_ORDER = ("BTC", "ETH", "BNB", "POL", "SOL", "XRP", "ADA", "TRX")
 
 # All capabilities listed as "candidate" here need real venue, issuer,
 # address and decimals verification before any coin is eligible to trade.
@@ -53,6 +53,15 @@ REGISTRY = (
         ("USDT",), "same-chain-token-validation-required",
         "BNB Smart Chain USDT representations need a verified token contract;"
         " Circle-native USDC must never be assumed on BSC",
+    ),
+    CoinNetwork(
+        "POL", "Polygon", "polygon-pos-mainnet", "evm", 137,
+        "Privy EVM wallet on Polygon PoS (chain 137); independent wallet authorization required",
+        ("USDC",), "same-chain-token-validation-required",
+        "POL is the native gas token. Only Circle-native Polygon USDC is"
+        " a candidate; do not substitute bridged USDC.e. Validate Polygon"
+        " routers, token contracts, fees, gas and transaction receipts"
+        " before allowing any POL trade; Polygon USDT is not enabled yet",
     ),
     CoinNetwork(
         "SOL", "Solana", "solana-mainnet", "solana", None,
@@ -142,7 +151,7 @@ def get_global_live_readiness() -> dict:
         "global_activation_blocked": True,
         "required_checks_per_asset": list(_MANDATORY_SAFETY_GATES),
         "description": (
-            "GO LIVE can only be implemented after each of seven real native"
+            "GO LIVE can only be implemented after each of eight real native"
             " execution engines and their security/settlement checks pass."
         ),
     }
