@@ -158,6 +158,21 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
        ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_fee_events (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        execution_id TEXT NOT NULL,
+        realized_net_delta_usd NUMERIC(36,12) NOT NULL,
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL,
+        fee_rate NUMERIC(10,8) NOT NULL DEFAULT 0.05 CHECK (fee_rate = 0.05),
+        fee_assessed_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK (fee_assessed_usd >= 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset,execution_id),
+        FOREIGN KEY (privy_did,asset)
+            REFERENCES mininex_asset_hwm(privy_did,asset)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
@@ -180,21 +195,7 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_treasury_obligations_pending
        ON mininex_treasury_obligations(status,created_at)""",
-    """CREATE TABLE IF NOT EXISTS mininex_fee_events (
-        privy_did TEXT NOT NULL,
-        asset TEXT NOT NULL,
-        execution_id TEXT NOT NULL,
-        realized_net_delta_usd NUMERIC(36,12) NOT NULL,
-        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL,
-        high_water_mark_usd NUMERIC(36,12) NOT NULL,
-        fee_rate NUMERIC(10,8) NOT NULL DEFAULT 0.05 CHECK (fee_rate = 0.05),
-        fee_assessed_usd NUMERIC(36,12) NOT NULL DEFAULT 0
-            CHECK (fee_assessed_usd >= 0),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        PRIMARY KEY (privy_did,asset,execution_id),
-        FOREIGN KEY (privy_did,asset)
-            REFERENCES mininex_asset_hwm(privy_did,asset)
-    )""",
+
 )
 
 
