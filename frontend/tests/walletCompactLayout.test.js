@@ -26,21 +26,21 @@ test('wallet starts with verified balances, then collapsible addresses',()=>{
   assert.match(wallet,/<CopyWalletAddress address=\{address\} network="ETH" t=\{t\}\/>/);
 });
 
-test('BTC and ETH settings each contain exactly their own budget slider',()=>{
-  assert.match(setup,/\['BTC','ETH'\]\.map\(asset=>\{/);
-  assert.match(setup,/return <section key=\{asset\}/);
-  assert.match(setup,/\{renderBudget\?\.\(asset\)\}/);
+test('BTC and ETH retain separate budget sliders within the selected eight-coin panel',()=>{
+  assert.match(setup,/selectedSettings=opened==='BTC'\|\|opened==='ETH'\?settings\[opened\]:null/);
+  assert.match(setup,/\{selectedCoin&&<section/);
+  assert.match(setup,/\{renderBudget\?\.\(opened\)\}/);
   assert.match(wallet,/renderBudget=\{renderBudget\}/);
   assert.match(wallet,/const renderBudget = asset =>/);
   assert.match(wallet,/value=\{previewBudgets\[asset\]\}/);
   assert.match(wallet,/onChange=\{event=>setPreviewBudgets\(old=>\(\{\.\.\.old,\[asset\]:Number\(event.target.value\)\}\)\)\}/);
   assert.match(wallet,/onClick=\{\(\)=>saveBudget\(asset\)\}/);
   assert.match(wallet,/expected_revision:savedBudgets\[asset\]\.revision/);
-  assert.match(setup,/onClick=\{\(\)=>save\(asset\)\}/);
+  assert.match(setup,/onClick=\{\(\)=>save\(opened\)\}/);
   assert.match(setup,/expected_revision:saved\[asset\]\.revision/);
-  assert.match(setup,/value=\{settings\[asset\]\.mode\}/);
-  assert.match(setup,/value=\{settings\[asset\]\.stable\}/);
-  assert.match(setup,/value=\{settings\[asset\]\.horizon\}/);
+  assert.match(setup,/value=\{selectedSettings\.mode\}/);
+  assert.match(setup,/value=\{selectedSettings\.stable\}/);
+  assert.match(setup,/value=\{selectedSettings\.horizon\}/);
 });
 
 test('read-only wallet data, PAPER settings and HWM stay separate',()=>{
@@ -51,6 +51,8 @@ test('read-only wallet data, PAPER settings and HWM stay separate',()=>{
   assert.match(wallet,/capabilities\.automated_signing_enabled===false/);
   assert.match(balances,/validateWalletBalanceResponse\(data\)/);
   assert.match(balances,/balances\[asset\]\.balance\+' '\+asset/);
+  assert.match(balances,/<details className="privy-hwm-box privy-balances-card mininex-real-balances"/);
+  assert.match(balances,/className="mininex-balance-summary"/);
   assert.doesNotMatch(wallet+setup+balances,/sendTransaction\(|sendBitcoin\(|signMessage\(|delegateWallet\(|privateKey/);
 });
 
