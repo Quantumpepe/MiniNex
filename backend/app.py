@@ -31,6 +31,7 @@ from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_l
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
 from .live_orders import get_live_order_history
+from .live_asset_registry import get_global_live_readiness
 
 market = MarketDataService()
 paper = PaperAutoEngine(market)
@@ -279,6 +280,16 @@ class EthLiveQuoteRequest(BaseModel):
     side: Literal["BUY", "SELL"]
     stable: Literal["USDC", "USDT"]
     amount: str
+
+
+@app.get("/api/live/readiness")
+def all_live_networks_readiness(authorization: str | None = Header(default=None)):
+    """Seven-chain LIVE preparation; never an operator activation endpoint."""
+    verify_privy_bearer(authorization)
+    return JSONResponse(get_global_live_readiness(), headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.get("/api/live/eth/readiness")
