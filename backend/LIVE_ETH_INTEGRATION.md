@@ -42,6 +42,32 @@ verification key and database configuration remain required.
 When one of these values is missing or independently verified balances are
 unavailable, the request fails closed.
 
+## Stage 2: isolated LIVE budget controls and emergency stop
+
+The following routes require a valid Privy identity, are owner-scoped and use
+PostgreSQL transactions:
+
+- `GET /api/live/eth/limits` reads planned LIVE spending limits.
+- `PUT /api/live/eth/limits` persists exact USD caps with optimistic revision
+  checks: `planned_capital_usd`, `max_order_usd`,
+  `max_daily_turnover_usd`, `expected_revision`. This ALWAYS leaves
+  trading paused. Limits are **not** an actual on-chain balance, deposit or
+  signer authorization. No live funds can be spent by this API.
+- `POST /api/live/eth/stop` keeps new orders disabled. In the eventual LIVE
+  engine, it must additionally cancel not-yet-submitted orders, and must not
+  misrepresent already submitted transactions as cancelled. On-chain
+  approvals/delegations require a separate verified revocation workflow.
+- `validate_spend_limits` is an internal fail-closed prerequisite for the future
+  executor; it checks order, pending allocation and daily turnover against the
+  independently configured caps. Both a **verified Privy signer grant** and
+  unpaused state are mandatory. No current public route can set either.
+
+This is a safety prerequisite for LIVE, not a claim that automatic swaps are
+already functioning. Required next: cryptographically verified Privy signer
+registration/revocation, atomic live order-intent reservations, Uniswap
+`check_approval`/swap transaction validation, nonce tracking, submission,
+receipts and cost accounting. These must be integrated before any activation.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
