@@ -65,3 +65,13 @@ rules are safe**, and the endpoint never enables trading. Before real
 execution, MiniNex still needs an audited restrictive policy, explicit
 user consent/revocation, an authenticated intent/order lifecycle, and
 receipt reconciliation. See [ETH LIVE integration](backend/LIVE_ETH_INTEGRATION.md).
+
+### ETH LIVE stage 4 – wallet-side safety controls
+
+The mobile wallet now has an independent ETH LIVE section for persistent
+capital/order/daily caps, verified Privy signer status, immediate backend stop,
+and a separately confirmed Privy wallet signer revocation action. **Privy's
+removeSigners removes all additional signers**; the screen warns before action.
+There is no grant/enrollment button until the policy contents and execution
+engine have passed security checks. ETH LIVE trading is not yet active.
+Frontend changes are checked by GitHub CI with npm tests and a Vite build.
