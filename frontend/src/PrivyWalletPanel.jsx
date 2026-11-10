@@ -7,6 +7,7 @@ import {API_BASE} from './data.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
+import LiveEthControls from './LiveEthControls.jsx';
 
 
 // Copies the complete public address. It never invokes a wallet signer or
@@ -330,6 +331,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
+
+          <LiveEthControls t={t} user={user} address={address}
+            getAccessToken={getAccessToken}
+            enabled={identityStatus==='verified' && databaseStatus==='stored'}/>
 
           <details className="privy-disclosure privy-technical-section">
             <summary>
