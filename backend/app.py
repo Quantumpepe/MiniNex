@@ -27,6 +27,7 @@ from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
+from .live_eth_swap_plan import make_eth_swap_plan
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
@@ -319,6 +320,21 @@ async def eth_privy_policy_status(authorization: str | None = Header(default=Non
     return JSONResponse(review, headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/eth/swap-plan")
+async def eth_live_swap_transaction_plan(
+    request: EthLiveQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Server-verified Uniswap approval/quote/swap preview. No signed TX."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    plan = await make_eth_swap_plan(
+        did, side=request.side, stable=request.stable, amount=request.amount)
+    return JSONResponse(plan, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
     })
 
 
