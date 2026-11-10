@@ -187,6 +187,43 @@ provider-specific ETH swap transaction simulation and signing; broadcast
 reconciliation, actual receipts and cost basis; and safe asset liquidation.
 Never enable with only a budget slider or matching Privy policy ID.
 
+## Stage 6: inspect Privy's actual ETH policy rules (read-only)
+
+`GET /api/live/eth/policy` independently fetches the operator-configured
+Privy policy via `https://api.privy.io/v1/policies/{policy_id}` and checks
+its actual `rules`, not merely the policy ID shown in wallet metadata.
+
+Environment values on Render only:
+- `MININEX_PRIVY_ETH_SIGNER_ID` / `MININEX_PRIVY_ETH_POLICY_ID` from stage 3.
+- `MININEX_ETH_SWAP_ROUTER`: independently verified mainnet contract address;
+  **do not assume a Uniswap quote's eventual execution router is the same.**
+- `MININEX_PRIVY_ETH_POLICY_SHA256`: operator-pinned SHA-256 of canonical
+  JSON containing `version`, `chain_type`, and full `rules`, computed
+  after manual policy review. A policy update changes the expected digest.
+
+The static guard rejects wrong network/policy ID, wildcard signing methods,
+ALLOW rules lacking chain ID 1, exact router recipient, bounded ETH value,
+ABI-scoped `exactInputSingle` function, bounded input amount, a destination
+recipient equal to **the independently verified user wallet**, and an expiry
+within 30 days. Every ALLOW rule must satisfy all constraints because
+Privy's policy rules combine with OR semantics. Unknown/invalid rules fail
+closed. This conservative prototype only covers `exactInputSingle`;
+USDC/USDT allowance and other real swap shapes are deliberately *not*
+implicitly permitted. Per-wallet recipient binding means one global policy
+is generally insufficient for a multi-user production app; per-user
+restrictive policy issuance needs a separate reviewed enrollment workflow.
+
+**This is an automated structural review, not a third-party security audit.**
+The response always reports `policy_contents_independently_audited=false`,
+`grant_enrollment_enabled=false`, and `execution_enabled=false`.
+No private keys, additional signer creation or real trades. The real
+transaction builder must independently verify decoded calldata, Uniswap
+router, token input/output, exact recipient, allowance amount, gas, nonce,
+min-out and the wallet owner immediately before sending.
+
+Privacy: Never log private Privy credentials or user identity in policy
+verification errors; policy contents are not exposed in the API response.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
