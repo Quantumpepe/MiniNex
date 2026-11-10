@@ -137,7 +137,8 @@ async def get_eth_signer_status(did: str) -> dict:
         "signer_policy_configured": config is not None,
         "wallet_delegated": False,
         "signer_verified": False,
-        "policy_verified": False,
+        "policy_reference_verified": False,
+        "policy_contents_verified": False,
         "trading_approved": False,
         "automated_signing_enabled": False,
         "execution_enabled": False,
@@ -157,5 +158,6 @@ async def get_eth_signer_status(did: str) -> dict:
     # Both exact Privy key quorum and exact restrictive override policy must match.
     scoped = _scoped_signer(wallet, did=did, address=owned["address"], config=config)
     result["signer_verified"] = scoped
-    result["policy_verified"] = scoped
+    result["policy_reference_verified"] = scoped
+    # A matching ID is not an independently audited policy definition.
     return result
