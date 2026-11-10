@@ -30,6 +30,7 @@ def privy_record(did=DID):
 
 def balances(eth="1.25", usdc="500", usdt="100"):
     return {
+        "wallets": {"ETH": WALLET},
         "balances": {
             "ETH": {"status": "verified", "balance": eth},
             "USDC": {"status": "verified", "balance": usdc},
@@ -200,6 +201,27 @@ def test_insufficient_balance_and_gas_reserve_fail_closed(monkeypatch):
         with pytest.raises(HTTPException) as err:
             asyncio.run(q.quote_eth_mainnet(DID, side=side, stable=stable, amount=amount))
         assert err.value.status_code == 409
+
+
+def test_changed_wallet_and_nonfinite_balance_are_rejected(monkeypatch):
+    monkeypatch.setenv("MININEX_UNISWAP_API_KEY", "backend-private-api-key")
+    async def user(did):
+        return privy_record(did)
+    monkeypatch.setattr(q, "fetch_privy_user", user)
+    async def mismatched(did):
+        value = balances()
+        value["wallets"]["ETH"] = "0x" + "b" * 40
+        return value
+    monkeypatch.setattr(q, "get_wallet_balances", mismatched)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(q.quote_eth_mainnet(DID, side="BUY", stable="USDC", amount="25"))
+    assert err.value.status_code == 503
+    async def nonfinite(did):
+        return balances(eth="NaN")
+    monkeypatch.setattr(q, "get_wallet_balances", nonfinite)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(q.quote_eth_mainnet(DID, side="BUY", stable="USDC", amount="25"))
+    assert err.value.status_code == 503
 
 
 def test_missing_ambiguous_or_unverified_wallet_never_quotes(monkeypatch):
