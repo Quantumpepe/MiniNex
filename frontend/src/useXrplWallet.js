@@ -18,8 +18,16 @@ export function useXrplWallet(user, enabled) {
   account.current={userId:user?.id,enabled};
   const userId=user?.id;
   const stored=enabled&&created?.userId===userId?created.address:null;
-  const hasLinkedXrpl=Array.isArray(user?.linkedAccounts)&&
-    user.linkedAccounts.some(a=>a?.type==='wallet'&&a?.chainType==='xrpl');
+  // A Privy account refresh can return a new linkedAccounts array on every
+  // render. Depend on stable XRPL record contents, not array identity: otherwise
+  // a refresh can cancel a wallet creation while its promise is in flight.
+  const linkedXrpl=Array.isArray(user?.linkedAccounts)
+    ?user.linkedAccounts.filter(a=>a?.type==='wallet'&&a?.chainType==='xrpl')
+    :[];
+  const hasLinkedXrpl=linkedXrpl.length>0;
+  const linkedXrplKey=JSON.stringify(linkedXrpl.map(a=>[
+    a.walletClientType,a.address,
+  ]).sort((x,y)=>String(x[1]).localeCompare(String(y[1]))));
 
   useEffect(()=>{
     let active=true;
@@ -67,7 +75,7 @@ export function useXrplWallet(user, enabled) {
       if(belongs())setPhase({userId,name:'failed'});
     });
     return()=>{active=false;};
-  },[enabled,userId,user?.linkedAccounts,retry,stored,hasLinkedXrpl]);
+  },[enabled,userId,linkedXrplKey,retry,stored,hasLinkedXrpl]);
 
   const address=enabled&&created?.userId===userId?created.address:null;
   return {
