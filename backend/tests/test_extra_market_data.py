@@ -1,5 +1,14 @@
 """Ten additional public coins are display-only and fail closed on bad data."""
-from backend.extra_market_data import ExtraMarketData, EXTRA_ASSETS
+from backend.extra_market_data import (
+    ExtraMarketData, EXTRA_ASSETS, discover_kraken_usd_pairs,
+    gecko_request_settings, gecko_backoff_seconds, retry_after_seconds,
+)
+import asyncio
+from datetime import datetime, timezone
+from email.utils import format_datetime
+
+import pytest
+from backend import extra_market_data as extra
 
 NOW = 1_800_000_000.0
 
@@ -80,3 +89,128 @@ def test_chart_bootstrap_accepts_only_real_closed_ordered_candles():
     else:
         raise AssertionError("Future candle accepted")
     assert len(service.history("POL", limit=3600)) == 90
+
+
+def test_coingecko_public_is_one_batch_every_two_minutes_and_keys_stay_server_side():
+    url, headers, interval = gecko_request_settings({})
+    assert url == "https://api.coingecko.com/api/v3/simple/price"
+    assert headers == {}
+    assert interval == 120
+    url, headers, interval = gecko_request_settings({
+        "MININEX_COINGECKO_DEMO_API_KEY": "test-demo-only",
+    })
+    assert url == "https://api.coingecko.com/api/v3/simple/price"
+    assert headers == {"x-cg-demo-api-key": "test-demo-only"}
+    assert interval == 60
+    url, headers, interval = gecko_request_settings({
+        "MININEX_COINGECKO_DEMO_API_KEY": "test-demo-only",
+        "MININEX_COINGECKO_PRO_API_KEY": "test-paid-only",
+    })
+    assert url == "https://pro-api.coingecko.com/api/v3/simple/price"
+    assert headers == {"x-cg-pro-api-key": "test-paid-only"}
+    assert "test-paid-only" not in url
+    assert interval == 60
+
+
+def test_retry_after_and_exponential_rate_limit_backoff_never_burst():
+    now = NOW
+    date = format_datetime(datetime.fromtimestamp(now + 720, timezone.utc),
+                           usegmt=True)
+    assert retry_after_seconds("180", now=now) == 180
+    assert retry_after_seconds(date, now=now) == 720
+    assert retry_after_seconds("invalid", now=now) is None
+    assert retry_after_seconds(None, now=now) is None
+    assert retry_after_seconds("999999", now=now) == 3600
+    assert gecko_backoff_seconds(1, now=now) == 300
+    assert gecko_backoff_seconds(2, now=now) == 600
+    assert gecko_backoff_seconds(3, now=now) == 1200
+    assert gecko_backoff_seconds(12, now=now) == 1800
+    assert gecko_backoff_seconds(1, retry_after="720", now=now) == 720
+    assert gecko_backoff_seconds(1, retry_after=date, now=now) == 720
+
+
+def test_kraken_pairs_require_exact_market_and_us_dollar_quote():
+    data = {"error": [], "result": {
+        "BNBUSD": {"wsname": "BNB/USD", "status": "online"},
+        "XDGZUSD": {"wsname": "XDG/USD", "status": "online"},
+        "SOLUSDT": {"wsname": "SOL/USDT", "status": "online"},
+        "ADAUSD": {"wsname": "ADA/USD", "status": "online"},
+        "DODGY": {"wsname": "DOGE/USD", "status": "cancel_only"},
+        "LINKUSD": {"wsname": "LINK/USD", "status": "offline"},
+        "UNKNOWNUSD": {"wsname": "UNKNOWN/USD", "status": "online"},
+    }}
+    assert discover_kraken_usd_pairs(data) == {
+        "BNB": "BNBUSD", "DOGE": "XDGZUSD", "ADA": "ADAUSD",
+    }
+    assert discover_kraken_usd_pairs({"error": ["EQuery:Unknown asset pair"],
+                                      "result": data["result"]}) == {}
+    assert discover_kraken_usd_pairs({"error": [], "result": []}) == {}
+
+
+def test_kraken_secondary_reference_replaces_expired_gecko_not_live_capability():
+    svc = ExtraMarketData(clock=lambda: NOW)
+    svc._kraken_pairs = {"SOL": "SOLUSD"}
+    assert svc.ingest_ws(make_ws("SOL", 200), now=NOW)
+    assert svc.ingest_kraken({"error": [], "result": {
+        "SOLUSD": {"b": ["199.5"], "a": ["200.5"]},
+    }}, now=NOW) == 1
+    snap = svc.snapshot(now=NOW)["SOL"]
+    assert snap["market_data_valid"] is True
+    assert snap["reference_source"] == "Kraken Spot USD"
+    assert snap["trading_enabled"] is False
+    assert snap["market_data_only"] is True
+    svc.ingest_gecko(gecko_row("SOL", 199, NOW), now=NOW)
+    assert svc.snapshot(now=NOW)["SOL"]["reference_source"] == "CoinGecko USD"
+    # Source-stamped CoinGecko may not be prolonged artificially by cached data.
+    svc.ingest_ws(make_ws("SOL", 200, NOW+180), now=NOW+180)
+    svc.ingest_kraken({"error": [], "result": {
+        "SOLUSD": {"b": ["199.5"], "a": ["200.5"]},
+    }}, now=NOW+179)
+    snap = svc.snapshot(now=NOW+181)["SOL"]
+    assert snap["reference_source"] == "Kraken Spot USD"
+    assert snap["market_data_valid"] is True
+    assert svc.snapshot(now=NOW+300)["SOL"]["market_data_valid"] is False
+
+
+def test_kraken_mismatched_pair_spread_and_invalid_prices_never_verify():
+    svc = ExtraMarketData(clock=lambda: NOW)
+    svc._kraken_pairs = {"DOGE": "XDGUSD"}
+    svc.ingest_ws(make_ws("DOGE", .2), now=NOW)
+    assert svc.ingest_kraken({"error": [], "result": {
+        "WRONG": {"b": [".19"], "a": [".21"]}}}, now=NOW) == 0
+    assert svc.ingest_kraken({"error": [], "result": {
+        "XDGUSD": {"b": [".1"], "a": [".2"]}}}, now=NOW) == 0
+    assert svc.ingest_kraken({"error": [], "result": {
+        "XDGUSD": {"b": ["NaN"], "a": [".2"]}}}, now=NOW) == 0
+    assert svc.snapshot(now=NOW)["DOGE"]["market_data_valid"] is False
+    assert svc.ingest_kraken({"error": [], "result": {
+        "XDGUSD": {"b": [".2"], "a": [".2001"]}}}, now=NOW) == 1
+    assert svc.snapshot(now=NOW)["DOGE"]["market_data_valid"] is True
+
+
+def test_gecko_429_waits_without_immediate_retries(monkeypatch):
+    calls = []
+    delays = []
+    class Response:
+        status_code = 429
+        headers = {"Retry-After": "601"}
+    class FakeHttp:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_):
+            return False
+        async def get(self, *_args, **kwargs):
+            calls.append(kwargs["params"]["ids"])
+            return Response()
+    monkeypatch.setattr(extra.httpx, "AsyncClient", lambda *args, **kwargs: FakeHttp())
+    async def stop_on_sleep(seconds):
+        delays.append(seconds)
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(extra.asyncio, "sleep", stop_on_sleep)
+    svc = ExtraMarketData(clock=lambda: NOW)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(svc._gecko_loop())
+    assert len(calls) == 1
+    assert calls[0].count(",") == 9  # all ten assets in one call
+    assert delays == [601]
+    assert not svc._reference

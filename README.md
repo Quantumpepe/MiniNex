@@ -193,3 +193,31 @@ pending update no longer shows a misleading endless loading spinner.
 
 This improvement will only be available **after the first OTA containing it
 has itself been activated** on a device running the older UI.
+
+
+## Market reference rate limits (November 2026)
+
+The ten extra-coin market previews are **read-only**; the BTC/ETH trading
+strategies and live execution guards are separate and unchanged.
+
+- Primary displayed spot feed: Binance USDT mini-tickers; Kraken USD market
+  bid/ask is an independent reference when a verified exact Kraken spot
+  USD market exists, otherwise CoinGecko is required.
+- CoinGecko public/no-key usage: **one request for all ten coins per 120 seconds**
+  (~21,600 requests over a 30-day month at continuous uptime), rather than
+  a separate call per user or per coin.
+- On HTTP 429, retry only after an exponential cooldown (starting at five
+  minutes, up to 30 minutes), respecting a longer valid `Retry-After` header.
+  Network errors also back off. No source is marked verified after expiry.
+- A Kraken USD reference can replace **expired** CoinGecko data only if its
+  pair identifier was discovered from Kraken's official AssetPairs endpoint,
+  its bid/ask prices are valid, and the quote remains fresh.
+- Later on Render, configure **one** server-side environment variable:
+  `MININEX_COINGECKO_DEMO_API_KEY` for the free registered Demo API,
+  or `MININEX_COINGECKO_PRO_API_KEY` for a paid API plan. The backend
+  automatically uses the correct official host/header for the selected key
+  and polls at 60-second intervals. **Never** set an API key in Vite,
+  Capacitor, GitHub source code, mobile app settings or public URLs.
+- 429 rate limits can still occur on shared public IP addresses. This
+  fallback increases resilience; it does not guarantee market data availability
+  or create executable prices. No trade is authorized by a display quote.
