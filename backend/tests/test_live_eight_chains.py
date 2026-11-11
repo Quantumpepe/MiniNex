@@ -1,4 +1,4 @@
-"""Eight native-coin roadmap, bounded stablecoin routes, and disabled GO LIVE."""
+"""Twelve-coin roadmap, bounded routes, and disabled GO LIVE."""
 import time
 
 import jwt
@@ -29,9 +29,9 @@ def headers(monkeypatch):
 
 
 def test_exact_coin_order_native_networks_and_immutable_registry():
-    assert reg.ASSET_ORDER == ("BTC","ETH","BNB","POL","SOL","XRP","ADA","TRX")
+    assert reg.ASSET_ORDER == ("BTC","ETH","BNB","SOL","XRP","TRX","POL","AVAX","LINK","DOGE","UNI","ADA")
     assert tuple(row.symbol for row in reg.REGISTRY)==reg.ASSET_ORDER
-    assert len(reg.BY_SYMBOL)==len(reg.ASSET_ORDER)==8
+    assert len(reg.BY_SYMBOL)==len(reg.ASSET_ORDER)==12
     expected={
         "BTC":("bitcoin-mainnet","bitcoin-utxo",None),
         "ETH":("ethereum-mainnet","evm",1),
@@ -41,13 +41,17 @@ def test_exact_coin_order_native_networks_and_immutable_registry():
         "XRP":("xrpl-mainnet","xrpl",None),
         "ADA":("cardano-mainnet","cardano-eutxo",None),
         "TRX":("tron-mainnet","tron",None),
+        "AVAX":("avalanche-c-mainnet","evm",43114),
+        "LINK":("ethereum-mainnet","evm-erc20",1),
+        "DOGE":("dogecoin-mainnet","dogecoin-utxo",None),
+        "UNI":("ethereum-mainnet","evm-erc20",1),
     }
     for symbol,(chain,route,chain_id) in expected.items():
         coin=reg.get_asset(symbol)
         assert (coin.blockchain,coin.execution_family,coin.chain_id)==(
             chain,route,chain_id)
         assert coin.symbol==symbol
-    for symbol in ("DOGE","MATIC","BTC-BEP20","WRAPPED_BTC","USDT","USDC",""):
+    for symbol in ("MATIC","BTC-BEP20","WRAPPED_BTC","USDT","USDC",""):
         with pytest.raises(HTTPException) as err:
             reg.get_asset(symbol)
         assert err.value.status_code==404
@@ -69,6 +73,10 @@ def test_stablecoin_network_issuer_edges_do_not_get_mislabeled():
     assert coins["POL"].chain_id==137
     assert coins["POL"].wallet_approach.startswith("Privy EVM")
     assert "bridged USDC.e" in coins["POL"].special_requirements
+    assert coins["AVAX"].chain_id==43114
+    assert coins["LINK"].execution_family=="evm-erc20"
+    assert coins["UNI"].execution_family=="evm-erc20"
+    assert coins["DOGE"].settlement_route=="external-provider-required"
 
 
 def test_no_env_var_can_enable_global_or_per_asset_trades(monkeypatch):
@@ -90,7 +98,7 @@ def test_no_env_var_can_enable_global_or_per_asset_trades(monkeypatch):
     assert "test-private-api-key" not in str(report)
 
 
-def test_dispatch_stays_locked_for_all_eight_coins():
+def test_dispatch_stays_locked_for_all_twelve_coins():
     for asset in reg.ASSET_ORDER:
         with pytest.raises(HTTPException) as error:
             reg.require_live_engine(asset)
