@@ -1,6 +1,6 @@
 import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
 import {useEffect,useRef,useState} from 'react';
-import {linkedVerifiedNativeAddress,validXrplMainnetAddress} from './xrpAdaWalletAddresses.js';
+import {linkedVerifiedNativeAddress,validatedCreatedXrplAddress} from './xrpAdaWalletAddresses.js';
 
 // Native XRP Ledger wallet, strictly tied to one verified Privy login.
 // Creation may not be available for every Privy SDK rollout/account yet.
@@ -51,14 +51,10 @@ export function useXrplWallet(user, enabled) {
       // out. Reject safely and allow an explicit retry, no fallback keypair.
       const response=await createWallet({chainType:'xrpl'});
       if(!belongs())return;
-      if(response?.user?.id && response.user.id!==userId)
-        throw new Error('XRPL wallet identity mismatch');
-      const wallet=response?.wallet;
-      if(wallet?.chainType!=='xrpl' ||
-         !(await validXrplMainnetAddress(wallet.address)))
-        throw new Error('Unverified XRP Ledger wallet');
+      const address=await validatedCreatedXrplAddress(response,userId);
+      if(!address)throw new Error('Unverified XRP Ledger wallet');
       if(!belongs())return;
-      setCreated({userId,address:wallet.address});
+      setCreated({userId,address});
       setPhase({userId,name:'created'});
     })().catch(()=>{
       if(belongs())setPhase({userId,name:'failed'});
