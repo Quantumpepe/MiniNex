@@ -12,6 +12,7 @@ import ManualSwapPreview from './ManualSwapPreview.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
+import {linkedVerifiedDogecoinAddress} from './dogeWalletAddress.js';
 import {useXrplWallet} from './useXrplWallet.js';
 
 
@@ -49,6 +50,41 @@ function CopyWalletAddress({address, network, t}) {
       {copyStatus==='copied' ? t.privyAddressCopied :
        copyStatus==='failed' ? t.privyCopyFailed : ''}
     </div>
+  </div>;
+}
+
+// Read-only DOGE placeholder until a verified native signer/custody provider
+// is available. The address must be linked to the authenticated Privy user
+// and pass native Dogecoin Base58Check validation; never reuse BTC/EVM keys.
+function ReadOnlyDogecoinWallet({user,enabled,t}) {
+  const [state,setState]=useState({userId:null,address:null});
+  // Stable record fingerprint avoids repeatedly resetting the address when
+  // Privy refreshes an unchanged linkedAccounts array.
+  const dogeAccountsKey=JSON.stringify((user?.linkedAccounts||[])
+    .filter(a=>a?.type==='wallet'&&a?.chainType==='dogecoin')
+    .map(a=>[a.walletClientType,a.address])
+    .sort((x,y)=>String(x[1]).localeCompare(String(y[1]))));
+  useEffect(()=>{
+    let active=true;
+    setState({userId:null,address:null});
+    if(!enabled||!user?.id)return()=>{active=false;};
+    const id=user.id;
+    linkedVerifiedDogecoinAddress(user).then(address=>{
+      if(active)setState({userId:id,address});
+    }).catch(()=>{
+      if(active)setState({userId:id,address:null});
+    });
+    return()=>{active=false;};
+  },[enabled,user?.id,dogeAccountsKey]);
+  const address=enabled&&state.userId===user?.id?state.address:null;
+  return <div className="mininex-coin-wallet-address" role="group"
+    aria-label={'DOGE '+t.privyFullAddress}>
+    {address
+      ? <CopyWalletAddress address={address} network="Dogecoin Mainnet" t={t}/>
+      : <div role="status" className="privy-wallet-description">
+          {t.coinAddressPending}
+        </div>}
+    <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
   </div>;
 }
 
@@ -412,8 +448,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
-    // DOGE and other unsupported native wallets require dedicated verified custody.
-    // Do not reuse an EVM/Solana address or display a fake receiving address.
+    if(asset==='DOGE'){
+      return <ReadOnlyDogecoinWallet user={user} enabled={verifiedAccount} t={t}/>;
+    }
+    // Other unsupported wallets must never borrow another chain address.
     return <div className="mininex-coin-wallet-address" role="status">
       <div className="privy-wallet-description">{t.coinAddressPending}</div>
     </div>;
