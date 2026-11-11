@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .market_data import MarketDataService
+from .extra_market_data import ExtraMarketData, EXTRA_ASSETS
 from .auto_engine import PaperAutoEngine
 from .auth import verify_privy_bearer
 from .storage import get_account_summary
@@ -36,6 +37,7 @@ from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 
 market = MarketDataService()
+extra_markets = ExtraMarketData()
 paper = PaperAutoEngine(market)
 personal_paper = PersonalPaperWorker(market)
 
@@ -43,6 +45,7 @@ personal_paper = PersonalPaperWorker(market)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await market.start()
+    await extra_markets.start()
     if _paper_visible():
         await paper.start()
     await personal_paper.start()
@@ -51,6 +54,7 @@ async def lifespan(app: FastAPI):
     finally:
         await personal_paper.stop()
         await paper.stop()
+        await extra_markets.stop()
         await market.stop()
 
 
@@ -153,9 +157,16 @@ async def verified_read_only_wallet_balances(
                                  "X-Content-Type-Options":"nosniff"})
 
 
+def public_market_snapshot():
+    """Add read-only previews without changing the BTC/ETH strategy engine."""
+    snapshot = market.snapshot()
+    snapshot["markets"].update(extra_markets.snapshot())
+    return snapshot
+
+
 @app.get("/api/market/prices")
 def prices():
-    return JSONResponse(market.snapshot(), headers={"Cache-Control": "no-store"})
+    return JSONResponse(public_market_snapshot(), headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/market/status")
@@ -203,9 +214,13 @@ def historical_strategy_replay(asset: str, mode: str = "LONG", horizon: str = "1
 @app.get("/api/market/history/{asset}")
 def price_history(asset: str, limit: int = 120):
     asset = asset.upper()
-    if asset not in ("BTC", "ETH"):
-        raise HTTPException(404, "Only BTC and ETH are supported")
-    return {"asset": asset, "currency": "USDT", "points": market.history(asset, limit=limit)}
+    if asset in ("BTC", "ETH"):
+        points = market.history(asset, limit=limit)
+    elif asset in EXTRA_ASSETS:
+        points = extra_markets.history(asset, limit=limit)
+    else:
+        raise HTTPException(404, "Unsupported market asset")
+    return {"asset": asset, "currency": "USDT", "points": points}
 
 
 @app.get("/api/paper/status")
@@ -237,7 +252,7 @@ async def websocket_market(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            await websocket.send_json(market.snapshot())
+            await websocket.send_json(public_market_snapshot())
             await asyncio.sleep(1.0)
     except (WebSocketDisconnect, RuntimeError, OSError):
         pass

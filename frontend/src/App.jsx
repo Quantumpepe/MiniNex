@@ -189,10 +189,14 @@ function useMiniNexData(asset, refreshNonce) {
     setHistory([]);setTrades([]);
     const sync=async()=>{
       try{
-        const [h,r]=await Promise.all([getJson(`/api/market/history/${asset}?limit=3600`),getJson(`/api/paper/trades/${asset}?limit=50`)]);
+        const hasPaper=coinBySymbol(asset)?.paperSettingsReady;
+        const [h,r]=await Promise.all([
+          getJson(`/api/market/history/${asset}?limit=3600`),
+          hasPaper?getJson(`/api/paper/trades/${asset}?limit=50`):Promise.resolve(null),
+        ]);
         if(!live) return;
         setHistory(Array.isArray(h?.points)?h.points:[]);
-        if(r?.mode==='PAPER_AUTO_DEMO'&&r.real_trading_enabled===false) setTrades(Array.isArray(r?.trades)?r.trades:[]);
+        if(hasPaper&&r?.mode==='PAPER_AUTO_DEMO'&&r.real_trading_enabled===false) setTrades(Array.isArray(r?.trades)?r.trades:[]);
       } catch { /* missing history is not a crash */ }
     };
     sync();const interval=window.setInterval(()=>{if(!document.hidden)sync();},12000);
@@ -397,7 +401,7 @@ export default function App() {
     return()=>{active=false;};
   },[]);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
-  const personalTrades=usePersonalPaperTrades(asset,paperVisible,refreshNonce);
+  const personalTrades=usePersonalPaperTrades(asset,paperVisible&&!!coinBySymbol(asset)?.paperSettingsReady,refreshNonce);
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
@@ -412,7 +416,7 @@ export default function App() {
   const Pnl=({n})=><span className={Number(n)>0?'text-positive':Number(n)<0?'text-negative':''}>{formatSigned(n,language)}</span>;
   const sourceTime=mk?.primary_at;
   const chooseLang=lang=>{setLanguage(lang);try{localStorage.setItem('mininex_language',lang);}catch{/* disabled */}};
-  const name=asset==='BTC'?'Bitcoin':'Ethereum';
+  const name=coinBySymbol(asset)?.name||asset;
 
   useEffect(()=>{document.documentElement.lang=language;document.title=`MiniNex · ${asset} & ETH/BTC`;},[language,asset]);
   const tabKey=(name)=>()=>navigate(name);
@@ -451,9 +455,9 @@ export default function App() {
           <CoinGrid t={t} lang={language} selected={asset} markets={market?.markets}
             syncedAt={syncedAt} kind="home"
             onSelect={symbol=>{
-              if(coinBySymbol(symbol)?.paperSettingsReady){
+              if(coinBySymbol(symbol)){
                 setAsset(symbol);setPeriod('m15');
-              }else navigate('wallet');
+              }
             }}/>
 
           <div className="overview-grid">
@@ -464,9 +468,10 @@ export default function App() {
                   <div className="time-switch" role="group" aria-label="Chart period"><button type="button" className={period==='m15'?'active':''} onClick={()=>setPeriod('m15')}>{t.quarterHour}</button><button type="button" className={period==='h1'?'active':''} onClick={()=>setPeriod('h1')}>{t.hourly}</button><button type="button" disabled title={t.historyLimit}>{t.day}</button></div>
                 </div>
                 <PriceChart history={history} asset={asset} period={period} market={mk} trades={[]} t={t} lang={language}/>
+              {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
-              {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
+              {paperVisible&&coinBySymbol(asset)?.paperSettingsReady&&<section className="panel recent-panel" aria-label={t.recentTrades}>
                 <div className="panel-top"><h2>{t.recentTrades} · {asset}</h2><span className="muted-description">{t.simulatedTradeLabel}</span></div>
                 <ActivityList trades={personalTrades} t={t} lang={language} asset={asset} compact/>
               </section>}

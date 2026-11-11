@@ -34,8 +34,8 @@ test('backend live mode hides all simulation cards and the old public trade prev
   const compact=read('../src/CompactOverview.jsx');
   assert.match(ui,/\/api\/user-paper\/availability/);
   assert.match(ui,/if\(!paperVisible\)return null/);
-  assert.match(app,/paperVisible&&<section className="panel recent-panel"/);
-  assert.match(compact,/showSimulatedTrades&&<section className="compact-recent-trades"/);
+  assert.match(app,/paperVisible&&coinBySymbol\(asset\)\?\.paperSettingsReady&&<section className="panel recent-panel"/);
+  assert.match(compact,/showSimulatedTrades&&coinBySymbol\(asset\)\?\.paperSettingsReady&&<section className="compact-recent-trades"/);
 });
 
 test('overview displays only current Privy account paper trades, never shared demo fills',()=>{

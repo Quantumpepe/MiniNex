@@ -759,3 +759,6 @@
 .update-activate-button:hover,.update-activate-button:focus-visible{
   background:#287155;border-color:#81f1c5;
 }
+
+/* Extra coins show public market previews without enabling any trade controls. */
+.compact-market-readonly{margin:6px 12px 0;font-size:12px;line-height:1.25;color:#91b2b3;text-align:center}

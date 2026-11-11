@@ -15,10 +15,11 @@ export function coinBySymbol(symbol) {
   return COINS.find(coin=>coin.symbol===symbol)||null;
 }
 
-// Only BTC and ETH have independently verified user-facing market feeds today.
+// All eight coins may show independently checked read-only public prices.
+// paperSettingsReady controls trading settings, not market quote visibility.
 export function coinMarketSnapshot(symbol, markets, syncedAt, now=Date.now()) {
   const coin=coinBySymbol(symbol);
-  if(!coin?.paperSettingsReady)return null;
+  if(!coin)return null;
   if(typeof syncedAt!=='number'||!Number.isFinite(syncedAt)||
      syncedAt<=0||now-syncedAt<0||now-syncedAt>=20000)return null;
   const quote=markets?.[symbol];
