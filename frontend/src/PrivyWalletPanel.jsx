@@ -388,7 +388,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         <div className="privy-wallet-description" role="status">
           {xrpWallet.address?t.coinWalletReady:
             xrpWallet.state==='creating'?t.coinWalletCreating:
-            xrpWallet.state==='failed'?t.coinWalletFailed:t.coinAddressPending}
+            ['failed','invalid'].includes(xrpWallet.state)?t.coinWalletFailed:t.coinAddressPending}
         </div>
         {xrpWallet.address&&
           <CopyWalletAddress address={xrpWallet.address} network="XRP Ledger" t={t}/>}
