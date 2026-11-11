@@ -1,7 +1,7 @@
 """Authoritative MiniNex LIVE asset registry and global readiness gate.
 
-The user-facing eight assets are native coins, not interchangeable wrapped
-representations. Stablecoin tickers do NOT imply that an issuer supports
+The twelve user-facing assets include native coins and Ethereum tokens.
+Only independently verified native routes/token contracts may execute. Stablecoin tickers do NOT imply that an issuer supports
 the same asset on every chain. All trading stays disabled until individually
 verified native routes and one separately authenticated operator rollout.
 
@@ -14,8 +14,9 @@ import os
 
 from fastapi import HTTPException
 
-# Keep TRX last as requested; BTC + ETH are the first LIVE engines.
-ASSET_ORDER = ("BTC", "ETH", "BNB", "POL", "SOL", "XRP", "ADA", "TRX")
+# BTC/ETH remain the only PAPER engines; all real execution is still disabled.
+ASSET_ORDER = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
+               "AVAX", "LINK", "DOGE", "UNI", "ADA")
 
 # All capabilities listed as "candidate" here need real venue, issuer,
 # address and decimals verification before any coin is eligible to trade.
@@ -85,6 +86,31 @@ REGISTRY = (
         " token policy, local DEX, UTXO fees and bridging need independent checks",
     ),
     CoinNetwork(
+        "AVAX", "Avalanche", "avalanche-c-mainnet", "evm", 43114,
+        "Privy Ethereum-format EVM wallet on Avalanche C-Chain; independent chain authorization",
+        ("USDC", "USDT"), "same-chain-token-validation-required",
+        "Validate C-Chain token issuers, router, gas, slippage and settlement before any swap",
+    ),
+    CoinNetwork(
+        "LINK", "Chainlink", "ethereum-mainnet", "evm-erc20", 1,
+        "Privy embedded Ethereum wallet; LINK ERC-20 uses ETH gas",
+        ("USDC", "USDT"), "ethereum-erc20-validation-required",
+        "Verify Ethereum LINK token address, decimals, allowances, fee and route",
+    ),
+    CoinNetwork(
+        "DOGE", "Dogecoin", "dogecoin-mainnet", "dogecoin-utxo", None,
+        "Dedicated user-owned native Dogecoin wallet and separate signer required",
+        ("USDC", "USDT"), "external-provider-required",
+        "No native stablecoin settlement on Dogecoin mainnet; independently vet "
+        "cross-chain venue, confirmations, fees and refund mechanism",
+    ),
+    CoinNetwork(
+        "UNI", "Uniswap", "ethereum-mainnet", "evm-erc20", 1,
+        "Privy embedded Ethereum wallet; UNI ERC-20 uses ETH gas",
+        ("USDC", "USDT"), "ethereum-erc20-validation-required",
+        "Verify Ethereum UNI token contract, decimals, allowances, price impact and receipts",
+    ),
+    CoinNetwork(
         "TRX", "TRON", "tron-mainnet", "tron", None,
         "Dedicated TRON wallet and independently tested automated signer",
         ("USDT",), "trc20-validation-required",
@@ -151,8 +177,9 @@ def get_global_live_readiness() -> dict:
         "global_activation_blocked": True,
         "required_checks_per_asset": list(_MANDATORY_SAFETY_GATES),
         "description": (
-            "GO LIVE can only be implemented after each of eight real native"
-            " execution engines and their security/settlement checks pass."
+            "BTC and ETH can be prepared independently for LIVE only after all"
+            " per-asset security and settlement checks pass. Ten other"
+            " coins remain display-only; no auto-capital rotation."
         ),
     }
 
