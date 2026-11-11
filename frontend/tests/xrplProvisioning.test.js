@@ -27,6 +27,11 @@ test('XRPL account provisioning uses authenticated Privy extended chain, no othe
   const panel=read('../src/PrivyWalletPanel.jsx');
   assert.match(hook,/@privy-io\/react-auth\/extended-chains/);
   assert.match(hook,/walletCreator\.current\(\{chainType:'xrpl'\}\)/);
+  // Default release must remain read-only until backend idempotency and the
+  // exact Privy XRPL chainType are verified. Do not auto-create duplicates.
+  assert.match(hook,/VITE_MININEX_XRPL_CREATION_VERIFIED/);
+  assert.match(hook,/if\(!creationVerifiedAndEnabled\)/);
+  assert.match(hook,/setPhase\(\{userId,name:'checking'\}\)/);
   assert.match(hook,/setPhase\(\{userId,name:'invalid'\}\)/);
   assert.match(hook,/validatedCreatedXrplAddress\(response,userId\)/);
   assert.match(hook,/linkedVerifiedNativeAddress\(user,'xrpl'\)/);
