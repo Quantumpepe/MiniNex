@@ -1,4 +1,4 @@
-"""Read-only public spot-market previews for six additional MiniNex coins.
+"""Read-only public spot-market previews for ten additional MiniNex coins.
 
 This service is intentionally separate from BTC/ETH trading and PAPER engines.
 Binance supplies USDT spot quotes/candles; CoinGecko USD prices independently
@@ -19,7 +19,7 @@ import httpx
 import websockets
 
 LOGGER = logging.getLogger("mininex.extra_markets")
-EXTRA_ASSETS = ("BNB", "POL", "SOL", "XRP", "ADA", "TRX")
+EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ADA")
 GECKO_IDS = {
     "BNB": "binancecoin",
     "POL": "polygon-ecosystem-token",
@@ -27,6 +27,10 @@ GECKO_IDS = {
     "XRP": "ripple",
     "ADA": "cardano",
     "TRX": "tron",
+    "AVAX": "avalanche-2",
+    "LINK": "chainlink",
+    "DOGE": "dogecoin",
+    "UNI": "uniswap",
 }
 SYMBOLS = {asset + "USDT": asset for asset in EXTRA_ASSETS}
 WS_URL = ("wss://data-stream.binance.vision/stream?streams=" +
