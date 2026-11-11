@@ -8,6 +8,8 @@ import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
+import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
+import {evmNetworkAddress} from './nativeCoinAddresses.js';
 
 
 // Copies the complete public address. It never invokes a wallet signer or
@@ -134,6 +136,8 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
   const [budgetStatus,setBudgetStatus]=useState('idle');
   const [budgetBusy,setBudgetBusy]=useState(false);
   const btcWallet = useNativeBtcWallet(
+    user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
+  const extraWallets = useAdditionalCoinWallets(
     user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
 
   useEffect(()=>{
@@ -315,6 +319,42 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
       </div>
       {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
     </div>;
+
+    if(asset==='BNB'||asset==='POL'){
+      const network=asset==='BNB'?'BNB Smart Chain':'Polygon PoS';
+      const chain=asset==='BNB'?'bsc-mainnet':'polygon-pos-mainnet';
+      const evmAddress=evmNetworkAddress(chain,address);
+      return <div className="mininex-coin-wallet-address" role="group"
+        aria-label={asset+' '+t.privyFullAddress}>
+        <p className="privy-wallet-description">{t.coinEvmSharedAddress}</p>
+        {evmAddress
+          ? <CopyWalletAddress address={evmAddress} network={network} t={t}/>
+          : <div role="status" className="privy-wallet-description">
+              {walletsReady?t.privyNoWallet:t.privyLoading}
+            </div>}
+        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
+      </div>;
+    }
+    if(asset==='SOL'||asset==='TRX'){
+      const nativeWallet=asset==='SOL'?extraWallets.solana:extraWallets.tron;
+      const network=asset==='SOL'?'Solana':'TRON';
+      return <div className="mininex-coin-wallet-address" role="group"
+        aria-label={asset+' '+t.privyFullAddress}>
+        <div className="privy-wallet-description" role="status">
+          {nativeWallet.address?t.coinWalletReady:
+            nativeWallet.state==='creating'?t.coinWalletCreating:
+            nativeWallet.state==='failed'?t.coinWalletFailed:t.privyBtcPending}
+        </div>
+        {nativeWallet.address&&
+          <CopyWalletAddress address={nativeWallet.address} network={network} t={t}/>}
+        {nativeWallet.state==='failed'&&!nativeWallet.address&&
+          <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
+            onClick={nativeWallet.retry}>{t.coinWalletRetry}</button>}
+        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
+      </div>;
+    }
+    // XRP and ADA need independent native key custody and address derivation.
+    // Do not reuse an EVM/Solana address or display a fake receiving address.
     return <div className="mininex-coin-wallet-address" role="status">
       <div className="privy-wallet-description">{t.coinAddressPending}</div>
     </div>;
