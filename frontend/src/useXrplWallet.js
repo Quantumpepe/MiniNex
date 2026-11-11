@@ -25,6 +25,12 @@ export function useXrplWallet(user, enabled) {
     ?user.linkedAccounts.filter(a=>a?.type==='wallet'&&a?.chainType==='xrpl')
     :[];
   const hasLinkedXrpl=linkedXrpl.length>0;
+  // Creating a new XRPL key is NOT idempotent across multiple devices.
+  // Keep account-scoped creation disabled in normal releases until actual
+  // Privy XRPL SDK support AND a server-side creation lock are confirmed.
+  // Existing verified, linked XRPL addresses may still be displayed.
+  const creationVerifiedAndEnabled=
+    import.meta.env?.VITE_MININEX_XRPL_CREATION_VERIFIED==='true';
   const linkedXrplKey=JSON.stringify(linkedXrpl.map(a=>[
     a.walletClientType,a.address,
   ]).sort((x,y)=>String(x[1]).localeCompare(String(y[1]))));
@@ -51,6 +57,10 @@ export function useXrplWallet(user, enabled) {
       }
       if(stored){
         setPhase({userId,name:'created'});
+        return;
+      }
+      if(!creationVerifiedAndEnabled){
+        setPhase({userId,name:'checking'});
         return;
       }
       const attempt=userId+':xrpl:'+retry;
@@ -80,7 +90,7 @@ export function useXrplWallet(user, enabled) {
       if(belongs())setPhase({userId,name:'failed'});
     });
     return()=>{active=false;};
-  },[enabled,userId,linkedXrplKey,retry,stored,hasLinkedXrpl]);
+  },[enabled,userId,linkedXrplKey,retry,stored,hasLinkedXrpl,creationVerifiedAndEnabled]);
 
   const address=enabled&&created?.userId===userId?created.address:null;
   return {
