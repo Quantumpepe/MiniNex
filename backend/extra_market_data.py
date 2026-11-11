@@ -143,6 +143,10 @@ class ExtraMarketData:
         self._historical: dict[str, list[dict[str, float]]] = {asset: [] for asset in EXTRA_ASSETS}
         self._tasks: list[asyncio.Task] = []
         self.last_error: str | None = None
+        # Monitoring only. No API keys, provider URLs or account data are
+        # exposed through market diagnostics.
+        self._gecko_rate_limited = False
+        self._gecko_next_attempt_at: float | None = None
 
     async def start(self) -> None:
         if self._tasks:
@@ -300,6 +304,37 @@ class ExtraMarketData:
             }
         return result
 
+    def diagnostics(self, *, now: float | None = None) -> dict[str, Any]:
+        """Summarize ten display-only coin feeds without stale or fake values.
+
+        This is a public safe status: no API keys, wallet IDs, authentication
+        state, account data or raw provider responses are ever included.
+        """
+        at = self.clock() if now is None else now
+        rows = self.snapshot(now=at)
+        valid = {asset: row["market_data_valid"] for asset, row in rows.items()}
+        remaining = (max(0, math.ceil(self._gecko_next_attempt_at - at))
+                     if self._gecko_next_attempt_at is not None else None)
+        return {
+            "mode": "EXTRA_COINS_READ_ONLY",
+            "trading_enabled": False,
+            "coin_count": len(EXTRA_ASSETS),
+            "verified_coin_count": sum(valid.values()),
+            "primary_ws_connected": self.connected,
+            "market_data_valid": valid,
+            "market_reasons": {asset: row["reason"] for asset, row in rows.items()},
+            "primary_sources": {
+                asset: row["primary_source"] for asset, row in rows.items()
+            },
+            "reference_sources": {
+                asset: row["reference_source"] for asset, row in rows.items()
+            },
+            "gecko_cooldown_active": bool(
+                self._gecko_rate_limited and remaining is not None and remaining > 0
+            ),
+            "gecko_next_attempt_in_seconds": remaining,
+        }
+
     def history(self, asset: str, *, limit: int = 120) -> list[dict[str, float]]:
         if asset not in EXTRA_ASSETS:
             raise ValueError("Unsupported read-only market")
@@ -396,6 +431,7 @@ class ExtraMarketData:
                     }, headers=headers)
                     if response.status_code == 429:
                         failures += 1
+                        self._gecko_rate_limited = True
                         delay = gecko_backoff_seconds(
                             failures, retry_after=response.headers.get("Retry-After"),
                             now=self.clock(), base_interval=interval,
@@ -410,6 +446,7 @@ class ExtraMarketData:
                         if not self.ingest_gecko(response.json()):
                             raise ValueError("No fresh CoinGecko reference prices")
                         failures = 0
+                        self._gecko_rate_limited = False
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -418,6 +455,7 @@ class ExtraMarketData:
                     self.last_error = "Reference: CoinGecko unavailable"
                     LOGGER.warning("CoinGecko reference unavailable (%s); retry in %d s",
                                    type(exc).__name__, delay)
+                self._gecko_next_attempt_at = self.clock() + delay
                 await asyncio.sleep(delay)
 
     async def _kraken_loop(self) -> None:

@@ -197,6 +197,7 @@ def market_status():
         "market_reasons": {k: v["reason"] for k, v in snap["markets"].items()},
         "primary_error": market.last_primary_error,
         "reference_error": market.last_reference_error,
+        "extra_coin_markets": extra_markets.diagnostics(),
     }
 
 

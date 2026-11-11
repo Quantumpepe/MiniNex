@@ -214,3 +214,57 @@ def test_gecko_429_waits_without_immediate_retries(monkeypatch):
     assert calls[0].count(",") == 9  # all ten assets in one call
     assert delays == [601]
     assert not svc._reference
+    status=svc.diagnostics(now=NOW)
+    assert status['gecko_cooldown_active'] is True
+    assert status['gecko_next_attempt_in_seconds'] == 601
+    assert status['trading_enabled'] is False
+
+
+def test_ten_coin_diagnostics_never_claim_unverified_prices_or_trading():
+    svc = ExtraMarketData(clock=lambda: NOW)
+    report = svc.diagnostics(now=NOW)
+    assert report["mode"] == "EXTRA_COINS_READ_ONLY"
+    assert report["coin_count"] == 10
+    assert report["verified_coin_count"] == 0
+    assert report["trading_enabled"] is False
+    assert report["gecko_cooldown_active"] is False
+    assert report["gecko_next_attempt_in_seconds"] is None
+    assert set(report["market_data_valid"]) == set(EXTRA_ASSETS)
+    assert set(report["market_reasons"]) == set(EXTRA_ASSETS)
+    assert not any(report["market_data_valid"].values())
+    assert not any(report["reference_sources"].values())
+
+    assert svc.ingest_ws(make_ws("BNB", 600))
+    assert svc.ingest_gecko(gecko_row("BNB", 600)) == 1
+    report = svc.diagnostics(now=NOW)
+    assert report["verified_coin_count"] == 1
+    assert report["market_data_valid"]["BNB"] is True
+    assert report["reference_sources"]["BNB"] == "CoinGecko USD"
+    assert report["market_reasons"]["BNB"] == "OK"
+    assert all(not value for key,value in report["market_data_valid"].items() if key!="BNB")
+    assert report["trading_enabled"] is False
+
+
+def test_rate_limit_diagnostics_expires_and_contains_no_secrets():
+    svc = ExtraMarketData(clock=lambda: NOW)
+    svc._gecko_rate_limited = True
+    svc._gecko_next_attempt_at = NOW + 300
+    first=svc.diagnostics(now=NOW + 2)
+    assert first["gecko_cooldown_active"] is True
+    assert first["gecko_next_attempt_in_seconds"] == 298
+    expired=svc.diagnostics(now=NOW + 301)
+    assert expired["gecko_cooldown_active"] is False
+    assert expired["gecko_next_attempt_in_seconds"] == 0
+    serialized=str(first)
+    assert "api_key" not in serialized.lower()
+    assert "http" not in serialized.lower()
+    assert "wallet" not in serialized.lower()
+
+
+def test_public_market_status_contains_bounded_readonly_extra_coin_report():
+    from backend import app as api
+    report = api.market_status()["extra_coin_markets"]
+    assert report["coin_count"] == 10
+    assert report["mode"] == "EXTRA_COINS_READ_ONLY"
+    assert report["trading_enabled"] is False
+    assert set(report["market_data_valid"]) == set(EXTRA_ASSETS)
