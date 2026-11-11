@@ -1,4 +1,4 @@
-"""Six additional public coins are display-only and fail closed on bad data."""
+"""Ten additional public coins are display-only and fail closed on bad data."""
 from backend.extra_market_data import ExtraMarketData, EXTRA_ASSETS
 
 NOW = 1_800_000_000.0
@@ -15,10 +15,10 @@ def gecko_row(asset, price, at=NOW):
     return {GECKO_IDS[asset]: {"usd": price, "last_updated_at": int(at)}}
 
 
-def test_all_six_public_prices_are_separate_and_not_tradable():
+def test_all_ten_public_prices_are_separate_and_not_tradable():
     service = ExtraMarketData(clock=lambda: NOW)
-    assert EXTRA_ASSETS == ("BNB", "POL", "SOL", "XRP", "ADA", "TRX")
-    for asset, price in zip(EXTRA_ASSETS, (600, .3, 200, 2, .9, .3)):
+    assert EXTRA_ASSETS == ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ADA")
+    for asset, price in zip(EXTRA_ASSETS, (600, 200, 2, .3, .3, 22, 13, .15, 8, .9)):
         assert service.ingest_ws(make_ws(asset, price), now=NOW)
         assert service.ingest_gecko(gecko_row(asset, price), now=NOW) == 1
     snapshot = service.snapshot(now=NOW)
@@ -33,7 +33,7 @@ def test_all_six_public_prices_are_separate_and_not_tradable():
 
 def test_stale_invalid_or_divergent_prices_never_display_as_verified():
     service = ExtraMarketData(clock=lambda: NOW)
-    assert not service.ingest_ws(make_ws("DOGE", 100), now=NOW)
+    assert not service.ingest_ws(make_ws("UNKNOWN", 100), now=NOW)
     assert not service.ingest_ws(make_ws("BNB", -10), now=NOW)
     assert not service.ingest_ws(make_ws("BNB", 100, NOW-60), now=NOW)
     assert service.ingest_ws(make_ws("BNB", 600), now=NOW)
@@ -51,7 +51,7 @@ def test_stale_invalid_or_divergent_prices_never_display_as_verified():
 
 def test_rest_only_restores_real_public_prices_not_orders():
     service = ExtraMarketData(clock=lambda: NOW)
-    assert not service.ingest_rest({"symbol":"DOGEUSDT","price":"0.5"},now=NOW)
+    assert not service.ingest_rest({"symbol":"UNKNOWNUSDT","price":"0.5"},now=NOW)
     assert not service.ingest_rest({"symbol":"SOLUSDT","price":"NaN"},now=NOW)
     assert service.ingest_rest({"symbol":"SOLUSDT","price":"200"},now=NOW)
     assert service.ingest_gecko(gecko_row("SOL", 200),now=NOW)
