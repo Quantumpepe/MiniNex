@@ -15,16 +15,18 @@ export default function CoinGrid({t,lang='de',selected,onSelect,markets,syncedAt
         const isSelected=selected===coin.symbol;
         return <button key={coin.symbol} type="button"
           className={'mininex-coin-button'+(isSelected?' is-selected':'')+
-            (!coin.paperSettingsReady?' is-planned':'')}
+            (!coin.paperSettingsReady?' is-planned':'')+(coin.inProgress?' is-in-progress':'')}
           aria-pressed={isSelected}
           aria-label={coin.name+' '+coin.symbol+' · '+
-            (live?t.privyPriceLive:t.privyPriceUnavailable)}
+            (coin.inProgress?t.coinInProgress:live?t.privyPriceLive:t.privyPriceUnavailable)}
           onClick={()=>onSelect(coin.symbol)}>
           <span className={'mininex-coin-glyph mininex-coin-glyph--'+coin.symbol.toLowerCase()}
             aria-hidden="true">{coin.glyph}</span>
           <span className="mininex-coin-details">
             <strong>{coin.symbol}</strong>
-            <small>{live?formatMoney(q.price_usdt,lang):t.privyPriceUnavailable}</small>
+            {coin.inProgress
+              ? <small className="mininex-coin-in-progress">{t.coinInProgress}</small>
+              : <small>{live?formatMoney(q.price_usdt,lang):t.privyPriceUnavailable}</small>}
           </span>
         </button>;
       })}
