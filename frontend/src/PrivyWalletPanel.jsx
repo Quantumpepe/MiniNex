@@ -8,6 +8,7 @@ import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
+import ManualSwapPreview from './ManualSwapPreview.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
@@ -411,6 +412,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
           {identityStatus==='verified' && databaseStatus==='stored' &&
             <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
+
+          {identityStatus==='verified' && databaseStatus==='stored' &&
+            <ManualSwapPreview t={t} lang={lang} getAccessToken={getAccessToken}
+              enabled={verifiedAccount} userId={user?.id}/>}
 
           {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
             <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}
