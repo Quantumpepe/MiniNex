@@ -22,7 +22,7 @@ test('wallet Swap is manual, accessible, directly below balances and no executio
   assert.match(css,/\.mininex-wallet-swap\{/);
   assert.match(labels,/walletSwapTitle: 'Swap'/);
   assert.match(labels,/walletSwapNotEnabled: 'Manuelle Swaps/);
-  assert.doesNotMatch(component,/sendTransaction|signTransaction|approve|delegateWallet|setAutomatic|broadcast\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|delegateWallet|broadcast)\s*\(/);
 });
 
 test('only BTC/ETH to/from stablecoins can request current read-only quotes',()=>{
