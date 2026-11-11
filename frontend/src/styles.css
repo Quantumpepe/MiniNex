@@ -654,11 +654,11 @@
   .update-progress-icon.is-spinning svg{animation:none}
 }
 
-/* MiniNex eight native coins: an independent 4x2 selector viewport.
+/* MiniNex twelve coin buttons: 4x3 compact selector viewport.
    Scroll here without scrolling the whole Wallet form or showing scrollbars.
    No fake coin prices, no disabled button that looks like an active trade. */
 .mininex-coins-window{
-  max-height:162px;min-height:0;max-width:100%;min-width:0;
+  max-height:210px;min-height:0;max-width:100%;min-width:0;
   overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;
   -webkit-overflow-scrolling:touch;touch-action:pan-y;
   scrollbar-width:none;-ms-overflow-style:none;
@@ -673,7 +673,7 @@
 }
 .mininex-coin-button{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  box-sizing:border-box;gap:4px;min-height:67px;min-width:0;
+  box-sizing:border-box;gap:3px;min-height:59px;min-width:0;
   padding:7px 3px;border:1px solid #315a56;border-radius:10px;
   background:#122e34;color:#d2f6ed;cursor:pointer;text-align:center;font:inherit;
 }
@@ -694,6 +694,12 @@
 .mininex-coin-glyph--xrp{background:#34454e;color:#eaf9f8}
 .mininex-coin-glyph--ada{background:#2856a6;color:#f2faff}
 .mininex-coin-glyph--trx{background:#a63946;color:#fff}
+.mininex-coin-glyph--avax{background:#c63343;color:#fff}
+.mininex-coin-glyph--link{background:#2852ba;color:#fff}
+.mininex-coin-glyph--doge{background:#b39947;color:#172021}
+.mininex-coin-glyph--uni{background:#6e2c65;color:#fff}
+.mininex-coin-in-progress{color:#e5c581!important;font-weight:750;font-size:9px!important}
+.mininex-coin-button.is-in-progress{border-style:dashed;border-color:#937c3c}
 .mininex-coin-details{display:grid;justify-items:center;gap:2px;max-width:100%;min-width:0}
 .mininex-coin-details strong{font-size:12px;font-weight:850;line-height:1.1}
 .mininex-coin-details small{
@@ -701,7 +707,12 @@
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   font-variant-numeric:tabular-nums;
 }
-.mininex-coins-window--home{margin-bottom:14px}
+.mininex-coins-window--home{margin-bottom:9px;max-height:160px;padding:5px}
+.mininex-coins-window--home .mininex-coins-grid{gap:4px}
+.mininex-coins-window--home .mininex-coin-button{min-height:48px;padding:4px 2px;gap:2px}
+.mininex-coins-window--home .mininex-coin-glyph{width:19px;height:19px;font-size:14px}
+.mininex-coins-window--home .mininex-coin-details strong{font-size:11px}
+.mininex-coins-window--home .mininex-coin-details small{font-size:8px}
 .mininex-selected-asset{gap:12px;min-width:0}
 .mininex-selected-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:7px}
 .mininex-selected-header strong{font-size:15px;color:#ebfff8}
@@ -727,9 +738,9 @@
 .mininex-balance-expanded{display:grid;gap:12px;margin-top:13px;padding-top:12px;border-top:1px solid #2b5554}
 .mininex-balance-expanded .privy-balance-refresh{justify-self:start}
 @media(max-width:390px){
-  .mininex-coins-window{padding:5px;max-height:149px}
+  .mininex-coins-window{padding:5px;max-height:190px}
   .mininex-coins-grid{gap:4px}
-  .mininex-coin-button{min-height:63px;padding:6px 2px}
+  .mininex-coin-button{min-height:56px;padding:4px 2px}
   .mininex-coin-glyph{width:22px;height:22px;font-size:17px}
   .mininex-coin-details strong{font-size:11px}
   .mininex-coin-details small{font-size:8px}
