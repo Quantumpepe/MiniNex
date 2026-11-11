@@ -100,3 +100,15 @@ export async function linkedVerifiedNativeAddress(user,chain) {
   }
   return null;
 }
+
+/**
+ * Validate a native XRPL wallet just returned by Privy's authenticated
+ * user-scoped creation hook. A base58-like string alone never proves custody.
+ */
+export async function validatedCreatedXrplAddress(response,userId) {
+  if(typeof userId!=='string'||!userId.startsWith('did:privy:')||
+     response?.user?.id!==userId||response?.wallet?.chainType!=='xrpl')
+    return null;
+  const address=response.wallet.address;
+  return await validXrplMainnetAddress(address)?address:null;
+}

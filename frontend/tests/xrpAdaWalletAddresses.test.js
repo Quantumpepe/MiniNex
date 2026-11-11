@@ -86,7 +86,9 @@ test('wallet previews do not invent addresses, create secrets or enable deposits
   assert.match(source,/linkedVerifiedNativeAddress\(user,'xrpl'\)/);
   assert.match(source,/linkedVerifiedNativeAddress\(user,'cardano'\)/);
   assert.match(source,/verifiedXrpAda\.userId===user\?\.id/);
-  assert.match(source,/asset==='XRP'\|\|asset==='ADA'/);
+  assert.match(source,/asset==='XRP'/);
+  assert.match(source,/asset==='ADA'/);
+  assert.match(source,/useXrplWallet\(user,verifiedAccount\)/);
   assert.match(source,/t\.coinAddressPending/);
   assert.match(source,/t\.coinAddressReadOnly/);
   assert.doesNotMatch(source+verifier,/seedPhrase|privateKey|wallet_propose|createWallet\(\{chainType:'xrpl'|sendTransaction\s*\(/);
