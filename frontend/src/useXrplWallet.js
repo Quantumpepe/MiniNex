@@ -1,0 +1,76 @@
+import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
+import {useEffect,useRef,useState} from 'react';
+import {linkedVerifiedNativeAddress,validXrplMainnetAddress} from './xrpAdaWalletAddresses.js';
+
+// Native XRP Ledger wallet, strictly tied to one verified Privy login.
+// Creation may not be available for every Privy SDK rollout/account yet.
+// If XRPL support is missing or an address cannot be verified, FAIL CLOSED:
+// do not show a receiving address and do not authorize deposits or transfers.
+export function useXrplWallet(user, enabled) {
+  const {createWallet} = useCreateExtendedWallet();
+  const [created,setCreated] = useState(null);
+  const [phase,setPhase] = useState({userId:null,name:'checking'});
+  const [retry,setRetry] = useState(0);
+  const attemptKey = useRef(null);
+  const account = useRef(null);
+  account.current={userId:user?.id,enabled};
+  const userId=user?.id;
+  const stored=enabled&&created?.userId===userId?created.address:null;
+  const hasLinkedXrpl=Array.isArray(user?.linkedAccounts)&&
+    user.linkedAccounts.some(a=>a?.type==='wallet'&&a?.chainType==='xrpl');
+
+  useEffect(()=>{
+    let active=true;
+    if(!enabled||!userId)return ()=>{active=false;};
+    const belongs=()=>active&&account.current.userId===userId&&account.current.enabled;
+    (async()=>{
+      // Verify linked wallet chain and checksum independently; do NOT accept
+      // an XRPL-looking EVM/Solana/wrong-account address.
+      const linked=await linkedVerifiedNativeAddress(user,'xrpl');
+      if(!belongs())return;
+      if(linked){
+        setCreated({userId,address:linked});
+        setPhase({userId,name:'created'});
+        return;
+      }
+      // An invalid preexisting XRPL wallet must be examined, never silently
+      // replaced by a second address or presented as a funded account.
+      if(hasLinkedXrpl){
+        setPhase({userId,name:'failed'});
+        return;
+      }
+      if(stored){
+        setPhase({userId,name:'created'});
+        return;
+      }
+      const attempt=userId+':xrpl:'+retry;
+      if(attemptKey.current===attempt)return;
+      attemptKey.current=attempt;
+      setPhase({userId,name:'creating'});
+      // This SDK call can reject when XRPL provisioning has not yet rolled
+      // out. Reject safely and allow an explicit retry, no fallback keypair.
+      const response=await createWallet({chainType:'xrpl'});
+      if(!belongs())return;
+      if(response?.user?.id && response.user.id!==userId)
+        throw new Error('XRPL wallet identity mismatch');
+      const wallet=response?.wallet;
+      if(wallet?.chainType!=='xrpl' ||
+         !(await validXrplMainnetAddress(wallet.address)))
+        throw new Error('Unverified XRP Ledger wallet');
+      if(!belongs())return;
+      setCreated({userId,address:wallet.address});
+      setPhase({userId,name:'created'});
+    })().catch(()=>{
+      if(belongs())setPhase({userId,name:'failed'});
+    });
+    return()=>{active=false;};
+  },[enabled,userId,user?.linkedAccounts,createWallet,retry,stored,hasLinkedXrpl]);
+
+  const address=enabled&&created?.userId===userId?created.address:null;
+  return {
+    address,
+    state:!enabled?'checking':address?'created':
+      phase.userId===userId?phase.name:'checking',
+    retry:()=>setRetry(n=>n+1),
+  };
+}
