@@ -475,6 +475,30 @@
 .privy-copy-address{display:grid;gap:6px}
 .privy-copy-address .privy-wallet-description:empty{display:none}
 .privy-btc-wallet{display:grid;gap:7px;border-top:1px solid #2a5655;padding-top:10px}
+
+/* Wallet-only manual swap: collapsible preview, never a trade-submit control. */
+.mininex-wallet-swap{display:grid;gap:10px;min-width:0}
+.mininex-swap-open{display:flex;align-items:center;justify-content:center;gap:9px;
+  min-height:44px;background:#205d4e;border:1px solid #58d4af;color:#e9fff6;font-weight:800}
+.mininex-swap-content{display:grid;gap:12px;min-width:0;padding:12px;
+  border:1px solid #2c5f58;border-radius:13px;background:#0d2930}
+.mininex-swap-form{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:9px;align-items:end}
+.mininex-swap-form label{display:grid;gap:6px;min-width:0;color:#b9dcd2;font-size:12px}
+.mininex-swap-form select,.mininex-swap-form input{width:100%;max-width:100%;min-width:0;min-height:42px;
+  box-sizing:border-box;padding:9px 8px;background:#0b222c;color:#f1fff9;
+  border:1px solid #387067;border-radius:9px;font-size:13px}
+.mininex-swap-form select:focus-visible,.mininex-swap-form input:focus-visible{
+  outline:2px solid #70edc1;outline-offset:2px}
+.mininex-swap-form .mininex-swap-flip{min-width:38px;min-height:42px;display:grid;place-items:center;padding:7px}
+.mininex-swap-form .mininex-swap-amount,
+.mininex-swap-form>[role="status"],.mininex-swap-form>[role="alert"],
+.mininex-swap-form>button[type="submit"]{grid-column:1/-1}
+.mininex-swap-quote{display:grid;gap:8px;background:#103c38;padding:11px;border-radius:10px;
+  overflow-wrap:anywhere;font-size:13px;color:#d9f8ec}
+.mininex-swap-disabled-note{border-left:2px solid #d5a85d;padding-left:10px}
+@media(max-width:355px){.mininex-swap-form{gap:5px}
+  .mininex-swap-form select,.mininex-swap-form input{font-size:12px;padding:7px 5px}}
+
 .privy-trading-settings{display:grid;gap:11px}
 .privy-trading-settings-heading{font-size:13px;font-weight:800;color:#a6c8c2;padding:1px 2px}
 .privy-asset-settings{
