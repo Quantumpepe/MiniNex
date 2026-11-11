@@ -91,7 +91,7 @@ export async function linkedVerifiedNativeAddress(user,chain) {
       (chain!=='xrpl' && chain!=='cardano')) return null;
   for (const account of user.linkedAccounts) {
     if (account?.type!=='wallet'||account.chainType!==chain ||
-        (account.walletClientType!=null && account.walletClientType!=='privy')) continue;
+        account.walletClientType!=='privy') continue;
     const address=account.address;
     const valid=chain==='xrpl'
       ? await validXrplMainnetAddress(address)
