@@ -12,6 +12,7 @@ import ManualSwapPreview from './ManualSwapPreview.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
+import {useXrplWallet} from './useXrplWallet.js';
 
 
 // Copies the complete public address. It never invokes a wallet signer or
@@ -142,6 +143,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
   const extraWallets = useAdditionalCoinWallets(
     user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
   const verifiedAccount = ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored';
+  const xrpWallet = useXrplWallet(user,verifiedAccount);
   const [verifiedXrpAda,setVerifiedXrpAda] = useState({userId:null,XRP:null,ADA:null});
   useEffect(()=>{
     let active=true;
@@ -377,17 +379,33 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
-    // Until Privy supplies confirmed native XRPL/Cardano custody support,
-    // only show already-linked, checksum-validated, account-owned addresses.
-    // Never synthesize either from an EVM/SOL/TRON key.
-    if(asset==='XRP'||asset==='ADA'){
+    // XRPL is a native Privy extended-chain wallet; create only for the
+    // verified account and expose only a checksum-validated wallet address.
+    // An SDK/provider rollout error leaves the account unavailable.
+    if(asset==='XRP'){
+      return <div className="mininex-coin-wallet-address" role="group"
+        aria-label={asset+' '+t.privyFullAddress}>
+        <div className="privy-wallet-description" role="status">
+          {xrpWallet.address?t.coinWalletReady:
+            xrpWallet.state==='creating'?t.coinWalletCreating:
+            xrpWallet.state==='failed'?t.coinWalletFailed:t.coinAddressPending}
+        </div>
+        {xrpWallet.address&&
+          <CopyWalletAddress address={xrpWallet.address} network="XRP Ledger" t={t}/>}
+        {xrpWallet.state==='failed'&&!xrpWallet.address&&
+          <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
+            onClick={xrpWallet.retry}>{t.coinWalletRetry}</button>}
+        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
+      </div>;
+    }
+    // Cardano remains "In Arbeit". No fabricated address or wallet creation.
+    if(asset==='ADA'){
       const nativeAddress=verifiedAccount&&verifiedXrpAda.userId===user?.id
-        ? verifiedXrpAda[asset] : null;
+        ? verifiedXrpAda.ADA : null;
       return <div className="mininex-coin-wallet-address" role="group"
         aria-label={asset+' '+t.privyFullAddress}>
         {nativeAddress
-          ? <CopyWalletAddress address={nativeAddress}
-              network={asset==='XRP'?'XRP Ledger':'Cardano'} t={t}/>
+          ? <CopyWalletAddress address={nativeAddress} network="Cardano" t={t}/>
           : <div role="status" className="privy-wallet-description">
               {t.coinAddressPending}
             </div>}
