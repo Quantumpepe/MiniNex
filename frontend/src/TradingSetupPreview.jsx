@@ -116,7 +116,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
       aria-label={selectedCoin.symbol+' '+t.privyAssetSettings}>
       <div className="mininex-selected-header">
         <strong>{selectedCoin.glyph} {selectedCoin.name} · {selectedCoin.symbol}</strong>
-        <span>{selectedCoin.paperSettingsReady?t.coinExistingSettings:t.coinPreparing}</span>
+        <span>{selectedCoin.inProgress?t.coinInProgress:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.coinPreparing}</span>
       </div>
       {renderCoinAddress?.(opened)}
       {selectedSettings ? <>
