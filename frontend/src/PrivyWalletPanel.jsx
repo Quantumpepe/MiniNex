@@ -10,6 +10,7 @@ import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress} from './nativeCoinAddresses.js';
+import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
 
 
 // Copies the complete public address. It never invokes a wallet signer or
@@ -139,6 +140,23 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
     user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
   const extraWallets = useAdditionalCoinWallets(
     user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
+  const verifiedAccount = ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored';
+  const [verifiedXrpAda,setVerifiedXrpAda] = useState({userId:null,XRP:null,ADA:null});
+  useEffect(()=>{
+    let active=true;
+    setVerifiedXrpAda({userId:null,XRP:null,ADA:null});
+    if(!verifiedAccount||!user?.id)return()=>{active=false;};
+    const expectedId=user.id;
+    Promise.all([
+      linkedVerifiedNativeAddress(user,'xrpl'),
+      linkedVerifiedNativeAddress(user,'cardano'),
+    ]).then(([XRP,ADA])=>{
+      if(active)setVerifiedXrpAda({userId:expectedId,XRP,ADA});
+    }).catch(()=>{
+      if(active)setVerifiedXrpAda({userId:expectedId,XRP:null,ADA:null});
+    });
+    return()=>{active=false;};
+  },[verifiedAccount,user?.id,user?.linkedAccounts]);
 
   useEffect(()=>{
     if(!ready||!authenticated){setIdentityStatus('idle');setDatabaseStatus('idle');setAssetLedger(null);setRouteCapabilities(null);setSavedBudgets(null);setPreviewBudgets({BTC:0,ETH:0});setBudgetStatus('idle');return;}
@@ -350,6 +368,23 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         {nativeWallet.state==='failed'&&!nativeWallet.address&&
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
             onClick={nativeWallet.retry}>{t.coinWalletRetry}</button>}
+        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
+      </div>;
+    }
+    // Until Privy supplies confirmed native XRPL/Cardano custody support,
+    // only show already-linked, checksum-validated, account-owned addresses.
+    // Never synthesize either from an EVM/SOL/TRON key.
+    if(asset==='XRP'||asset==='ADA'){
+      const nativeAddress=verifiedAccount&&verifiedXrpAda.userId===user?.id
+        ? verifiedXrpAda[asset] : null;
+      return <div className="mininex-coin-wallet-address" role="group"
+        aria-label={asset+' '+t.privyFullAddress}>
+        {nativeAddress
+          ? <CopyWalletAddress address={nativeAddress}
+              network={asset==='XRP'?'XRP Ledger':'Cardano'} t={t}/>
+          : <div role="status" className="privy-wallet-description">
+              {t.coinAddressPending}
+            </div>}
         <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
