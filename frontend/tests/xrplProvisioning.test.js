@@ -30,6 +30,8 @@ test('XRPL account provisioning uses authenticated Privy extended chain, no othe
   assert.match(hook,/setPhase\(\{userId,name:'invalid'\}\)/);
   assert.match(hook,/validatedCreatedXrplAddress\(response,userId\)/);
   assert.match(hook,/linkedVerifiedNativeAddress\(user,'xrpl'\)/);
+  assert.match(hook,/linkedXrplKey/);
+  assert.doesNotMatch(hook,/\[enabled,userId,user\?\.linkedAccounts/);
   assert.match(hook,/account\.current\.userId===userId&&account\.current\.enabled/);
   assert.match(hook,/if\(hasLinkedXrpl\)/);
   assert.match(panel,/useXrplWallet\(user,verifiedAccount\)/);
