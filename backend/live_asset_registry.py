@@ -33,7 +33,7 @@ class CoinNetwork:
     special_requirements: str
 
 
-REGISTRY = (
+_REGISTRY_UNSORTED = (
     CoinNetwork(
         "BTC", "Bitcoin", "bitcoin-mainnet", "bitcoin-utxo", None,
         "Privy bitcoin-segwit wallet: owner and automated signer capabilities must be verified",
@@ -118,6 +118,7 @@ REGISTRY = (
         " receipts; Circle deprecated USDC on TRON, so do not offer it",
     ),
 )
+REGISTRY = tuple(sorted(_REGISTRY_UNSORTED, key=lambda coin: ASSET_ORDER.index(coin.symbol)))
 BY_SYMBOL = {coin.symbol: coin for coin in REGISTRY}
 
 # Deliberately no hidden feature flag/env switch can bypass these controls.
