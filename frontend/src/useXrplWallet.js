@@ -54,7 +54,12 @@ export function useXrplWallet(user, enabled) {
         return;
       }
       const attempt=userId+':xrpl:'+retry;
-      if(attemptKey.current===attempt)return;
+      if(attemptKey.current===attempt){
+        // A previous create may have completed after an auth transition.
+        // Refuse to silently create a second wallet; require account sync.
+        setPhase({userId,name:'invalid'});
+        return;
+      }
       attemptKey.current=attempt;
       setPhase({userId,name:'creating'});
       // This SDK call can reject when XRPL provisioning has not yet rolled
