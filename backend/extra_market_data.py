@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 import json
 import logging
 import math
+import os
 import time
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -38,6 +40,78 @@ WS_URL = ("wss://data-stream.binance.vision/stream?streams=" +
 REST_URL = "https://data-api.binance.vision/api/v3/ticker/price"
 CANDLES_URL = "https://data-api.binance.vision/api/v3/klines"
 GECKO_URL = "https://api.coingecko.com/api/v3/simple/price"
+GECKO_PRO_URL = "https://pro-api.coingecko.com/api/v3/simple/price"
+KRAKEN_PAIRS_URL = "https://api.kraken.com/0/public/AssetPairs"
+KRAKEN_TICKER_URL = "https://api.kraken.com/0/public/Ticker"
+# The public CoinGecko limit can be shared with other Render clients.
+# One batched request for ten coins every two minutes is conservative.
+GECKO_PUBLIC_INTERVAL = 120
+GECKO_AUTH_INTERVAL = 60
+GECKO_BACKOFF_CAP = 1800
+KRAKEN_REFERENCE_INTERVAL = 60
+KRAKEN_REFERENCE_TTL = 100
+GECKO_REFERENCE_TTL = 180
+
+
+def gecko_request_settings(environ: dict | None = None) -> tuple[str, dict[str, str], int]:
+    """Provider key is server-only; never expose in a frontend response."""
+    env = os.environ if environ is None else environ
+    pro = str(env.get("MININEX_COINGECKO_PRO_API_KEY", "")).strip()
+    demo = str(env.get("MININEX_COINGECKO_DEMO_API_KEY", "")).strip()
+    if pro:
+        return GECKO_PRO_URL, {"x-cg-pro-api-key": pro}, GECKO_AUTH_INTERVAL
+    if demo:
+        return GECKO_URL, {"x-cg-demo-api-key": demo}, GECKO_AUTH_INTERVAL
+    return GECKO_URL, {}, GECKO_PUBLIC_INTERVAL
+
+
+def retry_after_seconds(raw: object, *, now: float) -> int | None:
+    """Respect Retry-After seconds or HTTP-date, with a safe bounded ceiling."""
+    if not isinstance(raw, str) or len(raw) > 100:
+        return None
+    value = raw.strip()
+    try:
+        if value.isascii() and value.isdecimal():
+            seconds = int(value)
+        else:
+            stamp = parsedate_to_datetime(value)
+            seconds = math.ceil(stamp.timestamp() - now)
+        return min(3600, max(0, seconds))
+    except (ValueError, TypeError, OverflowError, IndexError):
+        return None
+
+
+def gecko_backoff_seconds(failures: int, *, retry_after: object = None,
+                          now: float, base_interval: int = GECKO_PUBLIC_INTERVAL) -> int:
+    """First HTTP 429 waits >=5 min; repeated 429s wait up to 30 min."""
+    count = max(1, min(20, int(failures)))
+    exponential = min(GECKO_BACKOFF_CAP, 300 * (2 ** min(count - 1, 5)))
+    provider_hint = retry_after_seconds(retry_after, now=now)
+    return max(base_interval, exponential, provider_hint or 0)
+
+
+def discover_kraken_usd_pairs(payload: object) -> dict[str, str]:
+    """Discover exact exchange USD pair names; never infer or accept USDT pairs."""
+    if not isinstance(payload, dict) or payload.get("error") != []:
+        return {}
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return {}
+    matches: dict[str, str] = {}
+    for pair_key, info in result.items():
+        if not isinstance(pair_key, str) or not isinstance(info, dict):
+            continue
+        if info.get("status", "online") != "online":
+            continue
+        wsname = info.get("wsname")
+        if not isinstance(wsname, str) or not wsname.endswith("/USD"):
+            continue
+        base = wsname[:-4]
+        asset = "DOGE" if base in ("XDG", "DOGE") else base
+        if asset in EXTRA_ASSETS and asset not in matches:
+            matches[asset] = pair_key
+    return matches
+
 
 
 def valid_price(value: Any) -> float | None:
@@ -62,6 +136,9 @@ class ExtraMarketData:
         self.connected = False
         self._primary: dict[str, dict[str, Any]] = {}
         self._reference: dict[str, dict[str, Any]] = {}
+        self._kraken_reference: dict[str, dict[str, Any]] = {}
+        self._kraken_pairs: dict[str, str] = {}
+        self._kraken_discover_after = 0.0
         self._ticks = {asset: deque(maxlen=1500) for asset in EXTRA_ASSETS}
         self._historical: dict[str, list[dict[str, float]]] = {asset: [] for asset in EXTRA_ASSETS}
         self._tasks: list[asyncio.Task] = []
@@ -74,6 +151,7 @@ class ExtraMarketData:
             asyncio.create_task(self._ws_loop(), name="extra-market-spot"),
             asyncio.create_task(self._rest_loop(), name="extra-market-rest"),
             asyncio.create_task(self._gecko_loop(), name="extra-market-reference"),
+            asyncio.create_task(self._kraken_loop(), name="extra-market-kraken-backup"),
             asyncio.create_task(self._history_loop(), name="extra-market-history"),
         ]
 
@@ -150,19 +228,56 @@ class ExtraMarketData:
                 not math.isfinite(updated) or not 0 <= at - updated <= 180):
                 continue
             self._reference[asset] = {
-                "price": price, "received_at": at, "source": "CoinGecko USD",
+                "price": price, "received_at": at, "source_at": updated,
+                "source": "CoinGecko USD",
             }
             count += 1
         return count
+
+    def ingest_kraken(self, payload: Any, *, now: float | None = None) -> int:
+        """Read independent USD bid/ask midpoints with exact pair IDs."""
+        if not isinstance(payload, dict) or payload.get("error") != []:
+            return 0
+        rows = payload.get("result")
+        if not isinstance(rows, dict):
+            return 0
+        at = self.clock() if now is None else now
+        count = 0
+        for asset, pair in self._kraken_pairs.items():
+            entry = rows.get(pair)
+            if not isinstance(entry, dict):
+                continue
+            bids, asks = entry.get("b"), entry.get("a")
+            bid = valid_price(bids[0]) if isinstance(bids, list) and bids else None
+            ask = valid_price(asks[0]) if isinstance(asks, list) and asks else None
+            if bid is None or ask is None or ask < bid or (ask - bid) / bid > 0.025:
+                continue
+            self._kraken_reference[asset] = {
+                "price": (bid + ask) / 2, "received_at": at,
+                "source": "Kraken Spot USD",
+            }
+            count += 1
+        return count
+
+    def _fresh_reference(self, asset: str, at: float) -> dict | None:
+        gecko = self._reference.get(asset)
+        if gecko and 0 <= at - gecko["received_at"] <= GECKO_REFERENCE_TTL and (
+            0 <= at - gecko.get("source_at", gecko["received_at"]) <= 240
+        ):
+            return gecko
+        kraken = self._kraken_reference.get(asset)
+        if kraken and 0 <= at - kraken["received_at"] <= KRAKEN_REFERENCE_TTL:
+            return kraken
+        return None
 
     def snapshot(self, *, now: float | None = None) -> dict[str, dict[str, Any]]:
         at = self.clock() if now is None else now
         result = {}
         for asset in EXTRA_ASSETS:
             primary = self._primary.get(asset)
-            reference = self._reference.get(asset)
+            reference = self._fresh_reference(asset, at)
             primary_ok = bool(primary and 0 <= at - primary["received_at"] <= 10)
-            reference_ok = bool(reference and 0 <= at - reference["received_at"] <= 120)
+            reference_ok = reference is not None
             divergence = (abs(primary["price"] - reference["price"]) /
                           reference["price"] * 100) if primary_ok and reference_ok else None
             verified = bool(primary_ok and reference_ok and divergence is not None
@@ -266,24 +381,86 @@ class ExtraMarketData:
                 await asyncio.sleep(6)
 
     async def _gecko_loop(self) -> None:
+        """Single batched CoinGecko request, 429-aware backoff, optional future key."""
+        url, headers, interval = gecko_request_settings()
+        failures = 0
         async with httpx.AsyncClient(timeout=httpx.Timeout(8.0),
                                      follow_redirects=False) as client:
             while True:
+                delay = interval
                 try:
-                    response = await client.get(GECKO_URL, params={
+                    response = await client.get(url, params={
                         "ids": ",".join(GECKO_IDS.values()),
                         "vs_currencies": "usd",
                         "include_last_updated_at": "true",
-                    })
-                    response.raise_for_status()
-                    if not self.ingest_gecko(response.json()):
-                        raise ValueError("No fresh CoinGecko reference prices")
+                    }, headers=headers)
+                    if response.status_code == 429:
+                        failures += 1
+                        delay = gecko_backoff_seconds(
+                            failures, retry_after=response.headers.get("Retry-After"),
+                            now=self.clock(), base_interval=interval,
+                        )
+                        self.last_error = "Reference: CoinGecko HTTP 429 (cooldown)"
+                        LOGGER.warning("CoinGecko rate limited; pausing %d seconds; "
+                                       "Kraken independent fallback remains available", delay)
+                    else:
+                        response.raise_for_status()
+                        if len(response.content) > 196_000:
+                            raise ValueError("Oversized CoinGecko response")
+                        if not self.ingest_gecko(response.json()):
+                            raise ValueError("No fresh CoinGecko reference prices")
+                        failures = 0
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    self.last_error = f"Reference: {type(exc).__name__}: {str(exc)[:100]}"
-                    LOGGER.warning("Read-only coin reference: %s", self.last_error)
-                await asyncio.sleep(30)
+                    failures += 1
+                    delay = max(interval, min(GECKO_BACKOFF_CAP, 120 * 2 ** min(failures, 4)))
+                    self.last_error = "Reference: CoinGecko unavailable"
+                    LOGGER.warning("CoinGecko reference unavailable (%s); retry in %d s",
+                                   type(exc).__name__, delay)
+                await asyncio.sleep(delay)
+
+    async def _kraken_loop(self) -> None:
+        """Independent, read-only USD backup if CoinGecko is throttled.
+
+        Kraken pair names are discovered from its market metadata instead of
+        assuming that every asset has a USD market or using a wrong token.
+        """
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0),
+                                     follow_redirects=False) as client:
+            while True:
+                now = self.clock()
+                if now >= self._kraken_discover_after:
+                    self._kraken_discover_after = now + 600
+                    try:
+                        response = await client.get(KRAKEN_PAIRS_URL)
+                        response.raise_for_status()
+                        if len(response.content) > 5_000_000:
+                            raise ValueError("Oversized Kraken market listing")
+                        pairs = discover_kraken_usd_pairs(response.json())
+                        if pairs:
+                            self._kraken_pairs = pairs
+                            self._kraken_discover_after = now + 21600
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        LOGGER.warning("Kraken reference pair discovery unavailable: %s",
+                                       type(exc).__name__)
+                if self._kraken_pairs:
+                    try:
+                        response = await client.get(KRAKEN_TICKER_URL, params={
+                            "pair": ",".join(self._kraken_pairs.values()),
+                        })
+                        response.raise_for_status()
+                        if len(response.content) > 256_000:
+                            raise ValueError("Oversized Kraken USD quotes")
+                        self.ingest_kraken(response.json())
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        LOGGER.warning("Kraken backup reference unavailable: %s",
+                                       type(exc).__name__)
+                await asyncio.sleep(KRAKEN_REFERENCE_INTERVAL)
 
     async def _history_loop(self) -> None:
         async with httpx.AsyncClient(timeout=httpx.Timeout(8.0),
