@@ -8,8 +8,9 @@ import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
+import ManualSwapPreview from './ManualSwapPreview.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
-import {evmNetworkAddress} from './nativeCoinAddresses.js';
+import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
 
 
@@ -338,10 +339,15 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
       {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
     </div>;
 
-    if(asset==='BNB'||asset==='POL'){
-      const network=asset==='BNB'?'BNB Smart Chain':'Polygon PoS';
-      const chain=asset==='BNB'?'bsc-mainnet':'polygon-pos-mainnet';
-      const evmAddress=evmNetworkAddress(chain,address);
+    if(['BNB','POL','AVAX','LINK','UNI'].includes(asset)){
+      const network=asset==='BNB'?'BNB Smart Chain':
+        asset==='POL'?'Polygon PoS':asset==='AVAX'?'Avalanche C-Chain':
+        asset==='LINK'?'Chainlink (Ethereum ERC-20)':'Uniswap (Ethereum ERC-20)';
+      const chain=asset==='BNB'?'bsc-mainnet':
+        asset==='POL'?'polygon-pos-mainnet':'avalanche-c-mainnet';
+      const evmAddress=(asset==='LINK'||asset==='UNI')
+        ? (validEvmAddress(address)?address:null)
+        : evmNetworkAddress(chain,address);
       return <div className="mininex-coin-wallet-address" role="group"
         aria-label={asset+' '+t.privyFullAddress}>
         <p className="privy-wallet-description">{t.coinEvmSharedAddress}</p>
@@ -388,7 +394,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
-    // XRP and ADA need independent native key custody and address derivation.
+    // DOGE and other unsupported native wallets require dedicated verified custody.
     // Do not reuse an EVM/Solana address or display a fake receiving address.
     return <div className="mininex-coin-wallet-address" role="status">
       <div className="privy-wallet-description">{t.coinAddressPending}</div>
@@ -406,6 +412,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
           {identityStatus==='verified' && databaseStatus==='stored' &&
             <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
+
+          {identityStatus==='verified' && databaseStatus==='stored' &&
+            <ManualSwapPreview t={t} lang={lang} getAccessToken={getAccessToken}
+              enabled={verifiedAccount} userId={user?.id}/>}
 
           {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
             <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}

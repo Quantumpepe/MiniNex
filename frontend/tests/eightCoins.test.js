@@ -2,18 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {COINS,coinBySymbol,coinMarketSnapshot} from '../src/coins.js';
 
-test('eight native coins preserve approved compact 4x2 layout order',()=>{
+test('twelve coins preserve approved compact 4x3 layout order',()=>{
   assert.deepEqual(COINS.map(c=>c.symbol),
-    ['BTC','ETH','BNB','POL','SOL','XRP','ADA','TRX']);
-  assert.equal(COINS.length,8);
-  assert.equal(new Set(COINS.map(c=>c.network)).size,8);
+    ['BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ADA']);
+  assert.equal(COINS.length,12);
+  assert.equal(new Set(COINS.map(c=>c.network)).size,10);
   assert.equal(coinBySymbol('POL').network,'polygon-pos-mainnet');
-  assert.equal(coinBySymbol('DOGE'),null);
+  assert.equal(coinBySymbol('DOGE').network,'dogecoin-mainnet');
+  assert.equal(coinBySymbol('ADA').inProgress,true);
+  assert.equal(coinBySymbol('LINK').token,true);
+  assert.equal(coinBySymbol('UNI').token,true);
   assert.equal(coinBySymbol('USDC'),null);
   assert(COINS.every(c=>typeof c.glyph==='string'&&c.glyph.length>0));
 });
 
-test('all eight verified read-only prices can display without enabling coin trading',()=>{
+test('all twelve verified read-only prices can display without enabling coin trading',()=>{
   const now=100000;
   const markets=Object.fromEntries(COINS.map(c=>[c.symbol,{
     market_data_valid:true,price_usdt:100,change_24h_pct:1,
@@ -25,7 +28,7 @@ test('all eight verified read-only prices can display without enabling coin trad
     assert.equal(coin.paperSettingsReady,['BTC','ETH'].includes(coin.symbol));
     assert.equal(quote.trading_enabled,false);
   }
-  assert.equal(coinMarketSnapshot('DOGE',markets,now-5000,now),null);
+  assert.equal(coinMarketSnapshot('UNKNOWN',markets,now-5000,now),null);
   assert.equal(coinMarketSnapshot('POL',{POL:{market_data_valid:false,price_usdt:100}},now-5000,now),null);
 });
 
