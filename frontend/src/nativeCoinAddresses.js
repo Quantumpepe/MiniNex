@@ -20,7 +20,8 @@ export function findPrivyNativeWallet(user, chainType) {
   if (!user?.id || !Array.isArray(user.linkedAccounts)) return null;
   return user.linkedAccounts.find(account =>
     account?.type === 'wallet' &&
-    account?.walletClientType === 'privy' &&
+    // Tier-2 wallet records can omit walletClientType; reject explicitly external providers.
+    (account.walletClientType == null || account.walletClientType === 'privy') &&
     account?.chainType === chainType &&
     validNativePreviewAddress(chainType, account.address)
   ) || null;
