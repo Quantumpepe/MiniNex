@@ -110,10 +110,8 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
     <CoinGrid t={t} lang={lang} selected={asset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="home"
       onSelect={symbol=>{
-        if(coinBySymbol(symbol)?.paperSettingsReady){
+        if(coinBySymbol(symbol)){
           setAsset(symbol);setPeriod('m15');
-        }else{
-          goTo('wallet');
         }
       }}/>
     <section className="compact-main-chart" aria-label={t.market}>
@@ -131,7 +129,8 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         <span>{t.spreadCheck}</span><b>{valid&&selected?.price_divergence_pct!=null?formatNumber(selected.price_divergence_pct,lang,3)+'%':'—'}</b>
       </div>
     </section>
-    {showSimulatedTrades&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
+    {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{lang==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
+    {showSimulatedTrades&&coinBySymbol(asset)?.paperSettingsReady&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
       <div className="compact-recent-heading"><strong>{t.recentTrades} · {asset}</strong><span>{t.simulatedTradeLabel}</span></div>
       {recentTrades.length ? <div className={'compact-trade-list'+(hasMoreTrades?' compact-trade-list--scroll':'')}
         tabIndex={hasMoreTrades?0:undefined}
