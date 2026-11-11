@@ -26,7 +26,8 @@ test('XRPL account provisioning uses authenticated Privy extended chain, no othe
   const hook=read('../src/useXrplWallet.js');
   const panel=read('../src/PrivyWalletPanel.jsx');
   assert.match(hook,/@privy-io\/react-auth\/extended-chains/);
-  assert.match(hook,/createWallet\(\{chainType:'xrpl'\}\)/);
+  assert.match(hook,/walletCreator\.current\(\{chainType:'xrpl'\}\)/);
+  assert.match(hook,/setPhase\(\{userId,name:'invalid'\}\)/);
   assert.match(hook,/validatedCreatedXrplAddress\(response,userId\)/);
   assert.match(hook,/linkedVerifiedNativeAddress\(user,'xrpl'\)/);
   assert.match(hook,/account\.current\.userId===userId&&account\.current\.enabled/);
