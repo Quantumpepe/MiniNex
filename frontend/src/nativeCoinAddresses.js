@@ -44,6 +44,6 @@ export function findPrivyNativeWallet(user, chainType) {
 // EVM-compatible chains use the same key/address on DIFFERENT networks.
 // This does not create a second wallet or imply that any deposit is enabled.
 export function evmNetworkAddress(network, embeddedAddress) {
-  if (network !== 'bsc-mainnet' && network !== 'polygon-pos-mainnet') return null;
+  if (!['bsc-mainnet','polygon-pos-mainnet','avalanche-c-mainnet'].includes(network)) return null;
   return validEvmAddress(embeddedAddress) ? embeddedAddress : null;
 }
