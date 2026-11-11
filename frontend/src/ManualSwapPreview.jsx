@@ -100,7 +100,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
           <ArrowLeftRight size={16} aria-hidden="true"/>
         </button>
         <label><span>{t.walletSwapTo}</span>
-          <select value={to} onChange={event=>changeTo(event.target.value}>
+          <select value={to} onChange={event=>changeTo(event.target.value)}>
             {items.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
