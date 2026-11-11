@@ -8,6 +8,8 @@ import {linkedVerifiedNativeAddress,validatedCreatedXrplAddress} from './xrpAdaW
 // do not show a receiving address and do not authorize deposits or transfers.
 export function useXrplWallet(user, enabled) {
   const {createWallet} = useCreateExtendedWallet();
+  const walletCreator=useRef(createWallet);
+  walletCreator.current=createWallet;
   const [created,setCreated] = useState(null);
   const [phase,setPhase] = useState({userId:null,name:'checking'});
   const [retry,setRetry] = useState(0);
@@ -36,7 +38,7 @@ export function useXrplWallet(user, enabled) {
       // An invalid preexisting XRPL wallet must be examined, never silently
       // replaced by a second address or presented as a funded account.
       if(hasLinkedXrpl){
-        setPhase({userId,name:'failed'});
+        setPhase({userId,name:'invalid'});
         return;
       }
       if(stored){
@@ -49,10 +51,15 @@ export function useXrplWallet(user, enabled) {
       setPhase({userId,name:'creating'});
       // This SDK call can reject when XRPL provisioning has not yet rolled
       // out. Reject safely and allow an explicit retry, no fallback keypair.
-      const response=await createWallet({chainType:'xrpl'});
+      const response=await walletCreator.current({chainType:'xrpl'});
       if(!belongs())return;
       const address=await validatedCreatedXrplAddress(response,userId);
-      if(!address)throw new Error('Unverified XRP Ledger wallet');
+      if(!address){
+        // If a wallet was created but its provenance/address failed verification,
+        // never create a second wallet on a retry. Manual operator review required.
+        setPhase({userId,name:'invalid'});
+        return;
+      }
       if(!belongs())return;
       setCreated({userId,address});
       setPhase({userId,name:'created'});
@@ -60,7 +67,7 @@ export function useXrplWallet(user, enabled) {
       if(belongs())setPhase({userId,name:'failed'});
     });
     return()=>{active=false;};
-  },[enabled,userId,user?.linkedAccounts,createWallet,retry,stored,hasLinkedXrpl]);
+  },[enabled,userId,user?.linkedAccounts,retry,stored,hasLinkedXrpl]);
 
   const address=enabled&&created?.userId===userId?created.address:null;
   return {
