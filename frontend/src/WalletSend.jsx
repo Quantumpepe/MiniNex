@@ -271,6 +271,12 @@ export default function WalletSend({t,enabled,userId}) {
               type="button" disabled={busy} onClick={verifyReceipt}>
               {t.walletSendCheckReceipt}
             </button>}
+          {['confirmed','reverted','uncertain'].includes(phase)&&
+            <button className="privy-wallet-action privy-wallet-action--secondary"
+              type="button" disabled={busy}
+              onClick={()=>{sending.current=false;clearReview();setAmount('');setDestination('');}}>
+              {t.walletSendNew}
+            </button>}
         </div>}
     </div>}
   </section>;
