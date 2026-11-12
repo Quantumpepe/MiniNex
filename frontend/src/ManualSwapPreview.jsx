@@ -159,6 +159,12 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
       {quoteCurrent&&<div className="mininex-swap-quote" role="status">
         <strong>{t.walletSwapIndicative}</strong>
+        <div className="privy-wallet-description">
+          {quote.request.coin==='ETH'?t.walletSwapRouteEth:t.walletSwapRouteBtc}
+        </div>
+        {quote.request.coin==='ETH'
+          ? <div>{t.walletSwapSlippage}: <b>{quote.data.slippage_tolerance_pct}%</b></div>
+          : <div>{t.walletSwapPriceImpact}: <b>{(quote.data.quoted_price_impact_bps/100).toFixed(2)}%</b></div>}
         <div>{t.walletSwapEstimated}: <b>{estimated} {to}</b></div>
         {minimum&&<div>{t.walletSwapMinimum}: <b>{minimum} {to}</b></div>}
         {expiry&&<p className="privy-wallet-description">
