@@ -97,6 +97,7 @@ def test_single_real_provider_call_no_wallet_funding_memo_or_action(monkeypatch)
     assert out["destination_network"]=="xrpl-mainnet"
     assert out["estimated_output_amount"]=="0.12345678"
     assert out["input_amount"]=="1.5"
+    assert out["quote_expires_at"] is None
     assert out["quoted_price_impact_bps"]==25
     assert out["pool_route_quoted"] is True
     assert out["execution_enabled"] is False
@@ -104,6 +105,20 @@ def test_single_real_provider_call_no_wallet_funding_memo_or_action(monkeypatch)
     assert out["transaction_built"] is False
     assert out["deposit_address_provided"] is False
     assert "memo" not in out and "inbound_address" not in out
+
+
+def test_native_quote_exposes_provider_ttl_without_funding_instructions(monkeypatch):
+    original=httpx.AsyncClient
+    expiry=int(time.time())+20
+    def mock_client(*args,**kwargs):
+        return original(*args,transport=httpx.MockTransport(
+            lambda request:httpx.Response(
+                200,json=provider(expiry=expiry))),**kwargs)
+    monkeypatch.setattr(mq.httpx,"AsyncClient",mock_client)
+    result=asyncio.run(mq.get_native_swap_quote("SOL","XRP","1"))
+    assert result["quote_expires_at"]==expiry
+    assert result["can_submit"] is False
+    assert "memo" not in result and "inbound_address" not in result
 
 
 @pytest.mark.parametrize("evil", [
