@@ -480,7 +480,7 @@ test('manual quote UI is compact and preserves 12 coins without diagnostic butto
   assert.match(component,/walletSwapAdaPending/);
   assert.match(component,/walletSwapNotEnabled/);
   for(const name of ['checkWalletReadiness','checkRoute','checkFee','checkReceipt'])
-    assert.doesNotMatch(component,new RegExp('onClick=\\\\{'+name+'\\\\}'));
+    assert.equal(component.includes('onClick={'+name+'}'),false);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
