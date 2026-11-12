@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute,validEthReceiptStatus}
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute,validManualSwapWalletReadiness,validEthReceiptStatus}
   from '../src/manualSwapRules.js';
 
 const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -454,6 +454,65 @@ test('real provider quotes reject native network forgery and any executable inst
   assert.match(component,/quote\.request\.coin==='MULTICHAIN'/);
   assert.match(component,/walletSwapNativeLiquidityNotice/);
   assert.match(labels,/walletSwapNativeProvider: 'Live-Marktkurs von THORChain'/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});
+
+test('privy wallet record readiness is independent, authenticated and never an execution grant',()=>{
+  const good={
+    mode:'MANUAL_SWAP_WALLET_READINESS_ONLY',
+    source:{asset:'SOL',network:'solana-mainnet',record_status:'PRESENT'},
+    destination:{asset:'USDT',network:'ethereum-mainnet',record_status:'MISSING'},
+    route_class:'CROSS_CHAIN',
+    ada_in_progress:false,
+    linked_wallet_records_checked:true,
+    ownership_proof_verified:false,
+    native_signer_verified:false,
+    network_fees_verified:false,
+    minimum_received_guaranteed:false,
+    refund_path_verified:false,
+    signing_authorized:false,
+    execution_ready:false,
+    can_submit:false,
+  };
+  assert.equal(validManualSwapWalletReadiness(good,'SOL','USDT'),true);
+  for (const change of [
+    {mode:'SWAP_EXECUTION_READY'},
+    {signing_authorized:true},{execution_ready:true},{can_submit:true},
+    {native_signer_verified:true},{ownership_proof_verified:true},
+    {network_fees_verified:true},{refund_path_verified:true},
+    {source:{...good.source,network:'ethereum-mainnet'}},
+    {source:{...good.source,record_status:'READY'}},
+    {destination:{...good.destination,record_status:'PRESENT',address:'0xsecret'}},
+    {destination:{...good.destination,asset:'USDC'}},
+    {route_class:'SAME_CHAIN'},
+    {ada_in_progress:true},
+    {memo:'=:BTC'},{address:'0x'+'a'.repeat(40)},
+  ]) assert.equal(validManualSwapWalletReadiness({...good,...change},'SOL','USDT'),false,
+      JSON.stringify(change));
+  assert.equal(validManualSwapWalletReadiness({
+    ...good,source:{asset:'ETH',network:'ethereum-mainnet',record_status:'PRESENT'},
+    destination:{asset:'LINK',network:'ethereum-mainnet',record_status:'PRESENT'},
+    route_class:'SAME_CHAIN',
+  },'ETH','LINK'),true);
+  assert.equal(validManualSwapWalletReadiness({
+    ...good,source:{asset:'ADA',network:'cardano-mainnet',record_status:'MISSING'},
+    ada_in_progress:true,
+  },'ADA','USDT'),true);
+});
+
+test('wallet record check runs only on explicit tap without transfers or polling',()=>{
+  assert.match(component,/onClick=\{checkWalletReadiness\}/);
+  assert.match(component,/\/api\/wallet\/swap\/wallet-readiness\?/);
+  assert.match(component,/validManualSwapWalletReadiness\(result,from,to\)/);
+  assert.match(component,/getAccessToken\(\)/);
+  assert.match(component,/signal:controller\.signal/);
+  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),12_000\)/);
+  assert.match(component,/setWalletReadiness\(null\)/);
+  assert.match(component,/walletReadiness\.ada_in_progress/);
+  assert.match(labels,/walletSwapWalletCheck: 'Wallet-Einträge prüfen'/);
+  assert.match(labels,/walletSwapWalletCaveat:/);
+  assert.match(labels,/walletSwapAdaPending:/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });

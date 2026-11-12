@@ -106,6 +106,41 @@ export function validManualSwapQuote(data, request) {
 }
 
 
+// On-demand Privy-linked wallet RECORD inspection only. It never confirms
+// spend authority or permits a transfer; missing/ambiguous wallets fail closed.
+export function validManualSwapWalletReadiness(data, from, to) {
+  if (!MANUAL_SWAP_ASSETS.includes(from) || !MANUAL_SWAP_ASSETS.includes(to) ||
+      from===to || !data || data.mode!=='MANUAL_SWAP_WALLET_READINESS_ONLY')
+    return false;
+  const network=asset=>STABLES.has(asset)
+    ? 'ethereum-mainnet':coinBySymbol(asset)?.network;
+  const src=network(from), dst=network(to);
+  const states=['PRESENT','MISSING','AMBIGUOUS','INVALID_FORMAT'];
+  const exactKeys=(object,keys)=>object && typeof object==='object' &&
+    !Array.isArray(object) &&
+    Object.keys(object).sort().join(',')===keys.slice().sort().join(',');
+  return !!src && !!dst &&
+    exactKeys(data.source,['asset','network','record_status']) &&
+    exactKeys(data.destination,['asset','network','record_status']) &&
+    data.source.asset===from && data.destination.asset===to &&
+    data.source.network===src && data.destination.network===dst &&
+    states.includes(data.source.record_status) &&
+    states.includes(data.destination.record_status) &&
+    data.route_class===(src===dst?'SAME_CHAIN':'CROSS_CHAIN') &&
+    data.ada_in_progress===(from==='ADA'||to==='ADA') &&
+    data.linked_wallet_records_checked===true &&
+    data.ownership_proof_verified===false &&
+    data.native_signer_verified===false &&
+    data.network_fees_verified===false &&
+    data.minimum_received_guaranteed===false &&
+    data.refund_path_verified===false &&
+    data.signing_authorized===false &&
+    data.execution_ready===false && data.can_submit===false &&
+    !('address' in data) && !('signing_payload' in data) &&
+    !('inbound_address' in data) && !('memo' in data);
+}
+
+
 // No polling, network requests or background updates: one local expiry timer
 // is enough for a displayed read-only quote. Uncertain/old timestamps fail
 // closed. BTC quotes are only indicative and can never be executed.
