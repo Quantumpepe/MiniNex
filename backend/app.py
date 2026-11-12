@@ -38,6 +38,7 @@ from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
+from .manual_swap_wallet_readiness import get_manual_swap_wallet_readiness
 
 market = MarketDataService()
 extra_markets = ExtraMarketData()
@@ -359,6 +360,23 @@ def manual_wallet_swap_route(source: str, target: str,
     verify_privy_bearer(authorization)
     route = build_manual_swap_route(source, target)
     return JSONResponse(route, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/wallet/swap/wallet-readiness")
+async def manual_wallet_swap_wallet_readiness(
+        source: str, target: str,
+        authorization: str | None = Header(default=None)):
+    """One explicit user-requested inspection of source/destination wallet records.
+
+    Privy identities and linked wallets come only from the server's verified
+    user lookup. No client address/contract, signing, transfer or quote is used.
+    """
+    did = verify_privy_bearer(authorization)["user_id"]
+    report = await get_manual_swap_wallet_readiness(did, source, target)
+    return JSONResponse(report, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
