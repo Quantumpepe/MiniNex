@@ -25,7 +25,7 @@ test('wallet Swap is manual, accessible, directly below balances and no executio
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|delegateWallet|broadcast)\s*\(/);
 });
 
-test('only BTC/ETH to/from stablecoins can request current read-only quotes',()=>{
+test('all twelve coins can request real venue quotes; ETH/BTC keep dedicated routes',()=>{
   assert.equal(MANUAL_SWAP_ASSETS.length,14);
   assert.deepEqual(manualSwapQuoteRequest('ETH','USDC','0.125'),{
     path:'/api/live/eth/quote',
@@ -37,12 +37,18 @@ test('only BTC/ETH to/from stablecoins can request current read-only quotes',()=
     body:{side:'BUY',stable:'USDT',amount:'50'},
     coin:'BTC',from:'USDT',to:'BTC',
   });
-  assert.equal(manualSwapQuoteRequest('ETH','BTC','2'),null);
-  assert.equal(manualSwapQuoteRequest('LINK','USDC','10'),null);
-  assert.equal(manualSwapQuoteRequest('ADA','USDC','20'),null);
-  assert.equal(manualSwapQuoteRequest('DOGE','USDT','100'),null);
+  for(const [from,to,amount] of [
+    ['ETH','BTC','2'],['LINK','USDC','10'],['ADA','USDC','20'],
+    ['DOGE','USDT','100'],['USDC','USDT','1'],
+    ['SOL','XRP','5'],['POL','AVAX','1'],['UNI','BNB','3'],
+  ]) assert.deepEqual(manualSwapQuoteRequest(from,to,amount),{
+    path:'/api/wallet/swap/live-quote',
+    body:{source:from,target:to,amount},coin:'MULTICHAIN',from,to,
+  });
   assert.equal(manualSwapQuoteRequest('BTC','BTC','1'),null);
-  assert.equal(manualSwapQuoteRequest('USDC','USDT','1'),null);
+  assert.equal(manualSwapQuoteRequest('USDC','USDT','0.1234567'),null);
+  assert.equal(manualSwapQuoteRequest('ADA','USDC','0.0000001'),null);
+  assert.equal(manualSwapQuoteRequest('SOL','BTC','0.123456789'),null);
 });
 
 test('manual quote validation strictly rejects malformed, zero or overprecise inputs',()=>{
@@ -398,6 +404,47 @@ test('ETH receipt check only runs on tap with timeout and no background polling'
   assert.match(component,/walletSwapTxNotFill/);
   assert.match(labels,/walletSwapTxCheckTitle: 'Echte ETH-Transaktion prüfen'/);
   assert.match(labels,/walletSwapTxFINALIZED_REVERTED:/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});
+
+
+test('real provider quotes reject native network forgery and any executable instructions',()=>{
+  const req=manualSwapQuoteRequest('SOL','XRP','1.25');
+  const now=1_800_000_000_000;
+  const good={
+    mode:'NATIVE_MULTICHAIN_REAL_MARKET_QUOTE_ONLY',
+    source_asset:'SOL',destination_asset:'XRP',
+    source_network:'solana-mainnet',destination_network:'xrpl-mainnet',
+    input_amount:'1.25',estimated_output_amount:'30.01',
+    quote_provider:'THORCHAIN_PUBLIC_MCP',pool_route_quoted:true,
+    quoted_price_impact_bps:34,quote_checked_at:now/1000,
+    execution_enabled:false,can_submit:false,
+    transaction_built:false,signing_authorized:false,
+    deposit_address_provided:false,fee_breakdown_verified:false,
+    minimum_received_guaranteed:false,
+  };
+  assert.equal(validManualSwapQuote(good,req),true);
+  assert.equal(manualSwapQuoteExpiryMs(good,req,now),now+30_000);
+  assert.equal(manualSwapQuoteExpiryMs(good,req,now+30_001),null);
+  for(const change of [
+    {source_asset:'ETH'},{destination_asset:'DOGE'},
+    {source_network:'ethereum-mainnet'},
+    {destination_network:'bitcoin-mainnet'},
+    {quote_provider:'UNKNOWN'}, {pool_route_quoted:false},
+    {estimated_output_amount:'0'}, {estimated_output_amount:'no quote'},
+    {quoted_price_impact_bps:501},{quoted_price_impact_bps:'25'},
+    {execution_enabled:true},{can_submit:true},
+    {transaction_built:true},{signing_authorized:true},
+    {deposit_address_provided:true},{fee_breakdown_verified:true},
+    {minimum_received_guaranteed:true},
+    {input_amount:'1.3'},{quote_checked_at:'now'},
+    {memo:'=:'},{inbound_address:'bc1q...'},
+  ]) assert.equal(validManualSwapQuote({...good,...change},req),false,
+    JSON.stringify(change));
+  assert.match(component,/quote\.request\.coin==='MULTICHAIN'/);
+  assert.match(component,/walletSwapNativeLiquidityNotice/);
+  assert.match(labels,/walletSwapNativeProvider: 'Live-Marktkurs von THORChain'/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
