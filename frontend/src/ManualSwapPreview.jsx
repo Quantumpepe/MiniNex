@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs} from './manualSwapRules.js';
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview} from './manualSwapRules.js';
 
 // Standalone MANUAL wallet swap preview. It never signs, approves, delegates,
 // broadcasts, auto-swaps or changes the independent BTC/ETH trading budgets.
@@ -14,6 +14,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const [busy,setBusy]=useState(false);
   const [quote,setQuote]=useState(null);
   const [expired,setExpired]=useState(false);
+  const [feeReview,setFeeReview]=useState(null);
+  const [feeStatus,setFeeStatus]=useState('idle');
   const [error,setError]=useState('');
   const requestId=useRef(0);
   const inFlight=useRef(null);
@@ -37,12 +39,25 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     return ()=>clearTimeout(timeout);
   },[quote]);
 
+  // A provider fee review is a short-lived snapshot, not an executable quote.
+  // Only one timeout while visible, no second network request.
+  useEffect(()=>{
+    if(!feeReview)return;
+    const timeout=setTimeout(()=>{
+      setFeeReview(current=>current===feeReview?null:current);
+      setFeeStatus('expired');
+    },Math.max(0,feeReview.expiresAtMs-Date.now()));
+    return ()=>clearTimeout(timeout);
+  },[feeReview]);
+
   useEffect(()=>{
     requestId.current+=1;
     abortInFlight();
     setOpen(false);
     setQuote(null);
     setExpired(false);
+    setFeeReview(null);
+    setFeeStatus('idle');
     setError('');
     setBusy(false);
   },[userId,enabled]);
@@ -56,6 +71,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     abortInFlight();
     setQuote(null);
     setExpired(false);
+    setFeeReview(null);
+    setFeeStatus('idle');
     setError('');
     setBusy(false);
   };
@@ -74,6 +91,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setBusy(true);
     setQuote(null);
     setExpired(false);
+    setFeeReview(null);
+    setFeeStatus('idle');
     setError('');
     try {
       const token=await getAccessToken();
@@ -99,6 +118,46 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     }catch {
       if(id===requestId.current)setError(t.walletSwapFailed);
     }finally {
+      clearTimeout(timeout);
+      if(inFlight.current===controller)inFlight.current=null;
+      if(id===requestId.current)setBusy(false);
+    }
+  };
+
+  // Explicit user action only. Existing server endpoint builds a simulated
+  // unsigned ETH transaction, but does not return calldata, authorize or send.
+  const checkFee=async()=>{
+    if(!enabled||busy||!request||request.coin!=='ETH')return;
+    const id=++requestId.current;
+    const controller=new AbortController();
+    inFlight.current=controller;
+    const timeout=setTimeout(()=>controller.abort(),15_000);
+    setBusy(true);
+    setFeeReview(null);
+    setFeeStatus('checking');
+    try{
+      const token=await getAccessToken();
+      if(id!==requestId.current)return;
+      if(controller.signal.aborted||!token)throw Error('Fee check unavailable');
+      const response=await fetch(API_BASE+'/api/live/eth/swap-plan',{
+        method:'POST',cache:'no-store',signal:controller.signal,
+        headers:{
+          Authorization:'Bearer '+token,
+          Accept:'application/json',
+          'Content-Type':'application/json',
+        },
+        body:JSON.stringify(request.body),
+      });
+      if(!response.ok)throw Error('Fee plan unavailable');
+      const data=await response.json();
+      if(!validEthSwapFeeReview(data,request))throw Error('Unverified ETH fee review');
+      if(id===requestId.current){
+        setFeeReview({data,expiresAtMs:Date.now()+30_000});
+        setFeeStatus('ready');
+      }
+    }catch{
+      if(id===requestId.current)setFeeStatus('failed');
+    }finally{
       clearTimeout(timeout);
       if(inFlight.current===controller)inFlight.current=null;
       if(id===requestId.current)setBusy(false);
@@ -155,6 +214,22 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
           {busy?t.walletSwapChecking:t.walletSwapCheck}
         </button>
       </form>
+      {supportedPair&&request?.coin==='ETH'&&<button type="button"
+        className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={!enabled||!request||busy} onClick={checkFee}>
+        {feeStatus==='checking'?t.walletSwapFeeChecking:t.walletSwapFeeCheck}
+      </button>}
+      {feeStatus==='failed'&&<p className="privy-wallet-description" role="alert">
+        {t.walletSwapFeeFailed}</p>}
+      {feeStatus==='expired'&&<p className="privy-wallet-description" role="status">
+        {t.walletSwapFeeExpired}</p>}
+      {feeReview&&<div className="mininex-swap-quote" role="status">
+        <strong>{t.walletSwapFeeTitle}</strong>
+        {feeReview.data.state==='APPROVAL_OR_PERMIT_REQUIRED'
+          ? <p className="privy-wallet-description">{t.walletSwapFeeNeedsApproval}</p>
+          : <div>{t.walletSwapFeeMaximum}: <b>{feeReview.data.max_possible_gas_eth} ETH</b></div>}
+        <p className="privy-wallet-description">{t.walletSwapFeeCaveat}</p>
+      </div>}
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
       {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
       {quoteCurrent&&<div className="mininex-swap-quote" role="status">
