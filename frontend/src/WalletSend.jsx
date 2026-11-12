@@ -4,7 +4,8 @@ import {Send} from 'lucide-react';
 import {COINS} from './coins.js';
 import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,buildEvmSendTransaction,readRpcQuantity,rpcHex,
-  maxSendUnits,reviewEvmSend,verifiedSendReceipt} from './walletSendRules.js';
+  maxSendUnits,reviewEvmSend,verifiedSendReceipt,providerOwnsAddress,
+  verifiedSendTransaction} from './walletSendRules.js';
 
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
@@ -65,19 +66,22 @@ export default function WalletSend({t,enabled,userId}) {
   },[review,phase,t]);
 
   async function ownedProvider() {
-    if(!enabled||!embedded||!spec||typeof embedded.getEthereumProvider!=='function'||
-       typeof embedded.switchChain!=='function')throw Error('wallet');
-    // A Privy EVM account is shared across supported EVM chains, but chain
-    // selection must be checked before a send. No extra user authorization.
-    await embedded.switchChain(spec.chainId);
-    const provider=await embedded.getEthereumProvider();
+    if(!enabled||!embedded||!spec||typeof embedded.getEthereumProvider!=='function')
+      throw Error('wallet');
+    let provider=await embedded.getEthereumProvider();
     if(!provider||typeof provider.request!=='function')throw Error('wallet');
-    const chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
+    let chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
+    // No redundant Privy network-switch prompt when already on the right chain.
+    if(chain!==BigInt(spec.chainId)){
+      if(typeof embedded.switchChain!=='function')throw Error('network');
+      await embedded.switchChain(spec.chainId);
+      provider=await embedded.getEthereumProvider();
+      if(!provider||typeof provider.request!=='function')throw Error('wallet');
+      chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
+    }
     const accounts=await provider.request({method:'eth_accounts'});
-    if(chain!==BigInt(spec.chainId)||!Array.isArray(accounts)||
-       accounts.length!==1||
-       typeof accounts[0]!=='string'||
-       accounts[0].toLowerCase()!==embedded.address.toLowerCase())throw Error('wallet');
+    if(chain!==BigInt(spec.chainId)||
+       !providerOwnsAddress(accounts,embedded.address))throw Error('wallet');
     return provider;
   }
 
@@ -118,7 +122,7 @@ export default function WalletSend({t,enabled,userId}) {
       const gas=readRpcQuantity(await provider.request({method:'eth_estimateGas',
         params:[transaction]}));
       let gasLimit=(gas*12n+9n)/10n;
-      if(gasLimit>400000n||gasLimit<=0n)throw Error('fee');
+      if(gasLimit>1500000n||gasLimit<=0n)throw Error('fee');
       const spendable=spec.kind==='native'?funds.nativeBalance:funds.tokenBalance;
       let units=isMax?maxSendUnits(spendable,gasLimit,gasPrice,
         spec.kind==='native'):atomic;
@@ -131,7 +135,7 @@ export default function WalletSend({t,enabled,userId}) {
           method:'eth_estimateGas',params:[{...maxTx,gasPrice:rpcHex(gasPrice)}],
         }));
         gasLimit=(actualGas*12n+9n)/10n;
-        if(gasLimit>400000n||gasLimit<=0n)throw Error('fee');
+        if(gasLimit>1500000n||gasLimit<=0n)throw Error('fee');
         units=maxSendUnits(spendable,gasLimit,gasPrice,spec.kind==='native');
       }
       const exact=isMax?formatSendUnits(units,spec.decimals):amount;
@@ -156,18 +160,20 @@ export default function WalletSend({t,enabled,userId}) {
        review.chainId!==spec?.chainId)return;
     sending.current=true;
     const sendUser=userId;
+    let broadcastAttempted=false;
     setBusy(true);setError('');setPhase('submitting');
     try{
       const provider=providerRef.current;
       const chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
       const accounts=await provider.request({method:'eth_accounts'});
-      if(chain!==BigInt(review.chainId)||!Array.isArray(accounts)||
-         accounts.length!==1||accounts[0]?.toLowerCase()!==review.from.toLowerCase())
+      if(chain!==BigInt(review.chainId)||
+         !providerOwnsAddress(accounts,review.from))
         throw Error('account changed');
       const tx={...review.transaction,gas:rpcHex(review.gasLimit),
         gasPrice:rpcHex(review.gasPrice)};
       // The ONE user-initiated send call. Privy may display a mandatory
       // signing confirmation; no app-side delegated or automatic signature.
+      broadcastAttempted=true;
       const hash=await provider.request({method:'eth_sendTransaction',params:[tx]});
       if(typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
         throw Error('uncertain broadcast');
@@ -180,8 +186,13 @@ export default function WalletSend({t,enabled,userId}) {
       if(err?.code===4001||err?.code==='ACTION_REJECTED'){
         setReview(null);setPhase('idle');sending.current=false;
         setError(t.walletSendRejected);
+      }else if(!broadcastAttempted){
+        // Wrong wallet/network BEFORE the broadcast cannot move money.
+        // Permit a fresh review without a sticky duplicate-send blockade.
+        setReview(null);setPhase('failed');sending.current=false;
+        setError(t.walletSendReviewFailed);
       }else{
-        // A provider timeout may have broadcast. Never auto-repeat a transfer.
+        // A provider timeout after submit may have broadcast: never auto-retry.
         setPhase('uncertain');setError(t.walletSendUncertain);
       }
     }finally{if(currentUser.current===sendUser)setBusy(false);}
@@ -200,6 +211,11 @@ export default function WalletSend({t,enabled,userId}) {
          receipt.to?.toLowerCase()!==review.transaction.to.toLowerCase()||
          receipt.from?.toLowerCase()!==review.from.toLowerCase()||
          !['0x0','0x1'].includes(receipt.status))throw Error('receipt');
+      // Only user-requested status checks read the transaction calldata.
+      const onChain=await providerRef.current.request({
+        method:'eth_getTransactionByHash',params:[txHash]});
+      if(currentUser.current!==receiptUser)return;
+      if(!verifiedSendTransaction(review,onChain,txHash))throw Error('receipt');
       if(receipt.status==='0x1'&&!verifiedSendReceipt(review,receipt)){
         setPhase('uncertain');
         setError(t.walletSendReceiptFailed);
