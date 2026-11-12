@@ -112,6 +112,33 @@ def test_uniswap_quote_rejects_other_networks_recipients_and_routes():
             q._read_quote(bad, token_in=sample["tokenIn"], token_out=sample["tokenOut"],
                           amount_units=sample["amount"], wallet=WALLET)
 
+    # No default wallet identity: both recipient and swapper must be explicit.
+    for field in ("recipient", "swapper"):
+        bad = mock_quote(sample)
+        container = bad["quote"]["output"] if field == "recipient" else bad["quote"]
+        del container[field]
+        with pytest.raises(ValueError):
+            q._read_quote(bad, token_in=sample["tokenIn"], token_out=sample["tokenOut"],
+                          amount_units=sample["amount"], wallet=WALLET)
+    for recipient in (None, 0, "", "not-an-address", "0x" + "b" * 40):
+        bad = mock_quote(sample)
+        bad["quote"]["output"]["recipient"] = recipient
+        with pytest.raises(ValueError):
+            q._read_quote(bad, token_in=sample["tokenIn"], token_out=sample["tokenOut"],
+                          amount_units=sample["amount"], wallet=WALLET)
+    for swapper in (None, 0, "", "not-an-address", "0x" + "b" * 40):
+        bad = mock_quote(sample)
+        bad["quote"]["swapper"] = swapper
+        with pytest.raises(ValueError):
+            q._read_quote(bad, token_in=sample["tokenIn"], token_out=sample["tokenOut"],
+                          amount_units=sample["amount"], wallet=WALLET)
+    for field in ("txFailureReason", "txFailureReasons"):
+        bad = mock_quote(sample)
+        bad[field] = ["simulated contract revert"]
+        with pytest.raises(ValueError):
+            q._read_quote(bad, token_in=sample["tokenIn"], token_out=sample["tokenOut"],
+                          amount_units=sample["amount"], wallet=WALLET)
+
 
 def test_quote_readiness_does_not_claim_order_authority(monkeypatch):
     monkeypatch.setenv("MININEX_UNISWAP_API_KEY", "secret-not-for-clients")

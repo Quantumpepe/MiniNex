@@ -61,7 +61,8 @@ def _read_quote(payload: object, *, token_in: str, token_out: str,
     if not isinstance(payload, dict) or payload.get("routing") != "CLASSIC":
         raise ValueError("Unsafe or unsupported route")
     quote = payload.get("quote")
-    if not isinstance(quote, dict) or payload.get("txFailureReason"):
+    if (not isinstance(quote, dict) or payload.get("txFailureReason")
+            or payload.get("txFailureReasons")):
         raise ValueError("Invalid quoted route")
     source, destination = quote.get("input"), quote.get("output")
     if not isinstance(source, dict) or not isinstance(destination, dict):
@@ -69,10 +70,17 @@ def _read_quote(payload: object, *, token_in: str, token_out: str,
     if (str(source.get("token", "")).lower() != token_in.lower()
             or str(destination.get("token", "")).lower() != token_out.lower()):
         raise ValueError("Wrong quoted tokens")
-    if str(destination.get("recipient", wallet)).lower() != wallet.lower():
-        raise ValueError("Wrong quote recipient")
-    if str(quote.get("swapper", wallet)).lower() != wallet.lower():
-        raise ValueError("Wrong quote swapper")
+    # Never accept a missing recipient or swapper by defaulting to our own
+    # wallet. The provider must explicitly bind the quote to the verified
+    # Privy wallet before the quote can appear in a live swap workflow.
+    recipient = destination.get("recipient")
+    swapper = quote.get("swapper")
+    if (not isinstance(recipient, str) or not _HEX_ADDR.fullmatch(recipient)
+            or recipient.lower() != wallet.lower()):
+        raise ValueError("Missing or mismatched quote recipient")
+    if (not isinstance(swapper, str) or not _HEX_ADDR.fullmatch(swapper)
+            or swapper.lower() != wallet.lower()):
+        raise ValueError("Missing or mismatched quote swapper")
     if _valid_units(source.get("amount")) != int(amount_units):
         raise ValueError("Quoted input differs from requested input")
     output = _valid_units(destination.get("amount"))
