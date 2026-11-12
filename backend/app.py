@@ -29,6 +29,7 @@ from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
+from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 from .privy_live_signer import get_eth_signer_status
@@ -400,6 +401,22 @@ async def eth_unsigned_swap_preview(
     did = verify_privy_bearer(authorization)["user_id"]
     result = await make_eth_swap_plan(
         did, side=request.side, stable=request.stable, amount=request.amount)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/tx-receipt/{tx_hash}")
+async def eth_live_chain_receipt(tx_hash: str,
+                                 authorization: str | None = Header(default=None)):
+    """Only explicit authenticated checks of a user's own Uniswap tx.
+
+    On-chain success != verified swap output. No signer, send, polling,
+    order creation or changes to existing BTC/ETH trade permissions.
+    """
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await check_eth_swap_receipt(did, tx_hash)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
