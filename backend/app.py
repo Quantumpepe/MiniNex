@@ -37,6 +37,7 @@ from .privy_eth_policy import get_eth_policy_review
 from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
+from .manual_swap_live_quotes import get_native_swap_quote
 
 market = MarketDataService()
 extra_markets = ExtraMarketData()
@@ -323,6 +324,28 @@ class EthLiveQuoteRequest(BaseModel):
     side: Literal["BUY", "SELL"]
     stable: Literal["USDC", "USDT"]
     amount: str
+
+
+class NativeManualSwapQuoteRequest(BaseModel):
+    """Exact real provider quote only; wallet, venue and calldata are not inputs."""
+    model_config = ConfigDict(extra="forbid")
+    source: str
+    target: str
+    amount: str
+
+
+@app.post("/api/wallet/swap/live-quote")
+async def manual_wallet_swap_live_market_quote(
+        request: NativeManualSwapQuoteRequest,
+        authorization: str | None = Header(default=None)):
+    """Live THORChain quote from verified public provider, no signing."""
+    verify_privy_bearer(authorization)
+    quote = await get_native_swap_quote(request.source, request.target,
+                                        request.amount)
+    return JSONResponse(quote, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.get("/api/wallet/swap/route")

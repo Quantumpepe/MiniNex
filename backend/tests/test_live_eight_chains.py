@@ -152,12 +152,17 @@ def test_all_twelve_coin_manual_swap_route_pairs_classified_without_execution():
             assert row["network_fee_verified"] is False
             assert row["guaranteed_minimum_received"] is False
             assert len(row["required_checks"]) >= 5
-            assert row["quote_preview_implemented"] == (
-                {source, target} in (
-                    {"ETH", "USDC"}, {"ETH", "USDT"},
-                    {"BTC", "USDC"}, {"BTC", "USDT"},
-                )
-            )
+            assert row["quote_preview_implemented"] is True
+            assert row["active_liquidity_not_guaranteed"] is True
+            assert row["quote_endpoint"] in (
+                "/api/live/eth/quote", "/api/live/btc/quote",
+                "/api/wallet/swap/live-quote")
+            if {source, target} not in (
+                {"ETH", "USDC"}, {"ETH", "USDT"},
+                {"BTC", "USDC"}, {"BTC", "USDT"},
+            ):
+                assert row["quote_asset"] == "MULTICHAIN"
+                assert row["quote_endpoint"] == "/api/wallet/swap/live-quote"
     # ERC-20 USDC/USDT currently refer to ETH holdings, not native TRON,
     # XRPL, Bitcoin, Polygon, BSC or Cardano stablecoin balances.
     for symbol in ("TRX", "XRP", "BTC", "DOGE", "ADA", "BNB", "POL", "AVAX", "SOL"):
