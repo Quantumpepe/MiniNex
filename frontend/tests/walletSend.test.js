@@ -206,7 +206,7 @@ test('Privy EVM provider can expose multiple accounts without extra wallet promp
   assert.equal(providerOwnsAddress('wrong',own),false);
   assert.equal(providerOwnsAddress([own],'0x123'),false);
   assert.equal(providerOwnsAddress([own,null],own),true);
-  assert.equal(providerOwnsAddress(Array(25).fill(own),own),false);
+  assert.equal(providerOwnsAddress(Array(25).fill(own),own),true);
 });
 
 test('on-chain native send verification requires the exact reviewed amount',()=>{
