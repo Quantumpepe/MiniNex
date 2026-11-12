@@ -9,6 +9,7 @@ import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
+import WalletSend from './WalletSend.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
@@ -468,6 +469,9 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
         !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
           {identityStatus==='verified' && databaseStatus==='stored' &&
             <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
+
+          {identityStatus==='verified' && databaseStatus==='stored' &&
+            <WalletSend t={t} enabled={verifiedAccount} userId={user?.id}/>}
 
           {identityStatus==='verified' && databaseStatus==='stored' &&
             <ManualSwapPreview t={t} lang={lang} getAccessToken={getAccessToken}
