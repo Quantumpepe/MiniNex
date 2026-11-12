@@ -28,6 +28,10 @@ export default function WalletSend({t,enabled,userId}) {
   const embedded=wallets.find(w=>w?.walletClientType==='privy'&&
     /^0x[0-9a-fA-F]{40}$/.test(w?.address||''));
   const spec=sendAssetSpec(coin);
+  const networkLabel=spec?.chainId===1?'Ethereum Mainnet':
+    spec?.chainId===56?'BNB Smart Chain':
+    spec?.chainId===137?'Polygon PoS':
+    spec?.chainId===43114?'Avalanche C-Chain':'—';
 
   const clearReview=()=>{
     requestId.current++;
@@ -260,6 +264,7 @@ export default function WalletSend({t,enabled,userId}) {
       {error&&<p role="alert" className="privy-wallet-description">{error}</p>}
       {review&&phase==='ready'&&<div className="mininex-swap-quote" role="status">
         <strong>{t.walletSendSummary}</strong>
+        <div>{t.walletSendNetwork}: {networkLabel}</div>
         <div>{review.amount} {coin}</div>
         <div>{t.walletSendRecipient}: {review.to}</div>
         <div>{t.walletSendFeeMax}: {formatSendUnits(review.gasCost,18)} {spec.feeSymbol}</div>
