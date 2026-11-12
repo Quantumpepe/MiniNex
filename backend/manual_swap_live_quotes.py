@@ -116,6 +116,7 @@ async def get_native_swap_quote(source: str, target: str, amount: str) -> dict:
         "estimated_output_amount": amount_out,
         "quoted_price_impact_bps": quote["slippage_bps"],
         "quote_checked_at": int(time.time()),
+        "quote_expires_at": quote["provider_expiry"],
         "quote_provider": "THORCHAIN_PUBLIC_MCP",
         "pool_route_quoted": True,
         "fee_breakdown_verified": False,
