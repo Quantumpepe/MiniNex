@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview}
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute}
   from '../src/manualSwapRules.js';
 
 const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -283,6 +283,71 @@ test('fee review is optional user-driven, bounded, cancelable and local-expiring
   assert.match(component,/walletSwapFeeCaveat/);
   assert.match(labels,/walletSwapFeeMaximum: 'Maximal mögliche Gasgebühr/);
   assert.match(labels,/walletSwapFeeNeedsApproval: 'Eine Token-Freigabe/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});
+
+
+test('all twelve coins and ETH stables validate exact route classification only',()=>{
+  const symbols=[...MANUAL_SWAP_ASSETS];
+  assert.equal(symbols.length,14);
+  const network={
+    BTC:'bitcoin-mainnet',ETH:'ethereum-mainnet',BNB:'bsc-mainnet',
+    SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet',
+    POL:'polygon-pos-mainnet',AVAX:'avalanche-c-mainnet',
+    LINK:'ethereum-mainnet',DOGE:'dogecoin-mainnet',
+    UNI:'ethereum-mainnet',ADA:'cardano-mainnet',
+    USDC:'ethereum-mainnet',USDT:'ethereum-mainnet',
+  };
+  for(const from of symbols)for(const to of symbols) {
+    if(from===to)continue;
+    const q=manualSwapQuoteRequest(from,to,'1');
+    const data={
+      mode:'MANUAL_SWAP_ROUTE_DISCOVERY_ONLY',
+      source:{symbol:from,network:network[from]},
+      destination:{symbol:to,network:network[to]},
+      route_class:network[from]===network[to]?'SAME_CHAIN':'CROSS_CHAIN',
+      quote_preview_implemented:!!q,
+      quote_asset:q?.coin||null,
+      quote_endpoint:q?.path||null,
+      execution_ready:false,signing_authorized:false,
+      transaction_built:false,can_submit:false,
+      network_fee_verified:false,guaranteed_minimum_received:false,
+      required_checks:[
+        'verified_source_and_destination_wallets',
+        'independently_verified_provider_and_contracts',
+        'exact_spend_allowance_and_fees',
+        'restricted_user_wallet_signing',
+        'onchain_receipt_and_refund_reconciliation',
+      ],
+    };
+    assert.equal(validManualSwapRoute(data,from,to),true,from+' > '+to);
+    for(const change of [
+      {can_submit:true},{signing_authorized:true},{execution_ready:true},
+      {transaction_built:true},{guaranteed_minimum_received:true},
+      {network_fee_verified:true},{quote_preview_implemented:!data.quote_preview_implemented},
+      {quote_endpoint:'/api/unknown/execute'},{route_class:'CROSSCHAIN'},
+      {source:{symbol:from,network:'unknown'}},{required_checks:[]},
+    ]) assert.equal(validManualSwapRoute({...data,...change},from,to),false,
+      'wrong '+from+' > '+to+' '+JSON.stringify(change));
+  }
+  assert.equal(validManualSwapRoute(null,'ETH','USDC'),false);
+  assert.equal(validManualSwapRoute({},'ETH','USDC'),false);
+  assert.equal(validManualSwapRoute({},'ETH','ETH'),false);
+  assert.equal(validManualSwapRoute({},'WBTC','ETH'),false);
+});
+
+test('route readiness is user initiated and never delays main coin screen',()=>{
+  assert.match(component,/onClick=\{checkRoute\}/);
+  assert.match(component,/\/api\/wallet\/swap\/route\?/);
+  assert.match(component,/new URLSearchParams\(\{source:from,target:to\}\)/);
+  assert.match(component,/validManualSwapRoute\(route,from,to\)/);
+  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),8_000\)/);
+  assert.match(component,/signal:controller\.signal/);
+  assert.match(component,/clearTimeout\(timeout\)/);
+  assert.match(component,/walletSwapRouteNotExecutable/);
+  assert.match(component,/walletSwapCrossChainPending/);
+  assert.match(labels,/walletSwapRouteCheck: 'Native Tauschroute prüfen'/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });

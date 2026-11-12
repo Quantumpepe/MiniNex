@@ -148,3 +148,31 @@ export function validEthSwapFeeReview(data,request) {
     BigInt(data.max_gas_limit)*feeWei===liabilityWei &&
     !('calldata' in data) && !('data' in data) && !('signature' in data);
 }
+
+
+// The backend reports which NATIVE networks actually need connecting.
+// This is route discovery only: it may not authorize signatures, swaps or
+// pretend any missing ERC-20 stablecoin exists on a foreign blockchain.
+import {coinBySymbol} from './coins.js';
+
+export function validManualSwapRoute(data, from, to) {
+  if (!MANUAL_SWAP_ASSETS.includes(from) || !MANUAL_SWAP_ASSETS.includes(to) ||
+      from===to || !data || data.mode!=='MANUAL_SWAP_ROUTE_DISCOVERY_ONLY') return false;
+  const expectedNetwork=asset=>STABLES.has(asset)
+    ? 'ethereum-mainnet' : coinBySymbol(asset)?.network;
+  const incoming=expectedNetwork(from), outgoing=expectedNetwork(to);
+  const quote=manualSwapQuoteRequest(from,to,'1');
+  return !!incoming && !!outgoing &&
+    data.source?.symbol===from && data.destination?.symbol===to &&
+    data.source.network===incoming && data.destination.network===outgoing &&
+    data.route_class===(incoming===outgoing?'SAME_CHAIN':'CROSS_CHAIN') &&
+    data.quote_preview_implemented===!!quote &&
+    data.quote_asset===(quote?.coin||null) &&
+    data.quote_endpoint===(quote?.path||null) &&
+    data.execution_ready===false && data.signing_authorized===false &&
+    data.transaction_built===false && data.can_submit===false &&
+    data.network_fee_verified===false &&
+    data.guaranteed_minimum_received===false &&
+    Array.isArray(data.required_checks) && data.required_checks.length>=5 &&
+    data.required_checks.every(item=>typeof item==='string'&&item.length>3);
+}
