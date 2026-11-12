@@ -23,7 +23,7 @@ export function manualSwapQuoteRequest(from, to, amount) {
 }
 
 const validPositiveQuoteAmount=value=>
-  typeof value==='string' && /^(?:0|[1-9]\\d*)(?:\\.\\d+)?$/.test(value) &&
+  typeof value==='string' && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value) &&
   Number.isFinite(Number(value)) && Number(value)>0;
 
 // Read-only quote responses must match both the asset and the physical
