@@ -95,3 +95,28 @@ export function reviewEvmSend({symbol,from,to,amount,gasLimit,gasPrice,
     transaction:buildEvmSendTransaction(symbol,from,to,units),
     expiresAt:now+30000};
 }
+
+const TRANSFER_EVENT='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+export function verifiedSendReceipt(review,receipt) {
+  if(!review||!receipt||
+     typeof receipt.transactionHash!=='string'||
+     typeof receipt.from!=='string'||typeof receipt.to!=='string'||
+     receipt.from.toLowerCase()!==review.from?.toLowerCase()||
+     receipt.to.toLowerCase()!==review.transaction?.to?.toLowerCase()||
+     receipt.status!=='0x1')return false;
+  const spec=sendAssetSpec(review.symbol);
+  if(!spec)return false;
+  if(spec.kind==='native')return true;
+  // Successful token transaction != delivered tokens unless the matching
+  // ERC-20 Transfer event was emitted. No extra RPC query is needed.
+  const sourceTopic='0x'+review.from.slice(2).toLowerCase().padStart(64,'0');
+  const targetTopic='0x'+review.to.slice(2).toLowerCase().padStart(64,'0');
+  return Array.isArray(receipt.logs)&&receipt.logs.some(log=>
+    typeof log?.address==='string'&&log.address.toLowerCase()===spec.contract &&
+    Array.isArray(log.topics)&&log.topics.length===3 &&
+    log.topics[0].toLowerCase()===TRANSFER_EVENT&&
+    log.topics[1].toLowerCase()===sourceTopic&&
+    log.topics[2].toLowerCase()===targetTopic&&
+    typeof log.data==='string'&&/^0x[0-9a-fA-F]{64}$/.test(log.data)&&
+    BigInt(log.data)===review.amountUnits);
+}
