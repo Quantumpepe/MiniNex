@@ -5,7 +5,7 @@ import {
   SEND_ASSETS,SEND_EVM,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,rpcHex,readRpcQuantity,buildEvmSendTransaction,
   maxSendUnits,reviewEvmSend,verifiedSendReceipt,
-  providerOwnsAddress,verifiedSendTransaction,
+  providerOwnsAddress,verifiedSendTransaction,sendAddressPlaceholder,
 } from '../src/walletSendRules.js';
 
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
@@ -250,4 +250,15 @@ test('gas fee overflow and absurd gas limits cannot be quoted',()=>{
   assert.ok(reviewEvmSend(base));
   assert.equal(reviewEvmSend({...base,gasLimit:1500001n}),null);
   assert.equal(reviewEvmSend({...base,gasPrice:2n**256n}),null);
+});
+
+test('send recipient hints follow native address families, never mislabel all as EVM',()=>{
+  for(const [coin,hint] of Object.entries({
+    BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
+    DOGE:'D…',ADA:'addr1…',ETH:'0x…',BNB:'0x…',
+    POL:'0x…',AVAX:'0x…',LINK:'0x…',UNI:'0x…',
+    USDC:'0x…',USDT:'0x…',
+  }))assert.equal(sendAddressPlaceholder(coin),hint);
+  assert.match(sender,/placeholder=\{sendAddressPlaceholder\(coin\)\}/);
+  assert.match(sender,/disabled=\{busy\|\|sending.current\|\|!spec\}/);
 });
