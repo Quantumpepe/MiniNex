@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote}
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs}
   from '../src/manualSwapRules.js';
 
 const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -84,4 +84,46 @@ test('backend response cannot be displayed as verified executable swap',()=>{
   assert(validManualSwapQuote(btc,btcReq));
   assert.equal(validManualSwapQuote({...btc,can_submit:true},btcReq),false);
   assert.equal(validManualSwapQuote({...btc,minimum_received_guaranteed:true},btcReq),false);
+});
+
+
+test('swap quote expiry stays local, short, and fail-closed without background polling',()=>{
+  const now = 1_800_000_000_000;
+  const ethReq = manualSwapQuoteRequest('ETH','USDC','1');
+  const eth = {
+    mode:'LIVE_QUOTE_ONLY',asset:'ETH',side:'SELL',
+    input_asset:'ETH',output_asset:'USDC',input_amount:'1',
+    expected_output_amount:'3000',execution_enabled:false,
+    signing_authorized:false,transaction_submitted:false,
+    quote_expires_at:now/1000+15,
+  };
+  assert.equal(manualSwapQuoteExpiryMs(eth,ethReq,now),now+15_000);
+  assert.equal(manualSwapQuoteExpiryMs(eth,ethReq,now+15_000),null);
+  assert.equal(manualSwapQuoteExpiryMs({...eth,quote_expires_at:now/1000-30},ethReq,now),null);
+  assert.equal(manualSwapQuoteExpiryMs({...eth,quote_expires_at:now/1000+5000},ethReq,now),null);
+  assert.equal(manualSwapQuoteExpiryMs({...eth,quote_expires_at:'invalid'},ethReq,now),null);
+  assert.equal(manualSwapQuoteExpiryMs({...eth,execution_enabled:true},ethReq,now),null);
+  assert.equal(manualSwapQuoteExpiryMs(eth,ethReq,NaN),null);
+
+  const btcReq = manualSwapQuoteRequest('BTC','USDT','0.1');
+  const btc={
+    mode:'BTC_CROSSCHAIN_INDICATIVE_ONLY',asset:'BTC',side:'SELL',
+    source_asset:'BTC',destination_asset:'USDT',input_amount:'0.1',
+    estimated_output_amount:'100',execution_enabled:false,
+    can_submit:false,transaction_built:false,minimum_received_guaranteed:false,
+    quote_checked_at:now/1000,
+  };
+  assert.equal(manualSwapQuoteExpiryMs(btc,btcReq,now),now+30_000);
+  assert.equal(manualSwapQuoteExpiryMs(btc,btcReq,now+30_001),null);
+  assert.equal(manualSwapQuoteExpiryMs({...btc,quote_checked_at:now/1000+5000},btcReq,now),null);
+  assert.equal(manualSwapQuoteExpiryMs({...btc,quote_checked_at:now/1000+10},btcReq,now),null);
+  assert.equal(manualSwapQuoteExpiryMs({...btc,can_submit:true},btcReq,now),null);
+
+  assert.match(component,/manualSwapQuoteExpiryMs\(data,request\)/);
+  assert.match(component,/setTimeout\(/);
+  assert.match(component,/clearTimeout\(/);
+  assert.match(component,/walletSwapExpired/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/setTimeout\s*\(\s*fetch/);
+  assert.match(labels,/walletSwapExpired: 'Diese Kursvorschau ist abgelaufen/);
 });
