@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute}
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute,validEthReceiptStatus}
   from '../src/manualSwapRules.js';
 
 const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -348,6 +348,56 @@ test('route readiness is user initiated and never delays main coin screen',()=>{
   assert.match(component,/walletSwapRouteNotExecutable/);
   assert.match(component,/walletSwapCrossChainPending/);
   assert.match(labels,/walletSwapRouteCheck: 'Native Tauschroute prüfen'/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});
+
+
+test('real Ethereum receipt status is fail closed and never a live trade authorization',()=>{
+  const hash='0x'+'a'.repeat(64);
+  const base={
+    mode:'ETH_MAINNET_RECEIPT_CHECK',network:'ethereum-mainnet',
+    tx_hash:hash,execution_enabled:false,can_submit:false,
+    swap_outputs_verified:false,live_order_recorded:false,
+    confirmations:21,network_fee_eth:'0.000021',
+    transaction_seen:true,transaction_finalized:true,transaction_success:true,
+    state:'FINALIZED_SUCCESS',
+  };
+  assert.equal(validEthReceiptStatus(base,hash),true);
+  for(const bad of [
+    {execution_enabled:true},{can_submit:true},{swap_outputs_verified:true},
+    {live_order_recorded:true},{network:'bsc-mainnet'},
+    {tx_hash:'0x'+'f'.repeat(64)},{mode:'APPROVED_LIVE_TX'},
+    {confirmations:0},{confirmations:-1},{confirmations:1.5},
+    {transaction_finalized:false},{transaction_success:false},
+    {network_fee_eth:'unknown'},{network_fee_eth:'0'},
+    {network_fee_eth:'0.0000000000000000001'},
+  ]) assert.equal(validEthReceiptStatus({...base,...bad},hash),false,
+    JSON.stringify(bad));
+  assert.equal(validEthReceiptStatus({...base,
+    state:'INCLUDED_SUCCESS',transaction_finalized:false},hash),true);
+  assert.equal(validEthReceiptStatus({...base,
+    state:'FINALIZED_REVERTED',transaction_success:false},hash),true);
+  assert.equal(validEthReceiptStatus({...base,
+    state:'PENDING',transaction_finalized:false,transaction_success:null,
+    confirmations:0,network_fee_eth:null},hash),true);
+  assert.equal(validEthReceiptStatus({...base,
+    state:'NOT_FOUND',transaction_seen:false,transaction_finalized:false,
+    transaction_success:null,confirmations:0,network_fee_eth:null},hash),true);
+  assert.equal(validEthReceiptStatus({},hash),false);
+  assert.equal(validEthReceiptStatus(base,'0x123'),false);
+});
+
+test('ETH receipt check only runs on tap with timeout and no background polling',()=>{
+  assert.match(component,/onClick=\{checkReceipt\}/);
+  assert.match(component,/\/api\/live\/eth\/tx-receipt\//);
+  assert.match(component,/validEthReceiptStatus\(data,txHash\)/);
+  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),15_000\)/);
+  assert.match(component,/signal:controller\.signal/);
+  assert.match(component,/clearTimeout\(timeout\)/);
+  assert.match(component,/walletSwapTxNotFill/);
+  assert.match(labels,/walletSwapTxCheckTitle: 'Echte ETH-Transaktion prüfen'/);
+  assert.match(labels,/walletSwapTxFINALIZED_REVERTED:/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
