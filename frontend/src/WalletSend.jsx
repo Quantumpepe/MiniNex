@@ -151,6 +151,7 @@ export default function WalletSend({t,enabled,userId}) {
        review.from.toLowerCase()!==embedded?.address?.toLowerCase()||
        review.chainId!==spec?.chainId)return;
     sending.current=true;
+    const sendUser=userId;
     setBusy(true);setError('');setPhase('submitting');
     try{
       const provider=providerRef.current;
@@ -166,9 +167,11 @@ export default function WalletSend({t,enabled,userId}) {
       const hash=await provider.request({method:'eth_sendTransaction',params:[tx]});
       if(typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
         throw Error('uncertain broadcast');
+      if(currentUser.current!==sendUser)return; // Never show a prior user's tx.
       setTxHash(hash);
       setPhase('submitted');
     }catch(err){
+      if(currentUser.current!==sendUser)return;
       // A rejected wallet prompt is safe to retry with a FRESH fee review.
       if(err?.code===4001||err?.code==='ACTION_REJECTED'){
         setReview(null);setPhase('idle');sending.current=false;
@@ -177,23 +180,25 @@ export default function WalletSend({t,enabled,userId}) {
         // A provider timeout may have broadcast. Never auto-repeat a transfer.
         setPhase('uncertain');setError(t.walletSendUncertain);
       }
-    }finally{setBusy(false);}
+    }finally{if(currentUser.current===sendUser)setBusy(false);}
   }
 
   async function verifyReceipt() {
     if(!txHash||!providerRef.current||busy)return;
+    const receiptUser=userId;
     setBusy(true);
     try{
       const receipt=await providerRef.current.request({
         method:'eth_getTransactionReceipt',params:[txHash]});
+      if(currentUser.current!==receiptUser)return;
       if(receipt===null){setPhase('submitted');return;}
       if(!receipt||receipt.transactionHash?.toLowerCase()!==txHash.toLowerCase()||
          receipt.to?.toLowerCase()!==review.transaction.to.toLowerCase()||
          receipt.from?.toLowerCase()!==review.from.toLowerCase()||
          !['0x0','0x1'].includes(receipt.status))throw Error('receipt');
       setPhase(receipt.status==='0x1'?'confirmed':'reverted');
-    }catch{setError(t.walletSendReceiptFailed);}
-    finally{setBusy(false);}
+    }catch{if(currentUser.current===receiptUser)setError(t.walletSendReceiptFailed);}
+    finally{if(currentUser.current===receiptUser)setBusy(false);}
   }
 
   const change=(fn,value)=>{if(sending.current)return;clearReview();fn(value);};
