@@ -419,6 +419,7 @@ test('real provider quotes reject native network forgery and any executable inst
     input_amount:'1.25',estimated_output_amount:'30.01',
     quote_provider:'THORCHAIN_PUBLIC_MCP',pool_route_quoted:true,
     quoted_price_impact_bps:34,quote_checked_at:now/1000,
+    quote_expires_at:null,
     execution_enabled:false,can_submit:false,
     transaction_built:false,signing_authorized:false,
     deposit_address_provided:false,fee_breakdown_verified:false,
@@ -427,6 +428,14 @@ test('real provider quotes reject native network forgery and any executable inst
   assert.equal(validManualSwapQuote(good,req),true);
   assert.equal(manualSwapQuoteExpiryMs(good,req,now),now+30_000);
   assert.equal(manualSwapQuoteExpiryMs(good,req,now+30_001),null);
+  const shortLived={...good,quote_expires_at:now/1000+10};
+  assert.equal(validManualSwapQuote(shortLived,req),true);
+  assert.equal(manualSwapQuoteExpiryMs(shortLived,req,now),now+10_000);
+  assert.equal(manualSwapQuoteExpiryMs(shortLived,req,now+10_001),null);
+  assert.equal(validManualSwapQuote({...good,quote_expires_at:now/1000-1},req),false);
+  assert.equal(validManualSwapQuote({...good,quote_expires_at:now/1000+3601},req),false);
+  assert.equal(validManualSwapQuote({...good,quote_expires_at:'tomorrow'},req),false);
+  assert.equal(validManualSwapQuote({...good,quote_expires_at:undefined},req),false);
   for(const change of [
     {source_asset:'ETH'},{destination_asset:'DOGE'},
     {source_network:'ethereum-mainnet'},
