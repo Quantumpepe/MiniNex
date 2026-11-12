@@ -22,25 +22,50 @@ export function manualSwapQuoteRequest(from, to, amount) {
   };
 }
 
+const validPositiveQuoteAmount=value=>
+  typeof value==='string' && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value) &&
+  Number.isFinite(Number(value)) && Number(value)>0;
+
+// Read-only quote responses must match both the asset and the physical
+// settlement network. Unrecognized fields/providers fail closed; a plausible
+// number alone is not a trusted quote and NEVER authorizes execution.
 export function validManualSwapQuote(data, request) {
   if (!data || !request || data.asset !== request.coin ||
-      data.side !== request.body.side ||
-      data.execution_enabled !== false ||
-      typeof data.estimated_output_amount !== 'string' &&
-      typeof data.expected_output_amount !== 'string') return false;
-  const isEth=request.coin==='ETH';
-  if (isEth && (data.mode!=='LIVE_QUOTE_ONLY' ||
-      data.signing_authorized!==false || data.transaction_submitted!==false ||
-      data.input_asset!==request.from || data.output_asset!==request.to ||
-      data.input_amount!==request.body.amount)) return false;
-  if (!isEth && (data.mode!=='BTC_CROSSCHAIN_INDICATIVE_ONLY' ||
-      data.can_submit!==false || data.transaction_built!==false ||
-      data.minimum_received_guaranteed!==false ||
-      data.source_asset!==request.from || data.destination_asset!==request.to ||
-      data.input_amount!==request.body.amount)) return false;
-  const result=isEth?data.expected_output_amount:data.estimated_output_amount;
-  return typeof result==='string' && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(result) &&
-    Number.isFinite(Number(result)) && Number(result)>0;
+      data.side !== request.body.side || data.execution_enabled!==false ||
+      !validPositiveQuoteAmount(
+        request.coin==='ETH'?data.expected_output_amount:data.estimated_output_amount
+      )) return false;
+
+  if (request.coin==='ETH') {
+    if (data.mode!=='LIVE_QUOTE_ONLY' || data.chain_id!==1 ||
+        data.route!=='UNISWAP_V3_CLASSIC' ||
+        data.signing_authorized!==false || data.transaction_submitted!==false ||
+        data.input_asset!==request.from || data.output_asset!==request.to ||
+        data.input_amount!==request.body.amount ||
+        typeof data.slippage_tolerance_pct!=='number' ||
+        !Number.isFinite(data.slippage_tolerance_pct) ||
+        data.slippage_tolerance_pct<0 || data.slippage_tolerance_pct>0.5 ||
+        !validPositiveQuoteAmount(data.minimum_output_amount)) return false;
+    const expected=Number(data.expected_output_amount);
+    const minimum=Number(data.minimum_output_amount);
+    return minimum<=expected;
+  }
+
+  // A native BTC <-> ERC-20 stablecoin route crosses two different chains;
+  // never label an address/quote as native stablecoin on Bitcoin.
+  const expectedNetwork=request.body.side==='BUY'?'bitcoin-mainnet':'ethereum-mainnet';
+  return data.mode==='BTC_CROSSCHAIN_INDICATIVE_ONLY' &&
+    data.destination_network===expectedNetwork &&
+    data.route_provider==='THORCHAIN_PUBLIC_INDICATIVE' &&
+    data.source_asset===request.from && data.destination_asset===request.to &&
+    data.input_amount===request.body.amount &&
+    data.can_submit===false && data.transaction_built===false &&
+    data.automated_signing_enabled===false &&
+    data.deposit_address_provided===false &&
+    data.minimum_received_guaranteed===false &&
+    data.fee_breakdown_verified===false &&
+    Number.isInteger(data.quoted_price_impact_bps) &&
+    data.quoted_price_impact_bps>=0 && data.quoted_price_impact_bps<=500;
 }
 
 

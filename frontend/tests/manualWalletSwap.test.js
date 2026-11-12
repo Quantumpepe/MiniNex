@@ -60,7 +60,8 @@ test('backend response cannot be displayed as verified executable swap',()=>{
   const good={
     mode:'LIVE_QUOTE_ONLY',asset:'ETH',side:'SELL',
     input_asset:'ETH',output_asset:'USDC',input_amount:'1',
-    expected_output_amount:'3000',execution_enabled:false,
+    chain_id:1,route:'UNISWAP_V3_CLASSIC',slippage_tolerance_pct:0.5,
+    expected_output_amount:'3000',minimum_output_amount:'2985',execution_enabled:false,
     signing_authorized:false,transaction_submitted:false,
   };
   assert(validManualSwapQuote(good,request));
@@ -73,17 +74,44 @@ test('backend response cannot be displayed as verified executable swap',()=>{
     {...good,input_amount:'2'},
     {...good,expected_output_amount:'0'},
     {...good,expected_output_amount:'not available'},
+    {...good,chain_id:8453},
+    {...good,route:'UNISWAP_UNIVERSAL_ROUTER'},
+    {...good,slippage_tolerance_pct:2},
+    {...good,slippage_tolerance_pct:'0.5'},
+    {...good,slippage_tolerance_pct:-0.1},
+    {...good,minimum_output_amount:'3001'},
+    {...good,minimum_output_amount:'0'},
+    {...good,minimum_output_amount:undefined},
   ]) assert.equal(validManualSwapQuote(bad,request),false);
   const btcReq=manualSwapQuoteRequest('BTC','USDT','0.1');
   const btc={
     mode:'BTC_CROSSCHAIN_INDICATIVE_ONLY',asset:'BTC',side:'SELL',
     source_asset:'BTC',destination_asset:'USDT',input_amount:'0.1',
+    destination_network:'ethereum-mainnet',route_provider:'THORCHAIN_PUBLIC_INDICATIVE',
+    quoted_price_impact_bps:25,fee_breakdown_verified:false,
+    deposit_address_provided:false,automated_signing_enabled:false,
     estimated_output_amount:'100',execution_enabled:false,
     can_submit:false,transaction_built:false,minimum_received_guaranteed:false,
   };
   assert(validManualSwapQuote(btc,btcReq));
   assert.equal(validManualSwapQuote({...btc,can_submit:true},btcReq),false);
   assert.equal(validManualSwapQuote({...btc,minimum_received_guaranteed:true},btcReq),false);
+  for(const bad of [
+    {...btc,destination_network:'bitcoin-mainnet'},
+    {...btc,route_provider:'unverified_provider'},
+    {...btc,deposit_address_provided:true},
+    {...btc,automated_signing_enabled:true},
+    {...btc,fee_breakdown_verified:true},
+    {...btc,quoted_price_impact_bps:501},
+    {...btc,quoted_price_impact_bps:'25'},
+    {...btc,quoted_price_impact_bps:-1},
+    {...btc,source_asset:'ETH'},
+  ]) assert.equal(validManualSwapQuote(bad,btcReq),false);
+  const btcBuyReq=manualSwapQuoteRequest('USDT','BTC','100');
+  const btcBuy={...btc,side:'BUY',source_asset:'USDT',destination_asset:'BTC',
+    destination_network:'bitcoin-mainnet',input_amount:'100'};
+  assert.equal(validManualSwapQuote(btcBuy,btcBuyReq),true);
+  assert.equal(validManualSwapQuote({...btcBuy,destination_network:'ethereum-mainnet'},btcBuyReq),false);
 });
 
 
@@ -93,7 +121,8 @@ test('swap quote expiry stays local, short, and fail-closed without background p
   const eth = {
     mode:'LIVE_QUOTE_ONLY',asset:'ETH',side:'SELL',
     input_asset:'ETH',output_asset:'USDC',input_amount:'1',
-    expected_output_amount:'3000',execution_enabled:false,
+    chain_id:1,route:'UNISWAP_V3_CLASSIC',slippage_tolerance_pct:0.5,
+    expected_output_amount:'3000',minimum_output_amount:'2985',execution_enabled:false,
     signing_authorized:false,transaction_submitted:false,
     quote_expires_at:now/1000+15,
   };
@@ -109,6 +138,9 @@ test('swap quote expiry stays local, short, and fail-closed without background p
   const btc={
     mode:'BTC_CROSSCHAIN_INDICATIVE_ONLY',asset:'BTC',side:'SELL',
     source_asset:'BTC',destination_asset:'USDT',input_amount:'0.1',
+    destination_network:'ethereum-mainnet',route_provider:'THORCHAIN_PUBLIC_INDICATIVE',
+    quoted_price_impact_bps:25,fee_breakdown_verified:false,
+    deposit_address_provided:false,automated_signing_enabled:false,
     estimated_output_amount:'100',execution_enabled:false,
     can_submit:false,transaction_built:false,minimum_received_guaranteed:false,
     quote_checked_at:now/1000,
@@ -147,5 +179,19 @@ test('wallet quote network requests are cancelled when obsolete, never poll',()=
   assert.match(component,/onClick=\{\(\)=>\{reset\(\);setOpen/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/retry\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});
+
+
+test('manual swap quotes expose exact native route and risks without extra work',()=>{
+  assert.match(component,/walletSwapRouteEth/);
+  assert.match(component,/walletSwapRouteBtc/);
+  assert.match(component,/walletSwapSlippage/);
+  assert.match(component,/walletSwapPriceImpact/);
+  assert.match(component,/quoted_price_impact_bps\/100/);
+  assert.match(labels,/walletSwapRouteEth: 'Ethereum Mainnet/);
+  assert.match(labels,/walletSwapRouteBtc: 'Natives Bitcoin/);
+  assert.match(labels,/walletSwapFeesUnknown/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
