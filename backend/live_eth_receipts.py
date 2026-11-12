@@ -88,6 +88,7 @@ def inspect_eth_swap_receipt(tx_hash: str, *, wallet: str,
         raise ValueError("Transaction not bound to the owned mainnet router wallet")
     calldata = transaction.get("input")
     if (not isinstance(calldata, str) or len(calldata) % 2 != 0
+            or len(calldata) < 10 + 64*3
             or not _INPUT.fullmatch(calldata)
             or not calldata.lower().startswith(_ROUTER_SELECTOR)):
         raise ValueError("Unrecognized Uniswap swap transaction input")
