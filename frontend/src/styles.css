@@ -495,6 +495,20 @@
 .mininex-swap-form>button[type="submit"]{grid-column:1/-1}
 .mininex-swap-quote{display:grid;gap:8px;background:#103c38;padding:11px;border-radius:10px;
   overflow-wrap:anywhere;font-size:13px;color:#d9f8ec}
+.mininex-send-form{display:grid;gap:10px;min-width:0}
+.mininex-send-form label{display:grid;gap:5px;color:#b9dcd2;font-size:12px}
+.mininex-send-form select,.mininex-send-form input{
+  width:100%;min-width:0;box-sizing:border-box;min-height:43px;
+  background:#0b222c;color:#f1fff9;border:1px solid #387067;
+  border-radius:9px;padding:9px;font-size:14px
+}
+.mininex-send-form input:focus-visible,.mininex-send-form select:focus-visible{
+  outline:2px solid #70edc1;outline-offset:2px
+}
+.mininex-send-actions{display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,2fr);gap:8px}
+.mininex-swap-summary{display:grid;gap:5px}
+.mininex-wallet-send{min-width:0}
+.mininex-wallet-send code{overflow-wrap:anywhere}
 .mininex-swap-disabled-note{border-left:2px solid #d5a85d;padding-left:10px}
 @media(max-width:355px){.mininex-swap-form{gap:5px}
   .mininex-swap-form select,.mininex-swap-form input{font-size:12px;padding:7px 5px}}
