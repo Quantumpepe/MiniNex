@@ -316,7 +316,7 @@ export default function WalletSend({t,enabled,userId}) {
           {phase==='submitted'&&<p className="privy-wallet-description">
             {t.walletSendAutoReceipt}
           </p>}
-          {['confirmed','reverted','uncertain'].includes(phase)&&
+          {(phase==='submitted'&&!!txHash||['confirmed','reverted','uncertain'].includes(phase))&&
             <button className="privy-wallet-action privy-wallet-action--secondary"
               type="button" disabled={busy}
               onClick={()=>{sending.current=false;clearReview();setAmount('');setDestination('');}}>
