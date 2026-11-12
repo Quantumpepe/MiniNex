@@ -93,6 +93,19 @@ def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms()
                            to_asset=to_asset,input_units="100000000")
     assert good["estimated_output_units_1e8"]=="200000000"
     assert good["minimum_received_guaranteed"] is False
+    assert good["provider_expiry"] is None
+    current=int(time.time())
+    valid_expiring=provider_quote()
+    valid_expiring["result"]["structuredContent"]["expiry"]=current+20
+    result=q._provider_quote(valid_expiring,from_asset=from_asset,
+                             to_asset=to_asset,input_units="100000000")
+    assert result["provider_expiry"]==current+20
+    for invalid_expiry in (current-1,current+3601,"invalid",True,0):
+        invalid=provider_quote()
+        invalid["result"]["structuredContent"]["expiry"]=invalid_expiry
+        with pytest.raises(ValueError):
+            q._provider_quote(invalid,from_asset=from_asset,
+                              to_asset=to_asset,input_units="100000000")
     for changed in [
         {"expected_amount_out":"0"},
         {"expected_amount_out":"-1"},
