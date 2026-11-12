@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute} from './manualSwapRules.js';
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute,validEthReceiptStatus} from './manualSwapRules.js';
 
 // Standalone MANUAL wallet swap preview. It never signs, approves, delegates,
 // broadcasts, auto-swaps or changes the independent BTC/ETH trading budgets.
@@ -18,6 +18,9 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const [feeStatus,setFeeStatus]=useState('idle');
   const [routeInfo,setRouteInfo]=useState(null);
   const [routeStatus,setRouteStatus]=useState('idle');
+  const [txHash,setTxHash]=useState('');
+  const [txStatus,setTxStatus]=useState(null);
+  const [txError,setTxError]=useState(false);
   const [error,setError]=useState('');
   const requestId=useRef(0);
   const inFlight=useRef(null);
@@ -62,6 +65,9 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setFeeStatus('idle');
     setRouteInfo(null);
     setRouteStatus('idle');
+    setTxHash('');
+    setTxStatus(null);
+    setTxError(false);
     setError('');
     setBusy(false);
   },[userId,enabled]);
@@ -79,6 +85,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setFeeStatus('idle');
     setRouteInfo(null);
     setRouteStatus('idle');
+    setTxStatus(null);
+    setTxError(false);
     setError('');
     setBusy(false);
   };
@@ -208,6 +216,39 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     }
   };
 
+  // Verify a REAL signed Ethereum swap hash, only on the user's explicit
+  // request. This has no signing capability and runs no background polling.
+  const checkReceipt=async()=>{
+    if(!enabled||busy||!/^0x[a-fA-F0-9]{64}$/.test(txHash))return;
+    const id=++requestId.current;
+    abortInFlight();
+    const controller=new AbortController();
+    inFlight.current=controller;
+    const timeout=setTimeout(()=>controller.abort(),15_000);
+    setBusy(true);
+    setTxStatus(null);
+    setTxError(false);
+    try{
+      const token=await getAccessToken();
+      if(id!==requestId.current)return;
+      if(!token||controller.signal.aborted)throw Error('Receipt unavailable');
+      const response=await fetch(API_BASE+'/api/live/eth/tx-receipt/'+txHash,{
+        method:'GET',cache:'no-store',signal:controller.signal,
+        headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+      });
+      if(!response.ok)throw Error('Receipt unavailable');
+      const data=await response.json();
+      if(!validEthReceiptStatus(data,txHash))throw Error('Unverified receipt');
+      if(id===requestId.current)setTxStatus(data);
+    }catch{
+      if(id===requestId.current)setTxError(true);
+    }finally{
+      clearTimeout(timeout);
+      if(inFlight.current===controller)inFlight.current=null;
+      if(id===requestId.current)setBusy(false);
+    }
+  };
+
   const items=[...COINS.map(coin=>({value:coin.symbol,
     label:coin.symbol+(coin.inProgress?' · '+t.coinInProgress:'')})),
     {value:'USDC',label:'USDC'},{value:'USDT',label:'USDT'}];
@@ -307,6 +348,31 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         </p>}
         <p className="privy-wallet-description">{t.walletSwapFeesUnknown}</p>
       </div>}
+      <div className="mininex-swap-quote">
+        <strong>{t.walletSwapTxCheckTitle}</strong>
+        <p className="privy-wallet-description">{t.walletSwapTxCheckHint}</p>
+        <label><span>{t.walletSwapTxHashLabel}</span>
+          <input type="text" inputMode="text" autoComplete="off"
+            maxLength={66} spellCheck={false} value={txHash}
+            placeholder="0x…"
+            onChange={event=>{
+              reset();
+              setTxHash(event.target.value.trim());
+            }}/>
+        </label>
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          disabled={!enabled||busy||!/^0x[a-fA-F0-9]{64}$/.test(txHash)}
+          onClick={checkReceipt}>{t.walletSwapTxCheckButton}</button>
+        {txError&&<p role="alert" className="privy-wallet-description">
+          {t.walletSwapTxCheckFailed}</p>}
+        {txStatus&&<div role="status" className="privy-wallet-description">
+          <b>{t.walletSwapTxStatus}: {t['walletSwapTx'+txStatus.state]}</b>
+          <div>{t.walletSwapTxConfirmations}: {txStatus.confirmations}</div>
+          {txStatus.network_fee_eth!==null&&
+            <div>{t.walletSwapTxFee}: {txStatus.network_fee_eth} ETH</div>}
+          <p>{t.walletSwapTxNotFill}</p>
+        </div>}
+      </div>
       <p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
       </p>
