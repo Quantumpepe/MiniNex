@@ -23,6 +23,7 @@ export default function WalletSend({t,enabled,userId}) {
   const [error,setError]=useState('');
   const requestId=useRef(0);
   const sending=useRef(false);
+  const receiptAttempts=useRef(0);
   const providerRef=useRef(null);
   const currentUser=useRef(userId);
   currentUser.current=userId;
@@ -35,6 +36,7 @@ export default function WalletSend({t,enabled,userId}) {
     spec?.chainId===43114?'Avalanche C-Chain':'—';
 
   const clearReview=()=>{
+    receiptAttempts.current=0;
     requestId.current++;
     setReview(null);
     providerRef.current=null;
@@ -43,6 +45,7 @@ export default function WalletSend({t,enabled,userId}) {
     setTxHash('');
   };
   useEffect(()=>{
+    receiptAttempts.current=0;
     requestId.current++;
     sending.current=false;
     providerRef.current=null;
@@ -159,6 +162,7 @@ export default function WalletSend({t,enabled,userId}) {
        review.from.toLowerCase()!==embedded?.address?.toLowerCase()||
        review.chainId!==spec?.chainId)return;
     sending.current=true;
+    receiptAttempts.current=0;
     const sendUser=userId;
     let broadcastAttempted=false;
     setBusy(true);setError('');setPhase('submitting');
@@ -225,6 +229,18 @@ export default function WalletSend({t,enabled,userId}) {
     }catch{if(currentUser.current===receiptUser)setError(t.walletSendReceiptFailed);}
     finally{if(currentUser.current===receiptUser)setBusy(false);}
   }
+
+  // Up to three short, automatic receipt checks per submitted transfer.
+  // No ongoing market polling and no extra "check" buttons for the user.
+  useEffect(()=>{
+    if(!open||!enabled||phase!=='submitted'||!txHash||busy||
+       !review||receiptAttempts.current>=3)return;
+    const timeout=setTimeout(()=>{
+      receiptAttempts.current+=1;
+      verifyReceipt();
+    },12000);
+    return()=>clearTimeout(timeout);
+  },[open,enabled,phase,txHash,busy,review,userId]);
 
   const change=(fn,value)=>{if(sending.current)return;clearReview();fn(value);};
   const labels=[...COINS.map(c=>({symbol:c.symbol,
@@ -297,11 +313,9 @@ export default function WalletSend({t,enabled,userId}) {
           </div>}
           {txHash&&explorer&&<a href={explorer+txHash}
             target="_blank" rel="noopener noreferrer">{t.walletSendExplorer}</a>}
-          {txHash&&!['confirmed','reverted'].includes(phase)&&
-            <button className="privy-wallet-action privy-wallet-action--secondary"
-              type="button" disabled={busy} onClick={verifyReceipt}>
-              {t.walletSendCheckReceipt}
-            </button>}
+          {phase==='submitted'&&<p className="privy-wallet-description">
+            {t.walletSendAutoReceipt}
+          </p>}
           {['confirmed','reverted','uncertain'].includes(phase)&&
             <button className="privy-wallet-action privy-wallet-action--secondary"
               type="button" disabled={busy}
