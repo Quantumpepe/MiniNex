@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs}
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview}
   from '../src/manualSwapRules.js';
 
 const read=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -192,6 +192,97 @@ test('manual swap quotes expose exact native route and risks without extra work'
   assert.match(labels,/walletSwapRouteEth: 'Ethereum Mainnet/);
   assert.match(labels,/walletSwapRouteBtc: 'Natives Bitcoin/);
   assert.match(labels,/walletSwapFeesUnknown/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});
+
+
+test('ETH network fee preflight checks exact gas ceiling and cannot imply signing',()=>{
+  const req=manualSwapQuoteRequest('USDC','ETH','100');
+  const safe={
+    mode:'LIVE_ETH_SWAP_PLAN_ONLY',
+    asset:'ETH',chain_id:1,side:'BUY',
+    input_asset:'USDC',output_asset:'ETH',input_amount:'100',
+    expected_output_amount:'0.21',minimum_output_amount:'0.20895',
+    execution_enabled:false,automatic_signing_enabled:false,can_submit:false,
+    state:'UNSIGNED_TX_REVIEW_REQUIRED',
+    transaction_built:true,erc20_approval_required:false,
+    permit_signature_required:false,safe_to_sign:false,
+    router_commands_decoded:false,calldata_security_review_complete:false,
+    tx_outer_fields_verified:true,
+    router:'0x23617e59A5925b2A4Bf75d73ff6711cD0b29De85',
+    router_version:'2.1.2',
+    max_gas_limit:300000,max_fee_per_gas_gwei:'4',
+    max_possible_gas_eth:'0.0012',
+  };
+  assert.equal(validEthSwapFeeReview(safe,req),true);
+  assert.equal(validEthSwapFeeReview(safe,manualSwapQuoteRequest('USDC','BTC','100')),false);
+  for(const broken of [
+    {...safe,execution_enabled:true},
+    {...safe,can_submit:true},
+    {...safe,automatic_signing_enabled:true},
+    {...safe,safe_to_sign:true},
+    {...safe,router_commands_decoded:true},
+    {...safe,calldata_security_review_complete:true},
+    {...safe,tx_outer_fields_verified:false},
+    {...safe,chain_id:56},
+    {...safe,input_asset:'USDT'},
+    {...safe,input_amount:'100.01'},
+    {...safe,router:'0x'+'b'.repeat(40)},
+    {...safe,router_version:'2.2.0'},
+    {...safe,max_gas_limit:3000000},
+    {...safe,max_gas_limit:300000.5},
+    {...safe,max_gas_limit:300001},
+    {...safe,max_fee_per_gas_gwei:'4.0000000001'},
+    {...safe,max_fee_per_gas_gwei:'300.000000001'},
+    {...safe,max_fee_per_gas_gwei:'-1'},
+    {...safe,max_fee_per_gas_gwei:'1e4'},
+    {...safe,max_possible_gas_eth:'0.001200000000000001'},
+    {...safe,max_possible_gas_eth:'0.00401'},
+    {...safe,max_possible_gas_eth:'0'},
+    {...safe,expected_output_amount:'0'},
+    {...safe,minimum_output_amount:'0.22'},
+    {...safe,erc20_approval_required:true},
+    {...safe,permit_signature_required:true},
+    {...safe,signature:'0xdeadbeef'},
+    {...safe,data:'0x3593564c'},
+    {...safe,calldata:'0x3593564c'},
+  ]) assert.equal(validEthSwapFeeReview(broken,req),false,
+    'rejected '+JSON.stringify(broken));
+});
+
+test('approval branch reports unavailable fee and never exposes an actionable transaction',()=>{
+  const req=manualSwapQuoteRequest('USDT','ETH','10');
+  const plan={
+    mode:'LIVE_ETH_SWAP_PLAN_ONLY',asset:'ETH',chain_id:1,side:'BUY',
+    input_asset:'USDT',output_asset:'ETH',input_amount:'10',
+    expected_output_amount:'0.003',minimum_output_amount:'0.002985',
+    execution_enabled:false,automatic_signing_enabled:false,can_submit:false,
+    state:'APPROVAL_OR_PERMIT_REQUIRED',transaction_built:false,
+    erc20_approval_required:true,permit_signature_required:false,
+  };
+  assert.equal(validEthSwapFeeReview(plan,req),true);
+  assert.equal(validEthSwapFeeReview({...plan,transaction_built:true},req),false);
+  assert.equal(validEthSwapFeeReview({...plan,erc20_approval_required:false},req),false);
+  assert.equal(validEthSwapFeeReview({...plan,can_submit:true},req),false);
+  assert.equal(validEthSwapFeeReview({...plan,safe_to_sign:true},req),false);
+  assert.equal(validEthSwapFeeReview({...plan,max_possible_gas_eth:'0.0012'},req),false);
+  assert.equal(validEthSwapFeeReview({...plan,erc20_approval_required:false,permit_signature_required:true},req),true);
+});
+
+test('fee review is optional user-driven, bounded, cancelable and local-expiring',()=>{
+  assert.match(component,/onClick=\{checkFee\}/);
+  assert.match(component,/request\.coin!=='ETH'/);
+  assert.match(component,/API_BASE\+'\/api\/live\/eth\/swap-plan'/);
+  assert.match(component,/validEthSwapFeeReview\(data,request\)/);
+  assert.match(component,/signal:controller\.signal/);
+  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),15_000\)/);
+  assert.match(component,/expiresAtMs:Date\.now\(\)\+30_000/);
+  assert.match(component,/walletSwapFeeNeedsApproval/);
+  assert.match(component,/walletSwapFeeMaximum/);
+  assert.match(component,/walletSwapFeeCaveat/);
+  assert.match(labels,/walletSwapFeeMaximum: 'Maximal mögliche Gasgebühr/);
+  assert.match(labels,/walletSwapFeeNeedsApproval: 'Eine Token-Freigabe/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
