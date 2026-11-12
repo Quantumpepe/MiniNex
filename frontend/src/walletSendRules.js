@@ -114,6 +114,7 @@ export function verifiedSendReceipt(review,receipt) {
   return Array.isArray(receipt.logs)&&receipt.logs.some(log=>
     typeof log?.address==='string'&&log.address.toLowerCase()===spec.contract &&
     Array.isArray(log.topics)&&log.topics.length===3 &&
+    log.topics.every(topic=>typeof topic==='string')&&
     log.topics[0].toLowerCase()===TRANSFER_EVENT&&
     log.topics[1].toLowerCase()===sourceTopic&&
     log.topics[2].toLowerCase()===targetTopic&&
