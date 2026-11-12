@@ -35,6 +35,7 @@ from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
 from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
+from .manual_swap_routes import build_manual_swap_route
 
 market = MarketDataService()
 extra_markets = ExtraMarketData()
@@ -321,6 +322,22 @@ class EthLiveQuoteRequest(BaseModel):
     side: Literal["BUY", "SELL"]
     stable: Literal["USDC", "USDT"]
     amount: str
+
+
+@app.get("/api/wallet/swap/route")
+def manual_wallet_swap_route(source: str, target: str,
+                             authorization: str | None = Header(default=None)):
+    """One on-demand, authenticated static route check. No provider calls.
+
+    Full source and destination chain IDs are server-defined; the request
+    cannot choose a wallet, token contract, router, signer or recipient.
+    """
+    verify_privy_bearer(authorization)
+    route = build_manual_swap_route(source, target)
+    return JSONResponse(route, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.get("/api/live/readiness")
