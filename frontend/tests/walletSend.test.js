@@ -93,7 +93,7 @@ test('max sends preserve worst-case gas fee; ERC20 max uses full token balance',
   assert.equal(maxSendUnits(100n,-1n,price,true),null);
 });
 
-test('fee and amount review is tied to one wallet/network for 30 seconds',()=>{
+test('fee and amount review is tied to one wallet/network for 90 seconds',()=>{
   const from='0x'+'a'.repeat(40),to='0x'+'b'.repeat(40);
   const base={symbol:'ETH',from,to,amount:'0.5',
     gasLimit:21000n,gasPrice:20_000_000_000n,
@@ -101,7 +101,7 @@ test('fee and amount review is tied to one wallet/network for 30 seconds',()=>{
     now:1_800_000_000_000};
   const good=reviewEvmSend(base);
   assert.ok(good);
-  assert.equal(good.expiresAt,base.now+30000);
+  assert.equal(good.expiresAt,base.now+90000);
   assert.equal(good.gasCost,420000000000000n);
   assert.equal(good.transaction.value,'0x'+(5n*10n**17n).toString(16));
   for(const broken of [
