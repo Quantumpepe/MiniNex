@@ -50,6 +50,15 @@ export default function WalletSend({t,enabled,userId}) {
     setError('');
     setBusy(false);
   },[userId,enabled]);
+  useEffect(()=>{
+    if(!review||phase!=='ready')return;
+    const timer=setTimeout(()=>{
+      setReview(current=>current===review?null:current);
+      setPhase('idle');
+      setError(t.walletSendReviewExpired);
+    },Math.max(0,review.expiresAt-Date.now()));
+    return()=>clearTimeout(timer);
+  },[review,phase,t]);
 
   async function ownedProvider() {
     if(!enabled||!embedded||!spec||typeof embedded.getEthereumProvider!=='function'||
@@ -104,11 +113,23 @@ export default function WalletSend({t,enabled,userId}) {
         coin,embedded.address,destination,atomic);
       const gas=readRpcQuantity(await provider.request({method:'eth_estimateGas',
         params:[transaction]}));
-      const gasLimit=(gas*12n+9n)/10n;
+      let gasLimit=(gas*12n+9n)/10n;
       if(gasLimit>400000n||gasLimit<=0n)throw Error('fee');
       const spendable=spec.kind==='native'?funds.nativeBalance:funds.tokenBalance;
-      const units=isMax?maxSendUnits(spendable,gasLimit,gasPrice,
+      let units=isMax?maxSendUnits(spendable,gasLimit,gasPrice,
         spec.kind==='native'):atomic;
+      // Re-estimate MAX for the actual final amount, not only a 1-unit probe:
+      // recipient contracts can require more gas for a nonzero transfer.
+      if(isMax){
+        if(units===null||units<=0n)throw Error('funds');
+        const maxTx=buildEvmSendTransaction(coin,embedded.address,destination,units);
+        const actualGas=readRpcQuantity(await provider.request({
+          method:'eth_estimateGas',params:[{...maxTx,gasPrice:rpcHex(gasPrice)}],
+        }));
+        gasLimit=(actualGas*12n+9n)/10n;
+        if(gasLimit>400000n||gasLimit<=0n)throw Error('fee');
+        units=maxSendUnits(spendable,gasLimit,gasPrice,spec.kind==='native');
+      }
       const exact=isMax?formatSendUnits(units,spec.decimals):amount;
       const record=reviewEvmSend({symbol:coin,from:embedded.address,
         to:destination,amount:exact,gasLimit,gasPrice,...funds});
