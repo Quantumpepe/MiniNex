@@ -9,13 +9,22 @@ export function manualSwapQuoteRequest(from, to, amount) {
   if (!MANUAL_SWAP_ASSETS.includes(from) || !MANUAL_SWAP_ASSETS.includes(to) || from === to) return null;
   const coin = STABLES.has(from) ? to : from;
   const stable = STABLES.has(from) ? from : to;
-  if (!['BTC','ETH'].includes(coin) || !STABLES.has(stable)) return null;
-  const side = from === stable ? 'BUY' : 'SELL';
-  const decimals = from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6;
+  const legacy = ['BTC','ETH'].includes(coin) && STABLES.has(stable);
+  // The real provider uses 1e8 precision. Native XRP/TRX/ADA and Ethereum
+  // stables have only 6 decimal places; never round any entered amount.
+  const decimals = legacy
+    ? (from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6)
+    : (STABLES.has(from) || ['XRP','TRX','ADA'].includes(from) ? 6 : 8);
   if (typeof amount !== 'string' || amount.length > 48 ||
       !RE_AMOUNT.test(amount) || !/^[0-9]+$/.test(amount.replace('.','')) ||
       amount.split('.')[1]?.length > decimals || !Number.isFinite(Number(amount)) ||
       Number(amount) <= 0) return null;
+  if (!legacy) return {
+    path:'/api/wallet/swap/live-quote',
+    body:{source:from,target:to,amount},
+    coin:'MULTICHAIN',from,to,
+  };
+  const side = from === stable ? 'BUY' : 'SELL';
   return {
     path: coin === 'ETH' ? '/api/live/eth/quote' : '/api/live/btc/quote',
     body: {side,stable,amount}, coin, from, to,
@@ -30,6 +39,30 @@ const validPositiveQuoteAmount=value=>
 // settlement network. Unrecognized fields/providers fail closed; a plausible
 // number alone is not a trusted quote and NEVER authorizes execution.
 export function validManualSwapQuote(data, request) {
+  if(request?.coin==='MULTICHAIN') {
+    const network=asset=>STABLES.has(asset)
+      ? 'ethereum-mainnet':coinBySymbol(asset)?.network;
+    return !!data &&
+      data.mode==='NATIVE_MULTICHAIN_REAL_MARKET_QUOTE_ONLY' &&
+      data.source_asset===request.from &&
+      data.destination_asset===request.to &&
+      data.source_network===network(request.from) &&
+      data.destination_network===network(request.to) &&
+      data.input_amount===request.body.amount &&
+      data.quote_provider==='THORCHAIN_PUBLIC_MCP' &&
+      data.pool_route_quoted===true &&
+      validPositiveQuoteAmount(data.estimated_output_amount) &&
+      data.execution_enabled===false && data.can_submit===false &&
+      data.transaction_built===false && data.signing_authorized===false &&
+      data.deposit_address_provided===false &&
+      data.fee_breakdown_verified===false &&
+      data.minimum_received_guaranteed===false &&
+      Number.isInteger(data.quoted_price_impact_bps) &&
+      data.quoted_price_impact_bps>=0 &&
+      data.quoted_price_impact_bps<=500 &&
+      Number.isSafeInteger(data.quote_checked_at) &&
+      !('memo' in data) && !('inbound_address' in data);
+  }
   if (!data || !request || data.asset !== request.coin ||
       data.side !== request.body.side || data.execution_enabled!==false ||
       !validPositiveQuoteAmount(
@@ -88,6 +121,7 @@ export function manualSwapQuoteExpiryMs(data, request, nowMs = Date.now()) {
   if (eth) {
     return stampMs > nowMs && stampMs - nowMs <= 60_000 ? stampMs : null;
   }
+  // BTC and extended native cross-chain responses are only live snapshots.
   // BTC cross-chain response has only quote_checked_at, not a guaranteed
   // expiry. UI uses an intentionally short 30-second preview window.
   if (stampMs - nowMs > 5_000) return null;
