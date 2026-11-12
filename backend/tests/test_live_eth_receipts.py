@@ -146,7 +146,7 @@ def test_real_on_demand_receipt_rpc_uses_only_verified_owner_and_read_calls(monk
     def mocked_client(*args,**kwargs):
         assert kwargs["follow_redirects"] is False
         def serve(request):
-            assert request.url == er.ETH_RPC
+            assert str(request.url) == er.ETH_RPC
             body=json.loads(request.content)
             seen.append((body["id"],body["method"],body["params"]))
             return httpx.Response(200,json={
