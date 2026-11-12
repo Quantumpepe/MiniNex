@@ -81,13 +81,14 @@ export function reviewEvmSend({symbol,from,to,amount,gasLimit,gasPrice,
   const spec=sendAssetSpec(symbol);
   const units=exactSendUnits(amount,spec?.decimals);
   if(!spec||units===null||!validSendAddress(to,from)||
-     typeof gasLimit!=='bigint'||gasLimit<=0n||gasLimit>400000n||
+     typeof gasLimit!=='bigint'||gasLimit<=0n||gasLimit>1500000n||
      typeof gasPrice!=='bigint'||gasPrice<=0n||
      typeof nativeBalance!=='bigint'||nativeBalance<0n||
      !Number.isSafeInteger(now)||now<=0) return null;
   const gasCost=gasLimit*gasPrice;
+  if(gasCost>MAX_UINT256)return null;
   const spend=spec.kind==='native'?units+gasCost:gasCost;
-  if(spend>nativeBalance||
+  if(spend>MAX_UINT256||spend>nativeBalance||
     (spec.kind==='erc20'&&(typeof tokenBalance!=='bigint'||units>tokenBalance)))
     return null;
   return {symbol,chainId:spec.chainId,from,to,amount,amountUnits:units,
@@ -120,4 +121,34 @@ export function verifiedSendReceipt(review,receipt) {
     log.topics[2].toLowerCase()===targetTopic&&
     typeof log.data==='string'&&/^0x[0-9a-fA-F]{64}$/.test(log.data)&&
     BigInt(log.data)===review.amountUnits);
+}
+
+/** Some EIP-1193 providers expose multiple accounts. Only the exact Privy
+ * embedded-wallet address is allowed; other accounts never grant authority. */
+export function providerOwnsAddress(accounts,embeddedAddress) {
+  if(!Array.isArray(accounts)||typeof embeddedAddress!=='string'||
+     !validSendAddress(embeddedAddress)||accounts.length>20)return false;
+  const needle=embeddedAddress.toLowerCase();
+  return accounts.some(a=>typeof a==='string'&&
+    EVM_ADDRESS.test(a)&&a.toLowerCase()===needle);
+}
+
+/** A chain receipt alone cannot prove what a submitted transaction attempted.
+ * Compare on-chain transaction fields against the exact reviewed calldata. */
+export function verifiedSendTransaction(review,tx,hash) {
+  if(!review||!tx||typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
+    return false;
+  const original=review.transaction;
+  if(!original||typeof tx.hash!=='string'||tx.hash.toLowerCase()!==hash.toLowerCase()||
+     typeof tx.from!=='string'||typeof tx.to!=='string'||
+     tx.from.toLowerCase()!==review.from?.toLowerCase()||
+     tx.to.toLowerCase()!==original.to?.toLowerCase()||
+     typeof tx.value!=='string')return false;
+  try {
+    if(readRpcQuantity(tx.value)!==readRpcQuantity(original.value))return false;
+    if(original.data){
+      return typeof tx.input==='string'&&tx.input.toLowerCase()===original.data.toLowerCase();
+    }
+    return tx.input==null||tx.input==='0x';
+  }catch{return false;}
 }
