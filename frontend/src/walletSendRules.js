@@ -20,6 +20,12 @@ const EVM=Object.freeze({
   USDT:Object.freeze({chainId:1,decimals:6,feeSymbol:'ETH',kind:'erc20',
     contract:'0xdac17f958d2ee523a2206206994597c13d831ec7'}),
 });
+// Show the right address family without pretending every chain can send yet.
+export function sendAddressPlaceholder(symbol) {
+  const hints={BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
+    DOGE:'D…',ADA:'addr1…'};
+  return hints[symbol]||'0x…';
+}
 export const SEND_ASSETS=ALL;
 export const SEND_EVM=EVM;
 export const sendAssetSpec=asset=>EVM[asset]||null;
