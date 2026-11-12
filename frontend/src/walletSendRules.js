@@ -127,7 +127,7 @@ export function verifiedSendReceipt(review,receipt) {
  * embedded-wallet address is allowed; other accounts never grant authority. */
 export function providerOwnsAddress(accounts,embeddedAddress) {
   if(!Array.isArray(accounts)||typeof embeddedAddress!=='string'||
-     !validSendAddress(embeddedAddress)||accounts.length>20)return false;
+     !validSendAddress(embeddedAddress))return false;
   const needle=embeddedAddress.toLowerCase();
   return accounts.some(a=>typeof a==='string'&&
     EVM_ADDRESS.test(a)&&a.toLowerCase()===needle);
