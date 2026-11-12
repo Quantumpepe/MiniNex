@@ -127,3 +127,25 @@ test('swap quote expiry stays local, short, and fail-closed without background p
   assert.doesNotMatch(component,/setTimeout\s*\(\s*fetch/);
   assert.match(labels,/walletSwapExpired: 'Diese Kursvorschau ist abgelaufen/);
 });
+
+
+test('wallet quote network requests are cancelled when obsolete, never poll',()=>{
+  // The preview must not leave expensive calls running after a different
+  // amount/pair/account has been selected or the panel is closed.
+  assert.match(component,/const inFlight=useRef\(null\)/);
+  assert.match(component,/const abortInFlight=\(\)=>/);
+  assert.match(component,/current\?\.abort\(\)/);
+  assert.match(component,/signal:controller\.signal/);
+  assert.match(component,/const timeout=setTimeout\(\(\)=>controller\.abort\(\),15_000\)/);
+  assert.match(component,/clearTimeout\(timeout\)/);
+  assert.match(component,/if\(inFlight\.current===controller\)inFlight\.current=null/);
+  assert.match(component,/if\(id!==requestId\.current\)return/);
+  assert.match(component,/if\(controller\.signal\.aborted\)throw/);
+  assert.match(component,/useEffect\(\(\)=>\(\)=>\{requestId\.current\+=1;abortInFlight\(\);\},\[\]\)/);
+  assert.match(component,/const reset=\(\)=>\{\s*requestId\.current\+=1;\s*abortInFlight\(\)/);
+  assert.match(component,/\[userId,enabled\]/);
+  assert.match(component,/onClick=\{\(\)=>\{reset\(\);setOpen/);
+  assert.doesNotMatch(component,/setInterval\s*\(/);
+  assert.doesNotMatch(component,/retry\s*\(/);
+  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+});

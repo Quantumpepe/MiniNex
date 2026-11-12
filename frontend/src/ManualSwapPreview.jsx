@@ -16,6 +16,12 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const [expired,setExpired]=useState(false);
   const [error,setError]=useState('');
   const requestId=useRef(0);
+  const inFlight=useRef(null);
+  const abortInFlight=()=>{
+    const current=inFlight.current;
+    inFlight.current=null;
+    current?.abort();
+  };
   const request=manualSwapQuoteRequest(from,to,amount);
   const supportedPair=MANUAL_SWAP_ASSETS.includes(from)&&
     MANUAL_SWAP_ASSETS.includes(to)&&
@@ -33,6 +39,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
 
   useEffect(()=>{
     requestId.current+=1;
+    abortInFlight();
     setOpen(false);
     setQuote(null);
     setExpired(false);
@@ -40,8 +47,13 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setBusy(false);
   },[userId,enabled]);
 
+  // Cancel in-flight requests on navigation/unmount, without any background
+  // network requests or periodic work.
+  useEffect(()=>()=>{requestId.current+=1;abortInFlight();},[]);
+
   const reset=()=>{
     requestId.current+=1;
+    abortInFlight();
     setQuote(null);
     setExpired(false);
     setError('');
@@ -55,15 +67,22 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     event.preventDefault();
     if(!enabled||!request||busy)return;
     const id=++requestId.current;
+    const controller=new AbortController();
+    inFlight.current=controller;
+    // Only active during an explicit user-initiated quote request.
+    const timeout=setTimeout(()=>controller.abort(),15_000);
     setBusy(true);
     setQuote(null);
     setExpired(false);
     setError('');
     try {
       const token=await getAccessToken();
+      if(id!==requestId.current)return;
+      if(controller.signal.aborted)throw Error('Quote request expired');
       if(!token)throw Error('Authentication required');
       const response=await fetch(API_BASE+request.path,{
         method:'POST',cache:'no-store',
+        signal:controller.signal,
         headers:{
           Authorization:'Bearer '+token,
           Accept:'application/json',
@@ -80,6 +99,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     }catch {
       if(id===requestId.current)setError(t.walletSwapFailed);
     }finally {
+      clearTimeout(timeout);
+      if(inFlight.current===controller)inFlight.current=null;
       if(id===requestId.current)setBusy(false);
     }
   };
