@@ -61,6 +61,10 @@ export function validManualSwapQuote(data, request) {
       data.quoted_price_impact_bps>=0 &&
       data.quoted_price_impact_bps<=500 &&
       Number.isSafeInteger(data.quote_checked_at) &&
+      (data.quote_expires_at===null ||
+       (Number.isSafeInteger(data.quote_expires_at) &&
+        data.quote_expires_at > data.quote_checked_at &&
+        data.quote_expires_at <= data.quote_checked_at + 3600)) &&
       !('memo' in data) && !('inbound_address' in data);
   }
   if (!data || !request || data.asset !== request.coin ||
@@ -125,7 +129,12 @@ export function manualSwapQuoteExpiryMs(data, request, nowMs = Date.now()) {
   // BTC cross-chain response has only quote_checked_at, not a guaranteed
   // expiry. UI uses an intentionally short 30-second preview window.
   if (stampMs - nowMs > 5_000) return null;
-  const expiry = stampMs + 30_000;
+  const snapshotExpiry = stampMs + 30_000;
+  // A native quote with an earlier provider expiry must never outlive it.
+  const providerExpiry = request.coin === 'MULTICHAIN'
+    ? data.quote_expires_at : null;
+  const expiry = providerExpiry === null ? snapshotExpiry
+    : Math.min(snapshotExpiry, providerExpiry * 1000);
   return expiry > nowMs ? expiry : null;
 }
 

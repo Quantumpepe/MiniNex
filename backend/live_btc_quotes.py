@@ -114,9 +114,23 @@ def _provider_quote(raw: object, *, from_asset: str,
             raise ValueError("Unverified minimum swap quantity")
         if int(input_units) < int(recommended):
             raise ValueError("Input amount below fee-effective swap minimum")
+    # An indicative quote may expire before MiniNex's 30-second UI preview.
+    # Honor the provider's expiry if supplied; never accept a stale or
+    # implausibly distant timestamp. No address/memo is requested here.
+    raw_expiry = parsed.get("expiry")
+    provider_expiry = None
+    if raw_expiry is not None:
+        if (type(raw_expiry) not in (int, str)
+                or not re.fullmatch(r"[1-9][0-9]{9}", str(raw_expiry))):
+            raise ValueError("Invalid provider quote expiry")
+        provider_expiry = int(raw_expiry)
+        now = int(time.time())
+        if not now < provider_expiry <= now + 3600:
+            raise ValueError("Expired or unbounded provider quote")
     # Fee fields are provider-specific. Omission is explicitly shown as
     # unverified, never silently treated as zero.
     return {
+        "provider_expiry": provider_expiry,
         "estimated_output_units_1e8": output,
         "slippage_bps": slippage,
         "fee_breakdown_verified": False,
