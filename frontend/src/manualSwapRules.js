@@ -176,3 +176,37 @@ export function validManualSwapRoute(data, from, to) {
     Array.isArray(data.required_checks) && data.required_checks.length>=5 &&
     data.required_checks.every(item=>typeof item==='string'&&item.length>3);
 }
+
+
+// A REAL Ethereum receipt is not proof of swap output, and must never turn
+// into client-side authorization to send/sign a new transaction.
+export function validEthReceiptStatus(data, requestedHash) {
+  if(!/^0x[a-fA-F0-9]{64}$/.test(requestedHash||'') ||
+     !data || data.mode!=='ETH_MAINNET_RECEIPT_CHECK' ||
+     data.network!=='ethereum-mainnet' ||
+     data.tx_hash!==requestedHash.toLowerCase() ||
+     data.execution_enabled!==false || data.can_submit!==false ||
+     data.swap_outputs_verified!==false ||
+     data.live_order_recorded!==false ||
+     !Number.isSafeInteger(data.confirmations) ||
+     data.confirmations<0 || data.confirmations>1000000) return false;
+  const states={
+    NOT_FOUND:[false,false,null],
+    PENDING:[true,false,null],
+    INCLUDED_SUCCESS:[true,false,true],
+    INCLUDED_REVERTED:[true,false,false],
+    FINALIZED_SUCCESS:[true,true,true],
+    FINALIZED_REVERTED:[true,true,false],
+  };
+  const s=states[data.state];
+  if(!s || data.transaction_seen!==s[0] ||
+     data.transaction_finalized!==s[1] ||
+     data.transaction_success!==s[2])return false;
+  if(data.state==='NOT_FOUND'||data.state==='PENDING')
+    return data.confirmations===0 && data.network_fee_eth===null;
+  const gas=data.network_fee_eth;
+  return typeof gas==='string' &&
+    /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/.test(gas) &&
+    Number.isFinite(Number(gas)) && Number(gas)>0 &&
+    data.confirmations>=1;
+}
