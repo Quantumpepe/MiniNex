@@ -93,7 +93,7 @@ export function reviewEvmSend({symbol,from,to,amount,gasLimit,gasPrice,
   return {symbol,chainId:spec.chainId,from,to,amount,amountUnits:units,
     gasLimit,gasPrice,gasCost,feeSymbol:spec.feeSymbol,
     transaction:buildEvmSendTransaction(symbol,from,to,units),
-    expiresAt:now+30000};
+    expiresAt:now+90000};
 }
 
 const TRANSFER_EVENT='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
