@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview} from './manualSwapRules.js';
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs,validEthSwapFeeReview,validManualSwapRoute} from './manualSwapRules.js';
 
 // Standalone MANUAL wallet swap preview. It never signs, approves, delegates,
 // broadcasts, auto-swaps or changes the independent BTC/ETH trading budgets.
@@ -16,6 +16,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const [expired,setExpired]=useState(false);
   const [feeReview,setFeeReview]=useState(null);
   const [feeStatus,setFeeStatus]=useState('idle');
+  const [routeInfo,setRouteInfo]=useState(null);
+  const [routeStatus,setRouteStatus]=useState('idle');
   const [error,setError]=useState('');
   const requestId=useRef(0);
   const inFlight=useRef(null);
@@ -58,6 +60,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setExpired(false);
     setFeeReview(null);
     setFeeStatus('idle');
+    setRouteInfo(null);
+    setRouteStatus('idle');
     setError('');
     setBusy(false);
   },[userId,enabled]);
@@ -73,6 +77,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setExpired(false);
     setFeeReview(null);
     setFeeStatus('idle');
+    setRouteInfo(null);
+    setRouteStatus('idle');
     setError('');
     setBusy(false);
   };
@@ -93,6 +99,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setExpired(false);
     setFeeReview(null);
     setFeeStatus('idle');
+    setRouteInfo(null);
+    setRouteStatus('idle');
     setError('');
     try {
       const token=await getAccessToken();
@@ -157,6 +165,42 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       }
     }catch{
       if(id===requestId.current)setFeeStatus('failed');
+    }finally{
+      clearTimeout(timeout);
+      if(inFlight.current===controller)inFlight.current=null;
+      if(id===requestId.current)setBusy(false);
+    }
+  };
+
+  // One explicit tap only: classify native vs cross-chain settlement before
+  // attempting any provider. No polling or additional main-screen requests.
+  const checkRoute=async()=>{
+    if(!enabled||busy||from===to)return;
+    const id=++requestId.current;
+    abortInFlight();
+    const controller=new AbortController();
+    inFlight.current=controller;
+    const timeout=setTimeout(()=>controller.abort(),8_000);
+    setBusy(true);
+    setRouteInfo(null);
+    setRouteStatus('checking');
+    setQuote(null);
+    setFeeReview(null);
+    try{
+      const token=await getAccessToken();
+      if(id!==requestId.current)return;
+      if(!token||controller.signal.aborted)throw Error('Route unavailable');
+      const query=new URLSearchParams({source:from,target:to});
+      const response=await fetch(API_BASE+'/api/wallet/swap/route?'+query,{
+        cache:'no-store',signal:controller.signal,
+        headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+      });
+      if(!response.ok)throw Error('Route unavailable');
+      const route=await response.json();
+      if(!validManualSwapRoute(route,from,to))throw Error('Unverified route');
+      if(id===requestId.current){setRouteInfo(route);setRouteStatus('ready');}
+    }catch{
+      if(id===requestId.current)setRouteStatus('failed');
     }finally{
       clearTimeout(timeout);
       if(inFlight.current===controller)inFlight.current=null;
@@ -229,6 +273,22 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
           ? <p className="privy-wallet-description">{t.walletSwapFeeNeedsApproval}</p>
           : <div>{t.walletSwapFeeMaximum}: <b>{feeReview.data.max_possible_gas_eth} ETH</b></div>}
         <p className="privy-wallet-description">{t.walletSwapFeeCaveat}</p>
+      </div>}
+      <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={!enabled||busy||from===to} onClick={checkRoute}>
+        {routeStatus==='checking'?t.walletSwapRouteChecking:t.walletSwapRouteCheck}
+      </button>
+      {routeStatus==='failed'&&<p className="privy-wallet-description" role="alert">
+        {t.walletSwapRouteFailed}</p>}
+      {routeInfo&&<div className="mininex-swap-quote" role="status">
+        <strong>{t.walletSwapRouteStatus}</strong>
+        <div>{routeInfo.source.symbol} ({routeInfo.source.network})</div>
+        <div>{routeInfo.destination.symbol} ({routeInfo.destination.network})</div>
+        <p className="privy-wallet-description">
+          {routeInfo.route_class==='CROSS_CHAIN'
+            ? t.walletSwapCrossChainPending:t.walletSwapSameChainPending}
+        </p>
+        <p className="privy-wallet-description">{t.walletSwapRouteNotExecutable}</p>
       </div>}
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
       {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
