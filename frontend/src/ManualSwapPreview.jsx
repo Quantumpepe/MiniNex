@@ -77,7 +77,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     setError('');
     try {
       const token=await getAccessToken();
-      if(controller.signal.aborted||id!==requestId.current)return;
+      if(id!==requestId.current)return;
+      if(controller.signal.aborted)throw Error('Quote request expired');
       if(!token)throw Error('Authentication required');
       const response=await fetch(API_BASE+request.path,{
         method:'POST',cache:'no-store',
