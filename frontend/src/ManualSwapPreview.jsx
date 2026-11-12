@@ -336,7 +336,10 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       {quoteCurrent&&<div className="mininex-swap-quote" role="status">
         <strong>{t.walletSwapIndicative}</strong>
         <div className="privy-wallet-description">
-          {quote.request.coin==='ETH'?t.walletSwapRouteEth:t.walletSwapRouteBtc}
+          {quote.request.coin==='MULTICHAIN'
+            ? t.walletSwapNativeProvider+' · '+
+              quote.data.source_network+' → '+quote.data.destination_network
+            : quote.request.coin==='ETH'?t.walletSwapRouteEth:t.walletSwapRouteBtc}
         </div>
         {quote.request.coin==='ETH'
           ? <div>{t.walletSwapSlippage}: <b>{quote.data.slippage_tolerance_pct}%</b></div>
@@ -347,6 +350,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
           {t.walletSwapExpires}: {new Date(expiry).toLocaleTimeString(lang==='de'?'de-CH':'en-US')}
         </p>}
         <p className="privy-wallet-description">{t.walletSwapFeesUnknown}</p>
+        {quote.request.coin==='MULTICHAIN'&&
+          <p className="privy-wallet-description">{t.walletSwapNativeLiquidityNotice}</p>}
       </div>}
       <div className="mininex-swap-quote">
         <strong>{t.walletSwapTxCheckTitle}</strong>
