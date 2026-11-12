@@ -112,7 +112,7 @@ def test_single_real_provider_call_no_wallet_funding_memo_or_action(monkeypatch)
     {"slippage_bps":1000},
     {"expected_amount_out":"0"},
     {"expected_amount_out":"NaN"},
-    {"to_asset":"ETH.ETH"},
+    {"to_asset":"BTC.BTC"},
     {"from_asset":"BTC.BTC"},
     {"recommended_min_amount_in":"99999999999"},
 ])
