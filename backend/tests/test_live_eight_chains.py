@@ -122,3 +122,86 @@ def test_live_status_endpoint_is_authenticated_read_only(headers):
         "/api/live/go-live","/api/live/activate","/api/live/execute",
         "/api/operator/go-live","/api/live/TRX/send")
         for route in api.app.routes)
+
+
+def test_all_twelve_coin_manual_swap_route_pairs_classified_without_execution():
+    from backend.manual_swap_routes import (
+        STABLE_ASSETS, ALL_SWAP_ASSETS, build_manual_swap_route,
+    )
+    assert STABLE_ASSETS == ("USDC", "USDT")
+    assert ALL_SWAP_ASSETS == reg.ASSET_ORDER + STABLE_ASSETS
+    assert len(ALL_SWAP_ASSETS) == 14
+    assert sum(1 for source in ALL_SWAP_ASSETS for target in ALL_SWAP_ASSETS
+               if source != target) == 182
+    for source in ALL_SWAP_ASSETS:
+        for target in ALL_SWAP_ASSETS:
+            if source == target:
+                with pytest.raises(HTTPException):
+                    build_manual_swap_route(source, target)
+                continue
+            row = build_manual_swap_route(source, target)
+            assert row["source"]["symbol"] == source
+            assert row["destination"]["symbol"] == target
+            expected = ("SAME_CHAIN" if row["source"]["network"] ==
+                        row["destination"]["network"] else "CROSS_CHAIN")
+            assert row["route_class"] == expected
+            assert row["execution_ready"] is False
+            assert row["signing_authorized"] is False
+            assert row["transaction_built"] is False
+            assert row["can_submit"] is False
+            assert row["network_fee_verified"] is False
+            assert row["guaranteed_minimum_received"] is False
+            assert len(row["required_checks"]) >= 5
+            assert row["quote_preview_implemented"] == (
+                {source, target} in (
+                    {"ETH", "USDC"}, {"ETH", "USDT"},
+                    {"BTC", "USDC"}, {"BTC", "USDT"},
+                )
+            )
+    # ERC-20 USDC/USDT currently refer to ETH holdings, not native TRON,
+    # XRPL, Bitcoin, Polygon, BSC or Cardano stablecoin balances.
+    for symbol in ("TRX", "XRP", "BTC", "DOGE", "ADA", "BNB", "POL", "AVAX", "SOL"):
+        for stable in STABLE_ASSETS:
+            route = build_manual_swap_route(symbol, stable)
+            assert route["route_class"] == "CROSS_CHAIN"
+            assert route["destination"]["network"] == "ethereum-mainnet"
+            assert "cross_chain_finality_and_refund_path" in route["required_checks"]
+    for left, right in (("ETH", "LINK"), ("LINK", "UNI"), ("UNI", "USDT"),
+                        ("USDC", "ETH")):
+        route = build_manual_swap_route(left, right)
+        assert route["route_class"] == "SAME_CHAIN"
+        assert route["source"]["network"] == route["destination"]["network"]
+    for a, b in (("DOGE", "ETH"), ("BTC", "SOL"), ("ADA", "POL"),
+                 ("XRP", "TRX")):
+        route = build_manual_swap_route(a, b)
+        assert route["route_class"] == "CROSS_CHAIN"
+    for bad in ("USDCx", "USDC.e", "WBTC", "BTC.BTC", "MATIC", "BEP20-BTC", ""):
+        with pytest.raises(HTTPException):
+            build_manual_swap_route(bad, "ETH")
+
+
+def test_authenticated_manual_swap_route_api_has_no_execution_or_provider_calls(headers):
+    client = TestClient(api.app)
+    path = "/api/wallet/swap/route"
+    assert client.get(path, params={"source": "BTC", "target": "USDC"}).status_code == 401
+    response = client.get(path, headers=headers,
+                          params={"source": "BTC", "target": "USDC"})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    row = response.json()
+    assert row["source"]["network"] == "bitcoin-mainnet"
+    assert row["destination"]["network"] == "ethereum-mainnet"
+    assert row["quote_endpoint"] == "/api/live/btc/quote"
+    assert row["can_submit"] is False
+    assert client.get(path, headers=headers,
+                      params={"source": "LINK", "target": "UNI"}).status_code == 200
+    for src, dst in (("BTC", "BTC"), ("USDCx", "ADA"), ("ETH", "WBTC"),
+                     ("ETH", ""), ("", "ETH")):
+        assert client.get(path, headers=headers,
+            params={"source": src, "target": dst}).status_code == 422
+    for bad_param in ({"source": "ETH"}, {"target": "BTC"}):
+        assert client.get(path, headers=headers, params=bad_param).status_code == 422
+    assert client.post(path, headers=headers,
+                       json={"source": "BTC", "target": "USDC"}).status_code == 405
+    assert not any(route.path == "/api/wallet/swap/send" for route in api.app.routes)
