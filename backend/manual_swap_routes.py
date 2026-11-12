@@ -54,10 +54,15 @@ def build_manual_swap_route(source: str, target: str) -> dict:
         and {source, target}.intersection({"BTC"})
         and len({source, target}) == 2
     )
-    # A genuinely available read-only quote is NOT an executable route.
-    quote_asset = "ETH" if eth_stable_pair else ("BTC" if btc_stable_pair else None)
+    # Every pair can request a real live market quote through the public
+    # provider. A quote exists ONLY when actual liquidity is available;
+    # in particular ADA and UNI may have no active THORChain pool.
+    # This NEVER means an executable route or wallet signer is present.
+    quote_asset = "ETH" if eth_stable_pair else (
+        "BTC" if btc_stable_pair else "MULTICHAIN")
     quote_endpoint = ("/api/live/eth/quote" if quote_asset == "ETH" else
-                      "/api/live/btc/quote" if quote_asset == "BTC" else None)
+                      "/api/live/btc/quote" if quote_asset == "BTC" else
+                      "/api/wallet/swap/live-quote")
     # Real quote and fee provider status are NOT inferred from configuration
     # or a user-selected token ticker.
     required = list(_NO_EXECUTION)
@@ -73,7 +78,8 @@ def build_manual_swap_route(source: str, target: str) -> dict:
         "route_class": "SAME_CHAIN" if same_network else "CROSS_CHAIN",
         "quote_asset": quote_asset,
         "quote_endpoint": quote_endpoint,
-        "quote_preview_implemented": quote_asset is not None,
+        "quote_preview_implemented": True,
+        "active_liquidity_not_guaranteed": True,
         "execution_ready": False,
         "signing_authorized": False,
         "transaction_built": False,
