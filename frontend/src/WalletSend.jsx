@@ -5,7 +5,7 @@ import {COINS} from './coins.js';
 import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,buildEvmSendTransaction,readRpcQuantity,rpcHex,
   maxSendUnits,reviewEvmSend,verifiedSendReceipt,providerOwnsAddress,
-  verifiedSendTransaction} from './walletSendRules.js';
+  verifiedSendTransaction,sendAddressPlaceholder} from './walletSendRules.js';
 
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
@@ -268,12 +268,12 @@ export default function WalletSend({t,enabled,userId}) {
           </select>
         </label>
         <label><span>{t.walletSendRecipient}</span>
-          <input value={destination} disabled={busy||sending.current}
-            placeholder="0x…" autoComplete="off" spellCheck={false}
+          <input value={destination} disabled={busy||sending.current||!spec}
+            placeholder={sendAddressPlaceholder(coin)} autoComplete="off" spellCheck={false}
             onChange={e=>change(setDestination,e.target.value.trim())}/>
         </label>
         <label><span>{t.walletSendAmount} · {coin}</span>
-          <input value={amount} disabled={busy||sending.current}
+          <input value={amount} disabled={busy||sending.current||!spec}
             inputMode="decimal" placeholder="0.00" maxLength={48}
             onChange={e=>change(setAmount,e.target.value)}/>
         </label>
