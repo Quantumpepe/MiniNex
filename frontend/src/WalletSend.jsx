@@ -4,7 +4,8 @@ import {Send} from 'lucide-react';
 import {COINS} from './coins.js';
 import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,buildEvmSendTransaction,readRpcQuantity,rpcHex,
-  maxSendUnits,reviewEvmSend,verifiedSendReceipt} from './walletSendRules.js';
+  maxSendUnits,reviewEvmSend,verifiedSendReceipt,providerOwnsAddress,
+  verifiedSendTransaction,sendAddressPlaceholder} from './walletSendRules.js';
 
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
@@ -22,6 +23,7 @@ export default function WalletSend({t,enabled,userId}) {
   const [error,setError]=useState('');
   const requestId=useRef(0);
   const sending=useRef(false);
+  const receiptAttempts=useRef(0);
   const providerRef=useRef(null);
   const currentUser=useRef(userId);
   currentUser.current=userId;
@@ -34,6 +36,7 @@ export default function WalletSend({t,enabled,userId}) {
     spec?.chainId===43114?'Avalanche C-Chain':'—';
 
   const clearReview=()=>{
+    receiptAttempts.current=0;
     requestId.current++;
     setReview(null);
     providerRef.current=null;
@@ -42,6 +45,7 @@ export default function WalletSend({t,enabled,userId}) {
     setTxHash('');
   };
   useEffect(()=>{
+    receiptAttempts.current=0;
     requestId.current++;
     sending.current=false;
     providerRef.current=null;
@@ -65,19 +69,22 @@ export default function WalletSend({t,enabled,userId}) {
   },[review,phase,t]);
 
   async function ownedProvider() {
-    if(!enabled||!embedded||!spec||typeof embedded.getEthereumProvider!=='function'||
-       typeof embedded.switchChain!=='function')throw Error('wallet');
-    // A Privy EVM account is shared across supported EVM chains, but chain
-    // selection must be checked before a send. No extra user authorization.
-    await embedded.switchChain(spec.chainId);
-    const provider=await embedded.getEthereumProvider();
+    if(!enabled||!embedded||!spec||typeof embedded.getEthereumProvider!=='function')
+      throw Error('wallet');
+    let provider=await embedded.getEthereumProvider();
     if(!provider||typeof provider.request!=='function')throw Error('wallet');
-    const chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
+    let chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
+    // No redundant Privy network-switch prompt when already on the right chain.
+    if(chain!==BigInt(spec.chainId)){
+      if(typeof embedded.switchChain!=='function')throw Error('network');
+      await embedded.switchChain(spec.chainId);
+      provider=await embedded.getEthereumProvider();
+      if(!provider||typeof provider.request!=='function')throw Error('wallet');
+      chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
+    }
     const accounts=await provider.request({method:'eth_accounts'});
-    if(chain!==BigInt(spec.chainId)||!Array.isArray(accounts)||
-       accounts.length!==1||
-       typeof accounts[0]!=='string'||
-       accounts[0].toLowerCase()!==embedded.address.toLowerCase())throw Error('wallet');
+    if(chain!==BigInt(spec.chainId)||
+       !providerOwnsAddress(accounts,embedded.address))throw Error('wallet');
     return provider;
   }
 
@@ -118,7 +125,7 @@ export default function WalletSend({t,enabled,userId}) {
       const gas=readRpcQuantity(await provider.request({method:'eth_estimateGas',
         params:[transaction]}));
       let gasLimit=(gas*12n+9n)/10n;
-      if(gasLimit>400000n||gasLimit<=0n)throw Error('fee');
+      if(gasLimit>1500000n||gasLimit<=0n)throw Error('fee');
       const spendable=spec.kind==='native'?funds.nativeBalance:funds.tokenBalance;
       let units=isMax?maxSendUnits(spendable,gasLimit,gasPrice,
         spec.kind==='native'):atomic;
@@ -131,7 +138,7 @@ export default function WalletSend({t,enabled,userId}) {
           method:'eth_estimateGas',params:[{...maxTx,gasPrice:rpcHex(gasPrice)}],
         }));
         gasLimit=(actualGas*12n+9n)/10n;
-        if(gasLimit>400000n||gasLimit<=0n)throw Error('fee');
+        if(gasLimit>1500000n||gasLimit<=0n)throw Error('fee');
         units=maxSendUnits(spendable,gasLimit,gasPrice,spec.kind==='native');
       }
       const exact=isMax?formatSendUnits(units,spec.decimals):amount;
@@ -155,19 +162,22 @@ export default function WalletSend({t,enabled,userId}) {
        review.from.toLowerCase()!==embedded?.address?.toLowerCase()||
        review.chainId!==spec?.chainId)return;
     sending.current=true;
+    receiptAttempts.current=0;
     const sendUser=userId;
+    let broadcastAttempted=false;
     setBusy(true);setError('');setPhase('submitting');
     try{
       const provider=providerRef.current;
       const chain=readRpcQuantity(await provider.request({method:'eth_chainId'}));
       const accounts=await provider.request({method:'eth_accounts'});
-      if(chain!==BigInt(review.chainId)||!Array.isArray(accounts)||
-         accounts.length!==1||accounts[0]?.toLowerCase()!==review.from.toLowerCase())
+      if(chain!==BigInt(review.chainId)||
+         !providerOwnsAddress(accounts,review.from))
         throw Error('account changed');
       const tx={...review.transaction,gas:rpcHex(review.gasLimit),
         gasPrice:rpcHex(review.gasPrice)};
       // The ONE user-initiated send call. Privy may display a mandatory
       // signing confirmation; no app-side delegated or automatic signature.
+      broadcastAttempted=true;
       const hash=await provider.request({method:'eth_sendTransaction',params:[tx]});
       if(typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
         throw Error('uncertain broadcast');
@@ -180,8 +190,13 @@ export default function WalletSend({t,enabled,userId}) {
       if(err?.code===4001||err?.code==='ACTION_REJECTED'){
         setReview(null);setPhase('idle');sending.current=false;
         setError(t.walletSendRejected);
+      }else if(!broadcastAttempted){
+        // Wrong wallet/network BEFORE the broadcast cannot move money.
+        // Permit a fresh review without a sticky duplicate-send blockade.
+        setReview(null);setPhase('failed');sending.current=false;
+        setError(t.walletSendReviewFailed);
       }else{
-        // A provider timeout may have broadcast. Never auto-repeat a transfer.
+        // A provider timeout after submit may have broadcast: never auto-retry.
         setPhase('uncertain');setError(t.walletSendUncertain);
       }
     }finally{if(currentUser.current===sendUser)setBusy(false);}
@@ -200,6 +215,11 @@ export default function WalletSend({t,enabled,userId}) {
          receipt.to?.toLowerCase()!==review.transaction.to.toLowerCase()||
          receipt.from?.toLowerCase()!==review.from.toLowerCase()||
          !['0x0','0x1'].includes(receipt.status))throw Error('receipt');
+      // Only user-requested status checks read the transaction calldata.
+      const onChain=await providerRef.current.request({
+        method:'eth_getTransactionByHash',params:[txHash]});
+      if(currentUser.current!==receiptUser)return;
+      if(!verifiedSendTransaction(review,onChain,txHash))throw Error('receipt');
       if(receipt.status==='0x1'&&!verifiedSendReceipt(review,receipt)){
         setPhase('uncertain');
         setError(t.walletSendReceiptFailed);
@@ -209,6 +229,18 @@ export default function WalletSend({t,enabled,userId}) {
     }catch{if(currentUser.current===receiptUser)setError(t.walletSendReceiptFailed);}
     finally{if(currentUser.current===receiptUser)setBusy(false);}
   }
+
+  // Up to three short, automatic receipt checks per submitted transfer.
+  // No ongoing market polling and no extra "check" buttons for the user.
+  useEffect(()=>{
+    if(!open||!enabled||phase!=='submitted'||!txHash||busy||
+       !review||receiptAttempts.current>=3)return;
+    const timeout=setTimeout(()=>{
+      receiptAttempts.current+=1;
+      verifyReceipt();
+    },12000);
+    return()=>clearTimeout(timeout);
+  },[open,enabled,phase,txHash,busy,review,userId]);
 
   const change=(fn,value)=>{if(sending.current)return;clearReview();fn(value);};
   const labels=[...COINS.map(c=>({symbol:c.symbol,
@@ -236,12 +268,12 @@ export default function WalletSend({t,enabled,userId}) {
           </select>
         </label>
         <label><span>{t.walletSendRecipient}</span>
-          <input value={destination} disabled={busy||sending.current}
-            placeholder="0x…" autoComplete="off" spellCheck={false}
+          <input value={destination} disabled={busy||sending.current||!spec}
+            placeholder={sendAddressPlaceholder(coin)} autoComplete="off" spellCheck={false}
             onChange={e=>change(setDestination,e.target.value.trim())}/>
         </label>
         <label><span>{t.walletSendAmount} · {coin}</span>
-          <input value={amount} disabled={busy||sending.current}
+          <input value={amount} disabled={busy||sending.current||!spec}
             inputMode="decimal" placeholder="0.00" maxLength={48}
             onChange={e=>change(setAmount,e.target.value)}/>
         </label>
@@ -281,12 +313,10 @@ export default function WalletSend({t,enabled,userId}) {
           </div>}
           {txHash&&explorer&&<a href={explorer+txHash}
             target="_blank" rel="noopener noreferrer">{t.walletSendExplorer}</a>}
-          {txHash&&!['confirmed','reverted'].includes(phase)&&
-            <button className="privy-wallet-action privy-wallet-action--secondary"
-              type="button" disabled={busy} onClick={verifyReceipt}>
-              {t.walletSendCheckReceipt}
-            </button>}
-          {['confirmed','reverted','uncertain'].includes(phase)&&
+          {phase==='submitted'&&<p className="privy-wallet-description">
+            {t.walletSendAutoReceipt}
+          </p>}
+          {(phase==='submitted'&&!!txHash||['confirmed','reverted','uncertain'].includes(phase))&&
             <button className="privy-wallet-action privy-wallet-action--secondary"
               type="button" disabled={busy}
               onClick={()=>{sending.current=false;clearReview();setAmount('');setDestination('');}}>

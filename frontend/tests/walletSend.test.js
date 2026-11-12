@@ -5,6 +5,7 @@ import {
   SEND_ASSETS,SEND_EVM,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,rpcHex,readRpcQuantity,buildEvmSendTransaction,
   maxSendUnits,reviewEvmSend,verifiedSendReceipt,
+  providerOwnsAddress,verifiedSendTransaction,sendAddressPlaceholder,
 } from '../src/walletSendRules.js';
 
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
@@ -108,13 +109,14 @@ test('fee and amount review is tied to one wallet/network for 90 seconds',()=>{
     {...base,amount:'0'},
     {...base,amount:'1'},
     {...base,to:from},
-    {...base,gasLimit:400001n},
+    {...base,gasLimit:1500001n},
     {...base,gasLimit:-1n},
     {...base,gasPrice:0n},
     {...base,nativeBalance:1n},
   ]) assert.equal(reviewEvmSend(broken),null);
   const erc={...base,symbol:'USDC',amount:'100',nativeBalance:10n**16n,
     tokenBalance:101n*10n**6n};
+  assert.ok(reviewEvmSend({...base,gasLimit:400001n})); // legitimate complex recipients
   assert.ok(reviewEvmSend(erc));
   assert.equal(reviewEvmSend({...erc,tokenBalance:99n*10n**6n}),null);
   assert.equal(reviewEvmSend({...erc,nativeBalance:1n}),null);
@@ -128,6 +130,8 @@ test('send UI uses current Privy-owned wallet, explicit send tap and no automati
   assert.match(sender,/walletClientType==='privy'/);
   assert.match(sender,/getEthereumProvider/);
   assert.match(sender,/switchChain\(spec\.chainId\)/);
+  assert.match(sender,/if\(chain!==BigInt\(spec\.chainId\)\)/);
+  assert.match(sender,/providerOwnsAddress\(accounts,embedded\.address\)/);
   assert.match(sender,/method:'eth_chainId'/);
   assert.match(sender,/method:'eth_accounts'/);
   assert.match(sender,/method:'eth_estimateGas'/);
@@ -143,6 +147,14 @@ test('send UI uses current Privy-owned wallet, explicit send tap and no automati
   assert.match(sender,/walletSendFeeMax/);
   assert.match(sender,/walletSendUncertain/);
   assert.match(sender,/method:'eth_getTransactionReceipt'/);
+  assert.match(sender,/method:'eth_getTransactionByHash'/);
+  assert.match(sender,/verifiedSendTransaction\(review,onChain,txHash\)/);
+  assert.match(sender,/receiptAttempts\.current>=3/);
+  assert.match(sender,/\},12000\)/);
+  assert.match(sender,/walletSendAutoReceipt/);
+  assert.doesNotMatch(sender,/onClick=\{verifyReceipt\}/);
+  assert.match(sender,/let broadcastAttempted=false/);
+  assert.match(sender,/else if\(!broadcastAttempted\)/);
   assert.doesNotMatch(sender,/setInterval\s*\(/);
   assert.doesNotMatch(sender,/delegateWallet|privateKey|walletSecret|setApprovalForAll|unlimitedApproval/);
   assert.equal((sender.match(/method:'eth_sendTransaction'/g)||[]).length,1);
@@ -181,4 +193,72 @@ test('receipt verifies real ERC20 transfer logs, not just an apparent success',(
   }});
   assert.equal(verifiedSendReceipt(native,{from,to,status:'0x1',
     transactionHash:receipt.transactionHash}),true);
+});
+
+test('Privy EVM provider can expose multiple accounts without extra wallet prompts',()=>{
+  const own='0x'+'a'.repeat(40);
+  const other='0x'+'b'.repeat(40);
+  assert.equal(providerOwnsAddress([own],own),true);
+  assert.equal(providerOwnsAddress([other,own],own),true);
+  assert.equal(providerOwnsAddress([other,own.toUpperCase().replace('0X','0x')],own),true);
+  assert.equal(providerOwnsAddress([other],own),false);
+  assert.equal(providerOwnsAddress([],own),false);
+  assert.equal(providerOwnsAddress('wrong',own),false);
+  assert.equal(providerOwnsAddress([own],'0x123'),false);
+  assert.equal(providerOwnsAddress([own,null],own),true);
+  assert.equal(providerOwnsAddress(Array(25).fill(own),own),true);
+});
+
+test('on-chain native send verification requires the exact reviewed amount',()=>{
+  const from='0x'+'a'.repeat(40),to='0x'+'b'.repeat(40);
+  const plan=reviewEvmSend({symbol:'ETH',from,to,amount:'0.5',
+    gasLimit:25000n,gasPrice:2000000000n,
+    nativeBalance:1000000000000000000n,now:1800000000000});
+  assert.ok(plan);
+  const hash='0x'+'e'.repeat(64);
+  const tx={hash,from,to,value:plan.transaction.value,input:'0x'};
+  assert.equal(verifiedSendTransaction(plan,tx,hash),true);
+  assert.equal(verifiedSendTransaction(plan,{...tx,input:'0x1234'},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,value:'0x1'},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,from:to},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,to:from},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,hash:'0x'+'f'.repeat(64)},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,value:'-1'},hash),false);
+  assert.equal(verifiedSendTransaction(plan,null,hash),false);
+});
+
+test('on-chain ERC20 verification requires exact token calldata and zero ETH',()=>{
+  const from='0x'+'a'.repeat(40),to='0x'+'b'.repeat(40);
+  const plan=reviewEvmSend({symbol:'USDT',from,to,amount:'10',
+    gasLimit:100000n,gasPrice:1500000000n,
+    nativeBalance:1000000000000000000n,tokenBalance:50000000n,
+    now:1800000000000});
+  const hash='0x'+'e'.repeat(64);
+  const tx={hash,from,to:plan.transaction.to,
+    value:'0x0',input:plan.transaction.data};
+  assert.equal(verifiedSendTransaction(plan,tx,hash),true);
+  assert.equal(verifiedSendTransaction(plan,{...tx,value:'0x10'},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,to:to},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,input:'0xa9059cbb'},hash),false);
+  assert.equal(verifiedSendTransaction(plan,{...tx,input:plan.transaction.data.slice(0,-1)+'1'},hash),false);
+});
+
+test('gas fee overflow and absurd gas limits cannot be quoted',()=>{
+  const own='0x'+'a'.repeat(40),to='0x'+'b'.repeat(40);
+  const base={symbol:'ETH',from:own,to,amount:'1',gasLimit:21000n,
+    gasPrice:2000000000n,nativeBalance:10n**30n,now:1800000000000};
+  assert.ok(reviewEvmSend(base));
+  assert.equal(reviewEvmSend({...base,gasLimit:1500001n}),null);
+  assert.equal(reviewEvmSend({...base,gasPrice:2n**256n}),null);
+});
+
+test('send recipient hints follow native address families, never mislabel all as EVM',()=>{
+  for(const [coin,hint] of Object.entries({
+    BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
+    DOGE:'D…',ADA:'addr1…',ETH:'0x…',BNB:'0x…',
+    POL:'0x…',AVAX:'0x…',LINK:'0x…',UNI:'0x…',
+    USDC:'0x…',USDT:'0x…',
+  }))assert.equal(sendAddressPlaceholder(coin),hint);
+  assert.match(sender,/placeholder=\{sendAddressPlaceholder\(coin\)\}/);
+  assert.match(sender,/disabled=\{busy\|\|sending.current\|\|!spec\}/);
 });
