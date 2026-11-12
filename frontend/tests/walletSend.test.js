@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {
   SEND_ASSETS,SEND_EVM,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,rpcHex,readRpcQuantity,buildEvmSendTransaction,
-  maxSendUnits,reviewEvmSend,
+  maxSendUnits,reviewEvmSend,verifiedSendReceipt,
 } from '../src/walletSendRules.js';
 
 const read=p=>readFileSync(new URL(p,import.meta.url),'utf8');
@@ -148,4 +148,37 @@ test('send UI uses current Privy-owned wallet, explicit send tap and no automati
   assert.equal((sender.match(/method:'eth_sendTransaction'/g)||[]).length,1);
   assert.match(labels,/walletSendTitle: 'Senden'/);
   assert.match(labels,/walletSendTitle: 'Send'/);
+});
+
+test('receipt verifies real ERC20 transfer logs, not just an apparent success',()=>{
+  const from='0x'+'a'.repeat(40),to='0x'+'b'.repeat(40);
+  const plan=reviewEvmSend({
+    symbol:'USDC',from,to,amount:'1.5',
+    gasLimit:65000n,gasPrice:2000000000n,
+    nativeBalance:1000000000000000000n,tokenBalance:2000000n,
+    now:1800000000000,
+  });
+  assert.ok(plan);
+  const event='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const receipt={transactionHash:'0x'+'c'.repeat(64),from,to:plan.transaction.to,status:'0x1',
+    logs:[{address:plan.transaction.to,topics:[
+      event,
+      '0x'+from.slice(2).padStart(64,'0'),
+      '0x'+to.slice(2).padStart(64,'0'),
+    ],data:'0x'+plan.amountUnits.toString(16).padStart(64,'0')}]};
+  assert.equal(verifiedSendReceipt(plan,receipt),true);
+  for(const changed of [
+    {status:'0x0'},{from:to},{to:to},
+    {logs:[]},{logs:null},
+    {logs:[{...receipt.logs[0],data:'0x'+(plan.amountUnits+1n).toString(16).padStart(64,'0')}]},
+    {logs:[{...receipt.logs[0],topics:[event,null,null]}]},
+    {logs:[{...receipt.logs[0],address:to}]},
+  ]) assert.equal(verifiedSendReceipt(plan,{...receipt,...changed}),false);
+  const native=reviewEvmSend({...{
+    symbol:'ETH',from,to,amount:'0.25',gasLimit:21000n,
+    gasPrice:2000000000n,nativeBalance:1000000000000000000n,
+    tokenBalance:null,now:1800000000000,
+  }});
+  assert.equal(verifiedSendReceipt(native,{from,to,status:'0x1',
+    transactionHash:receipt.transactionHash}),true);
 });
