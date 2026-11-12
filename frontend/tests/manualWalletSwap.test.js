@@ -276,24 +276,13 @@ test('approval branch reports unavailable fee and never exposes an actionable tr
   assert.equal(validEthSwapFeeReview({...plan,erc20_approval_required:false,permit_signature_required:true},req),true);
 });
 
-test('fee review is optional user-driven, bounded, cancelable and local-expiring',()=>{
-  assert.match(component,/onClick=\{checkFee\}/);
-  assert.match(component,/request\.coin!=='ETH'/);
-  assert.match(component,/API_BASE\+'\/api\/live\/eth\/swap-plan'/);
-  assert.match(component,/validEthSwapFeeReview\(data,request\)/);
-  assert.match(component,/signal:controller\.signal/);
-  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),15_000\)/);
-  assert.match(component,/expiresAtMs:Date\.now\(\)\+30_000/);
-  assert.match(component,/walletSwapFeeNeedsApproval/);
-  assert.match(component,/walletSwapFeeMaximum/);
-  assert.match(component,/walletSwapFeeCaveat/);
-  assert.match(labels,/walletSwapFeeMaximum: 'Maximal mögliche Gasgebühr/);
-  assert.match(labels,/walletSwapFeeNeedsApproval: 'Eine Token-Freigabe/);
-  assert.doesNotMatch(component,/setInterval\s*\(/);
-  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+test('fee review helper remains validated, but extra swap fee button is not in normal flow',()=>{
+  assert.doesNotMatch(component,/onClick=\{checkFee\}/);
+  assert.doesNotMatch(component,/API_BASE\+'\/api\/live\/eth\/swap-plan'/);
+  assert.doesNotMatch(component,/walletSwapFeeMaximum/);
+  assert.match(labels,/walletSwapFeeNeedsApproval/);
+  assert.match(component,/onSubmit=\{checkQuote\}/);
 });
-
-
 test('all twelve coins and ETH stables validate exact route classification only',()=>{
   const symbols=[...MANUAL_SWAP_ASSETS];
   assert.equal(symbols.length,14);
@@ -343,22 +332,14 @@ test('all twelve coins and ETH stables validate exact route classification only'
   assert.equal(validManualSwapRoute({},'WBTC','ETH'),false);
 });
 
-test('route readiness is user initiated and never delays main coin screen',()=>{
-  assert.match(component,/onClick=\{checkRoute\}/);
-  assert.match(component,/\/api\/wallet\/swap\/route\?/);
-  assert.match(component,/new URLSearchParams\(\{source:from,target:to\}\)/);
-  assert.match(component,/validManualSwapRoute\(route,from,to\)/);
-  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),8_000\)/);
-  assert.match(component,/signal:controller\.signal/);
-  assert.match(component,/clearTimeout\(timeout\)/);
-  assert.match(component,/walletSwapRouteNotExecutable/);
-  assert.match(component,/walletSwapCrossChainPending/);
-  assert.match(labels,/walletSwapRouteCheck: 'Native Tauschroute prüfen'/);
+test('route classification stays in backend; the wallet has one primary quote action',()=>{
+  assert.doesNotMatch(component,/onClick=\{checkRoute\}/);
+  assert.doesNotMatch(component,/\/api\/wallet\/swap\/route\?/);
+  assert.match(component,/walletSwapRouteEth/);
+  assert.match(component,/walletSwapRouteBtc/);
+  assert.match(component,/onSubmit=\{checkQuote\}/);
   assert.doesNotMatch(component,/setInterval\s*\(/);
-  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
-
-
 test('real Ethereum receipt status is fail closed and never a live trade authorization',()=>{
   const hash='0x'+'a'.repeat(64);
   const base={
@@ -394,21 +375,13 @@ test('real Ethereum receipt status is fail closed and never a live trade authori
   assert.equal(validEthReceiptStatus(base,'0x123'),false);
 });
 
-test('ETH receipt check only runs on tap with timeout and no background polling',()=>{
-  assert.match(component,/onClick=\{checkReceipt\}/);
-  assert.match(component,/\/api\/live\/eth\/tx-receipt\//);
-  assert.match(component,/validEthReceiptStatus\(data,txHash\)/);
-  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),15_000\)/);
-  assert.match(component,/signal:controller\.signal/);
-  assert.match(component,/clearTimeout\(timeout\)/);
-  assert.match(component,/walletSwapTxNotFill/);
-  assert.match(labels,/walletSwapTxCheckTitle: 'Echte ETH-Transaktion prüfen'/);
-  assert.match(labels,/walletSwapTxFINALIZED_REVERTED:/);
-  assert.doesNotMatch(component,/setInterval\s*\(/);
-  assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
+test('technical ETH transaction hash checker is not a separate mandatory swap step',()=>{
+  assert.doesNotMatch(component,/onClick=\{checkReceipt\}/);
+  assert.doesNotMatch(component,/\/api\/live\/eth\/tx-receipt\//);
+  assert.doesNotMatch(component,/walletSwapTxCheckTitle/);
+  assert.match(component,/walletSwapNotEnabled/);
+  assert.match(component,/walletSwapFeesUnknown/);
 });
-
-
 test('real provider quotes reject native network forgery and any executable instructions',()=>{
   const req=manualSwapQuoteRequest('SOL','XRP','1.25');
   const now=1_800_000_000_000;
@@ -501,18 +474,13 @@ test('privy wallet record readiness is independent, authenticated and never an e
   },'ADA','USDT'),true);
 });
 
-test('wallet record check runs only on explicit tap without transfers or polling',()=>{
-  assert.match(component,/onClick=\{checkWalletReadiness\}/);
-  assert.match(component,/\/api\/wallet\/swap\/wallet-readiness\?/);
-  assert.match(component,/validManualSwapWalletReadiness\(result,from,to\)/);
-  assert.match(component,/getAccessToken\(\)/);
-  assert.match(component,/signal:controller\.signal/);
-  assert.match(component,/setTimeout\(\(\)=>controller\.abort\(\),12_000\)/);
-  assert.match(component,/setWalletReadiness\(null\)/);
-  assert.match(component,/walletReadiness\.ada_in_progress/);
-  assert.match(labels,/walletSwapWalletCheck: 'Wallet-Einträge prüfen'/);
-  assert.match(labels,/walletSwapWalletCaveat:/);
-  assert.match(labels,/walletSwapAdaPending:/);
+test('manual quote UI is compact and preserves 12 coins without diagnostic buttons',()=>{
+  assert.match(component,/onSubmit=\{checkQuote\}/);
+  assert.match(component,/className="mininex-swap-summary"/);
+  assert.match(component,/walletSwapAdaPending/);
+  assert.match(component,/walletSwapNotEnabled/);
+  for(const name of ['checkWalletReadiness','checkRoute','checkFee','checkReceipt'])
+    assert.doesNotMatch(component,new RegExp('onClick=\\\\{'+name+'\\\\}'));
   assert.doesNotMatch(component,/setInterval\s*\(/);
   assert.doesNotMatch(component,/\b(?:sendTransaction|signTransaction|approve|broadcast)\s*\(/);
 });
