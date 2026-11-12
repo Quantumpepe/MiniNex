@@ -4,7 +4,7 @@ import {Send} from 'lucide-react';
 import {COINS} from './coins.js';
 import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,buildEvmSendTransaction,readRpcQuantity,rpcHex,
-  maxSendUnits,reviewEvmSend} from './walletSendRules.js';
+  maxSendUnits,reviewEvmSend,verifiedSendReceipt} from './walletSendRules.js';
 
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
@@ -196,6 +196,11 @@ export default function WalletSend({t,enabled,userId}) {
          receipt.to?.toLowerCase()!==review.transaction.to.toLowerCase()||
          receipt.from?.toLowerCase()!==review.from.toLowerCase()||
          !['0x0','0x1'].includes(receipt.status))throw Error('receipt');
+      if(receipt.status==='0x1'&&!verifiedSendReceipt(review,receipt)){
+        setPhase('uncertain');
+        setError(t.walletSendReceiptFailed);
+        return;
+      }
       setPhase(receipt.status==='0x1'?'confirmed':'reverted');
     }catch{if(currentUser.current===receiptUser)setError(t.walletSendReceiptFailed);}
     finally{if(currentUser.current===receiptUser)setBusy(false);}
