@@ -42,3 +42,30 @@ export function validManualSwapQuote(data, request) {
   return typeof result==='string' && /^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(result) &&
     Number.isFinite(Number(result)) && Number(result)>0;
 }
+
+
+// No polling, network requests or background updates: one local expiry timer
+// is enough for a displayed read-only quote. Uncertain/old timestamps fail
+// closed. BTC quotes are only indicative and can never be executed.
+export function manualSwapQuoteExpiryMs(data, request, nowMs = Date.now()) {
+  if (!validManualSwapQuote(data, request) ||
+      !Number.isFinite(nowMs) || nowMs <= 0) return null;
+
+  const eth = request.coin === 'ETH';
+  const timestamp = eth ? data.quote_expires_at : data.quote_checked_at;
+  if (!Number.isSafeInteger(timestamp) || timestamp <= 0) return null;
+  const stampMs = timestamp * 1000;
+  if (!Number.isSafeInteger(stampMs)) return null;
+
+  // An ETH quote is very short-lived (backend: 15 seconds), never accept
+  // timestamps much farther in the future. This also fails closed on
+  // gross device/server clock mismatch.
+  if (eth) {
+    return stampMs > nowMs && stampMs - nowMs <= 60_000 ? stampMs : null;
+  }
+  // BTC cross-chain response has only quote_checked_at, not a guaranteed
+  // expiry. UI uses an intentionally short 30-second preview window.
+  if (stampMs - nowMs > 5_000) return null;
+  const expiry = stampMs + 30_000;
+  return expiry > nowMs ? expiry : null;
+}

@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote} from './manualSwapRules.js';
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs} from './manualSwapRules.js';
 
 // Standalone MANUAL wallet swap preview. It never signs, approves, delegates,
 // broadcasts, auto-swaps or changes the independent BTC/ETH trading budgets.
@@ -13,6 +13,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const [amount,setAmount]=useState('');
   const [busy,setBusy]=useState(false);
   const [quote,setQuote]=useState(null);
+  const [expired,setExpired]=useState(false);
   const [error,setError]=useState('');
   const requestId=useRef(0);
   const request=manualSwapQuoteRequest(from,to,amount);
@@ -20,10 +21,21 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     MANUAL_SWAP_ASSETS.includes(to)&&
     from!==to&&!!manualSwapQuoteRequest(from,to,'1');
 
+  // One local timeout per quote, with cleanup; never poll or refetch.
+  useEffect(()=>{
+    if(!quote)return;
+    const timeout=setTimeout(()=>{
+      setQuote(current=>current===quote?null:current);
+      setExpired(true);
+    },Math.max(0,quote.expiresAtMs-Date.now()));
+    return ()=>clearTimeout(timeout);
+  },[quote]);
+
   useEffect(()=>{
     requestId.current+=1;
     setOpen(false);
     setQuote(null);
+    setExpired(false);
     setError('');
     setBusy(false);
   },[userId,enabled]);
@@ -31,6 +43,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const reset=()=>{
     requestId.current+=1;
     setQuote(null);
+    setExpired(false);
     setError('');
     setBusy(false);
   };
@@ -44,6 +57,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     const id=++requestId.current;
     setBusy(true);
     setQuote(null);
+    setExpired(false);
     setError('');
     try {
       const token=await getAccessToken();
@@ -60,7 +74,9 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       if(!response.ok)throw Error('Provider quote unavailable');
       const data=await response.json();
       if(!validManualSwapQuote(data,request))throw Error('Invalid quote response');
-      if(id===requestId.current)setQuote({data,request});
+      const expiresAtMs=manualSwapQuoteExpiryMs(data,request);
+      if(expiresAtMs===null)throw Error('Stale or unverified quote');
+      if(id===requestId.current)setQuote({data,request,expiresAtMs});
     }catch {
       if(id===requestId.current)setError(t.walletSwapFailed);
     }finally {
@@ -74,8 +90,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const estimated=quote?.data?.expected_output_amount||
     quote?.data?.estimated_output_amount;
   const minimum=quote?.data?.minimum_output_amount;
-  const expiry=quote?.data?.quote_expires_at;
-  const quoteCurrent=quote&&
+  const expiry=quote?.expiresAtMs;
+  const quoteCurrent=quote&&Date.now()<quote.expiresAtMs&&
     (quote.request===request || (request&&quote.request.from===request.from&&
       quote.request.to===request.to&&quote.request.body.amount===request.body.amount));
 
@@ -119,12 +135,13 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         </button>
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
+      {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
       {quoteCurrent&&<div className="mininex-swap-quote" role="status">
         <strong>{t.walletSwapIndicative}</strong>
         <div>{t.walletSwapEstimated}: <b>{estimated} {to}</b></div>
         {minimum&&<div>{t.walletSwapMinimum}: <b>{minimum} {to}</b></div>}
         {expiry&&<p className="privy-wallet-description">
-          {t.walletSwapExpires}: {new Date(expiry*1000).toLocaleTimeString(lang==='de'?'de-CH':'en-US')}
+          {t.walletSwapExpires}: {new Date(expiry).toLocaleTimeString(lang==='de'?'de-CH':'en-US')}
         </p>}
         <p className="privy-wallet-description">{t.walletSwapFeesUnknown}</p>
       </div>}
