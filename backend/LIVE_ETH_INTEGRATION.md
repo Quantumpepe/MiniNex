@@ -413,6 +413,44 @@ consent/policy provisioning, router-compatible restricted signing,
 trusted independent Ethereum RPC simulation, nonce+reorg handling,
 real ledger reconciliation and guarded tiny-value deployment.
 
+## Stage 13: alternative direct SwapRouter02 policy path, read-only
+
+To compare the working Nexus-style restricted contract-call idea with
+the current MiniNex Universal Router, `eth_swaprouter02_preflight.py`
+records the official Ethereum SwapRouter02 address:
+`0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45`.
+It independently validates only the direct single-hop
+`exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))`
+selector `0x04e45aaf`, with an EXACT quote-bound stable/WETH token pair,
+recipient fixed to the verified user wallet, exact input, minimum received,
+approved V3 fee tier and zero price-limit override. No dynamic multicall
+ABI is accepted by this narrow reviewer.
+
+**Important native-ETH gap:** an ERC20 stable -> WETH direct swap returns
+**WETH, not native ETH**. The reverse path requires a pre-existing WETH
+balance. Actual MiniNex native ETH -> USDC/USDT -> native ETH requires
+separately reviewed wrap/unwrap steps, funding authorization, gas,
+allowance, receipts and wallet accounting. SwapRouter02 `exactInputSingle`
+does not contain a deadline field (unlike the older V3 SwapRouter).
+The final implementation must address route freshness independently.
+
+The current production quote and unsigned swap-plan endpoints still
+use Uniswap's Universal Router. This addition has **no API endpoint, no
+provider calls and no option to sign or broadcast**. It is intentionally
+not plugged into Privy `eth_sendTransaction` or the LIVE reservation
+worker. The existing Privy draft based on Universal Router `execute`
+must not be reused with the SwapRouter02 address.
+
+Next decide the full native wrap/unwrap approach and then independently
+prove the corresponding narrow Privy rule set for each user (wallet,
+chain, token pair, recipient and atomic spend bounds), before creating
+or applying an ALLOW policy. Never apply a broad `execute`, `multicall`,
+`transfer` or wildcard signer permission merely to unblock development.
+
+Official references:
+https://developers.uniswap.org/docs/protocols/v3/deployments/v3-ethereum-deployments
+https://github.com/Uniswap/swap-router-contracts/blob/main/contracts/interfaces/IV3SwapRouter.sol
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
