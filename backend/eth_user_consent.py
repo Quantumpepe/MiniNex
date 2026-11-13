@@ -26,6 +26,7 @@ import time
 import psycopg
 from eth_account import Account
 from eth_account.messages import encode_defunct
+from eth_keys.exceptions import BadSignature
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
@@ -214,7 +215,7 @@ def verify_eoa_eip191_signature(*, message: str, signature: object,
             encode_defunct(text=message), signature=signature
         )
         return recovered.lower() == wallet.lower()
-    except (ValueError, TypeError, OverflowError):
+    except (BadSignature, ValueError, TypeError, OverflowError):
         return False
 
 
