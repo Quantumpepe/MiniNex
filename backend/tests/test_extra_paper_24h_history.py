@@ -36,7 +36,7 @@ def test_one_public_15m_series_covers_the_24h_mode_without_fake_candles():
     assert svc.ingest_candles("SOL",candles(60,90),now=NOW)==90
     assert svc.ingest_ws(make_tick(),now=NOW)
     history=svc.history("SOL",limit=3600)
-    assert len(history)==187  # 96 long, 90 minute closes, 1 live tick
+    assert len(history)==186  # oldest 15m close ages out; 95 long + 90 minute + 1 tick
     assert history==sorted(history,key=lambda x:x["timestamp"])
     assert all(0 <= NOW-p["timestamp"] <= 86400 for p in history)
     assert any(NOW-p["timestamp"]>3600 for p in history)
@@ -55,6 +55,7 @@ def test_one_public_15m_series_covers_the_24h_mode_without_fake_candles():
 def test_dynamic_signal_keeps_short_windows_but_can_inspect_24h_long_history():
     svc=ExtraMarketData(clock=lambda:NOW)
     long=candles(first_price=230)
+    long[1][4]='230'  # high inside, not just beyond, the 24h cutoff
     svc.ingest_long_candles("SOL",long,now=NOW)
     svc.ingest_candles("SOL",candles(60,90),now=NOW)
     assert svc.ingest_ws(make_tick(),now=NOW)
