@@ -56,7 +56,7 @@ test('mobile Home shows private paper portfolio before compact eight-coin picker
   assert.match(compact,/if\(coinBySymbol\(symbol\)\)/);
   assert.match(compact,/coinBySymbol\(asset\)\?\.paperSettingsReady/);
   assert.match(compact,/compact-wallet-curve/);
-  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,homePaperScope,page==='overview'\)/);
+  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,'ALL',page==='overview'\)/);
   assert.match(app,/portfolioSummary=\{paperHome.summary\}/);
   assert.match(css,/\.compact-wallet-portfolio\{/);
   assert.match(css,/\.compact-chart-large,\.compact-chart-empty\{height:120px/);
