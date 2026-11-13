@@ -233,6 +233,20 @@
 .compact-recent-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .compact-recent-heading strong{font-size:15px;color:#e5fcf5}
 .compact-recent-heading span{font-size:10px;letter-spacing:.65px;color:#e2bb87;font-weight:780}
+/* The active coin is the default. All coins requires an explicit tap.
+   Both Android and desktop keep this control compact and reachable. */
+.home-history-filter-actions{display:flex;align-items:center;gap:9px}
+.home-history-filter{flex-shrink:0;min-height:30px;padding:5px 9px;
+  border:1px solid #3f756b;border-radius:8px;background:#173b3b;
+  color:#c8ffe8;font:inherit;font-weight:650;font-size:11px;cursor:pointer}
+.home-history-filter:hover,.home-history-filter:focus-visible{
+  border-color:#6de7b9;background:#20524b}
+.home-history-filter[aria-pressed="true"]{border-color:#65c7a2;
+  background:#2a5145}
+.home-history-paper-label{display:block;font-size:9px;letter-spacing:.5px;
+  color:#e2bb87;margin-top:2px}
+.compact-recent-heading strong{min-width:0}
+
 .compact-trade-list{display:flex;flex-direction:column}
 .compact-trade-row{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid #29484b}
 .compact-trade-icon{display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;border-radius:10px;background:#174939;color:#62ecc1}
