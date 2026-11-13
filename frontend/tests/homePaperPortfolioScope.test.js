@@ -140,7 +140,7 @@ test('portfolio and trades follow SAME selected asset and explicit opt-in ALL',(
 test('live cutover hides all PAPER UI and leaves wallet tools visible',()=>{
   assert.match(app,/getJson\('\/api\/user-paper\/availability'\)/);
   assert.match(app,/window\.setInterval\(\(\)=>\{/);
-  assert.match(app,/setPaperVisible\(data\?\.paper_available===true&&data\?\.live_trading_enabled===false/);
+  assert.match(app,/setPaperVisible\(\s*data\?\.paper_available===true&&data\?\.live_trading_enabled===false/);
   assert.match(mobile,/\{showSimulatedTrades&&<PaperPortfolioCard/);
   assert.match(mobile,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
