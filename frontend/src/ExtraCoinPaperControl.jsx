@@ -12,6 +12,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   const [loading,setLoading]=useState(true);
   const activeRef=useRef(0);
   const busyRef=useRef(false);
+  const mutationRef=useRef(0);
 
   const fetchOne=useCallback(async(signal)=>{
     const token=await getAccessToken();
@@ -29,6 +30,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
 
   useEffect(()=>{
     const request=++activeRef.current;
+    mutationRef.current++;
     setData(null);setBusy(false);setLoading(true);setFailed(false);
     if(!enabled||!getAccessToken){
       setLoading(false);
@@ -54,11 +56,14 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     const poll=async()=>{
       if(!alive||inFlight||busyRef.current||document.hidden)return;
       inFlight=true;
+      const version=mutationRef.current;
       try{
         const result=await fetchOne();
-        if(alive)setData(result);
+        if(alive&&!busyRef.current&&version===mutationRef.current)
+          setData(result);
       }catch{
-        if(alive)setFailed(true);
+        if(alive&&!busyRef.current&&version===mutationRef.current)
+          setFailed(true);
       }finally{inFlight=false;}
     };
     const timer=setInterval(poll,20000);
@@ -71,6 +76,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
        (action==='pause' && data.status!=='ACTIVE')||
        (action==='resume' && (data.status!=='PAUSED'||data.pause_exit_pending)))return;
     const request=activeRef.current;
+    mutationRef.current++;
     busyRef.current=true;setBusy(true);setFailed(false);
     try{
       const token=await getAccessToken();
