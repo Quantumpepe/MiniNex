@@ -13,7 +13,7 @@ import {
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
 import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
-import {summarizePaperSessions} from './paperPortfolio.js';
+import {summarizeHomePaperPortfolio,HOME_PAPER_PORTFOLIO_COINS} from './paperPortfolio.js';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
@@ -207,47 +207,81 @@ function useMiniNexData(asset, refreshNonce) {
 }
 
 /** Private PAPER-only portfolio snapshots for the compact Home card. */
-function usePaperPortfolioHome(paperVisible, refreshNonce) {
-  const {ready,authenticated,getAccessToken}=usePrivy();
-  const [summary,setSummary]=useState(null);
-  const [samples,setSamples]=useState([]);
+function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
+  const {ready,authenticated,user,getAccessToken}=usePrivy();
+  const did=user?.id||null;
+  const [state,setState]=useState({
+    summary:null,samples:[],status:'idle',scope:null,did:null,
+  });
   useEffect(()=>{
-    let active=true, inFlight=false;
-    setSummary(null);setSamples([]);
-    if (!paperVisible || !ready || !authenticated) return ()=>{active=false;};
+    let active=true,inFlight=false;
+    const controllers=new Set();
+    setState({summary:null,samples:[],status:'idle',scope,did});
+    if(!paperVisible||!homeVisible||!ready||!authenticated||!did)
+      return()=>{active=false;};
+    if(scope!=='ALL'&&!HOME_PAPER_PORTFOLIO_COINS.includes(scope)){
+      setState({summary:null,samples:[],status:'ready',scope,did});
+      return()=>{active=false;};
+    }
+    setState({summary:null,samples:[],status:'loading',scope,did});
     const sync=async()=>{
-      if(inFlight)return;
+      if(!active||inFlight||document.hidden)return;
       inFlight=true;
+      const controller=new AbortController();
+      controllers.add(controller);
       try{
         const token=await getAccessToken();
-        if(!token)throw new Error('Login required');
-        const rows=await Promise.all(['BTC','ETH'].map(async asset=>{
-          const response=await fetch(API_BASE+'/api/user-paper/'+asset,{
-            headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
+        if(!active||controller.signal.aborted)return;
+        if(!token)throw Error('Login required');
+        const fetchOne=async path=>{
+          const response=await fetch(API_BASE+path,{
+            method:'GET',cache:'no-store',signal:controller.signal,
+            headers:{Authorization:'Bearer '+token,Accept:'application/json'},
           });
-          if(!response.ok)throw new Error('Private paper data unavailable');
-          return [asset,await response.json()];
-        }));
-        if(!active)return;
-        const next=summarizePaperSessions(Object.fromEntries(rows));
-        setSummary(next);
-        if(next){
-          setSamples(existing=>{
+          if(!response.ok)throw Error('Portfolio source unavailable');
+          return response.json();
+        };
+        const coreCoins=scope==='ALL'?['BTC','ETH']:
+          ['BTC','ETH'].includes(scope)?[scope]:[];
+        const needExtra=scope==='ALL'||!coreCoins.length;
+        const results=await Promise.all([
+          ...coreCoins.map(async coin=>[coin,await fetchOne('/api/user-paper/'+coin)]),
+          ...(needExtra?[fetchOne('/api/extra-paper/comparison')]:[]),
+        ]);
+        if(!active||controller.signal.aborted)return;
+        const core=Object.fromEntries(results.filter(Array.isArray));
+        const extra=needExtra?results.at(-1):null;
+        const summary=summarizeHomePaperPortfolio(core,extra,scope);
+        // A never-started coin is empty; malformed/rejected sources are not
+        // silently converted into a fictional wallet balance.
+        setState(previous=>{
+          if(!active)return previous;
+          let samples=previous.scope===scope&&previous.did===did?
+            previous.samples:[];
+          if(summary?.valuationAvailable&&summary.equity!==null){
             const at=Date.now();
-            if(existing.length && at-existing[existing.length-1].at<12000)return existing;
-            return [...existing,{at,value:next.equity}].slice(-90);
-          });
-        }
+            if(!samples.length||at-samples[samples.length-1].at>=12000)
+              samples=[...samples,{at,value:summary.equity}].slice(-90);
+          }
+          return {summary,samples,status:'ready',scope,did};
+        });
       }catch{
-        // Never display stale totals as a verified real wallet balance.
-        if(active)setSummary(null);
-      }finally{inFlight=false;}
+        if(active)setState({summary:null,samples:[],status:'error',scope,did});
+      }finally{controllers.delete(controller);inFlight=false;}
     };
     sync();
     const interval=window.setInterval(sync,20000);
-    return ()=>{active=false;window.clearInterval(interval);};
-  },[ready,authenticated,getAccessToken,paperVisible,refreshNonce]);
-  return {summary,samples,authenticated:ready&&authenticated};
+    return()=>{
+      active=false;
+      window.clearInterval(interval);
+      for(const controller of controllers)controller.abort();
+      controllers.clear();
+    };
+  },[paperVisible,homeVisible,ready,authenticated,did,getAccessToken,refreshNonce,scope]);
+  // Never flash a previous account's or previous coin's capital during switch.
+  const current=state.scope===scope&&state.did===did?
+    state:{summary:null,samples:[],status:'loading'};
+  return {...current,authenticated:ready&&authenticated};
 }
 
 function Navigation({page,setPage,t,mobile=false}) {
@@ -371,7 +405,7 @@ export default function App() {
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
   const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
-  const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce);
+  const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce,homePaperScope,page==='overview');
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
   const valid=validMarket(mk) && Date.now()-syncedAt<FRESH_MS;
@@ -420,6 +454,7 @@ export default function App() {
              period={period} setPeriod={setPeriod}
             history={history} trades={homePaperTrades.trades} tradesStatus={homePaperTrades.status} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
              portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
+             portfolioStatus={paperHome.status}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
