@@ -378,6 +378,41 @@ executor must claim the signal and order atomically under the
 per-user/asset budget lock, prove Privy consent, and reconcile
 uncertain on-chain sends before another order.
 
+## Stage 12: ETH atomic reservation transaction core (dormant)
+
+The internal `live_eth_reservations.py` has a transaction-level **design
+and test harness**, not a live order executor. A future privileged worker
+must hold an account-specific PostgreSQL live ETH limits row lock before
+examining the durable signal binding and the full pending/24-hour order
+exposure. It must then insert the order intent and the immutable signal
+binding in the **same** transaction. An identical signal is returned as
+`DUPLICATE_NO_NEW_ORDER`; altered quote/amount for an already recorded
+signal is an integrity conflict. An error in either SQL insert must roll
+back the full transaction. Tests use a simulated SQL cursor/rollback.
+
+The operation also demands a future independently verified Privy owner,
+restricted signer, router-aware calldata policy and explicit revocable
+user consent. Currently there is **no implementation that can produce
+that trusted proof**; the existing `exactInputSingle` Privy policy still
+cannot authorize the `execute(bytes,bytes[],uint256)` router call.
+The internal Boolean proof fields are only test placeholders, not
+cryptographic proof or acceptable production authentication. They
+must be replaced by independently sourced, typed server evidence before
+this internal code is wired to any worker.
+
+`prepare_live_eth_reservation` and the existing
+`prepare_live_order_reservation` remain hard-disabled (HTTP 503).
+There are no routes, scheduled jobs or worker callers for the private
+transaction helper. No live limit can be unpaused through an API.
+No Privy delegation, approval, chain signature, transaction broadcast
+or balance transfer has been enabled. Neither Strategist nor Portfolio
+were modified.
+
+Next separately audited work: wallet-specific revocable Privy
+consent/policy provisioning, router-compatible restricted signing,
+trusted independent Ethereum RPC simulation, nonce+reorg handling,
+real ledger reconciliation and guarded tiny-value deployment.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
