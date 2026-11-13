@@ -9,8 +9,8 @@ export const defaultReplayOption=()=>({mode:'LONG',horizon:'15m',budget:'500'});
 export function validExtraReplayResult(value,asset,options) {
   if(!EXTRA_REPLAY_COINS.includes(asset)||
      !value||typeof value!=='object'||Array.isArray(value)||
-     value.asset!==asset||value.mode!==options.mode||
-     value.horizon!==options.horizon||
+     value.asset!==asset||value.mode!==options?.mode||
+     value.horizon!==options?.horizon||
      value.paper_only!==true||value.hypothetical!==true||
      value.real_trading_enabled!==false||
      value.wallet_funds_used!==false||
@@ -27,7 +27,7 @@ export function validExtraReplayResult(value,asset,options) {
     value.historical_quotes_not_independently_verified===true&&
     value.cost_model==='GENERIC_HYPOTHETICAL_PAPER_COSTS_NOT_CHAIN_QUOTES'&&
     typeof value.initial_usd==='number'&&
-    value.initial_usd===Number(options.budget)&&
+    value.initial_usd===Number(options?.budget)&&
     ['estimated_net_return_pct','estimated_max_drawdown_pct',
      'estimated_final_liquidation_usd','estimated_buy_and_hold_return_pct',
      'estimated_strategy_minus_hold_pp','observed_minutes'].every(key=>
