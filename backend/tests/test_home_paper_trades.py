@@ -165,12 +165,10 @@ def test_api_requires_privy_token_and_paper_mode(monkeypatch):
     assert checked==["Bearer verified-session"]
 
 
-@pytest.mark.parametrize("asset,table",[
-    ("BTC","mininex_user_paper_trades"),
-    ("ETH","mininex_user_paper_trades"),
-    ("SOL","mininex_extra_paper_trades"),
-    ("XRP","mininex_extra_paper_trades"),
-    ("UNI","mininex_extra_paper_trades"),
+@pytest.mark.parametrize("asset,table", [
+    (asset, "mininex_user_paper_trades" if asset in ("BTC", "ETH")
+     else "mininex_extra_paper_trades")
+    for asset in home.ALL_ASSETS
 ])
 def test_selected_coin_history_is_filtered_in_sql_before_limit(asset,table,monkeypatch):
     db=FakeDB([fill(asset,5)])
