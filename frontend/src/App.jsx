@@ -135,7 +135,7 @@ function PriceChart({history,asset,period,market,trades,t,lang}) {
   </div>;
 }
 
-function useMiniNexData(asset, refreshNonce) {
+function useMiniNexData(asset, refreshNonce, paperVisible) {
   const [market,setMarket]=useState(null);
   const [paper,setPaper]=useState(null);
   const [history,setHistory]=useState([]);
@@ -152,6 +152,7 @@ function useMiniNexData(asset, refreshNonce) {
       try{const data=await getJson('/api/market/prices');if(live){setMarket(data);setSyncedAt(Date.now());}}catch{ /* WS / next poll will retry */ }
     };
     const syncPaper=async()=>{
+      if(!paperVisible){if(live){setPaper(null);setPaperError(false);}return;}
       try{
         const data=ensurePaperOnly(await getJson('/api/paper/status'));
         if(live){setPaper(data);setPaperError(false);}
@@ -183,14 +184,14 @@ function useMiniNexData(asset, refreshNonce) {
     const marketPoll=window.setInterval(()=>{if(!document.hidden)syncMarket();},12000);
     const paperPoll=window.setInterval(()=>{if(!document.hidden)syncPaper();},5000);
     return ()=>{live=false;window.clearInterval(marketPoll);window.clearInterval(paperPoll);window.clearTimeout(retryTimer);try{ws?.close();}catch{ /* done */ }};
-  },[refreshNonce]);
+  },[refreshNonce,paperVisible]);
 
   useEffect(()=>{
     let live=true;
     setHistory([]);setTrades([]);
     const sync=async()=>{
       try{
-        const hasPaper=coinBySymbol(asset)?.paperSettingsReady;
+        const hasPaper=paperVisible&&coinBySymbol(asset)?.paperSettingsReady;
         const [h,r]=await Promise.all([
           getJson(`/api/market/history/${asset}?limit=3600`),
           hasPaper?getJson(`/api/paper/trades/${asset}?limit=50`):Promise.resolve(null),
@@ -202,7 +203,7 @@ function useMiniNexData(asset, refreshNonce) {
     };
     sync();const interval=window.setInterval(()=>{if(!document.hidden)sync();},12000);
     return()=>{live=false;window.clearInterval(interval);};
-  },[asset,refreshNonce]);
+  },[asset,refreshNonce,paperVisible]);
   return {market,paper,history,trades,connected,paperError,syncedAt};
 }
 
@@ -397,12 +398,24 @@ export default function App() {
   const [paperVisible,setPaperVisible]=useState(false);
   useEffect(()=>{
     let active=true;
-    getJson('/api/user-paper/availability')
-      .then(data=>{if(active)setPaperVisible(data?.paper_available===true&&data?.live_trading_enabled===false);})
-      .catch(()=>{if(active)setPaperVisible(false);});
-    return()=>{active=false;};
+    const verifyMode=()=>{
+      getJson('/api/user-paper/availability')
+        .then(data=>{
+          if(active)setPaperVisible(
+            data?.paper_available===true&&data?.live_trading_enabled===false
+          );
+        })
+        .catch(()=>{if(active)setPaperVisible(false);});
+    };
+    verifyMode();
+    // An environment cutover hides PAPER without a new APK, page reload
+    // or further frontend redesign, and the server itself blocks paper APIs.
+    const timer=window.setInterval(()=>{
+      if(!document.hidden)verifyMode();
+    },20000);
+    return()=>{active=false;window.clearInterval(timer);};
   },[]);
-  const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
+  const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
   const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce,homePaperScope,page==='overview');
@@ -498,8 +511,8 @@ export default function App() {
 
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
-          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt}/>
-          <UserPaperSessions t={t} lang={language}/>
+          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt} paperAvailable={paperVisible}/>
+          {paperVisible&&<UserPaperSessions t={t} lang={language}/>}
         </>}
 
         {page==='activity'&&<>
