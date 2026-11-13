@@ -22,8 +22,6 @@ import os
 import re
 import secrets
 import time
-from datetime import datetime, timezone
-from decimal import Decimal
 
 import psycopg
 from eth_account import Account
@@ -167,13 +165,16 @@ def _begin_locked(cur, *, did: str, session_digest: str, evidence: dict,
     cur.execute(
         """INSERT INTO mininex_live_eth_consent_intents
               (privy_did,wallet_address,session_sha256,limits_revision,
+               policy_owner_id,execution_signer_id,
                message_text,message_sha256,status,issued_at,expires_at)
-           VALUES (%s,%s,%s,%s,%s,%s,'PENDING',to_timestamp(%s),
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'PENDING',to_timestamp(%s),
                    to_timestamp(%s))
            ON CONFLICT (privy_did) DO UPDATE SET
                wallet_address=EXCLUDED.wallet_address,
                session_sha256=EXCLUDED.session_sha256,
                limits_revision=EXCLUDED.limits_revision,
+               policy_owner_id=EXCLUDED.policy_owner_id,
+               execution_signer_id=EXCLUDED.execution_signer_id,
                message_text=EXCLUDED.message_text,
                message_sha256=EXCLUDED.message_sha256,
                status='PENDING',
@@ -181,7 +182,7 @@ def _begin_locked(cur, *, did: str, session_digest: str, evidence: dict,
                expires_at=EXCLUDED.expires_at,
                confirmed_at=NULL,revoked_at=NULL""",
         (did, evidence["wallet"], session_digest, evidence["revision"],
-         message, digest, now, expires),
+         owner, signer, message, digest, now, expires),
     )
     return {
         "mode": "ETH_CONSENT_SIGNED_INTENT_ONLY",
@@ -218,11 +219,13 @@ def verify_eoa_eip191_signature(*, message: str, signature: object,
 
 
 def _confirm_locked(cur, *, did: str, session_digest: str,
-                    evidence: dict, signature: str, now: int) -> dict:
+                    evidence: dict, signature: str, now: int,
+                    owner: str, signer: str) -> dict:
     """One-use nonce, exact signed text and locked live limits required."""
     _check_locked_limits(cur, did, evidence)
     cur.execute(
-        """SELECT wallet_address,session_sha256,limits_revision,message_text,
+        """SELECT wallet_address,session_sha256,limits_revision,
+                  policy_owner_id,execution_signer_id,message_text,
                   message_sha256,status,extract(epoch FROM expires_at)::bigint
                       AS expires_at_unix
            FROM mininex_live_eth_consent_intents
@@ -234,6 +237,8 @@ def _confirm_locked(cur, *, did: str, session_digest: str,
             or row.get("wallet_address") != evidence["wallet"]
             or row.get("session_sha256") != session_digest
             or row.get("limits_revision") != evidence["revision"]
+            or row.get("policy_owner_id") != owner
+            or row.get("execution_signer_id") != signer
             or type(row.get("message_text")) is not str
             or row.get("expires_at_unix") is None
             or now >= int(row["expires_at_unix"])
@@ -297,7 +302,7 @@ async def confirm_eth_consent_intent(
     evidence = _require_enrollment_evidence(
         await get_eth_user_enrollment_preflight(did)
     )
-    _require_policy_roles()
+    owner, signer = _require_policy_roles()
     now = int(time.time())
     try:
         url = _db_url()
@@ -307,6 +312,7 @@ async def confirm_eth_consent_intent(
                 return _confirm_locked(
                     cur, did=did, session_digest=session_digest,
                     evidence=evidence, signature=signature, now=now,
+                    owner=owner, signer=signer,
                 )
     except psycopg.Error:
         LOG.warning("ETH consent confirmation temporarily unavailable")
