@@ -17,7 +17,33 @@ from backend.live_eth_quotes import ETH_NATIVE, STABLES
 
 DID="did:privy:eth-swap-plan"
 WALLET="0x"+"a"*40
-CALLDATA="0x3593564c"+"0"*192
+
+
+def _word(value):
+    return value.to_bytes(32, "big")
+
+
+def _blob(data):
+    return _word(len(data)) + data + b"\x00" * (-len(data) % 32)
+
+
+def router_calldata(*, commands=b"\x00", inputs=(b"\x01" * 32,), deadline=None):
+    """Canonical execute(bytes,bytes[],uint256) test ABI, with no actual trade."""
+    if deadline is None:
+        deadline = int(time.time()) + 120
+    commands_blob = _blob(commands)
+    encoded = [_blob(value) for value in inputs]
+    cursor = 32 * len(encoded)
+    offsets = []
+    for value in encoded:
+        offsets.append(_word(cursor))
+        cursor += len(value)
+    input_blob = _word(len(encoded)) + b"".join(offsets) + b"".join(encoded)
+    header = _word(96) + _word(96 + len(commands_blob)) + _word(deadline)
+    return "0x3593564c" + (header + commands_blob + input_blob).hex()
+
+
+CALLDATA=router_calldata()
 
 
 def record():
@@ -98,6 +124,10 @@ def test_eth_unsigned_tx_accepts_only_exact_mainnet_router_and_funded_gas():
     good=sp.inspect_uniswap_swap_tx(
         tx(),wallet=WALLET,side="BUY",input_atomic="100000000",eth_balance="1")
     assert good["tx_outer_fields_verified"] is True
+    assert good["router_envelope_verified"] is True
+    assert good["router_deadline_verified"] is True
+    assert good["router_command_count"] == 1
+    assert good["router_command_contents_verified"] is False
     assert good["router_commands_decoded"] is False
     assert good["safe_to_sign"] is False
     assert "data" not in good
@@ -249,3 +279,60 @@ def test_private_swap_plan_api_requires_auth_and_rejects_override(headers):
         json={**req,"side":"LEVERAGED_SHORT"}).status_code==422
     assert client.get("/api/live/eth/swap-plan",headers=headers).status_code==405
     assert not any(route.path=="/api/live/eth/sign-and-send" for route in api.app.routes)
+
+
+def test_router_envelope_rejects_expired_future_and_partial_revert_commands():
+    for calldata in (
+        router_calldata(deadline=int(time.time()) - 1),
+        router_calldata(deadline=int(time.time()) + 10_000),
+        router_calldata(commands=b"\x80"),
+        router_calldata(commands=b"\x40"),
+        router_calldata(commands=b"\x00\x0b", inputs=(b"\x01" * 32,)),
+        "0x3593564c" + "0" * 192,
+    ):
+        with pytest.raises(ValueError):
+            sp.inspect_uniswap_swap_tx(
+                {**tx(), "data": calldata},
+                wallet=WALLET, side="BUY", input_atomic="100000000",
+                eth_balance="1.25",
+            )
+
+
+def test_router_envelope_rejects_noncanonical_offsets_padding_and_trailing_data():
+    def changed(start, new_bytes):
+        raw = bytearray.fromhex(CALLDATA[10:])
+        raw[start:start + len(new_bytes)] = new_bytes
+        return "0x3593564c" + raw.hex()
+
+    # Malformed top-level input offset and dynamic bytes[] element offset.
+    raw = bytearray.fromhex(CALLDATA[10:])
+    input_array_start = int.from_bytes(raw[32:64], "big")
+    poisoned = [
+        changed(32, _word(96)),
+        changed(input_array_start + 32, _word(0)),
+        changed(96 + 32 + 1, b"\x01"),  # Nonzero command padding
+        CALLDATA + "00" * 32,  # Unaccounted trailing instructions
+        CALLDATA[:-2],  # Truncated ABI alignment
+    ]
+    for calldata in poisoned:
+        with pytest.raises(ValueError):
+            sp.inspect_uniswap_swap_tx(
+                {**tx(), "data": calldata},
+                wallet=WALLET, side="BUY", input_atomic="100000000",
+                eth_balance="1.25",
+            )
+
+
+def test_multi_command_valid_envelope_never_becomes_signable():
+    preview = sp.inspect_uniswap_swap_tx(
+        {**tx(), "data": router_calldata(
+            commands=b"\x00\x0b", inputs=(b"\x11" * 32, b"\x22" * 64))},
+        wallet=WALLET, side="BUY", input_atomic="100000000",
+        eth_balance="1.25",
+    )
+    assert preview["router_command_count"] == 2
+    assert preview["router_envelope_verified"] is True
+    assert preview["router_command_contents_verified"] is False
+    assert preview["safe_to_sign"] is False
+    assert preview["calldata_security_review_complete"] is False
+    assert "data" not in preview
