@@ -1,8 +1,6 @@
 """SwapRouter02 policy feasibility: test only, never sign or broadcast."""
 from __future__ import annotations
 
-import copy
-
 import pytest
 
 from backend import eth_swaprouter02_preflight as scope
@@ -139,13 +137,14 @@ def test_invalid_wallet_token_unit_inputs_fail_closed():
         {"stable": "DAI"},
         {"side": "BRIDGE"},
     ):
+        kwargs = {
+            "wallet": WALLET, "stable": "USDC", "side": "BUY",
+            "input_atomic": "100000000",
+            "minimum_output_atomic": "100000000000000000",
+        }
+        kwargs.update(invalid)
         with pytest.raises(ValueError):
-            scope.inspect_swaprouter02_exact_input(
-                transaction(), wallet=WALLET, stable="USDC", side="BUY",
-                input_atomic="100000000",
-                minimum_output_atomic="100000000000000000",
-                **invalid,
-            )
+            scope.inspect_swaprouter02_exact_input(transaction(), **kwargs)
 
 
 def test_policy_scope_is_informational_not_privy_authorization():
