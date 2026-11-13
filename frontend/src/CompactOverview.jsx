@@ -38,33 +38,36 @@ function MarketChart({history,period,valid,t,asset}) {
 }
 
 
-function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,paperAvailable}) {
+function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status}) {
   const chart=useMemo(()=>paperSparkline(samples),[samples]);
-  const positive=summary?.pnl>=0;
+  const positive=summary?.pnl!=null&&summary.pnl>=0;
   const color=positive?'#5bf2b6':'#ff9388';
   const label=lang==='de'?'Portfolio (Gesamtwert)':'Portfolio (total value)';
   const chartLabel=lang==='de'?'Beobachteter Verlauf seit App-Start':'Observed since opening the app';
-  const prompt=!paperAvailable
-    ? (lang==='de'?'Keine verifizierten Kontowerte verfügbar':'No verified account values available')
-    : authenticated
-      ? (lang==='de'?'Simulation starten oder Kursdaten prüfen':'Start a simulation or check market quotes')
-      : (lang==='de'?'Zum Anzeigen anmelden':'Sign in to view paper portfolio');
+  const prompt=!authenticated?t.homeTradesSignIn:
+    status==='loading'?t.homePortfolioLoading:
+    status==='error'?t.homePortfolioUnavailable:
+    summary&&!summary.valuationAvailable?t.homePortfolioNoPrice:
+    t.homePortfolioNoSession;
   return <section className="compact-wallet-portfolio" aria-label={label}>
     <div className="compact-wallet-top">
-      <span>{label} · BTC + ETH</span>
+      <span>{label} · {scope==='ALL'?t.homeAllCoins:scope}</span>
       <button type="button" className="compact-wallet-open" onClick={()=>goTo('wallet')} aria-label={t.wallet} title={t.wallet}><Wallet size={16}/></button>
     </div>
     <div className="compact-wallet-body">
       <div className="compact-wallet-values">
-        <strong>{summary?formatMoney(summary.equity,lang):'—'}</strong>
-        {summary
+        <strong>{summary?.valuationAvailable?formatMoney(summary.equity,lang):'—'}</strong>
+        {summary?.valuationAvailable
           ? <span className={positive?'text-positive':'text-negative'}>
               {formatSigned(summary.pnl,lang)} ({summary.pnlPct>=0?'+':''}{formatNumber(summary.pnlPct,lang,2)}%)
             </span>
           : <small>{prompt}</small>}
+        {summary&&<small className="home-portfolio-capital">
+          {t.homePortfolioCapital}: {formatMoney(summary.startingCapital,lang)}
+        </small>}
       </div>
       <div className="compact-wallet-curve">
-        {summary&&chart
+        {summary?.valuationAvailable&&chart
           ? <svg viewBox="0 0 200 50" role="img" aria-label={chartLabel} preserveAspectRatio="none">
               <defs><linearGradient id="paper-equity-fill" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity=".24"/>
@@ -78,13 +81,13 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,paperAvai
       </div>
     </div>
     <div className="compact-wallet-foot">
-      <span>{paperAvailable?'PAPER':'LIVE —'} · {paperAvailable ? (lang==='de'?'kein Echtgeld':'no real funds') : (lang==='de'?'nicht freigeschaltet':'not enabled')}</span>
+      <span>PAPER · {lang==='de'?'kein Echtgeld':'no real funds'}</span>
       <span>{chart ? chartLabel : (lang==='de'?'Werte nach geschätzten Verkaufskosten':'After estimated exit costs')}</span>
     </div>
   </section>;
 }
 
-export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,tradesStatus='ready',showAllTrades=false,onToggleAllTrades}) {
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,portfolioStatus='ready',tradesStatus='ready',showAllTrades=false,onToggleAllTrades}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -106,7 +109,10 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         <button className="icon-btn compact-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>goTo('settings')}><Settings2 size={17}/></button>
       </div>
     </div>
-    <PaperPortfolioCard t={t} lang={lang} summary={portfolioSummary} samples={portfolioSamples} authenticated={portfolioAuthenticated} paperAvailable={showSimulatedTrades} goTo={goTo}/>
+    {showSimulatedTrades&&<PaperPortfolioCard t={t} lang={lang}
+      summary={portfolioSummary} samples={portfolioSamples}
+      authenticated={portfolioAuthenticated} status={portfolioStatus}
+      scope={showAllTrades?'ALL':asset} goTo={goTo}/>}
     <CoinGrid t={t} lang={lang} selected={asset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="home"
       onSelect={symbol=>{
