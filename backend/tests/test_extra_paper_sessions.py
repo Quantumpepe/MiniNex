@@ -313,7 +313,8 @@ def test_public_paper_endpoints_require_privy_auth_and_ada_is_disabled(signed,mo
         ("/api/extra-paper/SOL/pause","POST"),
         ("/api/extra-paper/SOL/resume","POST"),
     ]:
-        assert client.request(method,path).status_code==401
+        kwargs={"json":{"budget_usd":500}} if path.endswith("/start") else {}
+        assert client.request(method,path,**kwargs).status_code==401
     calls=[]
     monkeypatch.setattr(api,"read_extra_paper",
         lambda did,asset,market:(calls.append(("read",did,asset)) or {"paper_only":True}))
