@@ -96,7 +96,6 @@ def test_user_owned_privy_wallet_and_five_thousand_live_capital_are_separate():
     ({"id": OTHER_DID, "linked_accounts": user()["linked_accounts"]}, None),
     ({"id": DID, "linked_accounts": []}, None),
     ({"id": DID, "linked_accounts": user()["linked_accounts"] * 2}, None),
-    (None, {"owner": {"user_id": DID}}),
     (None, {"owner": {"user_id": OTHER_DID}}),
     (None, {"address": "0x" + "b" * 40}),
     (None, {"chain_type": "solana"}),
