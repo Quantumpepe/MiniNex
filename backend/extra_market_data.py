@@ -141,6 +141,12 @@ class ExtraMarketData:
         self._kraken_discover_after = 0.0
         self._ticks = {asset: deque(maxlen=1500) for asset in EXTRA_ASSETS}
         self._historical: dict[str, list[dict[str, float]]] = {asset: [] for asset in EXTRA_ASSETS}
+        # 97 completed 15m candles provide ~24h of genuine close prices.
+        # Keep this separate from the short 1m series and live WS ticks.
+        # ADA is still "In Arbeit": it gets NO long strategy feed.
+        self._long_historical: dict[str, list[dict[str, float]]] = {
+            asset: [] for asset in EXTRA_ASSETS if asset != "ADA"
+        }
         self._tasks: list[asyncio.Task] = []
         self.last_error: str | None = None
         # Monitoring only. No API keys, provider URLs or account data are
@@ -339,8 +345,10 @@ class ExtraMarketData:
         if asset not in EXTRA_ASSETS:
             raise ValueError("Unsupported read-only market")
         at = self.clock()
-        data = [point for point in self._historical[asset]
-                if 0 <= at - point["timestamp"] <= 7200]
+        data = [point for point in self._long_historical.get(asset,())
+                if 0 <= at - point["timestamp"] <= 86400]
+        data.extend(point for point in self._historical[asset]
+                    if 0 <= at - point["timestamp"] <= 7200)
         data.extend(point for point in self._ticks[asset]
                     if 0 <= at - point["timestamp"] <= 7200)
         data.sort(key=lambda point: point["timestamp"])
@@ -369,6 +377,43 @@ class ExtraMarketData:
         if at - candles[-1]["timestamp"] > 180:
             raise ValueError("Stale candle batch")
         self._historical[asset] = candles
+        return len(candles)
+
+    def ingest_long_candles(self, asset: str, rows: Any, *,
+                            now: float | None = None) -> int:
+        """Accept only already-closed, sequential public 15m candles.
+
+        The long series supplements 1m history; it never creates a verified
+        live price, trade permission or new asset. Failed provider responses
+        leave the previously validated long window intact until it ages out.
+        """
+        if asset not in self._long_historical or not isinstance(rows,list) or (
+            len(rows) < 80 or len(rows) > 100
+        ):
+            raise ValueError("Unsupported paper asset or insufficient long candles")
+        at = self.clock() if now is None else now
+        if type(at) not in (float,int) or not math.isfinite(at) or at <= 0:
+            raise ValueError("Invalid long candle clock")
+        previous = None
+        candles: list[dict[str,float]] = []
+        for row in rows:
+            if not isinstance(row,list) or len(row)<7:
+                raise ValueError("Invalid 15m candle row")
+            try:
+                stamp=int(row[6])/1000
+            except (TypeError,ValueError,OverflowError):
+                raise ValueError("Invalid 15m close time") from None
+            value=valid_price(row[4])
+            if (value is None or not math.isfinite(stamp)
+                or stamp>=at or stamp<at-86400-900
+                or (previous is not None and
+                    not 899.9 <= stamp-previous <= 900.1)):
+                raise ValueError("Stale, future or out-of-order 15m candles")
+            candles.append({"timestamp":stamp,"price_usdt":value})
+            previous=stamp
+        if at-candles[-1]["timestamp"]>1800:
+            raise ValueError("No recent completed 15m candle")
+        self._long_historical[asset]=candles
         return len(candles)
 
     async def _ws_loop(self) -> None:
@@ -514,6 +559,18 @@ class ExtraMarketData:
                         })
                         response.raise_for_status()
                         self.ingest_candles(asset, response.json(), now=now)
+                        if asset != "ADA":
+                            # A second, low-rate public request every 5 min.
+                            # 97 x 15m completed closes cover the 24h mode
+                            # without fetching thousands of minute candles.
+                            end_long=(int(now)//900*900-1)*1000
+                            long_response=await client.get(CANDLES_URL,params={
+                                "symbol":asset+"USDT","interval":"15m",
+                                "limit":97,"endTime":end_long,
+                            })
+                            long_response.raise_for_status()
+                            self.ingest_long_candles(
+                                asset,long_response.json(),now=now)
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
