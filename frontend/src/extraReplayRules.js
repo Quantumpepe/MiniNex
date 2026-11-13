@@ -4,7 +4,7 @@ export const EXTRA_REPLAY_COINS=Object.freeze([
 ]);
 export const MODES=['LONG','SPOT_SHORT'];
 export const HORIZONS=['5m','15m','1h','24h'];
-export const defaultReplayOption=()=>({mode:'LONG',horizon:'15m',budget:'500'});
+export const defaultReplayOption=()=>({mode:'LONG',horizon:'15m',budget:'500',stable:'USDC'});
 
 export function validExtraReplayResult(value,asset,options) {
   if(!EXTRA_REPLAY_COINS.includes(asset)||
