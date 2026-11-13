@@ -756,6 +756,38 @@
 .mininex-selected-header strong{font-size:15px;color:#ebfff8}
 .mininex-selected-header span{font-size:11px;color:#9cc7ba}
 .mininex-selected-asset .privy-wallet-description{line-height:1.5}
+/* On-demand historical strategy analysis; no change to the home coin grid
+   or live controls. One contained block even on narrow Android screens. */
+.mininex-extra-replay{display:grid;gap:10px;min-width:0;padding:11px;
+  border:1px solid #2a5854;border-radius:11px;background:#0d2b30}
+.mininex-extra-replay>strong{font-size:14px;color:#e8fff5}
+.mininex-extra-replay .privy-wallet-description{margin:0;font-size:12px}
+.mininex-extra-replay-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.mininex-extra-replay-form label{display:grid;gap:5px;min-width:0;font-size:12px;color:#a8d4c9}
+.mininex-extra-replay-form input,.mininex-extra-replay-form select{
+  width:100%;min-width:0;box-sizing:border-box;min-height:40px;
+  background:#0a2428;border:1px solid #35756c;border-radius:8px;
+  padding:8px;color:#eafff7;font-size:13px
+}
+.mininex-extra-replay-form input:focus-visible,.mininex-extra-replay-form select:focus-visible{
+  outline:2px solid #65e9b9;outline-offset:2px
+}
+.mininex-extra-replay-form>button{grid-column:1/-1;min-height:43px}
+.mininex-extra-replay-result{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;padding:9px;border:1px solid #2b5f59;border-radius:10px}
+.mininex-extra-replay-result>div:not(.mininex-extra-replay-trades){
+  display:grid;gap:3px;min-width:0
+}
+.mininex-extra-replay-result span{font-size:11px;color:#a2cbbf}
+.mininex-extra-replay-result strong{font-size:15px;overflow-wrap:anywhere;color:#eafff7}
+.mininex-extra-replay-result>.privy-wallet-description,
+.mininex-extra-replay-trades{grid-column:1/-1}
+.mininex-extra-replay-trades{display:grid;gap:6px;max-height:166px;overflow-y:auto;
+  scrollbar-width:none;border-top:1px solid #28544f;padding-top:9px}
+.mininex-extra-replay-trades::-webkit-scrollbar{display:none}
+.mininex-extra-replay-trades>div{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mininex-extra-replay-trades strong{font-size:12px}
+
 
 /* The real balance summary is clickable. Real values render only on expand;
    unrelated native-chain balances remain explicitly unavailable. */
