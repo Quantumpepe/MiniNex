@@ -221,7 +221,9 @@ def test_server_strategy_signal_identity_rejects_duplicate_even_after_restart():
     }
     first = orders.build_strategy_signal_identity(DID, **params)
     same_after_restart = orders.build_strategy_signal_identity(DID, **params)
-    assert first == same_after_restart
+    equivalent_decimal = orders.build_strategy_signal_identity(
+        DID, **{**params, "proposed_usd": "125.500000"})
+    assert first == same_after_restart == equivalent_decimal
     assert first["order_claimed"] is False
     assert first["safe_to_send"] is False
     assert orders.valid_order_key(first["intent_key"]) == first["intent_key"]
