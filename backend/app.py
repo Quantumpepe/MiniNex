@@ -45,6 +45,7 @@ from .live_btc_quotes import quote_native_btc
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
+from .eth_auto_preflight import get_eth_automatic_preflight
 from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
@@ -482,6 +483,18 @@ async def eth_live_chain_receipt(tx_hash: str,
     did = verify_privy_bearer(authorization)["user_id"]
     result = await check_eth_swap_receipt(did, tx_hash)
     return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/auto-preflight")
+async def eth_automatic_execution_readiness(
+        authorization: str | None = Header(default=None)):
+    """Unified Privy/policy/limits diagnostics. No grant or transaction path."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    report = await get_eth_automatic_preflight(did)
+    return JSONResponse(report, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
