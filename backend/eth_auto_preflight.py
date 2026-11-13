@@ -20,7 +20,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 
 from .live_eth_controls import get_live_eth_limits, validate_limits
-from .live_orders import LIVE_RESERVATION_ACTIVATED
+from .live_orders import LIVE_RESERVATION_ACTIVATED, get_live_order_safety
 from .privy_eth_policy import get_eth_policy_review
 from .privy_live_signer import get_eth_signer_status
 from .storage import _safe_did
@@ -31,7 +31,7 @@ STATIC_POLICY_CALL = "exactInputSingle"
 
 
 def assess_eth_automatic_preflight(*, signer: object, policy: object,
-                                   limits: object) -> dict:
+                                   limits: object, order_safety: object = None) -> dict:
     """Explain blockers from server-derived evidence without granting access."""
     if not all(isinstance(source, dict) for source in (signer, policy, limits)):
         raise ValueError("Invalid server-side ETH preflight evidence")
@@ -60,6 +60,11 @@ def assess_eth_automatic_preflight(*, signer: object, policy: object,
             and policy.get("recipient_wallet_bound") is True),
         "per_user_eth_limits_configured": valid_limits,
         "live_eth_stop_released": limits.get("trading_paused") is False,
+        "no_unresolved_live_orders": (
+            isinstance(order_safety, dict)
+            and order_safety.get("no_unresolved_orders_observed") is True),
+        # The registry is defined but not used by a privileged writer yet.
+        "durable_signal_bindings_enforced": False,
         # The pinned Privy static-check logic currently guards a *different*
         # method, and cannot safely authorize Universal Router's nested calls.
         "policy_covers_current_router_call": False,
@@ -80,6 +85,16 @@ def assess_eth_automatic_preflight(*, signer: object, policy: object,
         "current_policy_method": STATIC_POLICY_CALL,
         "risk_limit_revision": (
             limits.get("revision") if type(limits.get("revision")) is int else None),
+        "unresolved_live_order_count": (
+            order_safety.get("outstanding_order_count")
+            if isinstance(order_safety, dict)
+            and type(order_safety.get("outstanding_order_count")) is int
+            else None),
+        "uncertain_live_order_count": (
+            order_safety.get("uncertain_order_count")
+            if isinstance(order_safety, dict)
+            and type(order_safety.get("uncertain_order_count")) is int
+            else None),
         "preflight_passed": False,
         "can_execute": False,
         "can_reserve": False,
@@ -102,4 +117,8 @@ async def get_eth_automatic_preflight(privy_did: str) -> dict:
     signer = await get_eth_signer_status(did)
     policy = await get_eth_policy_review(did)
     limits = await asyncio.to_thread(get_live_eth_limits, did)
-    return assess_eth_automatic_preflight(signer=signer, policy=policy, limits=limits)
+    order_safety = await asyncio.to_thread(get_live_order_safety, did, asset="ETH")
+    return assess_eth_automatic_preflight(
+        signer=signer, policy=policy, limits=limits,
+        order_safety=order_safety,
+    )
