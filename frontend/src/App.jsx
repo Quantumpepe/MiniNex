@@ -277,7 +277,7 @@ function ActivityList({trades,t,lang,compact=false,status='ready'}) {
     return <div key={trade.id} className="trade-row">
       <span className={`trade-icon ${buy?'trade-icon--buy':'trade-icon--sell'}`}>{buy?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>}</span>
       <div className="trade-main"><b>{buy?t.paperBuy:t.paperSell} · {trade.asset}</b>
-        <span>{formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})} · {t.homeTradePrice}: {formatMoney(trade.price_reference,lang)}</span>
+        <span>{t.homeTradePrice}: {formatMoney(trade.price_reference,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</span>
       </div>
       <div className="trade-amount"><b>{formatMoney(trade.amount_usd,lang)}</b><span className={pnl!=null?(Number(pnl)>=0?'text-positive':'text-negative'):''}>{pnl!=null?formatSigned(pnl,lang):t.paperTrade}</span></div>
     </div>;
