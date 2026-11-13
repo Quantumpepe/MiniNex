@@ -485,6 +485,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt}) {
               onClick={()=>setRetryNonce(n=>n+1)}>{t.privyRetryConnection}</button>}
 
           <TradingSetupPreview t={t} getAccessToken={getAccessToken}
+             userId={user?.id}
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             renderCoinAddress={renderCoinAddress}
