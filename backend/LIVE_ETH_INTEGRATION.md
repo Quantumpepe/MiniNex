@@ -505,6 +505,62 @@ Sources:
 https://github.com/gnosis/canonical-weth/blob/master/contracts/WETH9.sol
 https://github.com/Uniswap/swap-router-contracts/blob/main/contracts/V3SwapRouter.sol
 
+## Stage 15: user-specific Privy ETH policy blueprints (NO creation)
+
+`eth_privy_user_policy_blueprint.py` is an **offline**, *pure* constructor
+and strict whole-draft reviewer for six bounded `eth_sendTransaction`
+ALLOW rules. It does **not** POST to Privy, install a signer, grant
+permission, or enable any transaction.
+
+**Identity and ownership**: A future enrollment workflow must fetch the
+Privy wallet server-side from the verified user DID and require explicit,
+revocable consent. It must supply `policy_owner_id` independently of
+the execution quorum (`executor_signer_id`). The owner MUST NOT be
+the executor, and the owner policy controls must be checked on actual
+Privy-fetched policy metadata before association. Policy updates that
+widen permissions need renewed, explicit user authorization.
+
+**Individual caps, never a hardcoded 100 USDC**: The draft accepts exact
+per-user integer atomic `usdc_max_input_micro`, `usdt_max_input_micro`,
+`weth_max_input_wei`, and `native_wrap_max_wei`, plus a short expiry.
+Those values must be derived by a future enrollment worker from **verified**
+individual LIVE settings, fresh token prices, and the user's signed
+authorization, not from simulated paper positions or unauthenticated
+request bodies. The caps are per-transaction, NOT cumulative; enforce
+rolling spend/exposure server-side and, if available for this wallet
+method, via separately reviewed Privy stateful limits. Never make an
+unbounded allowance for any token.
+
+The four SwapRouter02 V3 rules each contain: chain 1, exact router
+address, expiry, zero native value, `exactInputSingle` ABI/function name,
+exact tokenIn and tokenOut (USDC/USDT and WETH), exact recipient wallet,
+V3 fee tiers 500/3000, zero sqrtPriceLimit, positive + capped amountIn,
+and positive amountOutMinimum. The WETH9 `deposit()` rule limits exact
+ETH value to a wallet-specific ceiling; the `withdraw(wad)` rule requires
+zero ETH value and a positive, capped WETH amount. Every ALLOW is
+independently constrained because Privy ORs across rules; adding one
+broader ALLOW could bypass the entire intended restriction.
+
+**Crucial remaining gaps**: Static `amountOutMinimum > 0` does NOT
+prove quote-derived slippage, per-order price protections or freshness;
+all must be independently enforced on the exact submitted calldata.
+A separate, exact ERC20 approval/allowance strategy is not yet
+implemented. Client wallet consent, verifier input provenance, atomic
+multi-leg reservation, nonce handling, per-leg receipts and recovery
+from partial WETH settlement are also incomplete. Wallet address string
+comparison in Privy is case-sensitive; verify the precise encoded case
+and ABI field handling in development before any enrollment.
+
+With only the initial Privy Dashboard draft, it is NOT safe to choose
+ALLOW or Create policy yet. The future production flow should
+automatically generate and independently review a distinct policy
+for each user wallet, configure a separate policy owner and additional
+signer only after opt-in, and keep all LIVE execution gated until
+the complete native ETH cycle passes real-world integration checks.
+
+Docs: https://docs.privy.io/controls/policies/overview
+and https://docs.privy.io/controls/policies/create-a-policy
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
