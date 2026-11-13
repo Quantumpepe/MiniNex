@@ -88,10 +88,10 @@ def summarize(asset: str,row: dict | None, events: list[dict],
     state=session.get("position") or {}
     budget=_finite(session.get("budget_usd"),nonnegative=True)
     if budget is None or budget<=0:
-        return {**base,"status":"UNAVAILABLE"}
+        return {**base,"status":"UNAVAILABLE","analysis_status":"UNAVAILABLE"}
     status=session.get("status")
     if status not in ("ACTIVE","PAUSED"):
-        return {**base,"status":"UNAVAILABLE"}
+        return {**base,"status":"UNAVAILABLE","analysis_status":"UNAVAILABLE"}
     view=mark_to_market(session,_OneSnapshot(feeds or {}))
     valuation=view.get("position",{}).get("valuation",{})
     valid=valuation.get("quote_valid") is True
@@ -99,7 +99,7 @@ def summarize(asset: str,row: dict | None, events: list[dict],
     realized=_finite(state.get("realized_net_profit"))
     count=state.get("trade_count")
     if type(count) is not int or count<0:
-        return {**base,"status":"UNAVAILABLE"}
+        return {**base,"status":"UNAVAILABLE","analysis_status":"UNAVAILABLE"}
     costs=0.0
     recent=0.0
     complete=True
