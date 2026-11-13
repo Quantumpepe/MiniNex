@@ -4,8 +4,9 @@ This is the next step beyond price quoting: check stablecoin approvals, request
 a fresh Classic AMM quote, then ask Uniswap to simulate and build an unsigned
 Ethereum swap transaction. Validate the resulting outer transaction.
 
-SECURITY: The universal-router's nested commands are not yet decoded or
-verified against the quoted tokens/minOut; therefore NO returned calldata,
+SECURITY: The universal-router's outer ABI envelope and deadline are now
+structurally checked, but nested commands are not decoded or verified against
+the quoted tokens/minOut; therefore NO returned calldata,
 approval instruction, wallet signature, or broadcast is made available to the
 client. The real order executor MUST independently decode and approve every
 nested command, reserve funds atomically, verify Privy grants and simulate via
@@ -67,8 +68,82 @@ def _nonnegative_eth(raw: object) -> Decimal:
     return qty
 
 
+def _inspect_router_envelope(calldata: str, *, now: int) -> dict:
+    """Validate canonical execute(bytes,bytes[],uint256) ABI, NOT command semantics.
+
+    Uniswap's command list and its bytes[] inputs must match one-to-one.
+    In particular, a familiar function selector alone cannot prove that the
+    provider returned a valid deadline or a well-formed encoded call.
+    """
+    raw = bytes.fromhex(calldata[10:])
+    if len(raw) < 96 or len(raw) % 32:
+        raise ValueError("Misaligned universal router ABI")
+
+    def word(offset: int) -> int:
+        if offset < 0 or offset % 32 or offset + 32 > len(raw):
+            raise ValueError("Router ABI word outside calldata")
+        return int.from_bytes(raw[offset:offset + 32], "big")
+
+    def padded(length: int) -> int:
+        return (length + 31) // 32 * 32
+
+    commands_at, inputs_at, deadline = word(0), word(32), word(64)
+    if commands_at != 96:
+        raise ValueError("Non-canonical router commands offset")
+    if deadline <= now or deadline > now + _TX_DEADLINE_SECONDS:
+        raise ValueError("Expired or unexpectedly distant router deadline")
+
+    count = word(commands_at)
+    if not 1 <= count <= 32:
+        raise ValueError("Invalid router command count")
+    commands_start = commands_at + 32
+    commands_end = commands_start + count
+    expected_inputs_at = commands_start + padded(count)
+    if inputs_at != expected_inputs_at or inputs_at > len(raw):
+        raise ValueError("Non-canonical router input array offset")
+    commands = raw[commands_start:commands_end]
+    if any(byte & 0xC0 for byte in commands):
+        # 0x80 permits partial failure; 0x40 is reserved. Neither is
+        # acceptable for this strict quote-only preview.
+        raise ValueError("Partial-revert or reserved command flag")
+    if any(raw[commands_end:inputs_at]):
+        raise ValueError("Nonzero router commands padding")
+
+    inputs_count = word(inputs_at)
+    if inputs_count != count:
+        raise ValueError("Router command/input length mismatch")
+    offsets_at = inputs_at + 32
+    offsets_end = offsets_at + 32 * count
+    if offsets_end > len(raw):
+        raise ValueError("Truncated router input array")
+    cursor = offsets_end
+    for index in range(count):
+        if word(offsets_at + 32 * index) != cursor - offsets_at:
+            raise ValueError("Non-canonical router input element offset")
+        length = word(cursor)
+        if length > 32_768:
+            raise ValueError("Oversized router command input")
+        data_end = cursor + 32 + length
+        padded_end = cursor + 32 + padded(length)
+        if padded_end > len(raw):
+            raise ValueError("Truncated router command input")
+        if any(raw[data_end:padded_end]):
+            raise ValueError("Nonzero router input padding")
+        cursor = padded_end
+    if cursor != len(raw):
+        raise ValueError("Trailing unrecognized router instructions")
+
+    return {
+        "router_envelope_verified": True,
+        "router_deadline_verified": True,
+        "router_command_count": count,
+        "router_command_contents_verified": False,
+    }
+
+
 def inspect_uniswap_swap_tx(tx: object, *, wallet: str, side: str,
-                            input_atomic: str, eth_balance: str) -> dict:
+                            input_atomic: str, eth_balance: str,
+                            now: int | None = None) -> dict:
     """Validate outer transaction; nested Universal Router calls stay untrusted."""
     if not isinstance(tx, dict) or not _HEX_ADDRESS.fullmatch(wallet):
         raise ValueError("Invalid swap transaction")
@@ -86,6 +161,10 @@ def inspect_uniswap_swap_tx(tx: object, *, wallet: str, side: str,
         raise ValueError("Unexpected or unbounded router calldata")
     if len(data) < 10 + 64 * 3:
         raise ValueError("Truncated universal router function")
+    checked_at = int(time.time()) if now is None else now
+    if type(checked_at) is not int or checked_at <= 0:
+        raise ValueError("Invalid router deadline reference time")
+    envelope = _inspect_router_envelope(data, now=checked_at)
     try:
         value = _unsigned(tx.get("value"), allow_zero=True)
         gas_limit = _unsigned(tx.get("gasLimit"))
@@ -121,6 +200,7 @@ def inspect_uniswap_swap_tx(tx: object, *, wallet: str, side: str,
         "max_fee_per_gas_gwei": str(Decimal(gas_max_fee) / Decimal(10**9)),
         "max_possible_gas_eth": str(Decimal(worst_gas_wei) / Decimal(10**18)),
         "tx_outer_fields_verified": True,
+        **envelope,
         "router_commands_decoded": False,
         "calldata_security_review_complete": False,
         "safe_to_sign": False,

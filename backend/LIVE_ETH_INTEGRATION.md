@@ -264,6 +264,30 @@ Uniswap official docs:
 - https://developers.uniswap.org/docs/trading/swapping-api/supported-chains
 - https://developers.uniswap.org/docs/api-reference/create_swap_transaction
 
+## Stage 8: strict Universal Router envelope preflight (read-only)
+
+The ETH swap-plan preview now parses the canonical ABI envelope for
+`execute(bytes,bytes[],uint256)` instead of trusting just the selector.
+It refuses expired deadlines or deadlines beyond the configured 120-second
+window, malformed offsets, truncated arrays, unaccounted trailing bytes,
+nonzero ABI padding, different command/input counts, partial-revert flags
+and reserved command bits. It reports only structural verification and the
+number of commands; it never returns encoded inputs or transaction calldata.
+
+**Important:** this is not full decoding of individual commands. The
+per-command recipient, token addresses, path, exact input, minimum output,
+funding source and Permit2 effects are still **unverified**. Every preview
+continues to return `router_commands_decoded:false`,
+`router_command_contents_verified:false`, `safe_to_sign:false`,
+`execution_enabled:false` and `can_submit:false`. It cannot trigger live
+trading and is not a wallet permission or contract audit.
+
+The backend's adversarial tests cover malformed offsets, data padding,
+partial-revert flags, deadlines and command/input mismatches.
+
+Uniswap Universal Router reference:
+https://developers.uniswap.org/docs/protocols/universal-router/concepts/commands
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
