@@ -90,7 +90,7 @@ test('only one private cached-no store API call on visible overview and user res
   assert.match(hook,/window\.setInterval\(sync,20000\)/);
   assert.match(hook,/document\.hidden/);
   assert.match(hook,/controllers\.clear\(\)/);
-  assert.match(hook,/setState\(\{trades:\[\],status:'error'\}\)/);
+  assert.match(hook,/setState\(\{trades:\[\],status:'error',scope:assetScope\}\)/);
   assert.doesNotMatch(hook,/sendTransaction|signTransaction|\/api\/live\/orders|method:'POST'/);
 });
 
