@@ -61,13 +61,18 @@ def inspect_swaprouter02_exact_input(
     """
     if (type(tx) is not dict or type(wallet) is not str
             or not _ADDR.fullmatch(wallet)
-            or stable not in STABLES or side not in ("BUY", "SELL")):
+            or type(stable) is not str or stable not in STABLES
+            or type(side) is not str or side not in ("BUY", "SELL")):
         raise ValueError("Invalid SwapRouter02 quote review")
-    if (tx.get("from", "").lower() != wallet.lower()
-            or tx.get("to", "").lower() != SWAPROUTER02_MAINNET.lower()
+    sender, to = tx.get("from"), tx.get("to")
+    if (type(sender) is not str or type(to) is not str
+            or sender.lower() != wallet.lower()
+            or to.lower() != SWAPROUTER02_MAINNET.lower()
             or type(tx.get("chainId")) is not int or tx["chainId"] != 1):
         raise ValueError("Unexpected swap sender, router or network")
-    if tx.get("value") not in ("0", 0):
+    native_value = tx.get("value")
+    if not ((type(native_value) is int and native_value == 0)
+            or (type(native_value) is str and native_value == "0")):
         raise ValueError("Native ETH funding is outside this ERC20-only review")
     calldata = tx.get("data")
     if (not isinstance(calldata, str) or len(calldata) != 2 + _CALL_BYTES * 2
