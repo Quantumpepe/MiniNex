@@ -177,7 +177,7 @@ def test_unexpected_additional_signers_are_flagged_not_assumed_safe():
         "signer_id": SIGNER_ID,
         "override_policy_ids": ["policy_mininex_restricted"],
     }])
-    assert review(w=with_policy)["unrecognized_existing_signers"] is False
+    assert review(w=with_policy)["unrecognized_existing_signers"] is True
     assert review(w=with_policy)["user_consent_signed_and_nonce_verified"] is False
     assert review(w=with_policy)["can_grant_permission"] is False
 
