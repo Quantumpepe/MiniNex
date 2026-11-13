@@ -317,6 +317,35 @@ References: official Uniswap 2.1.2 deployments and router Dispatcher:
 https://developers.uniswap.org/docs/trading/swapping-api/supported-chains
 https://github.com/Uniswap/universal-router/blob/main/contracts/base/Dispatcher.sol
 
+## Stage 10: unified Privy auto-trading readiness (read-only)
+
+Authenticated `GET /api/live/eth/auto-preflight` combines three
+**server-owned**, user-scoped sources: independently verified Privy
+additional signer metadata, pinned Privy policy structure, and live ETH
+capital/order/daily caps with the stop switch. It reports an explicit
+per-gate checklist and blockers without exposing wallet IDs, secrets,
+policy bodies, raw router calldata or approval instructions. No caller
+may supply an address, signer, policy, venue, order notional or override.
+
+**Important incompatibility:** the existing Privy static policy guard
+inspects `exactInputSingle`, while the currently reviewed swap-plan uses
+`execute(bytes,bytes[],uint256)` on Uniswap Universal Router 2.1.2.
+These are different functions. A pinned policy passing its existing
+structural checks therefore does **not** establish permission for the
+current swap route. The new preflight explicitly reports
+`policy_covers_current_router_call: false`. Do not fix this by weakening
+the policy to a broad `execute` allow rule; that would expose arbitrary
+nested router commands. Future restricted signer policy design must be
+reviewed together with dynamic server-side calldata checks, user consent
+and atomic nonce/order reservation.
+
+The existing live ETH controls remain PAUSED by default and cannot
+unpause through any API. The route is diagnostics only: it never
+creates delegation, a wallet grant, a reservation or a transaction.
+`preflight_passed`, `can_execute`, `can_reserve`,
+`automated_signing_enabled` and `live_trading_enabled` are all false.
+Tests verify verified-looking Privy evidence never bypasses these blocks.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
