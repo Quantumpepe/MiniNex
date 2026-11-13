@@ -5,3 +5,4 @@ websockets>=13,<17
 PyJWT[crypto]>=2.10,<3
 psycopg[binary]>=3.2,<4
 reportlab>=4.2,<5
+eth-account==0.14.0
