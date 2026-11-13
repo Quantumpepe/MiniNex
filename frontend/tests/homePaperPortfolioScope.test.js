@@ -127,6 +127,9 @@ test('spoofed real accounts and mismatched coin data never become virtual portfo
 test('portfolio ALWAYS totals all started coins while ONLY trades follow selected asset',()=>{
   assert.match(app,/const homePaperScope=showAllPaperHistory\?'ALL':asset/);
   assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,'ALL',page==='overview'\)/);
+  assert.doesNotMatch(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,homePaperScope/);
+  assert.match(app,/const homePaperScope=showAllPaperHistory\?'ALL':asset/);
+  assert.match(mobile,/scope="ALL" goTo=\{goTo\}/);
   assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
   assert.match(app,/setShowAllPaperHistory\(false\);setAsset\(symbol\)/);
   assert.match(app,/const \[showAllPaperHistory,setShowAllPaperHistory\]=useState\(false\)/);
