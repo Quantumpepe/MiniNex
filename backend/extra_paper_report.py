@@ -141,7 +141,8 @@ def summarize(asset: str,row: dict | None, events: list[dict],
     insight=analyze_recent_trades(asset,events,count)
     market_row=feeds.get(asset) if isinstance(feeds,dict) else None
     market_pct=market_change_24h(market_row)
-    usable_market=market_pct is not None
+    usable_market=(isinstance(market_row,dict) and
+                   market_row.get("market_data_valid") is True)
     summary=state.get("last_signal_summary")
     if not isinstance(summary,str) or not summary or len(summary)>160:
         summary=None
