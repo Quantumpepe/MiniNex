@@ -4,11 +4,11 @@ This is the next step beyond price quoting: check stablecoin approvals, request
 a fresh Classic AMM quote, then ask Uniswap to simulate and build an unsigned
 Ethereum swap transaction. Validate the resulting outer transaction.
 
-SECURITY: The universal-router's outer ABI envelope and deadline are now
-structurally checked, but nested commands are not decoded or verified against
-the quoted tokens/minOut; therefore NO returned calldata,
-approval instruction, wallet signature, or broadcast is made available to the
-client. The real order executor MUST independently decode and approve every
+SECURITY: the outer ABI envelope and deadline and a narrow one-hop V3
+ETH/stablecoin command sequence are verified against the quote and user's
+recipient. All other command patterns fail closed. This is NOT an independent
+on-chain simulation or authorization to sign. No calldata, approval
+instruction, wallet signature or broadcast is available to the client. The real order executor MUST independently decode and approve every
 nested command, reserve funds atomically, verify Privy grants and simulate via
 a trusted Ethereum RPC immediately before signing. Nothing in here sends funds.
 """
@@ -28,6 +28,7 @@ from .live_eth_quotes import (
 )
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import get_wallet_balances, verified_addresses
+from .eth_router_semantics import review_eth_v3_commands
 
 _API_URL = "https://trade-api.gateway.uniswap.org/v1"
 _APPROVAL_URL = _API_URL + "/check_approval"
@@ -139,6 +140,29 @@ def _inspect_router_envelope(calldata: str, *, now: int) -> dict:
         "router_command_count": count,
         "router_command_contents_verified": False,
     }
+
+
+def _router_command_payloads(calldata: str) -> tuple[bytes, tuple[bytes, ...]]:
+    """Extract already-validated canonical ABI fields for narrow review.
+
+    Must only be called AFTER inspect_uniswap_swap_tx verifies the envelope.
+    """
+    raw = bytes.fromhex(calldata[10:])
+    commands_at = 96
+    count = int.from_bytes(raw[commands_at:commands_at + 32], "big")
+    inputs_at = int.from_bytes(raw[32:64], "big")
+    offsets_at = inputs_at + 32
+    commands = raw[commands_at + 32:commands_at + 32 + count]
+    payloads = []
+    for index in range(count):
+        relative = int.from_bytes(
+            raw[offsets_at + index * 32: offsets_at + (index + 1) * 32],
+            "big",
+        )
+        start = offsets_at + relative
+        size = int.from_bytes(raw[start:start + 32], "big")
+        payloads.append(raw[start + 32:start + 32 + size])
+    return commands, tuple(payloads)
 
 
 def inspect_uniswap_swap_tx(tx: object, *, wallet: str, side: str,
@@ -337,6 +361,13 @@ async def make_eth_swap_plan(did: str, *, side: str, stable: str, amount: str) -
             safe = inspect_uniswap_swap_tx(
                 swap.get("swap"), wallet=wallet, side=side,
                 input_atomic=input_atomic, eth_balance=str(eth_balance))
+            commands, command_inputs = _router_command_payloads(swap["swap"]["data"])
+            inner = review_eth_v3_commands(
+                commands=commands, inputs=command_inputs,
+                side=side, stable_token=STABLES[stable],
+                wallet=wallet, router=_ROUTER,
+                input_atomic=input_atomic, minimum_atomic=minimum,
+            )
     except (httpx.HTTPError, ValueError, TypeError, KeyError, OverflowError):
         raise HTTPException(502, "Safe Uniswap ETH swap transaction could not be verified") from None
 
@@ -360,5 +391,6 @@ async def make_eth_swap_plan(did: str, *, side: str, stable: str, amount: str) -
         "automatic_signing_enabled": False,
         "can_submit": False,
         **safe,
-        "warning": "Uniswap simulated unsigned transaction. Nested router calldata, wallet authority and nonce still need independent verification. No funds moved.",
+        **inner,
+        "warning": "Strict one-hop ETH V3 command pattern checked. No signing authorization, independent RPC simulation, nonce reservation or on-chain receipt verification. No funds moved.",
     }
