@@ -112,7 +112,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
   };
 
   const changeReplay=(asset,key,value)=>{
-    if(!EXTRA_REPLAY_COINS.includes(asset)||!['mode','horizon','budget'].includes(key))return;
+    if(!EXTRA_REPLAY_COINS.includes(asset)||!['mode','horizon','budget','stable'].includes(key))return;
     setReplayOptions(old=>({...old,[asset]:{...old[asset],[key]:value}}));
   };
   const selectedCoin=coinBySymbol(opened);
@@ -164,7 +164,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
-        t={t} options={replayOptions[opened]} onChange={changeReplay}/>}
+        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]} onChange={changeReplay}/>}
     </section>}
     {status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
     {status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
