@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal
 
+from fastapi import HTTPException
+
 from .live_eth_controls import get_live_eth_limits, validate_limits
 from .live_orders import LIVE_RESERVATION_ACTIVATED
 from .privy_eth_policy import get_eth_policy_review
@@ -41,14 +43,8 @@ def assess_eth_automatic_preflight(*, signer: object, policy: object,
             str(limits.get("max_daily_turnover_usd", "0")),
         )
         valid_limits = all(amount > Decimal("0") for amount in (capital, order, daily))
-    except (ValueError, TypeError, KeyError, AttributeError):
-        valid_limits = False
-    except Exception as exc:
-        # Limit validation may raise HTTPException; an invalid saved value must
-        # never become a positive readiness check.
-        from fastapi import HTTPException
-        if not isinstance(exc, HTTPException):
-            raise
+    except (ValueError, TypeError, KeyError, AttributeError, HTTPException):
+        # Invalid or untrusted persisted limits must never pass readiness.
         valid_limits = False
 
     checks = {
