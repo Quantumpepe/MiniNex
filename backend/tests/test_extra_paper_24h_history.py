@@ -85,8 +85,10 @@ def test_missing_long_24h_candles_shows_partial_history_without_blocking_session
     assert report["available_minutes"]<100
     assert report["required_minutes"]==1440
     assert _history_coverage("BNB","1h",svc)["status"]=="READY"
-    assert _history_coverage("BNB","15m",svc)["status"]=="READY"
-    assert _history_coverage("BNB","5m",svc)["status"]=="READY"
+    # With only one live tick and 1m candles, 5m/15m cannot pretend
+    # to cover their full windows. Continuous WebSocket ticks fill them.
+    assert _history_coverage("BNB","15m",svc)["status"]=="PARTIAL"
+    assert _history_coverage("BNB","5m",svc)["status"]=="PARTIAL"
 
 
 def test_invalid_long_candles_do_not_replace_last_valid_history():
