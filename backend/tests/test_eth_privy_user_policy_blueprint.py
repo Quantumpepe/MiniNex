@@ -166,7 +166,7 @@ def test_weth_rules_have_separate_native_value_and_wad_limits():
     assert field(withdraw, "ethereum_calldata", "withdraw.wad", "lte")[
         "value"
     ] == CAPS["weth_max_input_wei"]
-    assert field(withdraw, "ethereum_calldata", "withdraw.wad")[
+    assert field(withdraw, "ethereum_calldata", "withdraw.wad", "lte")[
         "abi"
     ] == template.WETH_WITHDRAW_ABI
 
@@ -187,7 +187,7 @@ def test_weth_rules_have_separate_native_value_and_wad_limits():
     {"usdt_max_input_micro": None},
     {"weth_max_input_wei": "-1"},
     {"native_wrap_max_wei": True},
-    {"native_wrap_max_wei": "999999999999999999999999999999999999999999999"},
+    {"native_wrap_max_wei": str(10**45)},
     {"expires_at": NOW - 1},
     {"expires_at": NOW + 30 * 86400 + 1},
     {"expires_at": NOW},
