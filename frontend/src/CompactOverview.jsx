@@ -145,7 +145,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
           const pnl=!buy&&trade.realized_net_profit!=null?Number(trade.realized_net_profit):null;
           return <div className="compact-trade-row" key={trade.id}>
             <span className={'compact-trade-icon '+(buy?'is-buy':'is-sell')}>{buy?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span>
-            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})} · {t.homeTradePrice}: {formatMoney(trade.price_reference,lang)}</small></div>
+            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{t.homeTradePrice}: {formatMoney(trade.price_reference,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
             <div className="compact-trade-value"><strong>{formatMoney(amount,lang)}</strong>{pnl!=null&&<small className={pnl>=0?'text-positive':'text-negative'}>{formatSigned(pnl,lang)}</small>}</div>
           </div>;
         })}
