@@ -39,6 +39,7 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
       const token=await getAccessToken();
       if(!token)throw Error('Private comparison requires a login');
       const response=await fetch(API_BASE+'/api/extra-paper/comparison',{
+        method:'GET',
         headers:{Authorization:'Bearer '+token,Accept:'application/json'},
         cache:'no-store',signal:controller.signal,
       });
