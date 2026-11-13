@@ -121,7 +121,7 @@ def build_strategy_signal_identity(
     ).encode("ascii")
     signal_digest = hashlib.sha256(signal_material).hexdigest()
     payload_material = json.dumps(
-        [side, stable, str(notional), quote_digest],
+        [side, stable, format(notional, ".6f"), quote_digest],
         separators=(",", ":"), ensure_ascii=True,
     ).encode("ascii")
     return {
