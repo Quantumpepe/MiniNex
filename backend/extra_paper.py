@@ -222,13 +222,19 @@ def _settle_pause(cur: Any,row: dict,did: str,asset: str,
         return row
     p=_restore(asset,row["settlement"],stored,row["initial_demo_cash"])
     if p.coin_quantity>0:
-        feed=source.snapshot(now=now).get(asset,{})
-        raw=feed.get("price_usdt")
-        if feed.get("market_data_valid") is not True or type(raw) not in (int,float) or not math.isfinite(raw) or raw<=0:
-            return row
-        engine=PaperAutoEngine(ExtraPaperMarket(source))
-        quote=engine._sell_quote(asset,p.coin_quantity,float(raw))
-        if not quote:
+        try:
+            feed=source.snapshot(now=now).get(asset,{})
+            raw=feed.get("price_usdt")
+            if (feed.get("market_data_valid") is not True or
+                type(raw) not in (int,float) or not math.isfinite(raw)
+                or raw<=0):
+                return row
+            engine=PaperAutoEngine(ExtraPaperMarket(source))
+            quote=engine._sell_quote(asset,p.coin_quantity,float(raw))
+            if not quote:
+                return row
+        except Exception:
+            # A temporary bad market API must not undo PAUSED status.
             return row
         engine._paper_sell(p,quote,now,float(raw),"USER_PAUSE_TO_STABLE")
         _record_event(cur,did,asset,p)
