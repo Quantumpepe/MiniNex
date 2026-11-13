@@ -157,6 +157,17 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
           <strong>{hours}h {mins}m</strong></div>
       </div>
       <p className="privy-wallet-description">{t.extraPaperRunningNote}</p>
+      {data.history_coverage&&<p className="privy-wallet-description"
+        role="status">
+        {t.extraPaperHistoryCoverage}: {
+          data.history_coverage.available_minutes===null?'—':
+          data.horizon==='24h'?
+            (data.history_coverage.available_minutes/60).toFixed(1)+'h':
+            data.history_coverage.available_minutes.toFixed(0)+'m'
+        } / {data.horizon==='24h'?'24h':
+          data.history_coverage.required_minutes+'m'}
+        {data.history_coverage.complete?'': ' · '+t.extraPaperHistoryPartial}
+      </p>}
       {state==='ACTIVE'&&<button type="button" className="privy-wallet-action"
         disabled={busy} onClick={()=>command('pause')}>
         {t.extraPaperPause} · {data.settlement}
