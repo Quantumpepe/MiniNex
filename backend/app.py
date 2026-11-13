@@ -6,7 +6,7 @@ import os
 import time
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt, Field
 from typing import Literal
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -737,7 +737,7 @@ def user_paper_action(asset: str, action: str,
 
 class ExtraPaperStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    budget_usd: StrictInt
+    budget_usd: StrictInt = Field(ge=100,le=5000)
     mode: Literal["LONG","SPOT_SHORT"] = "LONG"
     stable: Literal["USDC","USDT"] = "USDC"
     horizon: Literal["5m","15m","1h","24h"] = "15m"
