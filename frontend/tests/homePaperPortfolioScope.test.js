@@ -124,13 +124,13 @@ test('spoofed real accounts and mismatched coin data never become virtual portfo
   assert.equal(summarizeHomePaperPortfolio({},wrong,'SOL'),null);
 });
 
-test('portfolio and trades follow SAME selected asset and explicit opt-in ALL',()=>{
+test('portfolio ALWAYS totals all started coins while ONLY trades follow selected asset',()=>{
   assert.match(app,/const homePaperScope=showAllPaperHistory\?'ALL':asset/);
-  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,homePaperScope,page==='overview'\)/);
+  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,'ALL',page==='overview'\)/);
   assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
   assert.match(app,/setShowAllPaperHistory\(false\);setAsset\(symbol\)/);
   assert.match(app,/const \[showAllPaperHistory,setShowAllPaperHistory\]=useState\(false\)/);
-  assert.match(mobile,/scope=\{showAllTrades\?'ALL':asset\}/);
+  assert.match(mobile,/scope="ALL" goTo=\{goTo\}/);
   assert.match(mobile,/homePortfolioCapital/);
   assert.match(mobile,/summary\?\.valuationAvailable/);
   assert.match(labels,/homePortfolioCapital: 'Virtuelles Startkapital'/);
