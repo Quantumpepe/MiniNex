@@ -6,7 +6,7 @@ import os
 import time
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt, Field
 from typing import Literal
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +25,10 @@ from .verified_sync import synchronize_one_page
 from .wallet_balances import get_wallet_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
+from .extra_paper import (
+    read as read_extra_paper, start as start_extra_paper,
+    set_status as set_extra_paper_status,
+)
 from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import (
@@ -48,7 +52,7 @@ from .manual_swap_wallet_readiness import get_manual_swap_wallet_readiness
 market = MarketDataService()
 extra_markets = ExtraMarketData()
 paper = PaperAutoEngine(market)
-personal_paper = PersonalPaperWorker(market)
+personal_paper = PersonalPaperWorker(market,extra_markets)
 
 
 @asynccontextmanager
@@ -730,4 +734,46 @@ def user_paper_action(asset: str, action: str,
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(set_user_paper_status(did,asset,action,market,time.time()),
                         headers={"Cache-Control":"private, no-store"})
+
+class ExtraPaperStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    budget_usd: StrictInt = Field(ge=100,le=5000)
+    mode: Literal["LONG","SPOT_SHORT"] = "LONG"
+    stable: Literal["USDC","USDT"] = "USDC"
+    horizon: Literal["5m","15m","1h","24h"] = "15m"
+
+
+@app.get("/api/extra-paper/{asset}")
+def extra_paper_status(asset: str, authorization: str | None = Header(default=None)):
+    """Account-owned virtual balance and history; no signing authority."""
+    _require_paper_visible()
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        read_extra_paper(did,asset,extra_markets),
+        headers={"Cache-Control":"private, no-store",
+                 "X-Content-Type-Options":"nosniff"})
+
+
+@app.post("/api/extra-paper/{asset}/start")
+def extra_paper_start(asset: str, body: ExtraPaperStartRequest,
+                      authorization: str | None = Header(default=None)):
+    """Start only this account's selected coin using 100-5000 virtual USD."""
+    _require_paper_visible()
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        start_extra_paper(did,asset,body.budget_usd,body.mode,
+                          body.stable,body.horizon,extra_markets),
+        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/extra-paper/{asset}/{action}")
+def extra_paper_action(asset: str,action: str,
+                       authorization: str | None = Header(default=None)):
+    """Pause immediately or resume a named, opt-in PAPER coin session."""
+    _require_paper_visible()
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        set_extra_paper_status(did,asset,action,extra_markets,time.time()),
+        headers={"Cache-Control":"private, no-store"})
+
 

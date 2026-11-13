@@ -1,12 +1,13 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
+import ExtraCoinPaperControl from './ExtraCoinPaperControl.jsx';
 import {EXTRA_REPLAY_COINS,MODES,HORIZONS,validExtraReplayBudget,
   validExtraReplayResult} from './extraReplayRules.js';
 
 // A single explicit historical simulation run; no wallet/private credentials,
 // auto-started user paper sessions, orders, live quotes or background polling.
 // Individual virtual budgets are held by the parent per coin for this UI visit.
-export default function ExtraCoinStrategyReplay({asset,t,enabled,options,onChange}) {
+export default function ExtraCoinStrategyReplay({asset,t,enabled,options,onChange,getAccessToken}) {
   const [result,setResult]=useState(null);
   const [busy,setBusy]=useState(false);
   const [failed,setFailed]=useState(false);
@@ -83,6 +84,8 @@ export default function ExtraCoinStrategyReplay({asset,t,enabled,options,onChang
         {busy?t.extraReplayRunning:t.extraReplayRun}
       </button>
     </form>
+    <ExtraCoinPaperControl asset={asset} t={t} enabled={enabled}
+      getAccessToken={getAccessToken} options={options} onChange={onChange}/>
     {!budgetOk&&<p className="privy-wallet-description" role="alert">
       {t.extraReplayBudgetInvalid}
     </p>}

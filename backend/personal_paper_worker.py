@@ -18,10 +18,12 @@ from psycopg.rows import dict_row
 
 from .storage import _db_url, _ensure_schema
 from .user_paper import step_user_paper
+from .extra_paper import tick as tick_extra_paper
 
 LOG=logging.getLogger("mininex.personal_paper_worker")
 INTERVAL_SECONDS=15
 BATCH_LIMIT=30
+EXTRA_BATCH_LIMIT=24
 
 
 def auto_worker_allowed() -> bool:
@@ -67,9 +69,43 @@ def process_active_sessions(market: Any) -> int:
     return evaluated
 
 
+
+def active_extra_keys(limit: int = EXTRA_BATCH_LIMIT) -> list[tuple[str,str]]:
+    """Fair, bounded scans only for explicitly started extra-coin PAPER rows."""
+    if not auto_worker_allowed():
+        return []
+    url=_db_url();_ensure_schema(url)
+    with psycopg.connect(url,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""SELECT privy_did,asset
+                FROM mininex_extra_paper_sessions
+                WHERE status='ACTIVE'
+                   OR (status='PAUSED' AND state_json->>'pause_exit_pending'='true')
+                ORDER BY updated_at ASC,privy_did,asset
+                LIMIT %s""",(min(max(1,limit),EXTRA_BATCH_LIMIT),))
+            return [(row["privy_did"],row["asset"]) for row in cur.fetchall()]
+
+
+def process_extra_sessions(source: Any) -> int:
+    """Reuse the strategy per coin, but never start accounts automatically."""
+    if not auto_worker_allowed():
+        return 0
+    processed=0
+    for did,asset in active_extra_keys():
+        if not auto_worker_allowed():
+            break
+        try:
+            tick_extra_paper(did,asset,source,time.time())
+            processed+=1
+        except Exception:
+            LOG.exception("Extra-coin PAPER tick failed for %s",asset)
+    return processed
+
+
 class PersonalPaperWorker:
-    def __init__(self,market: Any):
+    def __init__(self,market: Any,extra_market: Any | None = None):
         self.market=market
+        self.extra_market=extra_market
         self._task:asyncio.Task | None=None
 
     async def start(self):
@@ -93,4 +129,12 @@ class PersonalPaperWorker:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                LOG.exception("Personal paper scheduler cycle failed")
+                LOG.exception("BTC/ETH paper scheduler cycle failed")
+            if self.extra_market is not None:
+                try:
+                    # Extra coins use their OWN rows and cannot stop BTC/ETH.
+                    await asyncio.to_thread(process_extra_sessions,self.extra_market)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Extra-coin paper scheduler cycle failed")
