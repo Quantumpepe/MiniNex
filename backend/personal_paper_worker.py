@@ -126,11 +126,15 @@ class PersonalPaperWorker:
             try:
                 # Never block the API event loop with PostgreSQL or signal work.
                 await asyncio.to_thread(process_active_sessions,self.market)
-                # Separate SQL tables and a shared READ-ONLY extra-market feed.
-                # Existing BTC/ETH work always runs independently of this batch.
-                if self.extra_market is not None:
-                    await asyncio.to_thread(process_extra_sessions,self.extra_market)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                LOG.exception("Personal paper scheduler cycle failed")
+                LOG.exception("BTC/ETH paper scheduler cycle failed")
+            if self.extra_market is not None:
+                try:
+                    # Extra coins use their OWN rows and cannot stop BTC/ETH.
+                    await asyncio.to_thread(process_extra_sessions,self.extra_market)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Extra-coin paper scheduler cycle failed")
