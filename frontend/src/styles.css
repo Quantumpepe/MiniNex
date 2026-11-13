@@ -241,6 +241,10 @@
 .compact-trade-detail{flex:1;min-width:0}
 .compact-trade-detail strong,.compact-trade-value strong{font-size:13px}
 .compact-trade-detail small,.compact-trade-value small{font-size:11px;color:#93b8b4}
+/* Price is first in each secondary line. Clip the less important timestamp
+   rather than letting a long translated label push amounts off the screen. */
+.compact-trade-detail small{min-width:0;max-width:100%;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
 .compact-trade-value{text-align:right;font-variant-numeric:tabular-nums}
 .compact-trade-value small.text-positive{color:#63f3be}
 .compact-trade-value small.text-negative{color:#ff9b8e}

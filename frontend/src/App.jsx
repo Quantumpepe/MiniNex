@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
+import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
 import {summarizePaperSessions} from './paperPortfolio.js';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
@@ -205,45 +206,6 @@ function useMiniNexData(asset, refreshNonce) {
   return {market,paper,history,trades,connected,paperError,syncedAt};
 }
 
-function usePersonalPaperTrades(asset, paperVisible, refreshNonce) {
-  const {ready,authenticated,getAccessToken}=usePrivy();
-  const [trades,setTrades]=useState([]);
-  useEffect(()=>{
-    let active=true;
-    setTrades([]);
-    if(!paperVisible||!ready||!authenticated)return()=>{active=false;};
-    let inFlight=false;
-    const sync=async()=>{
-      if(inFlight)return;
-      inFlight=true;
-      try{
-        const token=await getAccessToken();
-        if(!token)throw new Error('Missing Privy token');
-        const response=await fetch(API_BASE+'/api/user-paper/'+asset,{
-          headers:{Authorization:'Bearer '+token,Accept:'application/json'},cache:'no-store'
-        });
-        if(!response.ok)throw new Error('Personal history unavailable');
-        const data=await response.json();
-        if(!active)return;
-        if(data?.asset!==asset||data?.paper_only!==true||
-            data?.real_trading_enabled!==false||data?.wallet_funds_used!==false){
-          throw new Error('Untrusted personal paper response');
-        }
-        setTrades(Array.isArray(data.trades)?
-          data.trades.filter(trade=>trade?.asset===asset&&
-            (trade?.kind==='PAPER_BUY'||trade?.kind==='PAPER_SELL')&&
-            trade?.real_trade===false):[]);
-      }catch{
-        if(active)setTrades([]);
-      }finally{inFlight=false;}
-    };
-    sync();
-    const interval=setInterval(sync,20000);
-    return()=>{active=false;clearInterval(interval);};
-  },[asset,paperVisible,ready,authenticated,getAccessToken,refreshNonce]);
-  return trades;
-}
-
 /** Private PAPER-only portfolio snapshots for the compact Home card. */
 function usePaperPortfolioHome(paperVisible, refreshNonce) {
   const {ready,authenticated,getAccessToken}=usePrivy();
@@ -300,19 +262,24 @@ function StatBox({label,value,sub,tone='',icon:Icon}) {
   return <div className="stat-box"><div className="stat-label">{Icon&&<Icon size={16}/>}<span>{label}</span></div><div className={`stat-value ${tone?`text-${tone}`:''}`}>{value}</div>{sub&&<div className="stat-sub">{sub}</div>}</div>;
 }
 
-function ActivityList({trades,t,lang,asset,compact=false}) {
-  const shown=(Array.isArray(trades)?[...trades]:[]).reverse().slice(0,40);
+function ActivityList({trades,t,lang,compact=false,status='ready'}) {
+  // Already sorted newest first by the authenticated server; never reverse.
+  const shown=Array.isArray(trades)?trades.slice(0,60):[];
   const hasMoreTrades=compact&&shown.length>4;
-  if(!shown.length) return <div className="empty-activity"><div className="empty-activity-icon"><Activity size={24}/></div><strong>{t.emptyActivity}</strong><span>{t.emptyActivitySub}</span></div>;
+  if(status==='loading')return <p className="empty-activity">{t.homeTradesLoading}</p>;
+  if(status==='error')return <p className="empty-activity" role="alert">{t.homeTradesUnavailable}</p>;
+  if(!shown.length)return <div className="empty-activity"><div className="empty-activity-icon"><Activity size={24}/></div><strong>{t.emptyActivity}</strong><span>{t.emptyActivitySub}</span></div>;
   return <div className={'trade-list'+(hasMoreTrades?' trade-list--scroll':'')}
     tabIndex={hasMoreTrades?0:undefined}
     role={hasMoreTrades?'region':undefined}
-    aria-label={hasMoreTrades?t.recentTrades+' · '+asset:undefined}>{shown.map((trade,i)=>{
+    aria-label={hasMoreTrades?t.recentTrades+' · '+t.homeAllCoins:undefined}>{shown.map(trade=>{
     const buy=trade.kind==='PAPER_BUY';const pnl=trade.realized_net_profit;
-    return <div key={`${trade.at||i}-${i}`} className="trade-row">
+    return <div key={trade.id} className="trade-row">
       <span className={`trade-icon ${buy?'trade-icon--buy':'trade-icon--sell'}`}>{buy?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>}</span>
-      <div className="trade-main"><b>{buy?t.paperBuy:t.paperSell} · {asset}</b><span>{formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})} · {trade.reason||'—'}</span></div>
-      <div className="trade-amount"><b>{formatMoney(buy?trade.total_spent:trade.net_proceeds,lang)}</b><span className={pnl!=null?(Number(pnl)>=0?'text-positive':'text-negative'):''}>{pnl!=null?formatSigned(pnl,lang):t.paperTrade}</span></div>
+      <div className="trade-main"><b>{buy?t.paperBuy:t.paperSell} · {trade.asset}</b>
+        <span>{t.homeTradePrice}: {formatMoney(trade.price_reference,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</span>
+      </div>
+      <div className="trade-amount"><b>{formatMoney(trade.amount_usd,lang)}</b><span className={pnl!=null?(Number(pnl)>=0?'text-positive':'text-negative'):''}>{pnl!=null?formatSigned(pnl,lang):t.paperTrade}</span></div>
     </div>;
   })}</div>;
 }
@@ -401,7 +368,7 @@ export default function App() {
     return()=>{active=false;};
   },[]);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
-  const personalTrades=usePersonalPaperTrades(asset,paperVisible&&!!coinBySymbol(asset)?.paperSettingsReady,refreshNonce);
+  const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce);
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
@@ -446,7 +413,7 @@ export default function App() {
         {page==='overview'&&<>
           <CompactOverview
             t={t} lang={language} chooseLang={chooseLang} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
-            history={history} trades={personalTrades} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
+            history={history} trades={homePaperTrades.trades} tradesStatus={homePaperTrades.status} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
              portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
@@ -471,9 +438,9 @@ export default function App() {
               {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
-              {paperVisible&&coinBySymbol(asset)?.paperSettingsReady&&<section className="panel recent-panel" aria-label={t.recentTrades}>
-                <div className="panel-top"><h2>{t.recentTrades} · {asset}</h2><span className="muted-description">{t.simulatedTradeLabel}</span></div>
-                <ActivityList trades={personalTrades} t={t} lang={language} asset={asset} compact/>
+              {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
+                <div className="panel-top"><h2>{t.recentTrades} · {t.homeAllCoins}</h2><span className="muted-description">{t.simulatedTradeLabel}</span></div>
+                <ActivityList trades={homePaperTrades.trades} status={homePaperTrades.status} t={t} lang={language} compact/>
               </section>}
             </div>
           </div>

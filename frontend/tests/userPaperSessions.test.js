@@ -30,20 +30,27 @@ test('automatic server cadence and simulated funds disclosed in both languages',
   assert.match(dict,/5’000 virtuellen USD/);
 });
 
-test('backend live mode hides all simulation cards and the old public trade preview',()=>{
+test('live mode hides simulated home timeline and keeps personal PAPER controls disabled',()=>{
   const compact=read('../src/CompactOverview.jsx');
   assert.match(ui,/\/api\/user-paper\/availability/);
   assert.match(ui,/if\(!paperVisible\)return null/);
-  assert.match(app,/paperVisible&&coinBySymbol\(asset\)\?\.paperSettingsReady&&<section className="panel recent-panel"/);
-  assert.match(compact,/showSimulatedTrades&&coinBySymbol\(asset\)\?\.paperSettingsReady&&<section className="compact-recent-trades"/);
+  assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
+  assert.match(compact,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
+  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce\)/);
 });
 
-test('overview displays only current Privy account paper trades, never shared demo fills',()=>{
-  assert.match(app,/function usePersonalPaperTrades\(/);
-  assert.match(app,/Authorization:'Bearer '\+token/);
-  assert.match(app,/data\?\.asset!==asset/);
-  assert.match(app,/trade\?\.real_trade===false/);
-  assert.match(app,/history=\{history\} trades=\{personalTrades\}/);
-  assert.match(app,/<ActivityList trades=\{personalTrades\}/);
+test('home uses only the current Privy account, never shared demo or LIVE fills',()=>{
+  const hook=read('../src/useAllPaperHomeTrades.js');
+  const validator=read('../src/homePaperFeed.js');
+  assert.match(hook,/const did=user\?\.id\|\|null/);
+  assert.match(hook,/Authorization:'Bearer '\+token/);
+  assert.match(hook,/API_BASE\+'\/api\/home\/paper-trades'/);
+  assert.match(hook,/validHomePaperFeed\(data\)/);
+  assert.match(hook,/controllers\.clear\(\)/);
+  assert.match(validator,/data\.scope!=='PRIVATE_ACCOUNT'/);
+  assert.match(validator,/data\.wallet_funds_used!==false/);
+  assert.match(validator,/trade\.real_trade!==false/);
+  assert.match(app,/history=\{history\} trades=\{homePaperTrades\.trades\}/);
+  assert.match(app,/<ActivityList trades=\{homePaperTrades\.trades\}/);
   assert.doesNotMatch(app,/<ActivityList trades=\{trades\}/);
 });

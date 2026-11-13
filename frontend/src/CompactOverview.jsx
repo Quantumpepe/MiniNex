@@ -84,13 +84,13 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,paperAvai
   </section>;
 }
 
-export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false}) {
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,tradesStatus='ready'}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
   // Keep every verified account-bound PAPER trade supplied by the API.
   // Only the visible viewport is capped at four rows; the rest scrolls inside.
-  const recentTrades=Array.isArray(trades)?[...trades].reverse():[];
+  const recentTrades=Array.isArray(trades)?trades.slice(0,60):[];
   const hasMoreTrades=recentTrades.length>4;
   return <section className="compact-home compact-home--market" aria-label={t.overview}>
     <div className="compact-welcome">
@@ -130,19 +130,22 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
       </div>
     </section>
     {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{lang==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
-    {showSimulatedTrades&&coinBySymbol(asset)?.paperSettingsReady&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
-      <div className="compact-recent-heading"><strong>{t.recentTrades} · {asset}</strong><span>{t.simulatedTradeLabel}</span></div>
-      {recentTrades.length ? <div className={'compact-trade-list'+(hasMoreTrades?' compact-trade-list--scroll':'')}
+    {showSimulatedTrades&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
+      <div className="compact-recent-heading"><strong>{t.recentTrades} · {t.homeAllCoins}</strong><span>{t.simulatedTradeLabel}</span></div>
+      {tradesStatus==='loading'?<p className="compact-trade-empty">{t.homeTradesLoading}</p>
+       :tradesStatus==='error'?<p className="compact-trade-empty" role="alert">{t.homeTradesUnavailable}</p>
+       :!portfolioAuthenticated?<p className="compact-trade-empty">{t.homeTradesSignIn}</p>
+       :recentTrades.length ? <div className={'compact-trade-list'+(hasMoreTrades?' compact-trade-list--scroll':'')}
         tabIndex={hasMoreTrades?0:undefined}
         role={hasMoreTrades?'region':undefined}
-        aria-label={hasMoreTrades?t.recentTrades+' · '+asset:undefined}>
+        aria-label={hasMoreTrades?t.recentTrades+' · '+t.homeAllCoins:undefined}>
         {recentTrades.map((trade,index)=>{
           const buy=trade.kind==='PAPER_BUY';
-          const amount=buy?trade.total_spent:trade.net_proceeds;
+          const amount=trade.amount_usd;
           const pnl=!buy&&trade.realized_net_profit!=null?Number(trade.realized_net_profit):null;
-          return <div className="compact-trade-row" key={(trade.at||index)+'-'+index}>
+          return <div className="compact-trade-row" key={trade.id}>
             <span className={'compact-trade-icon '+(buy?'is-buy':'is-sell')}>{buy?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span>
-            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {asset}</strong><small>{formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
+            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{t.homeTradePrice}: {formatMoney(trade.price_reference,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
             <div className="compact-trade-value"><strong>{formatMoney(amount,lang)}</strong>{pnl!=null&&<small className={pnl>=0?'text-positive':'text-negative'}>{formatSigned(pnl,lang)}</small>}</div>
           </div>;
         })}
