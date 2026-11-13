@@ -84,7 +84,7 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,paperAvai
   </section>;
 }
 
-export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,tradesStatus='ready'}) {
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,tradesStatus='ready',showAllTrades=false,onToggleAllTrades}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -131,14 +131,22 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
     </section>
     {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{lang==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
     {showSimulatedTrades&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
-      <div className="compact-recent-heading"><strong>{t.recentTrades} · {t.homeAllCoins}</strong><span>{t.simulatedTradeLabel}</span></div>
+      <div className="compact-recent-heading">
+        <strong>{t.recentTrades} · {showAllTrades?t.homeAllCoins:asset}
+          <small className="home-history-paper-label">{t.simulatedTradeLabel}</small>
+        </strong>
+        <button type="button" className="home-history-filter"
+          aria-pressed={showAllTrades} onClick={onToggleAllTrades}>
+          {showAllTrades?t.homeOnlyCoin:t.homeAllCoins}
+        </button>
+      </div>
       {tradesStatus==='loading'?<p className="compact-trade-empty">{t.homeTradesLoading}</p>
        :tradesStatus==='error'?<p className="compact-trade-empty" role="alert">{t.homeTradesUnavailable}</p>
        :!portfolioAuthenticated?<p className="compact-trade-empty">{t.homeTradesSignIn}</p>
        :recentTrades.length ? <div className={'compact-trade-list'+(hasMoreTrades?' compact-trade-list--scroll':'')}
         tabIndex={hasMoreTrades?0:undefined}
         role={hasMoreTrades?'region':undefined}
-        aria-label={hasMoreTrades?t.recentTrades+' · '+t.homeAllCoins:undefined}>
+        aria-label={hasMoreTrades?t.recentTrades+' · '+(showAllTrades?t.homeAllCoins:asset):undefined}>
         {recentTrades.map((trade,index)=>{
           const buy=trade.kind==='PAPER_BUY';
           const amount=trade.amount_usd;
