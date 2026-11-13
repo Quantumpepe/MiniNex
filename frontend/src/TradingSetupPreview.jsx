@@ -129,7 +129,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       aria-label={selectedCoin.symbol+' '+t.privyAssetSettings}>
       <div className="mininex-selected-header">
         <strong>{selectedCoin.glyph} {selectedCoin.name} · {selectedCoin.symbol}</strong>
-        <span>{selectedCoin.inProgress?t.coinInProgress:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
+        <span>{selectedCoin.inProgress?t.coinInProgress:!paperAvailable?t.wallet:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
       </div>
       {renderCoinAddress?.(opened)}
       {paperAvailable&&(selectedSettings ? <>
@@ -169,8 +169,8 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
         t={t} getAccessToken={getAccessToken} options={replayOptions[opened]} onChange={changeReplay}/>)}
     </section>}
-    {status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
-    {status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+    {paperAvailable&&status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
+    {paperAvailable&&status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       onClick={reload} disabled={busy}>{t.privyBudgetReload}</button>}
   </div>;
 }
