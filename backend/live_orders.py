@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+import hashlib
+import json
 import logging
 import re
 
@@ -80,6 +82,127 @@ def valid_notional(raw: object, *, allow_zero: bool = False) -> Decimal:
     if not amount.is_finite() or amount < 0 or (amount == 0 and not allow_zero) or amount >= 10_000_000:
         raise ValueError("USD notional outside supported range")
     return amount
+
+
+# Future live strategist must supply immutable server-generated signal IDs,
+# NEVER a client-chosen retry key. Signal reuse with different trade terms
+# is an integrity conflict, not permission to create another order.
+_SIGNAL_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def build_strategy_signal_identity(
+    privy_did: str, *, asset: str, strategy_run_id: str,
+    signal_event_id: str, side: str, stable: str,
+    proposed_usd: str, quote_digest: str,
+) -> dict:
+    """Pure future-order identity; does not claim, reserve or sign anything.
+
+    A single strategy event has the same identity across worker restarts,
+    regardless of retry timestamps. A changed quote or amount produces
+    a different payload digest under the SAME identity, so a future
+    transactional writer must reject that conflicting replay.
+    """
+    did = _safe_did(privy_did)
+    coin = valid_asset(asset)
+    if (type(strategy_run_id) is not str
+            or not _SIGNAL_REF.fullmatch(strategy_run_id)
+            or type(signal_event_id) is not str
+            or not _SIGNAL_REF.fullmatch(signal_event_id)
+            or side not in ("BUY", "SELL")
+            or stable not in ("USDC", "USDT")
+            or type(quote_digest) is not str
+            or not _HEX_SHA256.fullmatch(quote_digest)):
+        raise ValueError("Untrusted or incomplete strategy signal")
+    notional = valid_notional(proposed_usd)
+    signal_material = json.dumps(
+        [did, coin, ASSET_CHAINS[coin], strategy_run_id, signal_event_id],
+        separators=(",", ":"), ensure_ascii=True,
+    ).encode("ascii")
+    signal_digest = hashlib.sha256(signal_material).hexdigest()
+    payload_material = json.dumps(
+        [side, stable, format(notional, ".6f"), quote_digest],
+        separators=(",", ":"), ensure_ascii=True,
+    ).encode("ascii")
+    return {
+        "asset": coin,
+        "intent_key": "sig_" + signal_digest[:60],
+        "signal_digest": signal_digest,
+        "payload_digest": hashlib.sha256(payload_material).hexdigest(),
+        "order_claimed": False,
+        "safe_to_send": False,
+    }
+
+
+def classify_existing_signal_binding(existing: object, identity: dict) -> str:
+    """Fail closed on every recorded signal, including finalized orders.
+
+    A new event without a binding is *not* authorization to send: the
+    future executor must atomically insert the order and unique binding
+    in one DB transaction while enforcing all Privy and spending gates.
+    """
+    if type(identity) is not dict or not all(
+        type(identity.get(field)) is str
+        for field in ("signal_digest", "payload_digest", "intent_key")
+    ):
+        raise ValueError("Malformed strategy signal identity")
+    if existing is None:
+        return "UNCLAIMED_REQUIRES_ATOMIC_RESERVATION"
+    if type(existing) is not dict:
+        raise ValueError("Untrusted persisted signal binding")
+    if not all(
+        existing.get(field) == identity[field]
+        for field in ("signal_digest", "payload_digest", "intent_key")
+    ):
+        raise ValueError("Conflicting or corrupted strategy signal replay")
+    return "ALREADY_CLAIMED_DO_NOT_SEND"
+
+
+def get_live_order_safety(privy_did: str, *, asset: str) -> dict:
+    """Read owner-scoped pending orders; no order creation or permission grant.
+
+    Do not limit the query to recent N rows: an older uncertain broadcast
+    must still block future sends. Existing order states remain immutable.
+    """
+    did = _safe_did(privy_did)
+    asset = valid_asset(asset)
+    try:
+        url = _db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT state,COUNT(*) AS total
+                       FROM mininex_live_order_intents
+                       WHERE privy_did=%s AND asset=%s AND state=ANY(%s)
+                       GROUP BY state""",
+                    (did, asset, sorted(_RESERVED_STATES)),
+                )
+                rows = list(cur.fetchall())
+        counts = {state: 0 for state in _RESERVED_STATES}
+        for row in rows:
+            state, total = row.get("state"), row.get("total")
+            if state not in counts or type(total) is not int or total < 0:
+                raise ValueError("Untrusted outstanding LIVE order state")
+            counts[state] += total
+        outstanding = sum(counts.values())
+        uncertain = sum(counts[state] for state in (
+            "SENDING", "RECONCILIATION_REQUIRED", "SUBMITTED",
+            "REORG_PENDING",
+        ))
+        return {
+            "asset": asset,
+            "mode": "LIVE_ORDER_SAFETY_READ_ONLY",
+            "no_unresolved_orders_observed": outstanding == 0,
+            "outstanding_order_count": outstanding,
+            "uncertain_order_count": uncertain,
+            "safe_to_send": False,
+            "can_submit": False,
+        }
+    except psycopg.Error:
+        LOG.warning("LIVE order safety snapshot unavailable")
+        raise HTTPException(503, "Cannot verify outstanding LIVE orders") from None
 
 
 def verify_transition(current: str, target: str, *,

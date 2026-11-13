@@ -63,6 +63,8 @@ def test_privy_verified_and_configured_limits_still_cannot_enable_execution():
     assert checks["privy_policy_structure_checked"] is True
     assert checks["per_user_eth_limits_configured"] is True
     assert checks["live_eth_stop_released"] is True
+    assert checks["no_unresolved_live_orders"] is False
+    assert checks["durable_signal_bindings_enforced"] is False
     assert checks["policy_covers_current_router_call"] is False
     assert checks["separate_revocable_execution_consent_verified"] is False
     assert checks["atomic_order_reservations_enabled"] is False
@@ -128,15 +130,30 @@ def test_preflight_gathers_verified_server_side_sources_without_writes(monkeypat
         calls.append(("limits", did))
         return limits()
 
+    def fetch_orders(did, *, asset):
+        calls.append(("orders", did, asset))
+        return {
+            "no_unresolved_orders_observed": False,
+            "outstanding_order_count": 1,
+            "uncertain_order_count": 1,
+            "safe_to_send": False,
+        }
+
     monkeypatch.setattr(stage, "get_eth_signer_status", fetch_signer)
     monkeypatch.setattr(stage, "get_eth_policy_review", fetch_policy)
     monkeypatch.setattr(stage, "get_live_eth_limits", fetch_limits)
+    monkeypatch.setattr(stage, "get_live_order_safety", fetch_orders)
 
     result = asyncio.run(stage.get_eth_automatic_preflight(DID))
     assert calls == [
-        ("signer", DID), ("policy", DID), ("limits", DID)
+        ("signer", DID), ("policy", DID), ("limits", DID),
+        ("orders", DID, "ETH"),
     ]
     assert result["risk_limit_revision"] == 7
+    assert result["unresolved_live_order_count"] == 1
+    assert result["uncertain_live_order_count"] == 1
+    assert result["checks"]["no_unresolved_live_orders"] is False
+    assert result["checks"]["durable_signal_bindings_enforced"] is False
     assert result["checks"]["live_eth_stop_released"] is False
     assert result["can_execute"] is False
 
@@ -186,3 +203,22 @@ def test_api_is_private_read_only_and_never_grants_permission(auth, monkeypatch)
     assert body["can_reserve"] is False
     assert not any(route.path == "/api/live/eth/auto-execute"
                    for route in api.app.routes)
+
+
+def test_no_outstanding_orders_is_not_execution_permission():
+    report = stage.assess_eth_automatic_preflight(
+        signer=signer(), policy=policy(), limits=limits(paused=False),
+        order_safety={
+            "no_unresolved_orders_observed": True,
+            "outstanding_order_count": 0,
+            "uncertain_order_count": 0,
+            "safe_to_send": False,
+        },
+    )
+    assert report["checks"]["no_unresolved_live_orders"] is True
+    assert report["checks"]["durable_signal_bindings_enforced"] is False
+    assert report["can_execute"] is False
+    assert report["can_reserve"] is False
+    assert report["unresolved_live_order_count"] == 0
+
+

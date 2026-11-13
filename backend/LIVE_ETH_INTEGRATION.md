@@ -346,6 +346,38 @@ creates delegation, a wallet grant, a reservation or a transaction.
 `automated_signing_enabled` and `live_trading_enabled` are all false.
 Tests verify verified-looking Privy evidence never bypasses these blocks.
 
+## Stage 11: future LIVE signal idempotency and old-order blockers
+
+The DB schema now includes `mininex_live_signal_bindings`, a separate,
+currently empty registry. Its `(Privy user, asset, signal_digest)` primary
+key permanently binds an immutable server-generated Strategist signal to
+one order intent and one exact payload hash. A second UNIQUE constraint
+prevents another signal from reusing the same intent key. The registry
+references the original LIVE intent record and must later be populated
+**inside the same transaction as the actual atomic order reservation**.
+
+`build_strategy_signal_identity` creates a deterministic identity from
+verified user, network, strategy run and immutable signal-event reference;
+it also hashes side, stable, exact USD notional and approved quote digest.
+Restarts or identical retries reproduce the same intent ID. A changed
+payload for an already recorded signal is a hard conflict, never an excuse
+to send again. This is an internal future-executor contract, not an API.
+
+`get_live_order_safety` reads all unresolved BTC/ETH order states for the
+verified account and asset, **without pagination**, including SENDING,
+RECONCILIATION_REQUIRED, SUBMITTED and REORG_PENDING. The read-only ETH
+auto-preflight includes the result and blocks any unresolved orders.
+
+**Not operational yet:** The new signal table has no write path, and no
+privileged worker currently creates or reserves LIVE orders. Its presence
+does not prove atomic reservations are enforced; the readiness gate
+`durable_signal_bindings_enforced` therefore remains **false**.
+Live ETH is still paused, policy/Universal-Router authorization is
+unresolved, and no signing or sending has been enabled. The future
+executor must claim the signal and order atomically under the
+per-user/asset budget lock, prove Privy consent, and reconcile
+uncertain on-chain sends before another order.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer

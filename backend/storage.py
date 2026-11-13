@@ -95,6 +95,19 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_live_orders_by_account
        ON mininex_live_order_intents(privy_did,asset,created_at DESC)""",
+    # Future executor must atomically bind the immutable signal to an order.
+    """CREATE TABLE IF NOT EXISTS mininex_live_signal_bindings (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        signal_digest TEXT NOT NULL CHECK (length(signal_digest)=64 AND signal_digest ~ '^[0-9a-f]+$'),
+        intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 8 AND 96),
+        payload_digest TEXT NOT NULL CHECK (length(payload_digest)=64 AND payload_digest ~ '^[0-9a-f]+$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset,signal_digest),
+        UNIQUE (privy_did,asset,intent_key),
+        FOREIGN KEY (privy_did,asset,intent_key)
+            REFERENCES mininex_live_order_intents(privy_did,asset,intent_key)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_trade_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
