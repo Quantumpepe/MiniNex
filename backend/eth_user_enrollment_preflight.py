@@ -103,12 +103,10 @@ def assess_eth_enrollment_evidence(
         # This check only detects unexpected signers, it does not prove
         # the safety of any pre-existing signer or verify its policy.
         result["wallet_additional_signers_reviewed"] = True
-        result["unrecognized_existing_signers"] = any(
-            type(s) is not dict or s.get("signer_id") != executor_signer_id
-            or not isinstance(s.get("override_policy_ids"), list)
-            or len(s.get("override_policy_ids")) != 1
-            for s in signers
-        )
+        # No pre-existing additional signer can be trusted on shape alone:
+        # even an expected ID with a policy pointer might reference a broad
+        # policy. Actual policy contents and user consent remain unverified.
+        result["unrecognized_existing_signers"] = bool(signers)
     if type(live_limits) is not dict:
         return result
     rev = live_limits.get("revision")
