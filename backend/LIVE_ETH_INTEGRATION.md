@@ -593,6 +593,49 @@ returns `can_grant_permission:false`, `can_sign:false`,
 `can_submit:false` and `execution_enabled:false`. LIVE remains paused.
 The normal paper Strategist and combined Portfolio are unchanged.
 
+## Stage 17: EIP-191 user enrollment intent and local revoke (NOT a Privy grant)
+
+A future frontend can explicitly ask the user to sign a **readable**
+one-time Ethereum EIP-191 message tied to their server-verified Privy ETH
+wallet, login session, 256-bit random nonce, five-minute expiration, exact
+separate LIVE ETH capital/order/daily limits and revision, mainnet route,
+token pair scope and separate policy owner/executor IDs. It does NOT
+contain a transaction, approve arbitrary contracts, or authorize a signer.
+
+These authenticated endpoints are available for staged UI integration:
+
+- `POST /api/live/eth/consent/challenge`: independently verifies the Privy
+  user and managed wallet, separately checks the LIVE limits, rejects
+  unverified additional signers and absent owner/executor separation, then
+  stores one unique challenge under a locked LIVE account row and returns
+  the human-readable text for wallet `personal_sign` / EIP-191 signing.
+- `POST /api/live/eth/consent/confirm`: accepts **only** a 65-byte hex
+  Ethereum EOA signature. It rechecks the Privy wallet, frozen LIVE limits
+  revision, signer/owner IDs, user session and stored message SHA-256,
+  verifies the message signer by independent EIP-191 public-key recovery,
+  atomically marks the challenge `SIGNED_INTENT` once and rejects replay,
+  expiry, changed wallets, signatures or limits.
+- `POST /api/live/eth/consent/revoke`: marks an existing local intent
+  `REVOKED` and pauses MiniNex LIVE trading in the **same transaction**,
+  incrementing the LIVE limits revision to invalidate stale requests.
+
+**Limits:** This is an **intent** to request future enrollment, not a
+Privy authorization, not permission to create a real policy, and not
+approval for automatic transactions. Privy must later ask the user to
+explicitly delegate the *exact reviewed signer/policy* and expose a
+separately verified signer removal/revocation flow **before actual live
+activation**. Revoke here is LOCAL ONLY: it stops MiniNex execution but
+does not yet remove a signer from Privy's service; currently no signer
+is created by this code. Contract-wallet EIP-1271 consent signatures
+are intentionally not accepted. Each new challenge replaces an older
+challenge; changes to LIVE limits invalidate older signed intents.
+Login or a prepared policy/limit alone never constitutes consent.
+The server never receives a private wallet key.
+
+The backend preserves the current Universal Router swap preview,
+paper trading, account budgets and global Portfolio. Real trading remains
+disabled and no Privy policy or additional signer can be created.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
