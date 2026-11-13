@@ -3,6 +3,7 @@ import {API_BASE} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
 import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
+import ExtraPaperComparison from './ExtraPaperComparison.jsx';
 import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
 
 // Persisted preferences are display/configuration only: no signer authority.
@@ -25,7 +26,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de'}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de'}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -120,6 +121,8 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
 
   return <div className="privy-trading-settings" aria-label={t.privySetupTitle}>
     <div className="privy-trading-settings-heading">{t.privySetupTitle}</div>
+    <ExtraPaperComparison t={t} enabled={enabled} getAccessToken={getAccessToken}
+      userId={userId}/>
     <CoinGrid t={t} lang={lang} selected={opened} onSelect={toggleAsset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="wallet"/>
     {selectedCoin&&<section className="privy-asset-settings mininex-selected-asset"

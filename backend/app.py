@@ -29,6 +29,7 @@ from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
     set_status as set_extra_paper_status,
 )
+from .extra_paper_report import compare as compare_extra_paper
 from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import (
@@ -741,6 +742,17 @@ class ExtraPaperStartRequest(BaseModel):
     mode: Literal["LONG","SPOT_SHORT"] = "LONG"
     stable: Literal["USDC","USDT"] = "USDC"
     horizon: Literal["5m","15m","1h","24h"] = "15m"
+
+
+@app.get("/api/extra-paper/comparison")
+def extra_paper_comparison(authorization: str | None = Header(default=None)):
+    """Private, read-only comparison; no coin settings or wallet permissions change."""
+    _require_paper_visible()
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        compare_extra_paper(did,extra_markets),
+        headers={"Cache-Control":"private, no-store",
+                 "X-Content-Type-Options":"nosniff"})
 
 
 @app.get("/api/extra-paper/{asset}")

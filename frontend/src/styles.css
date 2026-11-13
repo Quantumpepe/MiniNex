@@ -773,6 +773,30 @@
   outline:2px solid #65e9b9;outline-offset:2px
 }
 .mininex-extra-replay-form>button{grid-column:1/-1;min-height:43px}
+.mininex-paper-compare{display:grid;gap:8px;min-width:0;margin:6px 0 12px}
+.mininex-paper-compare-body{display:grid;gap:10px;padding:10px;
+  background:#0d2b31;border:1px solid #285651;border-radius:12px;min-width:0}
+.mininex-paper-compare-body>.privy-wallet-description{margin:0;font-size:12px}
+.mininex-paper-compare-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;max-height:310px;overflow-y:auto;scrollbar-width:none}
+.mininex-paper-compare-list::-webkit-scrollbar{display:none}
+.mininex-paper-compare-coin{display:grid;gap:8px;min-width:0;
+  padding:9px;border:1px solid #30635c;border-radius:10px;background:#09232a}
+.mininex-paper-compare-head{display:flex;align-items:center;
+  justify-content:space-between;gap:5px}
+.mininex-paper-compare-head strong{font-size:14px;color:#eafff7}
+.mininex-paper-compare-head small{color:#acdbd0;font-size:10px}
+.mininex-paper-compare-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px}
+.mininex-paper-compare-values>div{display:grid;gap:3px;min-width:0}
+.mininex-paper-compare-values span{color:#a1cbbf;font-size:10px;line-height:1.2}
+.mininex-paper-compare-values strong{font-size:12px;color:#eafff7;overflow-wrap:anywhere}
+.mininex-paper-compare-values strong.mininex-pnl-positive{color:#6ff0c1}
+.mininex-paper-compare-values strong.mininex-pnl-negative{color:#ff8585}
+.mininex-paper-compare-caution{font-size:10px;color:#e7c58a;line-height:1.4}
+@media(max-width:380px){
+  .mininex-paper-compare-list{grid-template-columns:minmax(0,1fr)}
+}
 .mininex-extra-paper{display:grid;gap:9px;border:1px solid #305f58;
   border-radius:10px;padding:10px;background:#09252c;min-width:0}
 .mininex-extra-paper-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
