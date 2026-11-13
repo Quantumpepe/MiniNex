@@ -705,13 +705,14 @@ def user_paper_availability():
 
 @app.get("/api/home/paper-trades")
 def personal_home_paper_trades(
+    asset: str = "ALL",
     authorization: str | None = Header(default=None),
 ):
-    """Only the caller's newest saved PAPER trades from all 11 ready coins."""
+    """Caller-owned PAPER trades for selected coin or explicit ALL."""
     _require_paper_visible()
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(
-        recent_home_trades(did),
+        recent_home_trades(did,asset=asset),
         headers={"Cache-Control":"private, no-store",
                  "X-Content-Type-Options":"nosniff"},
     )
