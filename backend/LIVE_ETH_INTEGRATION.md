@@ -451,6 +451,60 @@ Official references:
 https://developers.uniswap.org/docs/protocols/v3/deployments/v3-ethereum-deployments
 https://github.com/Uniswap/swap-router-contracts/blob/main/contracts/interfaces/IV3SwapRouter.sol
 
+## Stage 14: native ETH <-> WETH9 conversion review (read-only)
+
+The original MiniNex external asset must remain **native ETH** (not WETH).
+SwapRouter02 `exactInputSingle` accepts ERC20 tokens, so a future
+direct-router ETH/stablecoin implementation would require TWO individually
+reconciled transactions, rather than treating WETH as the final asset:
+
+- BUY native ETH using stable: `exactInputSingle` USDC/USDT -> WETH
+  paid directly to the verified wallet; then `WETH9.withdraw(uint256)`
+  of the **actually received and verified** WETH into native ETH.
+- SELL native ETH for stable: `WETH9.deposit()` of exactly the intended
+  native ETH amount; after confirmed on-chain WETH receipt, swap that
+  verified WETH to USDC/USDT with `exactInputSingle`.
+
+`eth_native_weth9_review.py` strictly inspects an internal candidate WETH9
+deposit/withdraw transaction: chain 1, fixed mainnet WETH9 address
+`0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`, verified wallet sender,
+canonical selectors (`0xd0e30db0` deposit, `0x2e1a7d4d` withdraw),
+exact ETH value/withdraw bytes and a conservative reported ETH gas reserve.
+It also checks the reported wallet WETH balance before a withdrawal.
+It never returns transaction calldata, verifies live RPC balances or
+signs anything. All such inputs MUST be independently obtained by a
+future authenticated integration before considering any actual order.
+
+These TWO separate on-chain steps are **not atomic**. A second-step
+failure can leave WETH temporarily in the wallet. Never claim native
+ETH/stable settlement or charge performance fees until independently
+verified receipts, actual token deltas and gas expenditure are reconciled.
+Re-quote, re-evaluate risk limits/allowances and block on uncertain
+transaction outcomes before proceeding. Ensure the total portfolio
+value remains correct even with an intermediate WETH position; do not
+mislabel it as native ETH.
+
+**Privy policy impact:** Restricted approval would ultimately need
+three separate reviewed function families:
+`WETH9.deposit`, `WETH9.withdraw`, and SwapRouter02 `exactInputSingle`,
+plus narrowly scoped ERC20 allowances when needed. A single
+`eth_sendTransaction` rule merely allowing a contract or method is NOT
+sufficient. For dynamic token recipient, amount and minimum-output
+bounds, pair Privy's immutable restrictions with independently verified
+per-order calldata, budget/nonce/receipt gates. Never grant wildcard
+`*`, broad `multicall`, unrestricted `transfer`, or arbitrary `execute`.
+After a carefully validated one-time user grant, a delegated Privy signer
+could perform permitted steps automatically; this is not yet deployed.
+
+The existing Universal Router preview remains unchanged. No automatic
+execution, wallet delegation, user permission, transaction creation
+or new API endpoint is added. These WETH steps are non-executable
+comparisons only. The draft Privy `execute` policy remains unsaved.
+
+Sources:
+https://github.com/gnosis/canonical-weth/blob/master/contracts/WETH9.sol
+https://github.com/Uniswap/swap-router-contracts/blob/main/contracts/V3SwapRouter.sol
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
