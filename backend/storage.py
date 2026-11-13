@@ -158,6 +158,38 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
        ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
+    # Independent virtual accounts for nine extra coins. BTC/ETH schemas and
+    # real HWM/fee/live ledgers remain untouched. ADA stays unavailable.
+    """CREATE TABLE IF NOT EXISTS mininex_extra_paper_sessions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
+        status TEXT NOT NULL DEFAULT 'ACTIVE'
+            CHECK (status IN ('ACTIVE','PAUSED')),
+        settlement TEXT NOT NULL CHECK (settlement IN ('USDC','USDT')),
+        strategy_mode TEXT NOT NULL CHECK (strategy_mode IN ('LONG','SPOT_SHORT')),
+        horizon TEXT NOT NULL CHECK (horizon IN ('5m','15m','1h','24h')),
+        initial_demo_cash NUMERIC(28,8) NOT NULL
+            CHECK (initial_demo_cash BETWEEN 100 AND 5000),
+        state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+        revision BIGINT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_extra_paper_next
+       ON mininex_extra_paper_sessions(status,updated_at)""",
+    """CREATE TABLE IF NOT EXISTS mininex_extra_paper_trades (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        event_id BIGINT NOT NULL CHECK (event_id > 0),
+        occurred_at TIMESTAMPTZ NOT NULL,
+        event_json JSONB NOT NULL,
+        PRIMARY KEY (privy_did,asset,event_id),
+        FOREIGN KEY (privy_did,asset)
+            REFERENCES mininex_extra_paper_sessions(privy_did,asset)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_extra_paper_trade_history
+       ON mininex_extra_paper_trades(privy_did,asset,occurred_at DESC)""",
     """CREATE TABLE IF NOT EXISTS mininex_fee_events (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL,
