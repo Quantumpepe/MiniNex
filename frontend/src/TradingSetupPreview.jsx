@@ -26,7 +26,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de'}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -121,18 +121,18 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
 
   return <div className="privy-trading-settings" aria-label={t.privySetupTitle}>
     <div className="privy-trading-settings-heading">{t.privySetupTitle}</div>
-    <ExtraPaperComparison t={t} enabled={enabled} getAccessToken={getAccessToken}
-      userId={userId}/>
+    {paperAvailable&&<ExtraPaperComparison t={t} enabled={enabled} getAccessToken={getAccessToken}
+      userId={userId}/>}
     <CoinGrid t={t} lang={lang} selected={opened} onSelect={toggleAsset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="wallet"/>
     {selectedCoin&&<section className="privy-asset-settings mininex-selected-asset"
       aria-label={selectedCoin.symbol+' '+t.privyAssetSettings}>
       <div className="mininex-selected-header">
         <strong>{selectedCoin.glyph} {selectedCoin.name} · {selectedCoin.symbol}</strong>
-        <span>{selectedCoin.inProgress?t.coinInProgress:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
+        <span>{selectedCoin.inProgress?t.coinInProgress:!paperAvailable?t.wallet:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
       </div>
       {renderCoinAddress?.(opened)}
-      {selectedSettings ? <>
+      {paperAvailable&&(selectedSettings ? <>
         <div className="privy-asset-settings-fields">
           <label>
             <span>{t.privySetupMode}</span>
@@ -167,10 +167,10 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
-        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]} onChange={changeReplay}/>}
+        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]} onChange={changeReplay}/>)}
     </section>}
-    {status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
-    {status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+    {paperAvailable&&status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
+    {paperAvailable&&status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       onClick={reload} disabled={busy}>{t.privyBudgetReload}</button>}
   </div>;
 }

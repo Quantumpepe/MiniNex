@@ -18,7 +18,7 @@ const a=(asset,id,at,kind='PAPER_BUY')=>({
 });
 const base={
   paper_only:true,real_trading_enabled:false,wallet_funds_used:false,
-  scope:'PRIVATE_ACCOUNT',sort:'NEWEST_FIRST',assets:[...HOME_PAPER_COINS],
+  scope:'PRIVATE_ACCOUNT',sort:'NEWEST_FIRST',selected_asset:'ALL',assets:[...HOME_PAPER_COINS],
   trades:[
     a('SOL',12,'2026-11-13T18:15:00+00:00'),
     a('ETH',8,'2026-11-13T18:12:00+00:00','PAPER_SELL'),
@@ -48,6 +48,10 @@ test('only account-owned PAPER fields, strict newest-first timestamps and unique
     {real_trading_enabled:true},
     {paper_only:false},
     {sort:'OLDEST_FIRST'},
+    {selected_asset:'ETH'},
+    {selected_asset:'SOL'},
+    {selected_asset:'ADA'},
+    {selected_asset:undefined},
     {assets:[...HOME_PAPER_COINS,'ADA']},
     {assets:[...HOME_PAPER_COINS].reverse()},
     {trades:[a('ADA',1,'2026-11-13T18:15:00Z')]},
@@ -76,26 +80,26 @@ test('only account-owned PAPER fields, strict newest-first timestamps and unique
 });
 
 test('only one private cached-no store API call on visible overview and user reset',()=>{
-  assert.match(hook,/API_BASE\+'\/api\/home\/paper-trades'/);
+  assert.match(hook,/API_BASE\+'\/api\/home\/paper-trades\?asset='/);
   assert.match(hook,/Authorization:'Bearer '\+token/);
   assert.match(hook,/cache:'no-store'/);
-  assert.match(hook,/validHomePaperFeed\(data\)/);
+  assert.match(hook,/validHomePaperFeed\(data,assetScope\)/);
   assert.match(hook,/const did=user\?\.id\|\|null/);
-  assert.match(hook,/\[paperVisible,homeVisible,ready,authenticated,did,getAccessToken,refreshNonce\]/);
+  assert.match(hook,/\[paperVisible,homeVisible,ready,authenticated,did,getAccessToken,refreshNonce,assetScope\]/);
   assert.match(hook,/new AbortController\(\)/);
   assert.match(hook,/window\.setInterval\(sync,20000\)/);
   assert.match(hook,/document\.hidden/);
   assert.match(hook,/controllers\.clear\(\)/);
-  assert.match(hook,/setState\(\{trades:\[\],status:'error'\}\)/);
+  assert.match(hook,/setState\(\{trades:\[\],status:'error',scope:assetScope\}\)/);
   assert.doesNotMatch(hook,/sendTransaction|signTransaction|\/api\/live\/orders|method:'POST'/);
 });
 
 test('mobile and desktop main page display per-entry asset, amount, price and PnL',()=>{
-  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce\)/);
+  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
   assert.match(app,/trades=\{homePaperTrades\.trades\}/);
   assert.match(app,/status=\{homePaperTrades\.status\}/);
   assert.match(app,/tradesStatus=\{homePaperTrades\.status\}/);
-  assert.match(app,/<h2>\{t\.recentTrades\} · \{t\.homeAllCoins\}<\/h2>/);
+  assert.match(app,/<h2>\{t\.recentTrades\} · \{showAllPaperHistory\?t\.homeAllCoins:asset\}<\/h2>/);
   assert.match(app,/trade\.asset/);
   assert.match(app,/trade\.amount_usd/);
   assert.match(app,/trade\.price_reference/);
@@ -126,4 +130,25 @@ test('only four rows initially, row five onwards scrolls inside field invisibly'
   assert.match(css,/\.compact-trade-list--scroll,\s*\.recent-panel \.trade-list--scroll\{[\s\S]*?overflow-y:auto;/);
   assert.match(css,/scrollbar-width:none/);
   assert.match(css,/\.compact-trade-list--scroll::-webkit-scrollbar,[\s\S]*?display:none/);
+});
+
+
+test('default history is selected coin only; ALL is voluntary',()=>{
+  const selected={...base,selected_asset:'BTC',trades:[
+    a('BTC',7,'2026-11-13T18:15:00+00:00'),
+    a('BTC',3,'2026-11-13T18:12:00+00:00'),
+  ]};
+  assert.equal(validHomePaperFeed(selected,'BTC'),true);
+  assert.equal(validHomePaperFeed(selected,'ETH'),false);
+  assert.equal(validHomePaperFeed(selected,'ALL'),false);
+  assert.equal(validHomePaperFeed({...selected,trades:base.trades},'BTC'),false);
+  assert.equal(validHomePaperFeed({...base,selected_asset:'ALL'},'ALL'),true);
+  assert.equal(validHomePaperFeed(base,'ADA'),false);
+  assert.match(app,/const \[showAllPaperHistory,setShowAllPaperHistory\]=useState\(false\)/);
+  assert.match(app,/const homePaperScope=showAllPaperHistory\?'ALL':asset/);
+  assert.match(app,/setShowAllPaperHistory\(false\);setAsset\(symbol\)/);
+  assert.match(ui,/showAllTrades\?t\.homeAllCoins:asset/);
+  assert.match(ui,/onClick=\{onToggleAllTrades\}/);
+  assert.match(messages,/homeOnlyCoin: 'Nur dieser Coin'/);
+  assert.match(messages,/homeOnlyCoin: 'Only this coin'/);
 });

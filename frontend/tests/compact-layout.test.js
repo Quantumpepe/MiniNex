@@ -21,7 +21,8 @@ test('Portfolio wallet shortcut remains, but bottom Home buttons are removed',()
  assert.doesNotMatch(compact,/className="compact-actions"/);
  assert.doesNotMatch(compact,/goTo\('activity'\)/);
  assert.doesNotMatch(compact,/className="compact-market-modes"/);
- assert.doesNotMatch(compact,/onClick\s*=\s*\{[^}]+trade/i);
+ // A history-filter button is not a trading execution button.
+ assert.doesNotMatch(compact,/onClick=\{\(\)=>startTrade\(/);
  assert.match(app,/className="settings-activity-link"[^\n]*navigate\('activity'\)/);
 });
 test('Native build stays manual and distributes only a temporary debug artifact',()=>{
@@ -55,16 +56,16 @@ test('mobile Home shows private paper portfolio before compact eight-coin picker
   assert.match(compact,/if\(coinBySymbol\(symbol\)\)/);
   assert.match(compact,/coinBySymbol\(asset\)\?\.paperSettingsReady/);
   assert.match(compact,/compact-wallet-curve/);
-  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce\)/);
+  assert.match(app,/usePaperPortfolioHome\(paperVisible,refreshNonce,homePaperScope,page==='overview'\)/);
   assert.match(app,/portfolioSummary=\{paperHome.summary\}/);
   assert.match(css,/\.compact-wallet-portfolio\{/);
   assert.match(css,/\.compact-chart-large,\.compact-chart-empty\{height:120px/);
 });
 
 test('portfolio remains while redundant AUTO/PAPER/LIVE controls disappear',()=>{
-  assert.match(compact,/paperAvailable\?'PAPER':'LIVE/);
+  assert.match(compact,/\{showSimulatedTrades&&<PaperPortfolioCard/);
   assert.doesNotMatch(compact,/className="compact-market-modes"/);
-  assert.match(compact,/summary&&chart/);
+  assert.match(compact,/summary\?\.valuationAvailable&&chart/);
   assert.match(compact,/paperSparkline\(samples\)/);
   assert.doesNotMatch(compact,/LIVE.*\d{3,}/);
 });

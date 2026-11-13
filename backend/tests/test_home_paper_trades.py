@@ -110,6 +110,7 @@ def test_one_bounded_owner_scoped_query_joins_two_ledgers_without_mutating(monke
     monkeypatch.setattr(home.psycopg,"connect",lambda *a,**kw:db)
     response=home.recent_home_trades("did:privy:alice")
     assert response["scope"]=="PRIVATE_ACCOUNT"
+    assert response["selected_asset"]=="ALL"
     assert response["sort"]=="NEWEST_FIRST"
     assert response["wallet_funds_used"] is False
     assert response["real_trading_enabled"] is False
@@ -147,15 +148,70 @@ def test_api_requires_privy_token_and_paper_mode(monkeypatch):
     checked=[]
     monkeypatch.setattr(api,"verify_privy_bearer",lambda token:
         checked.append(token) or {"user_id":"did:privy:alice"})
-    monkeypatch.setattr(api,"recent_home_trades",lambda did:
-        {"scope":"PRIVATE_ACCOUNT","paper_only":True,"trades":[]})
+    checked_scopes=[]
+    monkeypatch.setattr(api,"recent_home_trades",lambda did,asset:
+        (checked_scopes.append((did,asset)) or
+         {"scope":"PRIVATE_ACCOUNT","paper_only":True,"trades":[],"selected_asset":asset}))
     reply=client.get("/api/home/paper-trades",
                      headers={"Authorization":"Bearer verified-session"})
     assert reply.status_code==200
     assert checked==["Bearer verified-session"]
+    assert checked_scopes==[("did:privy:alice","ALL")]
     assert reply.headers["cache-control"]=="private, no-store"
     assert reply.headers["x-content-type-options"]=="nosniff"
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     assert client.get("/api/home/paper-trades",
         headers={"Authorization":"Bearer verified-session"}).status_code==404
     assert checked==["Bearer verified-session"]
+
+
+@pytest.mark.parametrize("asset,table",[
+    ("BTC","mininex_user_paper_trades"),
+    ("ETH","mininex_user_paper_trades"),
+    ("SOL","mininex_extra_paper_trades"),
+    ("XRP","mininex_extra_paper_trades"),
+    ("UNI","mininex_extra_paper_trades"),
+])
+def test_selected_coin_history_is_filtered_in_sql_before_limit(asset,table,monkeypatch):
+    db=FakeDB([fill(asset,5)])
+    monkeypatch.setattr(home,"_db_url",lambda:"postgresql://fake")
+    monkeypatch.setattr(home,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(home.psycopg,"connect",lambda *a,**kw:db)
+    result=home.recent_home_trades("did:privy:owner",asset=asset)
+    assert result["selected_asset"]==asset
+    assert [row["asset"] for row in result["trades"]]==[asset]
+    assert len(db.calls)==1
+    sql,params=db.calls[0]
+    assert table in sql and "UNION ALL" not in sql
+    assert "AND asset=%s" in sql
+    assert "LIMIT %s" in sql
+    assert params==("did:privy:owner",asset,60)
+
+
+def test_wrong_coin_results_cannot_leak_into_selected_view(monkeypatch):
+    db=FakeDB([fill("ETH",2),fill("BTC",1)])
+    monkeypatch.setattr(home,"_db_url",lambda:"postgresql://fake")
+    monkeypatch.setattr(home,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(home.psycopg,"connect",lambda *a,**kw:db)
+    result=home.recent_home_trades("did:privy:owner",asset="BTC")
+    assert [x["asset"] for x in result["trades"]]==["BTC"]
+    for invalid in ("ADA","DOGE2","BTC;DROP",None,12):
+        with pytest.raises(HTTPException) as err:
+            home.recent_home_trades("did:privy:owner",asset=invalid)
+        assert err.value.status_code==422
+
+
+def test_explicit_all_coin_mode_remains_available_in_private_api(monkeypatch):
+    checked=[]
+    monkeypatch.setattr(api,"verify_privy_bearer",lambda token:
+        {"user_id":"did:privy:alice"})
+    monkeypatch.setattr(api,"recent_home_trades",lambda did,asset:
+        (checked.append((did,asset)) or {"selected_asset":asset,"trades":[]}))
+    client=TestClient(api.app)
+    for symbol in ("BTC","ETH","SOL","ALL"):
+        reply=client.get("/api/home/paper-trades?asset="+symbol,
+            headers={"Authorization":"Bearer valid"})
+        assert reply.status_code==200
+        assert reply.json()["selected_asset"]==symbol
+    assert checked==[("did:privy:alice",x) for x in
+                    ("BTC","ETH","SOL","ALL")]

@@ -7,11 +7,13 @@ const positive=n=>typeof n==='number'&&Number.isFinite(n)&&n>0;
 const finite=n=>typeof n==='number'&&Number.isFinite(n);
 const VALID_KINDS=new Set(['PAPER_BUY','PAPER_SELL']);
 
-export function validHomePaperFeed(data) {
+export function validHomePaperFeed(data,expectedAsset='ALL') {
+  if(expectedAsset!=='ALL'&&!HOME_PAPER_COINS.includes(expectedAsset))return false;
   if(!data||typeof data!=='object'||Array.isArray(data)||
      data.paper_only!==true||data.real_trading_enabled!==false||
      data.wallet_funds_used!==false||data.scope!=='PRIVATE_ACCOUNT'||
      data.sort!=='NEWEST_FIRST'||
+     data.selected_asset!==expectedAsset||
      !Array.isArray(data.assets)||
      data.assets.length!==HOME_PAPER_COINS.length||
      !data.assets.every((coin,i)=>coin===HOME_PAPER_COINS[i])||
@@ -21,6 +23,7 @@ export function validHomePaperFeed(data) {
   for(const trade of data.trades){
     if(!trade||typeof trade!=='object'||Array.isArray(trade)||
        !HOME_PAPER_COINS.includes(trade.asset)||
+       (expectedAsset!=='ALL'&&trade.asset!==expectedAsset)||
        trade.paper_only!==true||trade.real_trade!==false||
        !VALID_KINDS.has(trade.kind)||
        typeof trade.id!=='string'||

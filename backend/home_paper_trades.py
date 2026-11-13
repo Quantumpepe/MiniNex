@@ -79,29 +79,49 @@ def normalize_home_trade(row: Any) -> dict | None:
     }
 
 
-def recent_home_trades(did: str,limit: int = MAX_TRADES) -> dict:
+def recent_home_trades(did: str,limit: int = MAX_TRADES,
+                       asset: str = "ALL") -> dict:
     did=_safe_did(did)
     if type(limit) is not int or not 1<=limit<=MAX_TRADES:
         raise HTTPException(422,"Invalid paper-history limit")
-    # The two owner-scoped sources are read in one bounded query. Sorting
-    # is deterministic even when different coins trade in one second.
-    sql="""SELECT asset,event_id,occurred_at,event_json
-      FROM (
-          SELECT asset,event_id,occurred_at,event_json
+    if asset != "ALL" and asset not in ALL_ASSETS:
+        raise HTTPException(422,"Unsupported paper-history asset")
+    # Selected coin queries its own ledger BEFORE the LIMIT. This matters:
+    # filtering a globally limited list could hide older BTC/ETH/SOL trades
+    # when another coin has traded more recently.
+    if asset in CORE_ASSETS:
+        sql="""SELECT asset,event_id,occurred_at,event_json
           FROM mininex_user_paper_trades
-          WHERE privy_did=%s AND asset=ANY(%s)
-          UNION ALL
-          SELECT asset,event_id,occurred_at,event_json
+          WHERE privy_did=%s AND asset=%s
+          ORDER BY occurred_at DESC,event_id DESC LIMIT %s"""
+        params=(did,asset,limit)
+    elif asset in EXTRA_ASSETS:
+        sql="""SELECT asset,event_id,occurred_at,event_json
           FROM mininex_extra_paper_trades
-          WHERE privy_did=%s AND asset=ANY(%s)
-      ) paper
-      ORDER BY occurred_at DESC,asset ASC,event_id DESC
-      LIMIT %s"""
+          WHERE privy_did=%s AND asset=%s
+          ORDER BY occurred_at DESC,event_id DESC LIMIT %s"""
+        params=(did,asset,limit)
+    else:
+        # The deliberate "All coins" opt-in preserves the previous global
+        # view; both tables remain isolated by the same verified Privy DID.
+        sql="""SELECT asset,event_id,occurred_at,event_json
+          FROM (
+              SELECT asset,event_id,occurred_at,event_json
+              FROM mininex_user_paper_trades
+              WHERE privy_did=%s AND asset=ANY(%s)
+              UNION ALL
+              SELECT asset,event_id,occurred_at,event_json
+              FROM mininex_extra_paper_trades
+              WHERE privy_did=%s AND asset=ANY(%s)
+          ) paper
+          ORDER BY occurred_at DESC,asset ASC,event_id DESC
+          LIMIT %s"""
+        params=(did,list(CORE_ASSETS),did,list(EXTRA_ASSETS),limit)
     try:
         url=_db_url();_ensure_schema(url)
         with psycopg.connect(url,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(sql,(did,list(CORE_ASSETS),did,list(EXTRA_ASSETS),limit))
+                cur.execute(sql,params)
                 rows=cur.fetchall()
     except psycopg.Error:
         LOG.warning("Private home paper activity unavailable")
@@ -111,5 +131,7 @@ def recent_home_trades(did: str,limit: int = MAX_TRADES) -> dict:
         "paper_only":True,"real_trading_enabled":False,
         "wallet_funds_used":False,"scope":"PRIVATE_ACCOUNT",
         "sort":"NEWEST_FIRST","assets":list(ALL_ASSETS),
-        "trades":[item for item in cleaned if item is not None],
+        "selected_asset":asset,
+        "trades":[item for item in cleaned if item is not None and
+                  (asset=="ALL" or item["asset"]==asset)],
     }

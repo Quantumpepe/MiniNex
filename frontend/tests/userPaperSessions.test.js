@@ -36,7 +36,7 @@ test('live mode hides simulated home timeline and keeps personal PAPER controls 
   assert.match(ui,/if\(!paperVisible\)return null/);
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
   assert.match(compact,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
-  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce\)/);
+  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
 });
 
 test('home uses only the current Privy account, never shared demo or LIVE fills',()=>{
@@ -44,8 +44,8 @@ test('home uses only the current Privy account, never shared demo or LIVE fills'
   const validator=read('../src/homePaperFeed.js');
   assert.match(hook,/const did=user\?\.id\|\|null/);
   assert.match(hook,/Authorization:'Bearer '\+token/);
-  assert.match(hook,/API_BASE\+'\/api\/home\/paper-trades'/);
-  assert.match(hook,/validHomePaperFeed\(data\)/);
+  assert.match(hook,/API_BASE\+'\/api\/home\/paper-trades\?asset='/);
+  assert.match(hook,/validHomePaperFeed\(data,assetScope\)/);
   assert.match(hook,/controllers\.clear\(\)/);
   assert.match(validator,/data\.scope!=='PRIVATE_ACCOUNT'/);
   assert.match(validator,/data\.wallet_funds_used!==false/);
