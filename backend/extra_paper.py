@@ -144,6 +144,54 @@ def mark_to_market(result: dict,source: Any) -> dict:
     return result
 
 
+def _history_coverage(asset: str,horizon: str,source: Any) -> dict:
+    """Display-only actual observation span, not permission to trade.
+
+    24h uses the new public 15-minute history alongside existing recent
+    minute closes and ticks. Missing history is explained, not hidden behind
+    a new manual diagnostic button or blocking an active paper session.
+    """
+    required=WINDOWS[horizon]
+    fallback={"status":"UNAVAILABLE","available_minutes":None,
+              "required_minutes":int(required/60),"recent_age_seconds":None,
+              "complete":False}
+    try:
+        clock=getattr(source,"clock",time.time)
+        now=float(clock()) if callable(clock) else time.time()
+        samples=source.history(asset,limit=3600)
+        if not math.isfinite(now) or not isinstance(samples,list):
+            return fallback
+        stamps=[]
+        for sample in samples:
+            if not isinstance(sample,dict):
+                continue
+            stamp=sample.get("timestamp")
+            price=sample.get("price_usdt")
+            if (type(stamp) not in (int,float) or
+                type(price) not in (int,float) or
+                not math.isfinite(stamp) or not math.isfinite(price) or
+                price<=0 or not 0<=now-stamp<=required):
+                continue
+            stamps.append(float(stamp))
+        if not stamps:
+            return {"status":"INSUFFICIENT","available_minutes":0,
+                    "required_minutes":int(required/60),
+                    "recent_age_seconds":None,"complete":False}
+        span=max(stamps)-min(stamps)
+        age=max(0.0,now-max(stamps))
+        complete=span >= required*0.95 and age<=15
+        return {"status":"READY" if complete else "PARTIAL",
+                "available_minutes":round(span/60,1),
+                "required_minutes":int(required/60),
+                "recent_age_seconds":round(age,1),
+                "complete":complete}
+    except (TypeError,ValueError,AttributeError,OverflowError):
+        return fallback
+    except Exception:
+        LOG.warning("Extra-coin history coverage unavailable for %s",asset)
+        return fallback
+
+
 def read(did: str,asset: str,source: Any | None = None) -> dict:
     did=_safe_did(did);asset=valid_asset(asset)
     try:
@@ -153,7 +201,12 @@ def read(did: str,asset: str,source: Any | None = None) -> dict:
                 _prepare_rows(cur,did)
                 row=_row(cur,did,asset)
                 view=_present(asset,row,_trades(cur,did,asset) if row else None)
-                return mark_to_market(view,source) if source is not None else view
+                if source is not None:
+                    view=mark_to_market(view,source)
+                    if row:
+                        view["history_coverage"]=_history_coverage(
+                            asset,row["horizon"],source)
+                return view
     except psycopg.Error:
         LOG.warning("Extra-coin PAPER read unavailable")
         raise HTTPException(503,"Personal extra-coin simulation unavailable") from None

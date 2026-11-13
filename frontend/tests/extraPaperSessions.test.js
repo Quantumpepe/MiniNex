@@ -116,3 +116,43 @@ test('simple DE/EN labels, mobile layout, no new home controls or ADA changes',(
   assert.match(setup,/renderSessionControls\?\.\(opened\)/);
   assert.match(replay,/onSubmit=\{run\}/);
 });
+
+test('historical coverage is optional on POST and never blocks paper commands',()=>{
+  const ready={
+    status:'READY',complete:true,available_minutes:1425.0,
+    required_minutes:1440,recent_age_seconds:0,
+  };
+  const paper={...fixture,horizon:'24h',history_coverage:ready};
+  assert.equal(validExtraPaperState(paper,'SOL'),true);
+  assert.equal(validExtraPaperState(fixture,'SOL'),true);
+  for(const coverage of [
+    {...ready,status:'PARTIAL'},
+    {...ready,available_minutes:1500},
+    {...ready,available_minutes:-1},
+    {...ready,available_minutes:Infinity},
+    {...ready,recent_age_seconds:-1},
+    {...ready,required_minutes:60},
+    {...ready,complete:'true'},
+    {...ready,status:'LIVE'},
+  ])assert.equal(validExtraPaperState({
+    ...paper,history_coverage:coverage,
+  },'SOL'),false,JSON.stringify(coverage));
+  const partial={...ready,status:'PARTIAL',complete:false,
+    available_minutes:90,recent_age_seconds:12.0};
+  assert.equal(validExtraPaperState({...paper,history_coverage:partial},'SOL'),true);
+  assert.equal(validExtraPaperState({...paper,history_coverage:{
+    status:'UNAVAILABLE',available_minutes:null,required_minutes:1440,
+    recent_age_seconds:null,complete:false,
+  }},'SOL'),true);
+});
+
+test('mobile paper card explains historical coverage without additional trading gates',()=>{
+  assert.match(control,/data\.history_coverage/);
+  assert.match(control,/extraPaperHistoryCoverage/);
+  assert.match(control,/extraPaperHistoryPartial/);
+  assert.match(labels,/extraPaperHistoryCoverage: 'Historische Kursabdeckung'/);
+  assert.match(labels,/extraPaperHistoryCoverage: 'Historical price coverage'/);
+  assert.match(control,/onClick=\{\(\)=>command\('pause'\)\}/);
+  assert.match(control,/onClick=\{\(\)=>command\('resume'\)\}/);
+  assert.doesNotMatch(control,/history_coverage\.complete.*disabled/);
+});
