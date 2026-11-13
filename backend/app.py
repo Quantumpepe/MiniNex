@@ -47,6 +47,10 @@ from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
 from .eth_auto_preflight import get_eth_automatic_preflight
 from .eth_user_enrollment_preflight import get_eth_user_enrollment_preflight
+from .eth_user_consent import (
+    prepare_eth_consent_challenge, confirm_eth_consent_intent,
+    revoke_eth_consent_intent,
+)
 from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
@@ -513,6 +517,56 @@ async def eth_policy_enrollment_preflight(
     did = verify_privy_bearer(authorization)["user_id"]
     report = await get_eth_user_enrollment_preflight(did)
     return JSONResponse(report, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+class EthConsentSignatureRequest(BaseModel):
+    """Only a wallet-produced EIP-191 proof, not a Privy delegation."""
+    model_config = ConfigDict(extra="forbid")
+    signature: str = Field(min_length=132, max_length=132, pattern=r"^0x[0-9a-fA-F]{130}$")
+
+
+@app.post("/api/live/eth/consent/challenge")
+async def eth_consent_challenge(
+    authorization: str | None = Header(default=None),
+):
+    """Short-lived one-time user intent; does NOT enable trading."""
+    identity = verify_privy_bearer(authorization)
+    result = await prepare_eth_consent_challenge(
+        identity["user_id"], identity["session_id"],
+    )
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/consent/confirm")
+async def eth_consent_confirm(
+    body: EthConsentSignatureRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Store signed intent only; Privy additional signer still NOT granted."""
+    identity = verify_privy_bearer(authorization)
+    result = await confirm_eth_consent_intent(
+        identity["user_id"], identity["session_id"], body.signature,
+    )
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/consent/revoke")
+def eth_consent_revoke(
+    authorization: str | None = Header(default=None),
+):
+    """Atomic LOCAL intent revocation and MiniNex stop; not remote Privy removal."""
+    identity = verify_privy_bearer(authorization)
+    result = revoke_eth_consent_intent(identity["user_id"])
+    return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })

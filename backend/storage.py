@@ -65,6 +65,30 @@ SCHEMA = (
                (planned_capital_usd > 0 AND max_order_usd > 0 AND
                 max_daily_turnover_usd > 0))
     )""",
+    # A signed EIP-191 enrollment intent is NOT Privy wallet authority.
+    # One-time pending challenge, independently revocable and wallet-bound.
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_consent_intents (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        wallet_address TEXT NOT NULL
+            CHECK (wallet_address ~ '^0x[0-9a-f]{40}$'),
+        session_sha256 TEXT NOT NULL
+            CHECK (session_sha256 ~ '^[0-9a-f]{64}$'),
+        limits_revision BIGINT NOT NULL CHECK (limits_revision >= 0),
+        policy_owner_id TEXT NOT NULL,
+        execution_signer_id TEXT NOT NULL,
+        message_text TEXT NOT NULL CHECK (length(message_text) <= 3500),
+        message_sha256 TEXT NOT NULL
+            CHECK (message_sha256 ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL DEFAULT 'PENDING'
+            CHECK (status IN ('PENDING','SIGNED_INTENT','REVOKED')),
+        issued_at TIMESTAMPTZ NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        confirmed_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        CHECK (expires_at > issued_at),
+        CHECK (expires_at <= issued_at + interval '5 minutes'),
+        CHECK (policy_owner_id <> execution_signer_id)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_order_intents (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
