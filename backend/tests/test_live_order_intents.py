@@ -167,6 +167,10 @@ def test_rollover_exposure_includes_pending_without_underestimating_24h():
 def test_live_orders_sql_constraints_are_strict_and_separate_from_paper():
     sql = "\n".join(SCHEMA)
     assert "CREATE TABLE IF NOT EXISTS mininex_live_order_intents" in sql
+    assert "CREATE TABLE IF NOT EXISTS mininex_live_signal_bindings" in sql
+    assert "PRIMARY KEY (privy_did,asset,signal_digest)" in sql
+    assert "UNIQUE (privy_did,asset,intent_key)" in sql
+    assert "REFERENCES mininex_live_order_intents(privy_did,asset,intent_key)" in sql
     assert "PRIMARY KEY (privy_did,asset,intent_key)" in sql
     assert "state NOT IN ('SUBMITTED','CONFIRMED','REVERTED','REORG_PENDING')" in sql
     assert "mininex_user_paper_sessions" in sql
@@ -205,3 +209,124 @@ def test_user_can_only_read_own_orders_no_client_submit(monkeypatch, headers):
     assert not any(route.path in ("/api/live/orders/prepare",
                                   "/api/live/orders/execute",
                                   "/api/live/orders/send") for route in api.app.routes)
+
+
+def test_server_strategy_signal_identity_rejects_duplicate_even_after_restart():
+    """A retry of one immutable signal cannot invent a fresh order key."""
+    params = {
+        "asset": "ETH", "strategy_run_id": "session_20261113_alpha",
+        "signal_event_id": "signal_00000042", "side": "BUY",
+        "stable": "USDC", "proposed_usd": "125.5",
+        "quote_digest": "a" * 64,
+    }
+    first = orders.build_strategy_signal_identity(DID, **params)
+    same_after_restart = orders.build_strategy_signal_identity(DID, **params)
+    assert first == same_after_restart
+    assert first["order_claimed"] is False
+    assert first["safe_to_send"] is False
+    assert orders.valid_order_key(first["intent_key"]) == first["intent_key"]
+    assert orders.classify_existing_signal_binding(None, first) == (
+        "UNCLAIMED_REQUIRES_ATOMIC_RESERVATION"
+    )
+    assert orders.classify_existing_signal_binding(
+        {field: first[field] for field in (
+            "signal_digest", "intent_key", "payload_digest")}, first,
+    ) == "ALREADY_CLAIMED_DO_NOT_SEND"
+
+    # A changed quote or notional MUST NOT evade a signal's unique key.
+    changed = orders.build_strategy_signal_identity(
+        DID, **{**params, "proposed_usd": "125.500001"})
+    assert changed["intent_key"] == first["intent_key"]
+    assert changed["signal_digest"] == first["signal_digest"]
+    assert changed["payload_digest"] != first["payload_digest"]
+    with pytest.raises(ValueError):
+        orders.classify_existing_signal_binding(
+            {field: first[field] for field in (
+                "signal_digest", "intent_key", "payload_digest")}, changed,
+        )
+    # Different user / coin / strategy run / event can never share the key.
+    for changed_did, changed_params in (
+        ("did:privy:another", params),
+        (DID, {**params, "asset": "BTC"}),
+        (DID, {**params, "strategy_run_id": "session_20261113_beta"}),
+        (DID, {**params, "signal_event_id": "signal_00000043"}),
+    ):
+        identity = orders.build_strategy_signal_identity(
+            changed_did, **changed_params)
+        assert identity["intent_key"] != first["intent_key"]
+
+
+@pytest.mark.parametrize("changes", [
+    {"strategy_run_id": "abc"},
+    {"signal_event_id": "../../wallet"},
+    {"side": "LEVERAGE"},
+    {"stable": "ETH"},
+    {"proposed_usd": 150.0},
+    {"proposed_usd": "1e2"},
+    {"quote_digest": "abc123"},
+    {"quote_digest": "A" * 64},
+])
+def test_signal_identity_fails_closed_on_untrusted_fields(changes):
+    data = {
+        "asset": "ETH", "strategy_run_id": "session_20261113_alpha",
+        "signal_event_id": "signal_00000042", "side": "BUY",
+        "stable": "USDT", "proposed_usd": "100.00",
+        "quote_digest": "b" * 64,
+    }
+    with pytest.raises(ValueError):
+        orders.build_strategy_signal_identity(DID, **{**data, **changes})
+
+
+def test_unresolved_live_orders_are_not_lost_to_pagination(monkeypatch):
+    """An old uncertain broadcast blocks even after 50 later records."""
+    rows = [
+        {"state": "RECONCILIATION_REQUIRED", "total": 1},
+        {"state": "RESERVED", "total": 3},
+    ]
+
+    class FakeDatabase:
+        def __init__(self):
+            self.calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self, **kwargs):
+            return self
+
+        def execute(self, sql, params):
+            self.calls.append((sql, params))
+
+        def fetchall(self):
+            return rows
+
+    db = FakeDatabase()
+    monkeypatch.setattr(orders, "_db_url", lambda: "postgresql://fake")
+    monkeypatch.setattr(orders, "_ensure_schema", lambda _: None)
+    monkeypatch.setattr(orders, "_prepare_rows", lambda cur, did: None)
+    monkeypatch.setattr(orders.psycopg, "connect", lambda *a, **kw: db)
+    snapshot = orders.get_live_order_safety(DID, asset="ETH")
+    assert snapshot["no_unresolved_orders_observed"] is False
+    assert snapshot["outstanding_order_count"] == 4
+    assert snapshot["uncertain_order_count"] == 1
+    assert snapshot["safe_to_send"] is False
+    assert snapshot["can_submit"] is False
+    assert len(db.calls) == 1
+    sql, parameters = db.calls[0]
+    assert "privy_did=%s AND asset=%s" in sql
+    assert "GROUP BY state" in sql
+    assert "LIMIT" not in sql
+    assert parameters[0:2] == (DID, "ETH")
+    assert set(parameters[2]) == orders._RESERVED_STATES
+
+    # Even an empty ledger does not activate a disabled future executor.
+    rows.clear()
+    fresh = orders.get_live_order_safety(DID, asset="ETH")
+    assert fresh["no_unresolved_orders_observed"] is True
+    assert fresh["outstanding_order_count"] == 0
+    assert fresh["safe_to_send"] is False
+
+
