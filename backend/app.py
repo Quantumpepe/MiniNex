@@ -46,6 +46,7 @@ from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_l
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
 from .eth_auto_preflight import get_eth_automatic_preflight
+from .eth_user_enrollment_preflight import get_eth_user_enrollment_preflight
 from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
@@ -494,6 +495,23 @@ async def eth_automatic_execution_readiness(
     """Unified Privy/policy/limits diagnostics. No grant or transaction path."""
     did = verify_privy_bearer(authorization)["user_id"]
     report = await get_eth_automatic_preflight(did)
+    return JSONResponse(report, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/enrollment-preflight")
+async def eth_policy_enrollment_preflight(
+    authorization: str | None = Header(default=None),
+):
+    """Wallet + LIVE limits readiness only; never creates a signer or grant.
+
+    Authenticated DID is the only selection input. Return no draft body or
+    authority until explicit user consent and verified token caps exist.
+    """
+    did = verify_privy_bearer(authorization)["user_id"]
+    report = await get_eth_user_enrollment_preflight(did)
     return JSONResponse(report, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

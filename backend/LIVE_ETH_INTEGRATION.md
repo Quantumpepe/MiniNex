@@ -561,6 +561,38 @@ the complete native ETH cycle passes real-world integration checks.
 Docs: https://docs.privy.io/controls/policies/overview
 and https://docs.privy.io/controls/policies/create-a-policy
 
+## Stage 16: verified Privy wallet + LIVE limits enrollment preflight (read-only)
+
+An authenticated `GET /api/live/eth/enrollment-preflight` now accepts only
+the DID obtained from the validated Privy JWT. It retrieves the user's
+Privy record from Privy, extracts the **unique** Privy-managed Ethereum
+wallet and server-observed wallet ID, verifies its Privy wallet owner,
+network and address with a separate Privy GET, and looks up the account's
+**separate** LIVE ETH capital, order and daily limits from PostgreSQL.
+The endpoint never accepts client-selected wallet addresses, limit values,
+signer IDs or policy IDs. It rejects cross-user wallets and malformed
+limits, and flags any unverified existing additional signers.
+
+Two public **identifiers**, `MININEX_PRIVY_ETH_POLICY_OWNER_ID` and
+`MININEX_PRIVY_ETH_SIGNER_ID`, are checked for being nonempty, syntactically
+valid and different. Missing configuration remains a blocked preflight;
+do **not** paste a private key into any of these settings. Privy API
+secrets are managed separately. No policy is created or changed.
+
+The response intentionally **does not** manufacture token-atomic limits
+from a USD budget by blindly assuming USDC/USDT always equal $1. It
+does not return an authorization-ready policy draft. Before any later
+enrollment, the backend must independently derive caps using fresh prices,
+attach an owner-controlled policy, collect a separate user signature
+over exact wallet, allowed actions and caps using an expiring one-time
+nonce, verify revocation, and pin the entire policy body retrieved from
+Privy. The user explicitly approves and can revoke the delegation.
+
+Regardless of verified wallet or budget readiness, the endpoint ALWAYS
+returns `can_grant_permission:false`, `can_sign:false`,
+`can_submit:false` and `execution_enabled:false`. LIVE remains paused.
+The normal paper Strategist and combined Portfolio are unchanged.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
