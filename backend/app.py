@@ -30,6 +30,7 @@ from .extra_paper import (
     set_status as set_extra_paper_status,
 )
 from .extra_paper_report import compare as compare_extra_paper
+from .home_paper_trades import recent_home_trades
 from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
 from .strategy_replay import (
@@ -700,6 +701,20 @@ def user_paper_availability():
         "paper_available":_paper_visible(),
         "live_trading_enabled":False,
     },headers={"Cache-Control":"no-store"})
+
+
+@app.get("/api/home/paper-trades")
+def personal_home_paper_trades(
+    authorization: str | None = Header(default=None),
+):
+    """Only the caller's newest saved PAPER trades from all 11 ready coins."""
+    _require_paper_visible()
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        recent_home_trades(did),
+        headers={"Cache-Control":"private, no-store",
+                 "X-Content-Type-Options":"nosniff"},
+    )
 
 
 @app.get("/api/user-paper/{asset}")
