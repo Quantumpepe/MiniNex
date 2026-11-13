@@ -7,29 +7,27 @@ const compact=read('../src/CompactOverview.jsx');
 const app=read('../src/App.jsx');
 const css=read('../src/styles.css');
 
-test('compact Home does not discard the fifth or subsequent account PAPER trade',()=>{
-  assert.match(compact,/const recentTrades=Array\.isArray\(trades\)\?\[\.\.\.trades\]\.reverse\(\):\[\]/);
+test('compact home keeps the fifth and later account PAPER trade, newest first',()=>{
+  assert.match(compact,/const recentTrades=Array\.isArray\(trades\)\?trades\.slice\(0,60\):\[\]/);
   assert.match(compact,/const hasMoreTrades=recentTrades\.length>4/);
   assert.match(compact,/\{recentTrades\.map\(\(trade,index\)=>\{/);
   assert.doesNotMatch(compact,/reverse\(\)\.slice\(0,4\)/);
   assert.match(compact,/hasMoreTrades\?' compact-trade-list--scroll':''/);
   assert.match(compact,/tabIndex=\{hasMoreTrades\?0:undefined\}/);
   assert.match(compact,/role=\{hasMoreTrades\?'region':undefined\}/);
-  assert.match(compact,/aria-label=\{hasMoreTrades\?t\.recentTrades\+' · '\+asset:undefined\}/);
+  assert.match(compact,/aria-label=\{hasMoreTrades\?t\.recentTrades\+' · '\+t\.homeAllCoins:undefined\}/);
 });
 
-test('desktop Home uses the same four-visible-row scrolling and activity keeps its full list',()=>{
-  assert.match(app,/const shown=\(Array\.isArray\(trades\)\?\[\.\.\.trades\]:\[\]\)\.reverse\(\)\.slice\(0,40\)/);
+test('desktop home reads all coins from the same private paper feed',()=>{
+  assert.match(app,/const shown=Array\.isArray\(trades\)\?trades\.slice\(0,60\):\[\]/);
   assert.match(app,/const hasMoreTrades=compact&&shown\.length>4/);
   assert.match(app,/hasMoreTrades\?' trade-list--scroll':''/);
-  assert.match(app,/<ActivityList trades=\{personalTrades\} t=\{t\} lang=\{language\} asset=\{asset\} compact\/>/);
-  assert.match(app,/function usePersonalPaperTrades\(asset, paperVisible, refreshNonce\)/);
-  assert.match(app,/trade\?\.real_trade===false/);
-  assert.match(app,/data\?\.asset!==asset/);
-  assert.match(app,/data\?\.paper_only!==true/);
+  assert.match(app,/<ActivityList trades=\{homePaperTrades\.trades\} status=\{homePaperTrades\.status\} t=\{t\} lang=\{language\} compact\/>/);
+  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce\)/);
+  assert.match(app,/<h2>\{t\.recentTrades\} · \{t\.homeAllCoins\}<\/h2>/);
 });
 
-test('four visible rows; scroll inside the card from fifth; scrollbar stays invisible',()=>{
+test('four rows visible; fifth scrolls inside card without any scrollbar',()=>{
   assert.match(css,/\.compact-trade-row\{[\s\S]*?height:66px;[\s\S]*?flex:0 0 66px;/);
   assert.match(css,/\.compact-trade-list--scroll\{\s*max-height:264px;/);
   assert.match(css,/\.recent-panel \.trade-row\{[\s\S]*?height:68px;/);
