@@ -311,6 +311,7 @@ function FeeDetails({paper,portfolio,asset,t,lang}) {
 export default function App() {
   const [language,setLanguage]=useState(getLanguage);
   const [asset,setAsset]=useState('BTC');
+  const [showAllPaperHistory,setShowAllPaperHistory]=useState(false);
   const [page,setPage]=useState('overview');
   const pageRef=useRef('overview');
   const previousPages=useRef([]);
@@ -368,7 +369,8 @@ export default function App() {
     return()=>{active=false;};
   },[]);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce);
-  const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce);
+  const homePaperScope=showAllPaperHistory?'ALL':asset;
+  const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
@@ -412,7 +414,10 @@ export default function App() {
       <main className="main-body">
         {page==='overview'&&<>
           <CompactOverview
-            t={t} lang={language} chooseLang={chooseLang} asset={asset} setAsset={setAsset} period={period} setPeriod={setPeriod}
+            t={t} lang={language} chooseLang={chooseLang} asset={asset}
+             setAsset={symbol=>{setShowAllPaperHistory(false);setAsset(symbol);}}
+             showAllTrades={showAllPaperHistory} onToggleAllTrades={()=>setShowAllPaperHistory(v=>!v)}
+             period={period} setPeriod={setPeriod}
             history={history} trades={homePaperTrades.trades} tradesStatus={homePaperTrades.status} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
              portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
@@ -423,7 +428,7 @@ export default function App() {
             syncedAt={syncedAt} kind="home"
             onSelect={symbol=>{
               if(coinBySymbol(symbol)){
-                setAsset(symbol);setPeriod('m15');
+                setShowAllPaperHistory(false);setAsset(symbol);setPeriod('m15');
               }
             }}/>
 
@@ -439,7 +444,16 @@ export default function App() {
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
               {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
-                <div className="panel-top"><h2>{t.recentTrades} · {t.homeAllCoins}</h2><span className="muted-description">{t.simulatedTradeLabel}</span></div>
+                <div className="panel-top"><h2>{t.recentTrades} · {showAllPaperHistory?t.homeAllCoins:asset}</h2>
+                   <div className="home-history-filter-actions">
+                     <span className="muted-description">{t.simulatedTradeLabel}</span>
+                     <button type="button" className="home-history-filter"
+                       aria-pressed={showAllPaperHistory}
+                       onClick={()=>setShowAllPaperHistory(v=>!v)}>
+                       {showAllPaperHistory?t.homeOnlyCoin:t.homeAllCoins}
+                     </button>
+                   </div>
+                 </div>
                 <ActivityList trades={homePaperTrades.trades} status={homePaperTrades.status} t={t} lang={language} compact/>
               </section>}
             </div>
