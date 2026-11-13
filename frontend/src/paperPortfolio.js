@@ -75,10 +75,12 @@ const isMoney=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
 const roundMoney=n=>Math.round(n*100)/100;
 
 function coreEquity(row,asset) {
-  if(!row||row.asset!==asset||row.paper_only!==true||
+  if(!row||row.paper_only!==true||
      row.real_trading_enabled!==false||row.wallet_funds_used!==false)
     return undefined;
+  // Unstarted BTC/ETH records intentionally contain no asset field.
   if(row.status==='NOT_STARTED')return null;
+  if(row.asset!==asset)return undefined;
   if(!['ACTIVE','PAUSED'].includes(row.status))return undefined;
   const start=finite(row.demo_start_cash);
   const qty=finite(row.position?.coin_quantity);
