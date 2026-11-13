@@ -794,6 +794,24 @@
 .mininex-paper-compare-values strong.mininex-pnl-positive{color:#6ff0c1}
 .mininex-paper-compare-values strong.mininex-pnl-negative{color:#ff8585}
 .mininex-paper-compare-caution{font-size:10px;color:#e7c58a;line-height:1.4}
+/* Diagnostic details stay closed by default: the 12-coin home grid stays
+   uncluttered and no new trading controls are introduced. */
+.mininex-paper-compare-insights{display:grid;gap:7px;min-width:0;
+  padding-top:7px;border-top:1px solid #28534d}
+.mininex-paper-compare-insights summary{cursor:pointer;list-style:none;
+  color:#a1e4ce;font-size:11px;font-weight:600;outline-offset:3px}
+.mininex-paper-compare-insights summary::-webkit-details-marker{display:none}
+.mininex-paper-compare-insights summary::after{content:'+';float:right}
+.mininex-paper-compare-insights[open] summary::after{content:'−'}
+.mininex-paper-compare-insights .privy-wallet-description{
+  font-size:10px;line-height:1.5;margin:6px 0 0}
+.mininex-paper-compare-detail-grid{display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:7px}
+.mininex-paper-compare-detail-grid>div{display:grid;gap:2px;min-width:0}
+.mininex-paper-compare-detail-grid span{font-size:10px;color:#9bc6ba}
+.mininex-paper-compare-detail-grid strong{font-size:11px;
+  color:#e4fff4;overflow-wrap:anywhere}
+
 @media(max-width:380px){
   .mininex-paper-compare-list{grid-template-columns:minmax(0,1fr)}
 }
