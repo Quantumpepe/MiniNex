@@ -15,7 +15,7 @@ test('compact home keeps the fifth and later account PAPER trade, newest first',
   assert.match(compact,/hasMoreTrades\?' compact-trade-list--scroll':''/);
   assert.match(compact,/tabIndex=\{hasMoreTrades\?0:undefined\}/);
   assert.match(compact,/role=\{hasMoreTrades\?'region':undefined\}/);
-  assert.match(compact,/aria-label=\{hasMoreTrades\?t\.recentTrades\+' · '\+t\.homeAllCoins:undefined\}/);
+  assert.match(compact,/aria-label=\{hasMoreTrades\?t\.recentTrades\+' · '\+\(showAllTrades\?t\.homeAllCoins:asset\):undefined\}/);
 });
 
 test('desktop home reads all coins from the same private paper feed',()=>{
@@ -23,8 +23,8 @@ test('desktop home reads all coins from the same private paper feed',()=>{
   assert.match(app,/const hasMoreTrades=compact&&shown\.length>4/);
   assert.match(app,/hasMoreTrades\?' trade-list--scroll':''/);
   assert.match(app,/<ActivityList trades=\{homePaperTrades\.trades\} status=\{homePaperTrades\.status\} t=\{t\} lang=\{language\} compact\/>/);
-  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce\)/);
-  assert.match(app,/<h2>\{t\.recentTrades\} · \{t\.homeAllCoins\}<\/h2>/);
+  assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
+  assert.match(app,/<h2>\{t\.recentTrades\} · \{showAllPaperHistory\?t\.homeAllCoins:asset\}<\/h2>/);
 });
 
 test('four rows visible; fifth scrolls inside card without any scrollbar',()=>{
