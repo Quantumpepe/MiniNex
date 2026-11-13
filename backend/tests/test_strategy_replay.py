@@ -55,7 +55,7 @@ def test_replay_looks_only_at_past_samples_not_future():
 
 def test_invalid_replay_data_rejected():
     with pytest.raises(ValueError):
-        replay_strategy("SOL","LONG","15m",[])
+        replay_strategy("ADA","LONG","15m",[])
     with pytest.raises(ValueError):
         replay_strategy("BTC","LEVERAGED_SHORT","15m",[])
     with pytest.raises(ValueError):
@@ -79,7 +79,7 @@ def test_replay_endpoint_rejects_invalid_query_without_mutating():
     client=TestClient(app)
     r=client.get("/api/strategy/replay/BTC?mode=LEVERAGED_SHORT")
     assert r.status_code==422
-    r=client.get("/api/strategy/replay/SOL")
+    r=client.get("/api/strategy/replay/ADA")
     assert r.status_code==422
     r=client.get("/api/strategy/replay/BTC")
     assert r.status_code==200

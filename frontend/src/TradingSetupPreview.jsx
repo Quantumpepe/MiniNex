@@ -2,6 +2,8 @@ import React, {useEffect, useState} from 'react';
 import {API_BASE} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
+import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
+import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
 
 // Persisted preferences are display/configuration only: no signer authority.
 const INITIAL = Object.freeze({
@@ -28,6 +30,10 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
   const [busy,setBusy]=useState(false);
+  // Retain independent virtual backtest settings when switching among coins.
+  // These are local hypothetical budgets, not live or stored trade permissions.
+  const [replayOptions,setReplayOptions]=useState(()=>Object.fromEntries(
+    EXTRA_REPLAY_COINS.map(coin=>[coin,defaultReplayOption()])));
   // Only the coin button toggles this panel. Editing/saving fields never
   // closes it, and the selector itself scrolls independently of the form.
   const [opened,setOpened]=useState(null);
@@ -105,6 +111,10 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
     finally{setBusy(false);}
   };
 
+  const changeReplay=(asset,key,value)=>{
+    if(!EXTRA_REPLAY_COINS.includes(asset)||!['mode','horizon','budget'].includes(key))return;
+    setReplayOptions(old=>({...old,[asset]:{...old[asset],[key]:value}}));
+  };
   const selectedCoin=coinBySymbol(opened);
   const selectedSettings=opened==='BTC'||opened==='ETH'?settings[opened]:null;
 
@@ -116,7 +126,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
       aria-label={selectedCoin.symbol+' '+t.privyAssetSettings}>
       <div className="mininex-selected-header">
         <strong>{selectedCoin.glyph} {selectedCoin.name} · {selectedCoin.symbol}</strong>
-        <span>{selectedCoin.inProgress?t.coinInProgress:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.coinPreparing}</span>
+        <span>{selectedCoin.inProgress?t.coinInProgress:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
       </div>
       {renderCoinAddress?.(opened)}
       {selectedSettings ? <>
@@ -151,9 +161,10 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
           onClick={()=>save(opened)}>{t.privyBudgetSave} {opened}</button>
         {renderBudget?.(opened)}
         {renderSessionControls?.(opened)}
-      </> : <p className="privy-wallet-description" role="status">
+      </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
-      </p>}
+      </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
+        t={t} options={replayOptions[opened]} onChange={changeReplay}/>}
     </section>}
     {status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
     {status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
