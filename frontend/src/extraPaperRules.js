@@ -35,6 +35,24 @@ export function validExtraPaperState(data,asset){
   if(!Number.isInteger(data.position.trade_count)||
      data.position.trade_count<0||data.position.trade_count<data.trades.length||
      typeof data.pause_exit_pending!=='boolean')return false;
+  // The server may omit coverage in immediate POST results; an optional GET
+  // coverage report is informational, never a prerequisite for start/pause.
+  if(data.history_coverage!==undefined){
+    const c=data.history_coverage;
+    const required={'5m':5,'15m':15,'1h':60,'24h':1440}[data.horizon];
+    if(!c||typeof c!=='object'||Array.isArray(c)||
+       !['READY','PARTIAL','INSUFFICIENT','UNAVAILABLE'].includes(c.status)||
+       c.required_minutes!==required||typeof c.complete!=='boolean'||
+       (c.complete!==(c.status==='READY'))||
+       !(c.available_minutes===null||(
+         typeof c.available_minutes==='number'&&
+         Number.isFinite(c.available_minutes)&&c.available_minutes>=0&&
+         c.available_minutes<=required))||
+       !(c.recent_age_seconds===null||(
+         typeof c.recent_age_seconds==='number'&&
+         Number.isFinite(c.recent_age_seconds)&&c.recent_age_seconds>=0)))
+      return false;
+  }
   return true;
 }
 
