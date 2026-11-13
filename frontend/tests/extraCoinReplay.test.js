@@ -38,7 +38,7 @@ test('the nine extra coins share the strategy; BTC ETH and ADA stay untouched',(
   assert.equal(EXTRA_REPLAY_COINS.includes('BTC'),false);
   assert.equal(defaultReplayOption().budget,'500');
   assert.match(setup,/const selectedSettings=opened==='BTC'\|\|opened==='ETH'/);
-  assert.match(setup,/selectedCoin\.inProgress \?/);
+  assert.match(setup,/selectedCoin\.inProgress\?t\.coinInProgress/);
   assert.match(setup,/<ExtraCoinStrategyReplay asset=\{opened\}/);
   assert.match(setup,/EXTRA_REPLAY_COINS\.map\(coin=>\[coin,defaultReplayOption\(\)\]\)/);
   assert.match(setup,/setReplayOptions\(old=>/);
