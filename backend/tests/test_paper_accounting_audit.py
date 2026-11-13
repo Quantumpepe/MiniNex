@@ -161,3 +161,59 @@ def test_separate_assets_survive_state_roundtrips_without_cross_ledger_leaks():
     assert btc.coin_quantity < eth.coin_quantity
     btc.stable_cash -= 100
     assert eth.stable_cash == pytest.approx(engine.portfolios["ETH"].stable_cash)
+
+
+def test_all_eleven_coins_keep_trade_costs_and_histories_independent():
+    """Shared decision engine, independent holdings, all-in costs and PnL."""
+    from backend.strategy_replay import REPLAY_ASSETS
+
+    assert len(REPLAY_ASSETS) == 11
+    engine = PaperAutoEngine(PaperFeed())
+    engine.portfolios = {}
+    opening = {}
+
+    for index, asset in enumerate(REPLAY_ASSETS):
+        capital = float(500 + 100 * index)
+        price = float(100 + 75 * index)
+        portfolio = PaperPortfolio(
+            asset=asset, settlement="USDC" if index % 2 == 0 else "USDT",
+            stable_cash=capital, initial_equity=capital,
+        )
+        engine.portfolios[asset] = portfolio
+        quote = engine._buy_quote(asset, 250 + index * 30, price)
+        assert quote is not None
+        assert 0 < quote["total_spent"] <= capital
+        engine._paper_buy(portfolio, quote, 1_700_000_000, price, "BREAKOUT")
+        assert portfolio.stable_cash == pytest.approx(
+            capital - quote["total_spent"], abs=1e-7,
+        )
+        assert portfolio.cost_basis == pytest.approx(
+            quote["total_spent"], abs=1e-7,
+        )
+        opening[asset] = deepcopy(_state_of(portfolio))
+
+    # Only alternating coins sell. Every other coin must be bit-for-bit
+    # unchanged in its funds, position, profit and persisted state.
+    for index, asset in enumerate(REPLAY_ASSETS):
+        portfolio = engine.portfolios[asset]
+        if index % 2 == 0:
+            price = float(100 + 75 * index) * 1.025
+            quote = engine._sell_quote(asset, portfolio.coin_quantity, price)
+            assert quote is not None
+            engine._paper_sell(
+                portfolio, quote, 1_700_000_200, price, "DYNAMIC_NET_PROFIT_TRAILING"
+            )
+            assert portfolio.stable_cash == pytest.approx(
+                portfolio.initial_equity + portfolio.realized_profit,
+                abs=1e-6,
+            )
+            assert portfolio.coin_quantity == 0.0
+            assert portfolio.cost_basis == 0.0
+            assert portfolio.trade_count == 2
+        else:
+            assert _state_of(portfolio) == opening[asset]
+            assert portfolio.trade_count == 1
+        assert all(event["asset"] == asset and event["real_trade"] is False
+                   for event in portfolio.trade_history)
+        assert all(event["settlement"] == portfolio.settlement
+                   for event in portfolio.trade_history)
