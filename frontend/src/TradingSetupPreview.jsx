@@ -2,7 +2,8 @@ import React, {useEffect, useState} from 'react';
 import {API_BASE} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
-import ExtraCoinStrategyReplay,{EXTRA_REPLAY_COINS,defaultReplayOption} from './ExtraCoinStrategyReplay.jsx';
+import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
+import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
 
 // Persisted preferences are display/configuration only: no signer authority.
 const INITIAL = Object.freeze({
