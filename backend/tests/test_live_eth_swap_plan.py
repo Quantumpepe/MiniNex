@@ -391,3 +391,131 @@ def test_multi_command_valid_envelope_never_becomes_signable():
     assert preview["safe_to_sign"] is False
     assert preview["calldata_security_review_complete"] is False
     assert "data" not in preview
+
+
+def _review(data, *, side="BUY", stable="USDC", input_atomic="100000000",
+            minimum_atomic="208950000000000000"):
+    from backend.eth_router_semantics import review_eth_v3_commands
+    sp._inspect_router_envelope(data, now=int(time.time()))
+    commands, inputs = sp._router_command_payloads(data)
+    return review_eth_v3_commands(
+        commands=commands, inputs=inputs, side=side,
+        stable_token=STABLES[stable], wallet=WALLET, router=sp._ROUTER,
+        input_atomic=input_atomic, minimum_atomic=minimum_atomic,
+    )
+
+
+def test_semantic_review_allows_quote_bound_one_hop_v3_flows():
+    for side, calldata, input_units, minimum_units in (
+        ("BUY", reviewed_buy(), "100000000", "208950000000000000"),
+        ("SELL", reviewed_sell(), "100000000000000000", "99500000"),
+    ):
+        result = _review(calldata, side=side,
+                         input_atomic=input_units, minimum_atomic=minimum_units)
+        assert result["router_command_pattern_verified"] is True
+        assert result["router_commands_decoded"] is True
+        assert result["router_recipients_verified"] is True
+        assert result["router_path_type"] == "V3_SINGLE_HOP_ONLY"
+        assert "data" not in result
+
+
+def test_semantic_review_rejects_wrong_token_spend_output_fee_and_recipient():
+    poisoned = (
+        reviewed_buy(recipient="0x" + "b" * 40),
+        reviewed_buy(token_in=STABLES["USDT"]),
+        reviewed_buy(minimum=1),
+        reviewed_buy(amount=100000001),
+        reviewed_buy(payer=False),
+        reviewed_buy(fee=200),
+    )
+    for calldata in poisoned:
+        with pytest.raises(ValueError):
+            _review(calldata)
+
+
+def test_semantic_review_rejects_extra_commands_and_hidden_minimum():
+    from backend.eth_router_semantics import WETH_MAINNET
+    v3 = _v3_exact_in(
+        token_in=STABLES["USDC"], token_out=WETH_MAINNET,
+        recipient=sp._ROUTER, amount_in=100000000,
+        minimum=208950000000000000, payer=True,
+    )
+    unwrap = _addr(WALLET) + _word(208950000000000000)
+    poisoned = (
+        router_calldata(commands=b"\x00\x0c\x21",
+                        inputs=(v3, unwrap, b"\x00" * 32)),
+        router_calldata(commands=b"\x00\x0c", inputs=(
+            v3, _addr("0x" + "b" * 40) + _word(208950000000000000))),
+        router_calldata(commands=b"\x00\x0c", inputs=(
+            v3, _addr(WALLET) + _word(1))),
+        router_calldata(commands=b"\x0a\x00\x0c", inputs=(
+            b"\x00" * 32, v3, unwrap)),
+        router_calldata(commands=b"\x08\x0c", inputs=(v3, unwrap)),
+        router_calldata(commands=b"\x00", inputs=(v3,)),
+        router_calldata(commands=b"\x00\x0c", inputs=(
+            _v3_exact_in(token_in=STABLES["USDC"], token_out=WETH_MAINNET,
+                         recipient=sp._ROUTER, amount_in=100000000,
+                         minimum=208950000000000000, payer=True,
+                         hop_prices=(1,)),
+            unwrap)),
+    )
+    for calldata in poisoned:
+        with pytest.raises(ValueError):
+            _review(calldata)
+
+
+def test_semantic_review_rejects_sell_redirection_or_wrong_funding():
+    for calldata in (
+        reviewed_sell(token_out=STABLES["USDT"]),
+        reviewed_sell(recipient="0x" + "b" * 40),
+        reviewed_sell(payer=True),
+    ):
+        with pytest.raises(ValueError):
+            _review(calldata, side="SELL",
+                    input_atomic="100000000000000000",
+                    minimum_atomic="99500000")
+
+
+def test_semantic_review_rejects_legacy_five_argument_v3_input():
+    from backend.eth_router_semantics import WETH_MAINNET
+    path = (bytes.fromhex(STABLES["USDC"][2:]) + (3000).to_bytes(3, "big")
+            + bytes.fromhex(WETH_MAINNET[2:]))
+    legacy = (_addr(sp._ROUTER) + _word(100000000)
+              + _word(208950000000000000) + _word(160)
+              + _word(1) + _blob(path))
+    calldata = router_calldata(
+        commands=b"\x00\x0c",
+        inputs=(legacy, _addr(WALLET) + _word(208950000000000000)),
+    )
+    with pytest.raises(ValueError):
+        _review(calldata)
+
+
+def test_unrecognized_provider_command_is_rejected_before_return(monkeypatch, configured):
+    original = httpx.AsyncClient
+
+    def mock_client(*args, **kwargs):
+        def respond(request):
+            body = json.loads(request.content)
+            if str(request.url).endswith("/check_approval"):
+                return httpx.Response(200, json={"approval":None,"cancel":None})
+            if str(request.url).endswith("/quote"):
+                return httpx.Response(200, json=quote(body))
+            if str(request.url).endswith("/swap"):
+                return httpx.Response(200, json={"swap":{
+                    **tx(),
+                    "data":router_calldata(
+                        commands=b"\x00\x0b",
+                        inputs=(b"\x11" * 32, b"\x22" * 64),
+                    ),
+                }})
+            raise AssertionError("Unrecognized test request")
+
+        return original(*args, transport=httpx.MockTransport(respond), **kwargs)
+
+    monkeypatch.setattr(sp.httpx, "AsyncClient", mock_client)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(sp.make_eth_swap_plan(
+            DID, side="BUY", stable="USDC", amount="100",
+        ))
+    assert err.value.status_code == 502
