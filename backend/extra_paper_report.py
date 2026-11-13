@@ -15,6 +15,9 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .extra_paper import _present, mark_to_market
+from .paper_trade_insights import (
+    analyze_recent_trades, market_change_24h, observation_status,
+)
 from .strategy_replay import EXTRA_REPLAY_ASSETS
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
@@ -65,6 +68,19 @@ def summarize(asset: str,row: dict | None, events: list[dict],
         "recent_estimated_costs_usd":None,"recent_costs_complete":False,
         "runtime_active_seconds":None,"pause_exit_pending":False,
         "last_decision":None,"last_reason":None,
+        "last_signal_summary":None,
+        "recent_trade_sample_count":0,
+        "recent_trade_sample_is_lifetime":False,
+        "recent_entry_reason_counts":{
+            "DCA":0,"REBOUND":0,"BREAKOUT":0,"TREND":0,"OTHER":0},
+        "recent_exit_reason_counts":{
+            "TRAILING":0,"RISK":0,"SPOT":0,"PAUSE":0,"OTHER":0},
+        "recent_sell_stats_complete":False,
+        "recent_sell_win_rate_pct":None,
+        "recent_average_sell_pnl_usd":None,
+        "recent_largest_loss_usd":None,
+        "market_change_24h_pct":None,
+        "analysis_status":"NOT_STARTED",
     }
     if row is None:
         return base
@@ -72,10 +88,10 @@ def summarize(asset: str,row: dict | None, events: list[dict],
     state=session.get("position") or {}
     budget=_finite(session.get("budget_usd"),nonnegative=True)
     if budget is None or budget<=0:
-        return {**base,"status":"UNAVAILABLE"}
+        return {**base,"status":"UNAVAILABLE","analysis_status":"UNAVAILABLE"}
     status=session.get("status")
     if status not in ("ACTIVE","PAUSED"):
-        return {**base,"status":"UNAVAILABLE"}
+        return {**base,"status":"UNAVAILABLE","analysis_status":"UNAVAILABLE"}
     view=mark_to_market(session,_OneSnapshot(feeds or {}))
     valuation=view.get("position",{}).get("valuation",{})
     valid=valuation.get("quote_valid") is True
@@ -83,7 +99,7 @@ def summarize(asset: str,row: dict | None, events: list[dict],
     realized=_finite(state.get("realized_net_profit"))
     count=state.get("trade_count")
     if type(count) is not int or count<0:
-        return {**base,"status":"UNAVAILABLE"}
+        return {**base,"status":"UNAVAILABLE","analysis_status":"UNAVAILABLE"}
     costs=0.0
     recent=0.0
     complete=True
@@ -122,6 +138,14 @@ def summarize(asset: str,row: dict | None, events: list[dict],
     if len(events)>RECENT_LIMIT:
         complete=False
     runtime=session.get("runtime_active_seconds")
+    insight=analyze_recent_trades(asset,events,count)
+    market_row=feeds.get(asset) if isinstance(feeds,dict) else None
+    market_pct=market_change_24h(market_row)
+    usable_market=(isinstance(market_row,dict) and
+                   market_row.get("market_data_valid") is True)
+    summary=state.get("last_signal_summary")
+    if not isinstance(summary,str) or not summary or len(summary)>160:
+        summary=None
     return {**base,
             "status":status,
             "budget_usd":round(budget,2),
@@ -142,7 +166,13 @@ def summarize(asset: str,row: dict | None, events: list[dict],
             "runtime_active_seconds":runtime,
             "pause_exit_pending":session.get("pause_exit_pending") is True,
             "last_decision":state.get("last_decision"),
-            "last_reason":state.get("last_reason")}
+            "last_reason":state.get("last_reason"),
+            "last_signal_summary":summary,
+            **insight,
+            "market_change_24h_pct":market_pct,
+            "analysis_status":observation_status(
+                status,count,insight,usable_market),
+            }
 
 
 def compare(did: str,market: object) -> dict:

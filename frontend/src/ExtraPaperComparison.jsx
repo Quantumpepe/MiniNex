@@ -61,6 +61,13 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
   const percent=value=>value===null||value===undefined?'—':
     (value>0?'+':'')+value.toFixed(2)+'%';
   const tone=value=>value>0?'positive':value<0?'negative':'neutral';
+  const insightStatus=status=>({
+    INCOMPLETE_SAMPLE:t.extraComparePartial,
+    NO_CLOSED_SELLS:t.extraCompareNoClosed,
+    EARLY_SAMPLE:t.extraCompareEarly,
+    PRICE_UNAVAILABLE:t.extraCompareMarketMissing,
+    OBSERVATIONS_AVAILABLE:t.extraCompareObserved,
+  }[status]||t.extraComparePartial);
 
   return <section className="mininex-paper-compare">
     <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
@@ -107,6 +114,39 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
             {!row.quote_valid&&<small className="mininex-paper-compare-caution">
               {t.extraCompareNoQuote}
             </small>}
+            <details className="mininex-paper-compare-insights">
+              <summary>{t.extraCompareInsights}</summary>
+              <p className="privy-wallet-description">
+                {insightStatus(row.analysis_status)}
+              </p>
+              <div className="mininex-paper-compare-detail-grid">
+                <div><span>{t.extraCompareMarket24h}</span>
+                  <strong>{percent(row.market_change_24h_pct)}</strong></div>
+                <div><span>{t.extraCompareWinRate}</span>
+                  <strong>{percent(row.recent_sell_win_rate_pct)}</strong></div>
+                <div><span>{t.extraCompareAverageSell}</span>
+                  <strong>{money(row.recent_average_sell_pnl_usd)}</strong></div>
+                <div><span>{t.extraCompareLargestLoss}</span>
+                  <strong>{money(row.recent_largest_loss_usd)}</strong></div>
+                <div><span>{t.extraCompareDca}</span>
+                  <strong>{row.recent_entry_reason_counts.DCA}</strong></div>
+                <div><span>{t.extraCompareRebounds}</span>
+                  <strong>{row.recent_entry_reason_counts.REBOUND}</strong></div>
+                <div><span>{t.extraCompareTrailingExits}</span>
+                  <strong>{row.recent_exit_reason_counts.TRAILING}</strong></div>
+                <div><span>{t.extraCompareRiskExits}</span>
+                  <strong>{row.recent_exit_reason_counts.RISK}</strong></div>
+                <div><span>{t.extraCompareSample}</span>
+                  <strong>{row.recent_trade_sample_count}/{row.trade_count}</strong></div>
+              </div>
+              {row.last_signal_summary&&
+                <p className="privy-wallet-description">
+                  {t.extraCompareLatestSignal}: {row.last_signal_summary}
+                </p>}
+              <p className="privy-wallet-description">
+                {t.extraCompareDifferentPeriods}
+              </p>
+            </details>
           </>}
         </div>)}
       </div>}

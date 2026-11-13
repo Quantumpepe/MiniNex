@@ -24,7 +24,20 @@ const defaultRow=asset=>({
   recent_flat_sells:0,recent_realized_pnl_usd:null,
   recent_estimated_costs_usd:null,recent_costs_complete:false,
   runtime_active_seconds:null,pause_exit_pending:false,
-  last_decision:null,last_reason:null,
+  last_decision:null,last_reason:null,last_signal_summary:null,
+  recent_trade_sample_count:0,recent_trade_sample_is_lifetime:false,
+  recent_entry_reason_counts:{
+    DCA:0,REBOUND:0,BREAKOUT:0,TREND:0,OTHER:0,
+  },
+  recent_exit_reason_counts:{
+    TRAILING:0,RISK:0,SPOT:0,PAUSE:0,OTHER:0,
+  },
+  recent_sell_stats_complete:false,
+  recent_sell_win_rate_pct:null,
+  recent_average_sell_pnl_usd:null,
+  recent_largest_loss_usd:null,
+  market_change_24h_pct:null,
+  analysis_status:'NOT_STARTED',
 });
 const rows=EXTRA_REPLAY_COINS.map(defaultRow);
 const base={
@@ -56,6 +69,21 @@ test('contract permits legitimate marked equity but refuses unverified net retur
     recent_winning_sells:1,recent_losing_sells:3,
     recent_flat_sells:0,recent_realized_pnl_usd:-17.5,
     recent_estimated_costs_usd:8.9,recent_costs_complete:true,
+    recent_trade_sample_count:10,
+    recent_trade_sample_is_lifetime:true,
+    recent_entry_reason_counts:{
+      DCA:2,REBOUND:2,BREAKOUT:1,TREND:1,OTHER:0,
+    },
+    recent_exit_reason_counts:{
+      TRAILING:1,RISK:2,SPOT:1,PAUSE:0,OTHER:0,
+    },
+    recent_sell_stats_complete:true,
+    recent_sell_win_rate_pct:25,
+    recent_average_sell_pnl_usd:-4.38,
+    recent_largest_loss_usd:-7.2,
+    market_change_24h_pct:-4.5,
+    analysis_status:'EARLY_SAMPLE',
+    last_signal_summary:'1m +0.250% | 3m +0.100%',
   };
   const updated={...base,assets:rows.map(row=>row.asset==='SOL'?entry:row)};
   assert.equal(validExtraPaperComparison(updated),true);
@@ -66,6 +94,15 @@ test('contract permits legitimate marked equity but refuses unverified net retur
     {estimated_net_return_pct:NaN},{trade_count:-1},
     {recent_buys:0.3},{recent_costs_complete:'true'},
     {budget_usd:5001},
+    {recent_sell_win_rate_pct:101},
+    {recent_trade_sample_count:31},
+    {recent_exit_reason_counts:{TRAILING:1,RISK:-1,SPOT:1,PAUSE:0,OTHER:0}},
+    {recent_entry_reason_counts:{DCA:30,REBOUND:2,BREAKOUT:1,TREND:1,OTHER:0}},
+    {recent_sell_stats_complete:false},
+    {recent_largest_loss_usd:1.5},
+    {analysis_status:'MADE_UP_RECOMMENDATION'},
+    {market_change_24h_pct:Infinity},
+    {last_signal_summary:'x'.repeat(200)},
   ]){
     const bad={...updated,assets:updated.assets.map(x=>x.asset==='SOL'?{...entry,...patch}:x)};
     assert.equal(validExtraPaperComparison(bad),false,JSON.stringify(patch));
@@ -114,4 +151,12 @@ test('clear German and English short-window caution and compact mobile style',()
   assert.match(ui,/row\.recent_closed_sells/);
   assert.match(ui,/row\.recent_costs_complete/);
   assert.match(ui,/row\.quote_valid/);
+  assert.match(ui,/row\.recent_entry_reason_counts\.DCA/);
+  assert.match(ui,/row\.recent_exit_reason_counts\.TRAILING/);
+  assert.match(ui,/row\.recent_exit_reason_counts\.RISK/);
+  assert.match(ui,/row\.recent_sell_win_rate_pct/);
+  assert.match(ui,/row\.market_change_24h_pct/);
+  assert.match(ui,/<details className="mininex-paper-compare-insights">/);
+  assert.match(translations,/extraCompareDifferentPeriods:/);
+  assert.match(css,/\.mininex-paper-compare-detail-grid\{/);
 });
