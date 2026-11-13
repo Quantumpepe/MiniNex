@@ -1,6 +1,7 @@
 """MiniNex FastAPI V0.3 -- verified prices and PAPER-only AUTO strategy."""
 from contextlib import asynccontextmanager
 import asyncio
+import math
 import os
 import time
 
@@ -26,7 +27,11 @@ from .user_paper import read_user_paper, start_user_paper, set_user_paper_status
 from .personal_paper_worker import PersonalPaperWorker
 from .treasury import treasury_status
 from .ota_proxy import ota_release_cache, ReleaseUnavailable
-from .strategy_replay import replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES
+from .strategy_replay import (
+    replay_strategy, WINDOWS as REPLAY_WINDOWS, MODES as REPLAY_MODES,
+    REPLAY_ASSETS, EXTRA_REPLAY_ASSETS,
+)
+from .extended_paper_replay import compact_replay_observations
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .live_eth_receipts import check_eth_swap_receipt
@@ -206,14 +211,26 @@ def market_status():
 
 
 @app.get("/api/strategy/replay/{asset}")
-def historical_strategy_replay(asset: str, mode: str = "LONG", horizon: str = "15m"):
-    """Non-executing historical replay, separate from all user accounts."""
+def historical_strategy_replay(asset: str, mode: str = "LONG",
+                               horizon: str = "15m", initial_usd: float = 500.0):
+    """One on-demand historical PAPER evaluation, separate from user accounts.
+
+    Reuse the BTC/ETH rules for nine additional coins with independent
+    hypothetical capital. Never starts a session, changes real budgets,
+    asks a provider for new data, or signs/sends a transaction.
+    """
     asset=asset.upper()
-    if asset not in ("BTC","ETH") or mode not in REPLAY_MODES or horizon not in REPLAY_WINDOWS:
+    if (asset not in REPLAY_ASSETS or mode not in REPLAY_MODES
+        or horizon not in REPLAY_WINDOWS or not math.isfinite(initial_usd)
+        or not 100 <= initial_usd <= 5000):
         raise HTTPException(422,"Invalid replay selection")
-    samples=market.history(asset,limit=3600)
-    result=replay_strategy(asset,mode,horizon,samples)
-    return JSONResponse(result,headers={"Cache-Control":"no-store"})
+    if asset in EXTRA_REPLAY_ASSETS:
+        samples=compact_replay_observations(extra_markets.history(asset,limit=3600))
+    else:
+        samples=market.history(asset,limit=3600)
+    result=replay_strategy(asset,mode,horizon,samples,initial_usd=initial_usd)
+    return JSONResponse(result,headers={"Cache-Control":"no-store",
+                                         "X-Content-Type-Options":"nosniff"})
 
 
 @app.get("/api/market/history/{asset}")
