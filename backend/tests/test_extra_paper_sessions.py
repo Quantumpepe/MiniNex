@@ -353,3 +353,54 @@ def test_live_cutover_shuts_off_extra_paper_routes_and_worker(signed,monkeypatch
         json={"budget_usd":500}).status_code==404
     assert client.post("/api/extra-paper/SOL/pause",headers=signed()).status_code==404
     assert worker.auto_worker_allowed() is False
+
+
+def test_all_nine_extra_coins_keep_budgets_positions_and_fills_isolated(fake_db):
+    """Every opted-in coin and user owns a different durable paper ledger."""
+    feed = FakeMarkets()
+    alice = "did:privy:alice"
+    bob = "did:privy:bob"
+    budgets = {coin: 200 + 100 * index
+               for index, coin in enumerate(EXTRA_REPLAY_ASSETS)}
+
+    for coin, budget in budgets.items():
+        started = extra_paper.start(
+            alice, coin, budget, "SPOT_SHORT", "USDC", "5m", feed, NOW
+        )
+        assert started["budget_usd"] == budget
+        assert started["asset"] == coin
+        assert float(started["position"]["coin_quantity"]) > 0
+
+    # Same symbol, unrelated owner: must not share SOL holdings or event IDs.
+    extra_paper.start(bob, "SOL", 1400, "SPOT_SHORT", "USDT", "5m", feed, NOW)
+    untouched = deepcopy(fake_db.sessions)
+    first = extra_paper.set_status(alice, "SOL", "pause", feed, NOW + 20)
+    assert first["status"] == "PAUSED"
+    assert first["pause_exit_completed"] is True
+    for key, before in untouched.items():
+        if key != (alice, "SOL"):
+            assert fake_db.sessions[key] == before
+
+    # A sale of one coin must never debit another coin, regardless of order.
+    for index, coin in enumerate(EXTRA_REPLAY_ASSETS):
+        if coin != "SOL":
+            extra_paper.set_status(alice, coin, "pause", feed, NOW + 21 + index)
+        view = extra_paper.read(alice, coin)
+        assert view["status"] == "PAUSED"
+        assert view["asset"] == coin
+        assert view["budget_usd"] == budgets[coin]
+        assert float(view["position"]["coin_quantity"]) == 0.0
+        assert len(view["trades"]) == 1
+        event = view["trades"][0]
+        assert event["asset"] == coin
+        assert event["kind"] == "PAPER_SELL"
+        assert event["real_trade"] is False
+        assert float(view["position"]["stable_cash"]) == pytest.approx(
+            budgets[coin] + float(view["position"]["realized_net_profit"]),
+            abs=1e-6,
+        )
+    assert len(fake_db.events) == len(EXTRA_REPLAY_ASSETS)
+    assert all((did, coin, 1) in fake_db.events
+               for coin in EXTRA_REPLAY_ASSETS for did in (alice,))
+    assert fake_db.sessions[(bob, "SOL")] == untouched[(bob, "SOL")]
+    assert extra_paper.read(bob, "SOL")["trades"] == []
