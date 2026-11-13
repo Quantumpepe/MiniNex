@@ -288,6 +288,35 @@ partial-revert flags, deadlines and command/input mismatches.
 Uniswap Universal Router reference:
 https://developers.uniswap.org/docs/protocols/universal-router/concepts/commands
 
+## Stage 9: quote-bound V3 inner command preflight (read-only)
+
+The unsigned ETH `/swap-plan` now accepts only two fully identified
+Universal Router **2.1.2** command sequences, each limited to one V3 pool:
+
+- BUY: `V3_SWAP_EXACT_IN` USDC/USDT -> WETH to the router, then
+  `UNWRAP_WETH` to the verified user's ETH wallet.
+- SELL: `WRAP_ETH` of the exact quoted amount to the router, then
+  `V3_SWAP_EXACT_IN` WETH -> USDC/USDT to the user's ETH wallet.
+
+Review validates six-field V3 exact-input ABI (including the empty
+`minHopPriceX36` array), canonical addresses, exact quoted input, output
+minimum at BOTH the swap and final unwrap (on BUY), recognized V3 fee
+tiers, payer flag, intermediate custody, and final wallet recipient.
+It rejects all other command patterns (including Permit2 permits, sweeps,
+sub-plans, multi-hop, nonempty price guard arrays, and unreviewed routes).
+Those routes simply cannot produce a plan until separately implemented.
+
+**Still not signable:** This is a narrow static command-pattern verification.
+Actual router-contract compatibility, live approvals, signer policies,
+trusted-RPC simulation, per-coin capital reservations, nonce/receipt
+reconciliation, real gas and token deltas, and user consent remain open.
+Output continues to expose no calldata or approvals and always sets
+`safe_to_sign:false`, `execution_enabled:false`, `can_submit:false`.
+
+References: official Uniswap 2.1.2 deployments and router Dispatcher:
+https://developers.uniswap.org/docs/trading/swapping-api/supported-chains
+https://github.com/Uniswap/universal-router/blob/main/contracts/base/Dispatcher.sol
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
