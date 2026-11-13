@@ -128,9 +128,11 @@ def test_swap_rules_fix_token_pair_recipient_nonzero_min_and_per_wallet_cap(
     assert field(
         rule, "ethereum_calldata", "exactInputSingle.params.amountIn", "gt"
     )["value"] == "0"
+    expected_cap = (CAPS[f"{stable.lower()}_max_input_micro"]
+                    if side == "BUY" else CAPS["weth_max_input_wei"])
     assert field(
         rule, "ethereum_calldata", "exactInputSingle.params.amountIn", "lte"
-    )["value"] == CAPS[f"{stable.lower()}_max_input_micro"] if side == "BUY" else CAPS["weth_max_input_wei"]
+    )["value"] == expected_cap
     assert field(
         rule, "ethereum_calldata", "exactInputSingle.params.amountOutMinimum",
         "gt",
