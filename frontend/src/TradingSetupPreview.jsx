@@ -164,7 +164,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudg
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
-        t={t} options={replayOptions[opened]} onChange={changeReplay}/>
+        t={t} options={replayOptions[opened]} onChange={changeReplay}/>}
     </section>}
     {status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
     {status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
