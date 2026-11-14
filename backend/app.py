@@ -23,6 +23,7 @@ from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
 from .wallet_balances import get_wallet_balances
+from .multicoin_evm_balances import get_multicoin_evm_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .extra_paper import (
@@ -420,6 +421,19 @@ async def manual_wallet_swap_wallet_readiness(
     did = verify_privy_bearer(authorization)["user_id"]
     report = await get_manual_swap_wallet_readiness(did, source, target)
     return JSONResponse(report, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/wallet/multicoin-balances")
+async def authenticated_multicoin_balances(
+    authorization: str | None = Header(default=None),
+):
+    """Actual BNB/POL/AVAX/LINK/UNI holdings from each correct blockchain."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_multicoin_evm_balances(did)
+    return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
