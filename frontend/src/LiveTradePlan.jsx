@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import EthPolicyRouteReadiness from './EthPolicyRouteReadiness.jsx';
 import LiveReceiptCheck from './LiveReceiptCheck.jsx';
+import EthLiveSwap from './EthLiveSwap.jsx';
 import {createLivePlanRequest,normalizedLiveStable,validLiveTradePlan,
   LIVE_SETTLEMENTS} from './liveTradePlanRules.js';
 
@@ -142,6 +143,9 @@ export default function LiveTradePlan({
         {result.wallet_funds_verified?t.livePlanWalletChecked:t.livePlanVenueOnly}
       </p>
       <p className="privy-wallet-description">{t.livePlanNotExecutable}</p>
+      {asset==='ETH'&&<EthLiveSwap
+        enabled={enabled} userId={userId} getAccessToken={getAccessToken}
+        side={side} stable={stable} amount={amount} t={t}/>}
       {asset==='ETH'&&<EthPolicyRouteReadiness
         request={quote.request} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}/>}
