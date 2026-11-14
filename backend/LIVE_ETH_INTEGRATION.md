@@ -826,6 +826,77 @@ Privy docs:
 - https://docs.privy.io/wallets/using-wallets/signers/remove-signers
 - https://docs.privy.io/wallets/using-wallets/signers/add-signers
 
+## Stages 23-24: user-initiated Privy policy creation + separate wallet permission
+
+**Stage 23, real Privy policy creation (NO wallet grant):** The user
+explicitly starts setup from the MiniNex ETH LIVE controls. Privy's
+`useSignMessage` prompts the verified embedded Ethereum wallet to sign
+a one-time, nonce-bound EIP-191 MiniNex enrollment INTENT using Privy's
+native signing UI. The server checks the same authenticated DID, session,
+wallet, LIVE limits revision, independent policy-owner and execution
+signer quorums. A POST to `/api/live/eth/policy/prepare` stores the
+individual six-rule policy in PostgreSQL. A *separate*, explicit POST
+`/api/live/eth/policy/create` rechecks the trusted wallet, locked LIVE
+limits, signed intent, unexpired policy and a current independent ETH/
+USDC/USDT price reference. Only a <=5-minute-old prepared policy may be
+submitted. Under row locks, the server permanently reserves a single
+`SUBMITTING` attempt **and commits before** calling Privy
+`POST /v1/policies`. The request includes a deterministic idempotency
+key and independent policy-owner quorum. After Privy responds, the server
+GETs the exact newly created policy and checks its full remote owner,
+method, conditions, recipient, contract, chain, size and rule count. A
+matching remote readback is stored as `REMOTE_VERIFIED_UNATTACHED`.
+Timeout, bad readback or ambiguous POST outcome becomes `UNCERTAIN`,
+with no background automatic retry or duplicate creation. An existing
+stop/revoke never gets overwritten by a late POST response.
+
+**Stage 24, separate explicit Privy wallet-owner grant:** An authenticated
+`GET /api/live/eth/policy/grant-review` independently rechecks the
+verified user-owned wallet, stored LIVE limits revision and full policy
+freshly fetched from Privy. It supplies *only* the matching wallet,
+executor signer quorum and user-specific Policy ID (no private key).
+When enabled **after a separate security audit**, the MiniNex UI offers
+the user Privy's native
+`useSigners().addSigners({address, signers:[{signerId,policyIds:[policyId]}]})`.
+The user must approve this separately in their own Privy wallet. The
+backend *never* registers a signer, infers delegation from an EIP-191
+intent, grants an empty policy override or accepts client-provided
+signer/policy IDs. Subsequent authenticated POST
+`/api/live/eth/policy/confirm-grant` only stores `GRANT_VERIFIED`
+after fresh Privy wallet metadata shows exactly **one additional signer**
+matching the expected quorum and one exact override policy, the full
+remote policy is verified again and locked LIVE limits/consent/revoke
+state are unchanged.
+
+**Important runtime safety:** `MININEX_PRIVY_ETH_GRANT_ENABLED` defaults
+to OFF. It must stay unset until a controlled Privy ABI-parser/Uniswap
+route and on-chain allowance review, atomic cumulative daily budget
+enforcement, safe transaction preflight, remote removeSigners and
+uncertain-creation reconciliation have passed a separate security
+gate. Its only accepted value is `enabled-after-audit`. No automatic
+wallet grant occurs merely because a policy exists. Even when a user
+has granted the exact scoped signer, LIVE trade submission, gas
+spending and automatic strategies remain disabled in the backend. The
+Stage 19 policy itself enforces per-order maximums but **not** cumulative
+daily spending; activating automated real trading from the mere
+presence of a grant would be unsafe. The signed intent and Privy
+grant are two distinct approval events.
+
+The existing owner-approved Privy removeSigners/revoke flow remains
+available. If the wallet owner revokes midway through a policy POST, the
+DB never resurrects authorization, and orphaned/uncertain policy
+creation needs reconciliation before another attempt. These changes
+must be deployed together, with no destructive migration and no
+changes to Paper simulations, Strategist, coin-separated trade history
+or the global Portfolio.
+
+References:
+https://docs.privy.io/controls/policies/create-a-policy
+https://docs.privy.io/controls/policies/get-a-policy
+https://docs.privy.io/wallets/using-wallets/signers/add-signers
+https://docs.privy.io/wallets/using-wallets/ethereum/sign-a-message
+https://docs.privy.io/wallets/using-wallets/signers/remove-signers
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
