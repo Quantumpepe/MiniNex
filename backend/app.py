@@ -48,6 +48,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
+from .live_btc_receipts import check_native_btc_transaction
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
@@ -593,6 +594,19 @@ async def eth_live_chain_receipt(tx_hash: str,
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/btc/tx-receipt/{tx_hash}")
+async def btc_live_chain_receipt(
+    tx_hash: str, authorization: str | None = Header(default=None),
+):
+    """Owner-scoped BTC UTXO confirmation status, NOT a crosschain swap fill."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await check_native_btc_transaction(did,tx_hash)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
