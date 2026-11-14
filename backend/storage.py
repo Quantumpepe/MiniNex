@@ -128,6 +128,30 @@ SCHEMA = (
                last_attempt_at IS NOT NULL),
         CHECK (status <> 'REVOKED' OR revoked_at IS NOT NULL)
     )""",
+    # Existing installations have the original Stage-21 status CHECK. A
+    # CREATE TABLE IF NOT EXISTS cannot extend that original constraint.
+    # Replace only that non-destructive CHECK to add GRANT_VERIFIED safely.
+    """ALTER TABLE mininex_live_eth_policy_enrollments
+       DROP CONSTRAINT IF EXISTS mininex_live_eth_policy_enrollments_status_check""",
+    """ALTER TABLE mininex_live_eth_policy_enrollments
+       ADD CONSTRAINT mininex_live_eth_policy_enrollments_status_check
+       CHECK (status IN (
+           'PREPARED','SUBMITTING','UNCERTAIN',
+           'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED',
+           'REVOKE_REQUESTED','REVOKED'))""",
+    """DO $$
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname='mininex_live_eth_policy_grant_integrity_check'
+         ) THEN
+           ALTER TABLE mininex_live_eth_policy_enrollments
+             ADD CONSTRAINT mininex_live_eth_policy_grant_integrity_check
+             CHECK (status <> 'GRANT_VERIFIED' OR
+               (policy_id IS NOT NULL AND remote_policy_sha256 IS NOT NULL
+                AND remote_verified_at IS NOT NULL));
+         END IF;
+       END $$""",
     """CREATE TABLE IF NOT EXISTS mininex_live_order_intents (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
