@@ -213,6 +213,65 @@ def _stage_locked(
     }, current_revision=values["revision"])
 
 
+def _reserve_one_remote_attempt_locked(
+    cur, *, did: str, evidence: dict, owner: str,
+    executor: str, idempotency_key: str, now: int,
+) -> dict:
+    """Future-worker-only atomic one-shot reservation; NOT API-exposed.
+
+    This transition must be COMMITTED before any future remote Privy POST.
+    Never automatically reset SUBMITTING/UNCERTAIN to PREPARED after a crash.
+    The current production worker does not call this function or Privy POST.
+    """
+    values = _require_enrollment_evidence(evidence)
+    if (type(idempotency_key) is not str or _SHA.fullmatch(idempotency_key) is None
+            or type(now) is not int or now <= 0):
+        raise HTTPException(409, "Invalid remote policy reservation")
+    _check_locked_limits(cur, did, values)
+    _require_signed_intent(
+        cur, did=did, values=values, owner=owner, executor=executor,
+    )
+    cur.execute(
+        """SELECT wallet_address,limits_revision,policy_owner_id,
+                  execution_signer_id,idempotency_key,status,policy_id,
+                  extract(epoch FROM policy_expires_at)::bigint
+                      AS expires_at_unix
+           FROM mininex_live_eth_policy_enrollments
+           WHERE privy_did=%s FOR UPDATE""", (did,),
+    )
+    row = cur.fetchone()
+    if (type(row) is not dict or row.get("status") != "PREPARED"
+            or row.get("policy_id") is not None
+            or row.get("wallet_address") != values["wallet"]
+            or row.get("limits_revision") != values["revision"]
+            or row.get("policy_owner_id") != owner
+            or row.get("execution_signer_id") != executor
+            or row.get("idempotency_key") != idempotency_key
+            or type(row.get("expires_at_unix")) is not int
+            or now >= row["expires_at_unix"]):
+        raise HTTPException(409, "Policy attempt already claimed, stale or revoked")
+    cur.execute(
+        """UPDATE mininex_live_eth_policy_enrollments
+           SET status='SUBMITTING',last_attempt_at=now(),updated_at=now()
+           WHERE privy_did=%s AND status='PREPARED'
+                 AND idempotency_key=%s
+           RETURNING status""", (did, idempotency_key),
+    )
+    updated = cur.fetchone()
+    if type(updated) is not dict or updated.get("status") != "SUBMITTING":
+        raise HTTPException(409, "Policy submission reservation conflict")
+    return {
+        "status": "SUBMITTING",
+        "idempotency_key": idempotency_key,
+        "remote_post_performed": False,
+        "remote_post_must_not_retry_after_uncertainty": True,
+        "can_grant_permission": False,
+        "can_sign": False,
+        "can_submit": False,
+        "execution_enabled": False,
+    }
+
+
 def _store_prepared(did: str, evidence: dict, plan: dict,
                     owner: str, executor: str, now: int) -> dict:
     try:
