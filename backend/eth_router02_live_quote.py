@@ -12,7 +12,7 @@ submit approvals, create a Privy policy, delegate a signer or move funds.
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
 import re
 import time
@@ -132,7 +132,10 @@ def _get_balance(value: object) -> Decimal:
     raw=value.get("balance")
     if type(raw) is not str or len(raw)>80:
         raise ValueError("Invalid verified wallet units")
-    amount=Decimal(raw)
+    try:
+        amount=Decimal(raw)
+    except InvalidOperation:
+        raise ValueError("Invalid verified wallet units") from None
     if not amount.is_finite() or amount<0:
         raise ValueError("Invalid verified wallet units")
     return amount
@@ -156,7 +159,8 @@ async def make_policy_compatible_eth_quote(
         holdings=balance["balances"]
         native=_get_balance(holdings["ETH"])
         available=_get_balance(holdings[stable if side=="BUY" else "ETH"])
-        if requested>available or native-requested*(side=="SELL")<=ETH_GAS_RESERVE:
+        available_native_after_input = native-requested if side=="SELL" else native
+        if requested>available or available_native_after_input<=ETH_GAS_RESERVE:
             raise HTTPException(409,"Insufficient verified source or ETH gas")
     except (KeyError,TypeError,ValueError,AttributeError):
         raise HTTPException(503,"ETH wallet balance unavailable") from None
