@@ -52,6 +52,9 @@ from .eth_privy_policy_ledger import (
     prepare_eth_policy_record, get_eth_policy_ledger_status,
     get_eth_policy_remote_revocation_review,
 )
+from .eth_privy_signer_revocation import (
+    get_privy_wallet_signer_absence, confirm_privy_wallet_signer_revocation,
+)
 from .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
@@ -623,6 +626,32 @@ async def eth_privy_policy_revocation_review(
     """Verify remote signer absence; does NOT remove signer or policy."""
     did = verify_privy_bearer(authorization)["user_id"]
     result = await get_eth_policy_remote_revocation_review(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/policy/wallet-signer-absence")
+async def eth_wallet_signer_absence(
+    authorization: str | None = Header(default=None),
+):
+    """Independent Privy GET verification of the exact user's signer list."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_privy_wallet_signer_absence(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/policy/confirm-revocation")
+async def eth_wallet_signer_revocation_confirmation(
+    authorization: str | None = Header(default=None),
+):
+    """Confirm local stop + Privy-verified absence, never remote DELETE."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await confirm_privy_wallet_signer_revocation(did)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
