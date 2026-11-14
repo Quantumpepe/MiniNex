@@ -37,7 +37,7 @@ def test_owner_granted_auto_session_can_start(monkeypatch):
                for sql in cur.sql)
 
 @pytest.mark.parametrize("index,change",[
-    (0,{"max_order_usd":0}),
+    (0,{"planned_capital_usd":0}),
     (1,{"status":"REMOTE_VERIFIED_UNATTACHED"}),
     (1,{"policy_id":"other"}),
     (2,{"status":"REVOKED"}),

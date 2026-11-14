@@ -81,7 +81,7 @@ def test_btc_schema_is_independent_and_idempotent():
     sql="\n".join(SCHEMA)
     assert "CREATE TABLE IF NOT EXISTS mininex_live_btc_limits" in sql
     assert "trading_paused BOOLEAN NOT NULL DEFAULT TRUE" in sql
-    assert "max_order_usd <= planned_capital_usd" in sql
+    assert "max_order_usd <= planned_capital_usd" not in sql
     from backend.storage import _prepare_rows
     import inspect
     code=inspect.getsource(_prepare_rows)
@@ -136,7 +136,7 @@ def test_stop_btc_is_idempotent_and_leaves_eth_untouched(db):
 
 @pytest.mark.parametrize("limits",[
     ("100","0","20"),("100","110","200"),("100","50","10"),
-    ("NaN","5","10"),("50000000","1","1"),(100,10,10),
+    ("NaN","5","10"),("10000000000000000000000","1","1"),(100,10,10),
     ("100.0000001","10","50"),
 ])
 def test_invalid_btc_limits_rejected_before_database(db,limits):

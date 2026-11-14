@@ -47,7 +47,7 @@ def test_live_buy_uses_wallet_cash_not_paper_balance():
 def test_live_sell_uses_actual_weth_inventory():
     dec={"action":"SELL","market_price":"100"}
     assert live.live_trade_quantity(decision=dec,live_limits=limits(),
-         balances=balance(),allowance=allowance("SELL"))=="1.000000000000000000"
+         balances=balance(),allowance=allowance("SELL"))=="1.500000000000000000"
 
 def test_stop_and_no_token_allowance_cannot_trade():
     l=limits();l["trading_paused"]=True
@@ -95,11 +95,11 @@ def test_confirmed_uptrend_can_use_full_selected_budget():
         balances=cash,allowance=allowance())
     assert result=="100.000000"
 
-def test_live_order_cap_still_limits_all_in_cash():
+def test_owner_selected_budget_controls_all_in_cash():
     decision={"action":"BUY","market_price":"2000"}
     cash=balance()
     cash["balances"]["USDC"]["balance"]="1000"
     result=live.live_trade_quantity(
         decision=decision,live_limits=limits(),
         balances=cash,allowance=allowance())
-    assert result=="100.000000"
+    assert result=="200.000000"

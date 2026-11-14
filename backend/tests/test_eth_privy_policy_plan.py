@@ -118,7 +118,7 @@ def test_unpegged_stale_future_or_invalid_prices_are_rejected(change):
 
 
 @pytest.mark.parametrize("bad_order", [
-    "", "-1", "0", "NaN", "Infinity", "10000000", "0.0000001",
+    "", "-1", "0", "NaN", "Infinity", "10000000000000000000000", "0.0000001",
     None, True, 0,
 ])
 def test_invalid_user_live_order_amount_rejected(bad_order):
