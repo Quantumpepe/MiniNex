@@ -235,6 +235,13 @@ SCHEMA = (
            REFERENCES mininex_live_order_intents(privy_did,asset,intent_key),
         CHECK (status <> 'SUBMITTED' OR tx_hash IS NOT NULL)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_auto_sessions (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        run_id TEXT NOT NULL UNIQUE,
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        status TEXT NOT NULL DEFAULT 'PAUSED' CHECK(status IN ('ACTIVE','PAUSED')),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
     """CREATE INDEX IF NOT EXISTS mininex_live_orders_by_account
        ON mininex_live_order_intents(privy_did,asset,created_at DESC)""",
     # Future executor must atomically bind the immutable signal to an order.
