@@ -218,3 +218,43 @@ def test_readonly_status_route_requires_auth_and_never_grants_signing(
     assert response.json()["automated_signing_enabled"] is False
     assert client.post("/api/live/eth/authorization", headers=headers).status_code == 405
     assert not any(route.path == "/api/live/eth/authorize" for route in api.app.routes)
+
+
+def test_personal_policy_without_any_static_policy_env(monkeypatch):
+    """Each user's policy is generated after login and is not a global ID."""
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_ID", SIGNER)
+    monkeypatch.delenv("MININEX_PRIVY_ETH_POLICY_ID", raising=False)
+    from backend import eth_privy_policy_ledger as ledger
+    calls=[]
+    def read(did):
+        calls.append(did)
+        return {
+            "status":"GRANT_VERIFIED",
+            "live_limits_revision_matches":True,
+            "policy_expired":False,
+            "policy_id":POLICY,
+        }
+    monkeypatch.setattr(ledger,"get_eth_policy_ledger_status",read)
+    config=verifier.signer_configuration(DID)
+    assert config=={"signer_id":SIGNER,"policy_id":POLICY}
+    assert calls==[DID]
+    assert verifier._scoped_signer(
+        privy_wallet(),did=DID,address=WALLET,config=config)
+
+
+@pytest.mark.parametrize("change",[
+    {"status":"REMOTE_VERIFIED_UNATTACHED"},
+    {"policy_expired":True},
+    {"live_limits_revision_matches":False},
+    {"policy_id":None},
+])
+def test_personal_grant_not_active_cannot_infer_policy(monkeypatch,change):
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_ID",SIGNER)
+    monkeypatch.delenv("MININEX_PRIVY_ETH_POLICY_ID",raising=False)
+    from backend import eth_privy_policy_ledger as ledger
+    row={"status":"GRANT_VERIFIED","live_limits_revision_matches":True,
+         "policy_expired":False,"policy_id":POLICY}
+    row.update(change)
+    monkeypatch.setattr(ledger,"get_eth_policy_ledger_status",
+                        lambda did:row)
+    assert verifier.signer_configuration(DID) is None

@@ -180,7 +180,7 @@ async def send_eth_auto_native_leg(did:str, *, source_key:str,operation:str,
     """ONE auto WETH9 send with persisted SENDING and user-owned Privy signer."""
     did=_safe_did(did)
     key=native_intent_key(did,source_key,operation)
-    config=signer_configuration()
+    config=signer_configuration(did)
     if config is None:
         raise HTTPException(503,"ETH Privy signer not registered")
     user=await fetch_privy_user(did)
