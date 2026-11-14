@@ -169,7 +169,7 @@ def test_each_coin_cannot_use_real_wallet_or_restricted_asset(coin):
             extra_paper.valid_asset(bad)
 
 
-@pytest.mark.parametrize("bad",[True,500.1,"500",99,5001,-1,0,None])
+@pytest.mark.parametrize("bad",[True,500.1,"500",9007199254740992,-1,0,None])
 def test_virtual_budget_validation_is_exact_and_bounded(bad):
     with pytest.raises(HTTPException):
         extra_paper.validate_start(bad,"LONG","USDT","5m")
@@ -336,7 +336,7 @@ def test_public_paper_endpoints_require_privy_auth_and_ada_is_disabled(signed,mo
         ("start","did:privy:bob","UNI",600,"LONG","USDT","15m"),
         ("pause","did:privy:alice","UNI"),
     ]
-    for bad in [{"budget_usd":0},{"budget_usd":5001},{"budget_usd":"500"},
+    for bad in [{"budget_usd":0},{"budget_usd":9007199254740992},{"budget_usd":"500"},
                 {"budget_usd":500,"secret":"no"}]:
         assert client.post("/api/extra-paper/SOL/start",
             headers=signed(),json=bad).status_code==422

@@ -48,11 +48,11 @@ test('the nine extra coins share the strategy; BTC ETH and ADA stay untouched',(
   assert.match(list,/symbol:'BTC'.*paperSettingsReady:true/);
 });
 
-test('each optional virtual budget is independent and capped at the demo limit',()=>{
-  for(const valid of ['100','500','1250','5000'])
+test('each optional virtual budget belongs to the user, without demo caps',()=>{
+  for(const valid of ['1','99','100','500','1250','5000','5001','5500','100000'])
     assert.equal(validExtraReplayBudget(valid),true,valid);
-  for(const bad of ['0','99','5001','5500','0500','5e2','500.5','-10','NaN',
-                    '',null,undefined,500,'1,000','100000'])
+  for(const bad of ['0','0500','5e2','500.5','-10','NaN',
+                    '',null,undefined,500,'1,000','9007199254740992'])
     assert.equal(validExtraReplayBudget(bad),false,String(bad));
   const a=defaultReplayOption(),b=defaultReplayOption();
   a.budget='900';b.budget='100';

@@ -51,7 +51,7 @@ test('malformed or permission-granting server responses never replace settings',
     d=>{d.assets.reverse();},
     d=>{delete d.settings.UNI;},
     d=>{d.settings.SOL.mode='LEVERAGE';},
-    d=>{d.settings.BNB.budget_usd=5001;},
+    d=>{d.settings.BNB.budget_usd=9007199254740992;},
     d=>{d.settings.TRX.revision='0';},
   ]){
     const d=data();mutation(d);
