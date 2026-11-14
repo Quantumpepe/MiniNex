@@ -160,3 +160,51 @@ export function verifiedLocalPrivyRevocationPending(snapshot){
     snapshot.privy_remote_signer_removed===false &&
     snapshot.real_trading_enabled===false;
 }
+
+
+// A recovery review describes an incident; it must NEVER be accepted as
+// authorization to create another policy, grant a signer or execute trades.
+const POLICY_RECOVERY_ACTIONS=new Set([
+  'NO_POLICY_PREPARED','PREPARED_REVIEW',
+  'MANUAL_RECONCILIATION_REQUIRED','REMOTE_POLICY_REVIEW',
+  'RECHECK_WALLET_AUTHORITY','REMOVE_OR_VERIFY_PRIVY_SIGNERS',
+  'CONFIRM_LOCAL_REVOKE_AFTER_OWNER_CHECK','REVOKED_KEEP_STOPPED',
+]);
+
+export function validEthPrivyIncidentReview(snapshot){
+  if(snapshot?.mode!=='ETH_PRIVY_INCIDENT_REVIEW_READ_ONLY' ||
+     snapshot?.asset!=='ETH' || snapshot?.chain_id!==1 ||
+     !POLICY_RECOVERY_ACTIONS.has(snapshot.action_code) ||
+     ![
+       'NOT_PREPARED','PREPARED','SUBMITTING','UNCERTAIN',
+       'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED',
+       'REVOKE_REQUESTED','REVOKED',
+     ].includes(snapshot.status) ||
+     !Array.isArray(snapshot.blockers) ||
+     !snapshot.blockers.includes('ETH_LIVE_EXECUTION_DISABLED') ||
+     !snapshot.blockers.includes('NO_AUTOMATIC_PRIVY_RETRY') ||
+     !snapshot.blockers.every(x=>typeof x==='string'&&x.length>0&&x.length<=100) ||
+     typeof snapshot.local_stop_verified!=='boolean' ||
+     typeof snapshot.limits_revision_matches!=='boolean' ||
+     typeof snapshot.policy_expired!=='boolean' ||
+     typeof snapshot.remote_policy_exactly_verified_now!=='boolean' ||
+     typeof snapshot.privy_wallet_signers_verified_now!=='boolean' ||
+     typeof snapshot.privy_additional_signers_absent_now!=='boolean' ||
+     (snapshot.privy_additional_signers_absent_now &&
+       !snapshot.privy_wallet_signers_verified_now) ||
+     (snapshot.policy_id!==null &&
+       (typeof snapshot.policy_id!=='string' ||
+         !/^[A-Za-z0-9_-]{6,160}$/.test(snapshot.policy_id))) ||
+     (snapshot.last_remote_attempt_age_seconds!==null &&
+       (!Number.isSafeInteger(snapshot.last_remote_attempt_age_seconds) ||
+         snapshot.last_remote_attempt_age_seconds<0)) ||
+     snapshot.remote_policy_deleted!==false ||
+     snapshot.remote_policy_created_by_review!==false ||
+     snapshot.privy_signer_changed_by_review!==false ||
+     snapshot.automatic_retry_allowed!==false ||
+     snapshot.safe_to_recreate_policy!==false ||
+     snapshot.real_trading_enabled!==false ||
+     snapshot.can_sign!==false || snapshot.can_submit!==false ||
+     snapshot.execution_enabled!==false)return false;
+  return true;
+}
