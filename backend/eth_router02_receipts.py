@@ -47,7 +47,8 @@ def _read_call(raw: object, *, owner: str, stable: str,
     words=[int(raw[10+i*64:10+(i+1)*64],16) for i in range(7)]
     source,received,fee,recipient,amount_in,min_out,limit=words
     if (source >= 2**160 or received >= 2**160 or recipient >= 2**160
-            or limit!=0 or not 0<amount_in<10**45 or not 0<min_out<10**45):
+            or fee not in (500,3000) or limit!=0
+            or not 0<amount_in<10**45 or not 0<min_out<10**45):
         raise ValueError("Non-canonical V3 swap calldata")
     tx={"from":owner,"to":SWAPROUTER02_MAINNET,
         "chainId":1,"value":"0","data":raw}
