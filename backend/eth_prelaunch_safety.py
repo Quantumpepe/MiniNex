@@ -70,6 +70,8 @@ def assess_eth_prelaunch_safety(
             blockers.append("UNVERIFIED_ADDITIONAL_SIGNERS")
     if state in _UNCERTAIN:
         blockers.append("POLICY_STATE_REQUIRES_MANUAL_RECONCILIATION")
+    if state == "REVOKE_REQUESTED":
+        blockers.append("OWNER_PRIVY_SIGNER_REMOVAL_NOT_YET_VERIFIED")
     if state == "REVOKED":
         blockers.append("USER_REVOKED_POLICY")
     if state in ("NOT_PREPARED","PREPARED"):

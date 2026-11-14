@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport} from '../src/liveEthRules.js';
+import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,verifiedLocalPrivyRevocationPending} from '../src/liveEthRules.js';
 
 const limits=()=>{
   return {
@@ -201,4 +201,33 @@ test('read-only ETH safety card can never claim trading authorization',()=>{
   ]){
     assert.equal(validEthReadOnlySafetyReport({...readOnlyPrelaunch(),...patch}),false);
   }
+});
+
+
+test('local ETH stop and limits change never pretend to remove Privy signers',()=>{
+  const safe={
+    mode:'LIVE_LIMITS_PREPARATION_ONLY',asset:'ETH',chain_id:1,
+    planned_capital_usd:'5000',max_order_usd:'1000',
+    max_daily_turnover_usd:'3000',
+    revision:8,trading_paused:true,
+    privy_grant_verified:false,live_trading_enabled:false,
+    automated_signing_enabled:false,
+    local_eth_consent_invalidated:true,
+    privy_remote_revocation_requested:true,
+    privy_remote_signer_removed:false,
+    real_trading_enabled:false,
+  };
+  assert.equal(verifiedLocalPrivyRevocationPending(safe),true);
+  for(const patch of [
+    {privy_remote_revocation_requested:false},
+    {privy_remote_signer_removed:true},
+    {privy_remote_signer_removed:undefined},
+    {real_trading_enabled:true},
+    {trading_paused:false},
+    {live_trading_enabled:true},
+    {privy_grant_verified:true},
+    {max_order_usd:'99999'},
+    {asset:'BTC'},{chain_id:56},
+  ])assert.equal(verifiedLocalPrivyRevocationPending({...safe,...patch}),false);
+  assert.equal(verifiedLocalPrivyRevocationPending(null),false);
 });

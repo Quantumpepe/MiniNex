@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
-import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,usdUnits} from './liveEthRules.js';
+import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
 
 const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
 const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
@@ -31,7 +31,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     typeof a.address==='string' &&
     a.address.toLowerCase()===String(address||'').toLowerCase());
   const ownAddress=IS_ETH_ADDRESS.test(address||'')&&linked.length===1?address:null;
+  // A client-side delegated hint is useful only for offering a revoke.
+  // Enrollment instead uses the server's authoritative Privy GET check.
   const mayHaveSigners=!!ownAddress && (linked[0]?.delegated===true || grant?.wallet_delegated===true);
+  const canRequestPrivyRemoval=!!ownAddress && (mayHaveSigners||policyState?.status==='REVOKE_REQUESTED');
 
   const getVerifiedToken=async()=>{
     const token=await getAccessToken();
@@ -125,7 +128,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
         ...payload,expected_revision:limits.revision
       });
       applyLimits(result);
-      setMessage(t.liveEthLimitsSaved);
+      setSafetyAudit(null);
+      setMessage(verifiedLocalPrivyRevocationPending(result)
+        ?t.liveEthLimitsSavedRevokeNeeded:t.liveEthLimitsSaved);
+      try{await refresh();}catch{ /* The saved stop still remains effective. */ }
     }catch{
       setMessage(t.liveEthSaveFailed);
       setPhase('failed');
@@ -138,13 +144,16 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     try{
       const result=await request('/api/live/eth/stop','POST');
       applyLimits(result);
-      setMessage(t.liveEthStopped);
+      setSafetyAudit(null);
+      setMessage(verifiedLocalPrivyRevocationPending(result)
+        ?t.liveEthStoppedRevokeNeeded:t.liveEthStopped);
+      try{await refresh();}catch{ /* Never claim a remote removal. */ }
     }catch{setMessage(t.liveEthStopFailed);}
     finally{setBusy(false);}
   };
 
   const revoke=async()=>{
-    if(busy||!confirmRevoke||!ownAddress||!mayHaveSigners||!enabled)return;
+    if(busy||!confirmRevoke||!canRequestPrivyRemoval||!enabled)return;
     setBusy(true);setMessage('');
     let serverStopped=false;
     let walletRemovalRequested=false;
@@ -197,7 +206,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
   const setupPolicy=async()=>{
     if(busy||phase!=='ready'||!ownAddress||!limits?.trading_paused||
        !policyState||!['NOT_PREPARED','PREPARED'].includes(policyState.status)||
-       usdUnits(limits.max_order_usd)<=0n||mayHaveSigners)return;
+       usdUnits(limits.max_order_usd)<=0n)return;
     setBusy(true);setMessage('');
     try{
       if(policyState.status==='NOT_PREPARED'){
@@ -236,7 +245,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
 
   const grantPrivySigner=async()=>{
     if(busy||!ownAddress||!validScopedGrantOffer(grantOffer,ownAddress)||
-       !limits?.trading_paused||mayHaveSigners)return;
+       !limits?.trading_paused)return;
     setBusy(true);setMessage('');
     try{
       const offer=await request('/api/live/eth/policy/grant-review');
@@ -330,7 +339,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
           {['NOT_PREPARED','PREPARED'].includes(policyState?.status)&&
             <button className="privy-wallet-action privy-wallet-action--secondary"
               type="button" onClick={setupPolicy}
-              disabled={busy||!ownAddress||mayHaveSigners||!limits.trading_paused||
+              disabled={busy||!ownAddress||!limits.trading_paused||
                 usdUnits(limits.max_order_usd)===0n||changes}>
               {t.liveEthPolicySetupButton}</button>}
           {validScopedGrantOffer(grantOffer,ownAddress)&&
@@ -339,7 +348,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
                 {t.liveEthPrivyGrantWarning}
               </p>
               <button type="button" className="privy-wallet-action"
-                disabled={busy||mayHaveSigners||changes||!limits.trading_paused}
+                disabled={busy||changes||!limits.trading_paused}
                 onClick={grantPrivySigner}>{t.liveEthGrantButton}</button>
             </>}
           {!validScopedGrantOffer(grantOffer,ownAddress)&&
@@ -376,7 +385,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
         </div>
         <button className="privy-wallet-action privy-wallet-action--secondary"
           type="button" onClick={stop} disabled={busy}>{t.liveEthStopButton}</button>
-        {mayHaveSigners&&<div className="privy-hwm-box" style={{display:'grid',gap:8}}>
+        {canRequestPrivyRemoval&&<div className="privy-hwm-box" style={{display:'grid',gap:8}}>
           <strong>{t.liveEthRevokeTitle}</strong>
           <p className="privy-wallet-description">{t.liveEthRevokeAllWarning}</p>
           {!confirmRevoke
