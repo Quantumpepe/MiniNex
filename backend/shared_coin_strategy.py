@@ -37,7 +37,7 @@ def _parameters(asset: str, portfolio: PaperPortfolio, at: float, horizon: str) 
         raise ValueError("Unsupported strategy time horizon")
     if type(at) not in (float, int) or not math.isfinite(at) or at <= 0:
         raise ValueError("Invalid strategy timestamp")
-    if portfolio.strategy_mode not in ("LONG", "SPOT_SHORT"):
+    if portfolio.strategy_mode not in ("LONG", "SPOT_SHORT", "AUTO"):
         raise ValueError("Unsupported spot strategy mode")
 
 
