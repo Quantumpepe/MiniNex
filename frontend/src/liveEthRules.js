@@ -76,3 +76,45 @@ export function validWalletSignerAbsence(snapshot,address){
     snapshot?.execution_enabled===false &&
     snapshot?.can_sign===false && snapshot?.can_submit===false;
 }
+
+
+// Wallet delegation can only use a PRIVY-server verified policy and the exact
+// wallet the logged-in user owns. Never trust a client-provided signer/policy.
+const PRIVY_ID=/^[A-Za-z0-9_-]{6,160}$/;
+const ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
+
+export function validScopedGrantOffer(data,ownAddress){
+  return typeof ownAddress==='string' && ETH_ADDRESS.test(ownAddress) &&
+    data?.mode==='ETH_PRIVY_SCOPED_GRANT_REVIEW_ONLY' &&
+    data?.asset==='ETH' && data?.chain_id===1 &&
+    data?.policy_verified===true &&
+    data?.wallet_owned_by_user===true &&
+    data?.unexpected_signers===false &&
+    data?.user_privy_grant_verified===false &&
+    data?.grant_offer_enabled===true &&
+    data?.can_request_user_grant===true &&
+    data?.cumulative_spend_enforced_by_policy===false &&
+    data?.production_trading_enabled===false &&
+    data?.can_sign===false && data?.can_submit===false &&
+    data?.execution_enabled===false &&
+    typeof data?.verified_wallet_address==='string' &&
+    ETH_ADDRESS.test(data.verified_wallet_address) &&
+    data.verified_wallet_address.toLowerCase()===ownAddress.toLowerCase() &&
+    typeof data?.policy_id==='string' && PRIVY_ID.test(data.policy_id) &&
+    typeof data?.execution_signer_id==='string' &&
+    PRIVY_ID.test(data.execution_signer_id) &&
+    data.policy_id!==data.execution_signer_id;
+}
+
+export function validEthPolicyLifecycle(data){
+  return data?.mode==='ETH_PRIVY_POLICY_DURABLE_PREPARATION_ONLY' &&
+    data?.asset==='ETH' && data?.chain_id===1 &&
+    [
+      'NOT_PREPARED','PREPARED','SUBMITTING','UNCERTAIN',
+      'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED',
+      'REVOKE_REQUESTED','REVOKED',
+    ].includes(data.status) &&
+    data?.execution_enabled===false &&
+    data?.can_submit===false && data?.can_sign===false &&
+    data?.policy_created_in_privy===false;
+}

@@ -79,7 +79,7 @@ def _snapshot(row: object, *, current_revision: object = None) -> dict:
     status = row.get("status")
     if status not in {
         "PREPARED", "SUBMITTING", "UNCERTAIN",
-        _REMOTE_VERIFIED, _REVOKE_REQUESTED, "REVOKED",
+        _REMOTE_VERIFIED, "GRANT_VERIFIED", _REVOKE_REQUESTED, "REVOKED",
     }:
         raise HTTPException(503, "Policy ledger state invalid")
     base.update({

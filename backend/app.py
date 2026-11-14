@@ -55,6 +55,8 @@ from .eth_privy_policy_ledger import (
 from .eth_privy_signer_revocation import (
     get_privy_wallet_signer_absence, confirm_privy_wallet_signer_revocation,
 )
+from .eth_privy_policy_provisioner import publish_user_eth_privy_policy
+from .eth_privy_user_grant import get_eth_user_grant_review, confirm_eth_user_grant
 from .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
@@ -626,6 +628,45 @@ async def eth_privy_policy_revocation_review(
     """Verify remote signer absence; does NOT remove signer or policy."""
     did = verify_privy_bearer(authorization)["user_id"]
     result = await get_eth_policy_remote_revocation_review(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/policy/create")
+async def eth_create_scoped_privy_policy(
+    authorization: str | None = Header(default=None),
+):
+    """One user-initiated, signed-intent-gated, owner-bound Privy policy."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await publish_user_eth_privy_policy(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/policy/grant-review")
+async def eth_scoped_privy_grant_review(
+    authorization: str | None = Header(default=None),
+):
+    """Only independently verified owner-bound one-policy signer offer."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_eth_user_grant_review(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/policy/confirm-grant")
+async def eth_confirm_wallet_owner_grant(
+    authorization: str | None = Header(default=None),
+):
+    """Record Privy-owner approved signer only after server GET verification."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await confirm_eth_user_grant(did)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
