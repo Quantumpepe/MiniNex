@@ -302,3 +302,14 @@ test('Privy no-signers display needs matched server observed wallet verification
     ...verified,privy_wallet_signers_verified_now:false,
   }),false);
 });
+
+test('ETH wallet trading budget form cannot reference deleted limit-field index',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const panel=readFileSync(new URL('../src/LiveEthControls.jsx',import.meta.url),'utf8');
+  assert.match(panel,/const FIELDS=\['planned_capital_usd'\]/);
+  assert.match(panel,/aria-label=\{t\.liveEthCapital\}/);
+  assert.doesNotMatch(panel,/\[t\.liveEthCapital,t\.liveEthPerOrder,t\.liveEthDaily\]\[i\]/);
+  assert.match(panel,/<EthAutoOwnerApproval/);
+  assert.match(panel,/<EthLiveWalletEquity/);
+  assert.match(panel,/onClick=\{stop\}/);
+});
