@@ -98,8 +98,7 @@ def live_trade_quantity(*, decision: dict, live_limits: dict,
             or allowance.get("source_funds_sufficient") is not True
             or allowance.get("conservative_native_gas_reserve_met") is not True):
         return None
-    cap=min(_positive_decimal(live_limits.get("planned_capital_usd"),"capital"),
-            _positive_decimal(live_limits.get("max_order_usd"),"limit"))
+    cap=_positive_decimal(live_limits.get("planned_capital_usd"),"capital")
     if cap<_MIN_ORDER:
         return None
     if action=="BUY":
@@ -166,9 +165,7 @@ async def execute_live_eth_strategy_tick(did: str, *, market,
             if (balances.get("wallet_ownership_verified") is True
                     and native.get("status")=="verified"):
                 held=_positive_decimal(native["balance"],"ETH balance")
-                cap=min(
-                    _positive_decimal(limits["planned_capital_usd"],"capital"),
-                    _positive_decimal(limits["max_order_usd"],"order"))
+                cap=_positive_decimal(limits["planned_capital_usd"],"capital")
                 price=_positive_decimal(decision["market_price"],"price")
                 quantity=min(max(_ZERO,held-_D("0.01")),cap/price)
                 quantity=quantity.quantize(

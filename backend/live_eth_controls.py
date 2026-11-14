@@ -16,7 +16,7 @@ from psycopg.rows import dict_row
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
 LOG = logging.getLogger("mininex.live_eth_controls")
-MONEY_MAX = Decimal("10000000")
+MONEY_MAX = Decimal("9999999999999999999999")
 MONEY_PLACES = Decimal("0.000001")
 _MONEY_RE = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$")
 _ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{7,95}$")
@@ -38,15 +38,10 @@ def _money(value: object, *, allow_zero: bool) -> Decimal:
 
 def validate_limits(capital: object, order: object, daily: object) -> tuple[Decimal, Decimal, Decimal]:
     """Inputs are USD *caps*, not balances; no exchange, approval or authorization."""
+    # Only the user's chosen coin budget. Order/day columns are
+    # mirrored for legacy storage but do not enforce trading limits.
     cap = _money(capital, allow_zero=True)
-    per_order = _money(order, allow_zero=True)
-    per_day = _money(daily, allow_zero=True)
-    if (cap == 0 or per_order == 0 or per_day == 0):
-        if cap != 0 or per_order != 0 or per_day != 0:
-            raise HTTPException(422, "Live limits must be all zero or all nonzero")
-    elif per_order > cap or per_order > per_day:
-        raise HTTPException(422, "Order cap exceeds capital or daily allowance")
-    return cap, per_order, per_day
+    return cap, cap, cap
 
 
 def _rev(value: object) -> int:
@@ -216,10 +211,12 @@ def validate_spend_limits(*, budget: dict, order_usd: object,
         str(budget["max_order_usd"]),
         str(budget["max_daily_turnover_usd"]),
     )
-    if not cap or not each or not turnover:
-        raise HTTPException(409, "LIVE risk limits not configured")
-    if notional > each or notional + reserved > cap or notional + spent > turnover:
-        raise HTTPException(409, "LIVE order exceeds spending limits")
+    if cap <= 0:
+        raise HTTPException(409, "Owner trading budget not set")
+    # No order maximum or daily turnover cap. Respect only the owner's
+    # selected budget for simultaneous capital exposure.
+    if notional + reserved > cap:
+        raise HTTPException(409, "Trade exceeds owner-selected ETH budget")
     return notional
 
 
