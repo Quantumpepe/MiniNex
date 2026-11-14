@@ -583,6 +583,15 @@ class PaperAutoEngine:
                     self.rules.early_rebound_prior_drop_pct
                     if p.strategy_mode in ("SPOT_SHORT", "AUTO") else self.rules.reentry_drop_pct
                 ) and recovery_ok
+                if rebound and p.strategy_mode == "AUTO":
+                    # In AUTO a defensive sell/rebuy must improve the unit
+                    # entry price after estimated spread and venue friction.
+                    # A separate confirmed strong breakout can still start a
+                    # new LONG cycle when the rising trend resumes.
+                    roundtrip_friction_pct = (
+                        self.costs.rate + 2 * self.costs.execution_markup) * 100
+                    rebound = price < p.last_exit_price * (
+                        1 - roundtrip_friction_pct / 100)
                 if rebound and p.strategy_mode == "SPOT_SHORT":
                     proposed=self._buy_quote(asset,p.stable_cash,price)
                     if not proposed or (
