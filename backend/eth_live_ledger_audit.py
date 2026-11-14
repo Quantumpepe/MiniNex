@@ -25,6 +25,10 @@ _PENDING = sorted(_RESERVED_STATES)
 def _usd_exact(raw: object) -> Decimal:
     if isinstance(raw, Decimal):
         val = raw
+    elif type(raw) is int and raw == 0:
+        # PostgreSQL COALESCE(SUM(numeric), 0) can yield integer zero when
+        # no rows exist; never accept untyped positive integers as spend.
+        val = Decimal(0)
     elif type(raw) is str and len(raw) <= 64:
         try:
             val = Decimal(raw)
