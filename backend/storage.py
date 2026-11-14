@@ -339,6 +339,25 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_treasury_obligations_pending
        ON mininex_treasury_obligations(status,created_at)""",
+    # Existing installations also need an upgrade: CREATE TABLE IF NOT EXISTS
+    # cannot change a previous LONG/SPOT_SHORT check. Each ALTER is atomic.
+    # Keeps all previous sessions/positions/fills/budgets intact.
+    """ALTER TABLE mininex_unified_strategy_profiles
+       DROP CONSTRAINT IF EXISTS mininex_unified_strategy_profiles_mode_check,
+       ADD CONSTRAINT mininex_unified_strategy_profiles_mode_check
+       CHECK (mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_trade_preferences
+       DROP CONSTRAINT IF EXISTS mininex_trade_preferences_mode_check,
+       ADD CONSTRAINT mininex_trade_preferences_mode_check
+       CHECK (mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_user_paper_sessions
+       DROP CONSTRAINT IF EXISTS mininex_user_paper_sessions_strategy_mode_check,
+       ADD CONSTRAINT mininex_user_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS mininex_extra_paper_sessions_strategy_mode_check,
+       ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
 
 )
 

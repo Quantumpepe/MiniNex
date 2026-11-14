@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .auto_engine import PaperAutoEngine, PaperPortfolio, PaperRules
+from .shared_coin_strategy import evaluate_coin_strategy, exit_coin_to_stable
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 from .strategy_replay import EXTRA_REPLAY_ASSETS, WINDOWS, MODES
 from .user_paper import (
@@ -276,20 +277,11 @@ def _settle_pause(cur: Any,row: dict,did: str,asset: str,
     p=_restore(asset,row["settlement"],stored,row["initial_demo_cash"])
     if p.coin_quantity>0:
         try:
-            feed=source.snapshot(now=now).get(asset,{})
-            raw=feed.get("price_usdt")
-            if (feed.get("market_data_valid") is not True or
-                type(raw) not in (int,float) or not math.isfinite(raw)
-                or raw<=0):
-                return row
-            engine=PaperAutoEngine(ExtraPaperMarket(source))
-            quote=engine._sell_quote(asset,p.coin_quantity,float(raw))
-            if not quote:
+            if not exit_coin_to_stable(asset,p,ExtraPaperMarket(source),now):
                 return row
         except Exception:
             # A temporary bad market API must not undo PAUSED status.
             return row
-        engine._paper_sell(p,quote,now,float(raw),"USER_PAUSE_TO_STABLE")
         _record_event(cur,did,asset,p)
     state=_paper_state_with_runtime(p,stored,now,active=False)
     state.pop("pause_exit_pending",None)
@@ -365,14 +357,8 @@ def tick(did: str,asset: str,source: Any,now: float) -> dict:
                 p.strategy_mode=row["strategy_mode"]
                 if p.last_evaluated_at is not None and now-p.last_evaluated_at<TICK_SECONDS:
                     return _present(asset,row,_trades(cur,did,asset))
-                wrapper=ExtraPaperMarket(source)
-                engine=PaperAutoEngine(wrapper,rules=PaperRules(
-                    warmup_seconds=0.0,min_history_samples=4,
-                    price_window_seconds=WINDOWS[row["horizon"]]))
-                engine.portfolios={asset:p}
-                feed=wrapper.snapshot(now=now)["markets"][asset]
-                engine.process_asset(asset,feed,now)
-                p.last_evaluated_at=now
+                # The SAME decision path as BTC/ETH: no per-coin strategy fork.
+                evaluate_coin_strategy(asset,p,ExtraPaperMarket(source),now,row["horizon"])
                 _record_event(cur,did,asset,p)
                 state=_paper_state_with_runtime(p,row["state_json"],now,active=True)
                 cur.execute("""UPDATE mininex_extra_paper_sessions

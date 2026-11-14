@@ -18,7 +18,7 @@ test('BTC and ETH have separately persisted mode, stablecoin and horizon',()=>{
 });
 
 test('spot downtrend is not leveraged shorting',()=>{
-  assert.match(setup,/const MODES = \['LONG','SPOT_SHORT'\]/);
+  assert.match(setup,/const MODES = \['LONG','SPOT_SHORT','AUTO'\]/);
   assert.match(strings,/Spot downtrend is NOT leveraged shorting/);
   assert.match(strings,/kein gehebelter Short/);
 });

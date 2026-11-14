@@ -2,7 +2,7 @@
 import {EXTRA_REPLAY_COINS,validExtraReplayBudget} from './extraReplayRules.js';
 
 const STATUSES=new Set(['NOT_STARTED','ACTIVE','PAUSED']);
-const MODES=new Set(['LONG','SPOT_SHORT']);
+const MODES=new Set(['LONG','SPOT_SHORT','AUTO']);
 const STABLES=new Set(['USDC','USDT']);
 const HORIZONS=new Set(['5m','15m','1h','24h']);
 

@@ -855,7 +855,7 @@ def budgets_update(
 
 class SharedStrategyProfileRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    mode: Literal["LONG", "SPOT_SHORT"]
+    mode: Literal["LONG", "SPOT_SHORT", "AUTO"]
     horizon: Literal["5m", "15m", "1h", "24h"]
     expected_revision: StrictInt = Field(ge=0, lt=2_000_000_000)
 
@@ -906,7 +906,7 @@ def trade_preferences_update(
     did = verify_privy_bearer(authorization)["user_id"]
     if asset not in ("BTC", "ETH"):
         raise HTTPException(404, "Only BTC and ETH are supported")
-    if (body.mode not in ("LONG", "SPOT_SHORT")
+    if (body.mode not in ("LONG", "SPOT_SHORT", "AUTO")
             or body.stable not in ("USDC", "USDT")
             or body.horizon not in ("5m", "15m", "1h", "24h")
             or not 0 <= body.expected_revision < 2_000_000_000):
@@ -1070,7 +1070,7 @@ def user_paper_action(asset: str, action: str,
 class ExtraPaperStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     budget_usd: StrictInt = Field(ge=100,le=5000)
-    mode: Literal["LONG","SPOT_SHORT"] = "LONG"
+    mode: Literal["LONG","SPOT_SHORT","AUTO"] = "LONG"
     stable: Literal["USDC","USDT"] = "USDC"
     horizon: Literal["5m","15m","1h","24h"] = "15m"
 

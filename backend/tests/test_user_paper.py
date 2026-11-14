@@ -100,13 +100,14 @@ def test_fail_closed_invalid_assets_and_states():
 def test_all_selected_horizons_have_no_artificial_wait():
     """History is real Binance candle data, not time spent in a session."""
     import inspect
-    src=inspect.getsource(user_paper.step_user_paper)
+    from backend import shared_coin_strategy
+    from backend.strategy_replay import WINDOWS
+    # Every one of the 11 coin sessions now uses the SAME evaluation policy.
+    src=inspect.getsource(shared_coin_strategy.evaluate_coin_strategy)
     assert 'warmup_seconds=0.0' in src
-    assert '"5m":300.0' in src
-    assert '"15m":900.0' in src
-    assert '"1h":3600.0' in src
-    assert '"24h":86400.0' in src
+    assert WINDOWS=={"5m":300.0,"15m":900.0,"1h":3600.0,"24h":86400.0}
     assert '24H_HISTORY_NOT_AVAILABLE' not in src
+    assert "evaluate_coin_strategy" in inspect.getsource(user_paper.step_user_paper)
 
 
 def test_three_minute_history_is_enough_for_conservative_signal_evaluation():
