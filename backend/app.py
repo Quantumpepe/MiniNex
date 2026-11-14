@@ -568,6 +568,31 @@ async def eth_verified_token_allowance(
     })
 
 
+@app.post("/api/live/eth/router02-user-transaction")
+async def eth_router02_user_wallet_transaction(
+    request: EthLiveQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Actual owner-wallet-signable Router02 trade calldata; never signs for user.
+
+    This is an ERC20/WETH leg only. The app must handle token allowance,
+    native WETH9 conversion and finalized receipts as separate real steps.
+    """
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await make_policy_compatible_eth_quote(
+        did, side=request.side, stable=request.stable,
+        amount=request.amount, include_user_transaction=True,
+    )
+    if (result.get("wallet_identity_verified") is not True
+            or result.get("unsigned_swap_validated") is not True
+            or result.get("transaction", {}).get("chainId") != 1):
+        raise HTTPException(502, "Executable ETH transaction was not verified")
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
 @app.post("/api/live/eth/router02-quote")
 async def eth_swaprouter02_quote_preview(
     request: EthLiveQuoteRequest,
