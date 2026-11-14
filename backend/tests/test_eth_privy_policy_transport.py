@@ -81,7 +81,7 @@ def test_request_is_owned_by_independent_quorum_and_wallet_revision():
     lambda p: p["rules"][0]["conditions"].pop(-1),
     lambda p: p["rules"][0]["conditions"][1].update(value="0x"+"f"*40),
     lambda p: p["rules"][0]["conditions"][7].update(value="0x"+"f"*40),
-    lambda p: p["rules"][0]["conditions"][-1].update(value="0"),
+    lambda p: p["rules"][0]["conditions"][-1].update(value="1"),
     lambda p: p["rules"][0].update(method="eth_signTypedData_v4"),
     lambda p: p["rules"][0].update(action="DENY"),
 ])
@@ -109,7 +109,7 @@ def test_unreviewed_privy_payload_cannot_assemble_a_request(change):
     lambda p: p.update(chain_type="solana"),
     lambda p: p["rules"][0].update(action="DENY"),
     lambda p: p["rules"][0].update(method="*"),
-    lambda p: p["rules"][0]["conditions"][-1].update(value="0"),
+    lambda p: p["rules"][0]["conditions"][-1].update(value="1"),
     lambda p: p["rules"][0].update(id=p["rules"][1]["id"]),
     lambda p: p["rules"][0].pop("id"),
     lambda p: p["rules"][0].update(unsafe_additional_field=True),
