@@ -774,6 +774,58 @@ actual delegation. The policy transport from Stage 20 remains
 hard-disabled in production. No trading, live signing or ERC20
 approval path is activated.
 
+## Stage 22: user-authorized Privy signer removal + independent confirmation
+
+Privy's supported removal flow for user-owned embedded wallets is
+`useSigners().removeSigners({address})`, invoked from the user's
+authenticated wallet UI **only after explicit confirmation**. It removes
+**all** additional signers on that wallet, potentially including signers
+from other applications; the UI warns about this beforehand.
+
+MiniNex's existing revoke button now:
+1. Calls authenticated POST `/api/live/eth/consent/revoke` FIRST.
+   The backend atomically pauses ETH LIVE orders, revokes the
+   signed enrollment intent and marks any durable ETH user policy
+   `REVOKE_REQUESTED`. If that fails, it still attempts a separate
+   best-effort LIVE stop.
+2. Prompts Privy to remove signers via the **owner's own session**
+   (`useSigners().removeSigners`). The server never holds or
+   impersonates the user's wallet authorization key.
+3. Independently calls authenticated GET
+   `/api/live/eth/policy/wallet-signer-absence`. The server itself
+   fetches the exact verified user-owned ETH wallet from Privy and
+   confirms the `additional_signers` field **exists and is empty**.
+   Missing fields, remaining signers, mismatched user/address/wallet ID
+   and failed Privy API calls fail closed. SDK resolve alone is NOT
+   proof of successful removal.
+4. If local stop and remote absence are verified, optionally calls
+   POST `/api/live/eth/policy/confirm-revocation` to atomically
+   finalize a matching existing `REVOKE_REQUESTED` policy record
+   as `REVOKED`, after checking locked LIVE stop, revoked signed
+   intent, wallet and execution signer IDs. Legacy users without
+   a staged policy simply keep the verified remote absence report.
+
+The server-side confirmer records **remote signer absence observed at
+that instant**, not proof of continued absence or deletion of an
+orphaned Privy policy. The user can later authorize new signers
+themselves; a future live execution engine must re-check wallet
+permissions and the LIVE budget before every order. No remote policy
+DELETE is attempted; deleting a policy while a signer remains could
+expose accidental unrestricted authority in some configurations.
+
+**Grant/enablement remains OFF.** Privy requires the wallet owner to
+explicitly add the precise backend signer with the exact restricted
+policy ID (`useSigners().addSigners({address,signers:[{signerId,
+policyIds:[policyId]}]})`), and an empty policy list is unsafe.
+MiniNex has not yet activated policy creation or wallet delegation,
+and EIP-191 enrollment intent alone never grants any rights.
+No backend automatic signer enrollment, live execution, funding
+transfer or approvals were added. Strategist and simulation unchanged.
+
+Privy docs:
+- https://docs.privy.io/wallets/using-wallets/signers/remove-signers
+- https://docs.privy.io/wallets/using-wallets/signers/add-signers
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer

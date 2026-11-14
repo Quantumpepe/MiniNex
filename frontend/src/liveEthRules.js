@@ -55,3 +55,24 @@ export function validatedLiveEthDraft(draft) {
   }
   return null;
 }
+
+
+// A successful local stop or Privy SDK promise is not proof of revocation.
+// The server must independently GET the *same verified wallet* and observe
+// a present, empty additional_signers list; client cannot choose that wallet.
+export function validWalletSignerAbsence(snapshot,address){
+  return typeof address==='string' && /^0x[a-fA-F0-9]{40}$/.test(address) &&
+    snapshot?.mode==='PRIVY_SIGNER_ABSENCE_REMOTE_READ_ONLY' &&
+    snapshot?.asset==='ETH' && snapshot?.chain_id===1 &&
+    typeof snapshot?.verified_wallet_address==='string' &&
+    snapshot.verified_wallet_address.toLowerCase()===address.toLowerCase() &&
+    snapshot?.wallet_identity_verified===true &&
+    snapshot?.wallet_owned_by_authenticated_user===true &&
+    snapshot?.remote_wallet_metadata_verified===true &&
+    snapshot?.additional_signers_field_verified===true &&
+    snapshot?.signer_absence_verified===true &&
+    snapshot?.privy_remote_signer_removed_by_backend===false &&
+    snapshot?.privy_policy_deleted===false &&
+    snapshot?.execution_enabled===false &&
+    snapshot?.can_sign===false && snapshot?.can_submit===false;
+}
