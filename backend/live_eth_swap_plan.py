@@ -330,9 +330,13 @@ async def make_eth_swap_plan(did: str, *, side: str, stable: str, amount: str) -
                 quote, token_in=addr_in, token_out=addr_out,
                 amount_units=input_atomic, wallet=wallet,
             )
+            # Timestamp the server-checked quote; an unsigned preview is not reusable.
+            quote_checked_at_unix = int(time.time())
             if approval_required or quote.get("permitData") is not None:
                 return {
                     "mode": "LIVE_ETH_SWAP_PLAN_ONLY",
+                    "quote_checked_at_unix": quote_checked_at_unix,
+                    "quote_expires_at_unix": quote_checked_at_unix + 15,
                     "asset": "ETH", "chain_id": 1,
                     "side": side, "input_asset": token_in,
                     "output_asset": "ETH" if side == "BUY" else stable,
@@ -373,6 +377,8 @@ async def make_eth_swap_plan(did: str, *, side: str, stable: str, amount: str) -
 
     return {
         "mode": "LIVE_ETH_SWAP_PLAN_ONLY",
+                    "quote_checked_at_unix": quote_checked_at_unix,
+                    "quote_expires_at_unix": quote_checked_at_unix + 15,
         "asset": "ETH",
         "chain_id": 1,
         "side": side,
