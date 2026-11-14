@@ -24,6 +24,8 @@ def evidence():
         "mode": "LIVE_ETH_SWAP_PLAN_ONLY", "asset": "ETH", "chain_id": 1,
         "side": "BUY", "input_asset": "USDC", "output_asset": "ETH",
         "input_amount": "100", "minimum_output_amount": "0.05",
+        "expected_output_amount": "0.05",
+        "quote_checked_at_unix": now, "quote_expires_at_unix": now + 15,
         "state": "UNSIGNED_TX_REVIEW_REQUIRED",
         "execution_enabled": False, "automatic_signing_enabled": False,
         "can_submit": False, "safe_to_sign": False,
@@ -33,6 +35,9 @@ def evidence():
         "router_command_contents_verified": True, "router_recipients_verified": True,
         "router_quote_bounds_verified": True,
         "max_gas_limit": 100_000, "max_fee_per_gas_gwei": "2",
+        "max_possible_gas_eth": "0.0002",
+        "router": cp._ROUTER, "router_version": cp._ROUTER_VERSION,
+        "calldata_security_review_complete": False,
     }
     user = {
         "id": DID, "linked_accounts": [{
@@ -67,6 +72,8 @@ def evidence():
         "pending_reserved_usd": "0", "confirmed_24h_usd": "0",
         "unresolved_order_count": 0, "reconciliation_required_count": 0,
         "older_than_30m_pending_count": 0,
+        "ready_for_live": False, "can_submit": False,
+        "cumulative_spend_enforced_at_execution": False,
     }
     return dict(
         did=DID, side="BUY", stable="USDC", amount="100", now=now,
@@ -89,6 +96,9 @@ def test_server_evidence_provides_only_indicative_cost():
     assert "ETH_STOP_ACTIVE" in result["blockers"]
     assert "NO_ATOMIC_ORDER_RESERVATION" in result["operational_blockers"]
     assert result["same_transaction_budget_lock_held"] is False
+    assert result["provider_fee_status"] == "UNKNOWN_NOT_PROVEN_ZERO"
+    assert result["fee_coverage_complete"] is False
+    assert "PROVIDER_FEES_NOT_INDEPENDENTLY_VERIFIED" in result["operational_blockers"]
     assert not any(result[k] for k in ("can_reserve", "can_sign", "can_submit", "live_trading_enabled"))
 
 
@@ -250,3 +260,93 @@ def test_cost_preview_is_user_authenticated_and_unable_to_send(monkeypatch, bear
         "/api/live/eth/cost-preview", json={**payload, "wallet": WALLET},
         headers=bearer,
     ).status_code == 422
+
+
+@pytest.mark.parametrize("shift, expiry_shift", [
+    (-16, -16), (1, 1), (0, 2), (-30, -30),
+])
+def test_quote_time_must_be_server_bounded(shift, expiry_shift):
+    data = evidence()
+    data["plan"]["quote_checked_at_unix"] += shift
+    data["plan"]["quote_expires_at_unix"] += expiry_shift
+    with pytest.raises(ValueError):
+        review(data)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("expected_output_amount", "0.06"),
+    ("expected_output_amount", "NaN"),
+    ("minimum_output_amount", "0.049"),
+    ("minimum_output_amount", "0.051"),
+    ("router", "0x" + "f" * 40),
+    ("router", 7),
+    ("router_version", "unknown"),
+    ("calldata_security_review_complete", True),
+    ("max_possible_gas_eth", "0.00000001"),
+    ("max_possible_gas_eth", "nan"),
+])
+def test_independent_plan_bounds_router_and_gas_consistency(field, value):
+    data = evidence()
+    data["plan"][field] = value
+    with pytest.raises(ValueError):
+        review(data)
+
+
+def test_ledger_must_remain_non_executable():
+    for field in ("can_submit", "ready_for_live", "cumulative_spend_enforced_at_execution"):
+        data = evidence()
+        data["ledger"][field] = True
+        with pytest.raises(ValueError):
+            review(data)
+
+
+def test_only_one_ledger_read_provides_limits(monkeypatch):
+    data = evidence()
+    async def fake_plan(*args, **kwargs):
+        return data["plan"]
+    async def fake_user(did):
+        return data["user"]
+    async def fake_wallet(did):
+        return data["wallet"]
+    async def fake_prices():
+        return data["prices"]
+    calls = []
+    def fake_ledger(did):
+        calls.append(did)
+        return data["ledger"]
+    def forbidden_second_limits(did):
+        raise AssertionError("A second ETH budget read can drift from the ledger snapshot")
+    monkeypatch.setattr(cp, "make_eth_swap_plan", fake_plan)
+    monkeypatch.setattr(cp, "fetch_privy_user", fake_user)
+    monkeypatch.setattr(cp, "get_wallet_balances", fake_wallet)
+    monkeypatch.setattr(cp, "fetch_reference_prices", fake_prices)
+    monkeypatch.setattr(cp, "get_eth_live_ledger_audit", fake_ledger)
+    monkeypatch.setattr(cp, "get_live_eth_limits", forbidden_second_limits)
+    result = asyncio.run(cp.get_eth_readonly_cost_preview(
+        DID, side="BUY", stable="USDC", amount="100"))
+    assert calls == [DID]
+    assert result["budget_revision"] == 1
+    assert result["can_submit"] is False
+
+
+def test_get_rejects_changed_or_missing_ledger_snapshots(monkeypatch):
+    data = evidence()
+    async def fake_plan(*args, **kwargs):
+        return data["plan"]
+    async def fake_user(did):
+        return data["user"]
+    async def fake_wallet(did):
+        return data["wallet"]
+    async def fake_prices():
+        return data["prices"]
+    def fake_ledger(did):
+        return {"mode": "ETH_LIVE_LEDGER_READ_ONLY", "asset": "BTC"}
+    monkeypatch.setattr(cp, "make_eth_swap_plan", fake_plan)
+    monkeypatch.setattr(cp, "fetch_privy_user", fake_user)
+    monkeypatch.setattr(cp, "get_wallet_balances", fake_wallet)
+    monkeypatch.setattr(cp, "fetch_reference_prices", fake_prices)
+    monkeypatch.setattr(cp, "get_eth_live_ledger_audit", fake_ledger)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(cp.get_eth_readonly_cost_preview(
+            DID, side="BUY", stable="USDC", amount="100"))
+    assert exc.value.status_code == 503
