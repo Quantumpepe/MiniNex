@@ -59,6 +59,7 @@ from .eth_privy_policy_provisioner import publish_user_eth_privy_policy
 from .eth_privy_user_grant import get_eth_user_grant_review, confirm_eth_user_grant
 from .eth_live_ledger_audit import get_eth_live_ledger_audit
 from .eth_prelaunch_safety import get_eth_prelaunch_safety_report
+from .eth_privy_policy_incident import get_eth_privy_policy_incident_review
 from .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
@@ -656,6 +657,19 @@ async def eth_live_prelaunch_readiness(
     """Never authorizes live trades; reports detailed fail-closed blockers."""
     did = verify_privy_bearer(authorization)["user_id"]
     result = await get_eth_prelaunch_safety_report(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/policy/incident-review")
+async def eth_privy_policy_incident_review(
+    authorization: str | None = Header(default=None),
+):
+    """Owner-bound read-only Privy recovery; no policy POST/retry or delegation."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_eth_privy_policy_incident_review(did)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

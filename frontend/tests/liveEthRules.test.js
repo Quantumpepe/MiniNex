@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,verifiedLocalPrivyRevocationPending} from '../src/liveEthRules.js';
+import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,verifiedLocalPrivyRevocationPending,validEthPrivyIncidentReview} from '../src/liveEthRules.js';
 
 const limits=()=>{
   return {
@@ -230,4 +230,73 @@ test('local ETH stop and limits change never pretend to remove Privy signers',()
     {asset:'BTC'},{chain_id:56},
   ])assert.equal(verifiedLocalPrivyRevocationPending({...safe,...patch}),false);
   assert.equal(verifiedLocalPrivyRevocationPending(null),false);
+});
+
+
+const privyIncident=()=>({
+  mode:'ETH_PRIVY_INCIDENT_REVIEW_READ_ONLY',
+  asset:'ETH',chain_id:1,status:'UNCERTAIN',
+  action_code:'MANUAL_RECONCILIATION_REQUIRED',
+  policy_id:null,last_remote_attempt_age_seconds:120,
+  local_stop_verified:true,limits_revision_matches:true,
+  policy_expired:false,
+  remote_policy_exactly_verified_now:false,
+  privy_wallet_signers_verified_now:false,
+  privy_additional_signers_absent_now:false,
+  blockers:[
+    'ETH_LIVE_EXECUTION_DISABLED',
+    'NO_AUTOMATIC_PRIVY_RETRY',
+    'POLICY_POST_RESULT_UNCERTAIN',
+  ],
+  remote_policy_deleted:false,
+  remote_policy_created_by_review:false,
+  privy_signer_changed_by_review:false,
+  automatic_retry_allowed:false,
+  safe_to_recreate_policy:false,
+  real_trading_enabled:false,
+  can_sign:false,can_submit:false,
+  execution_enabled:false,
+});
+
+test('Privy policy incident review stays non-executable for all recovery states',()=>{
+  assert.equal(validEthPrivyIncidentReview(privyIncident()),true);
+  for(const [state,action] of [
+    ['NOT_PREPARED','NO_POLICY_PREPARED'],
+    ['PREPARED','PREPARED_REVIEW'],
+    ['SUBMITTING','MANUAL_RECONCILIATION_REQUIRED'],
+    ['GRANT_VERIFIED','RECHECK_WALLET_AUTHORITY'],
+    ['REVOKE_REQUESTED','REMOVE_OR_VERIFY_PRIVY_SIGNERS'],
+    ['REVOKED','REVOKED_KEEP_STOPPED'],
+  ])assert.equal(validEthPrivyIncidentReview({
+    ...privyIncident(),status:state,action_code:action,
+  }),true);
+  assert.equal(validEthPrivyIncidentReview(null),false);
+  for(const patch of [
+    {mode:'ETH_SIGN_AND_SEND'},
+    {asset:'BTC'},{chain_id:137},{status:'APPROVED_TO_TRADE'},
+    {action_code:'RETRY_POLICY_CREATE_NOW'},
+    {blockers:[]},{blockers:['ETH_LIVE_EXECUTION_DISABLED']},
+    {automatic_retry_allowed:true},{safe_to_recreate_policy:true},
+    {remote_policy_deleted:true},{remote_policy_created_by_review:true},
+    {privy_signer_changed_by_review:true},
+    {real_trading_enabled:true},{can_sign:true},
+    {can_submit:true},{execution_enabled:true},
+    {privy_additional_signers_absent_now:true},
+    {last_remote_attempt_age_seconds:-1},
+    {last_remote_attempt_age_seconds:Infinity},
+    {policy_id:'../../another-wallet'},
+  ])assert.equal(validEthPrivyIncidentReview({...privyIncident(),...patch}),false);
+});
+
+test('Privy no-signers display needs matched server observed wallet verification',()=>{
+  const verified={...privyIncident(),
+    privy_additional_signers_absent_now:true,
+    privy_wallet_signers_verified_now:true,
+    status:'REVOKE_REQUESTED',
+    action_code:'CONFIRM_LOCAL_REVOKE_AFTER_OWNER_CHECK',
+  };
+  assert.equal(validEthPrivyIncidentReview(verified),true);
+  assert.equal(validEthPrivyIncidentReview({
+    ...verified,privy_wallet_signers_verified_now:false,
+  }),false);
 });

@@ -1017,6 +1017,62 @@ permission removal, and end-to-end execution tests. The current code and
 UI do not claim that budget values are wallet balances or that pressing
 Stop converts a position into USDC/USDT.
 
+## Stages 41–48: Privy uncertain-POST and revoked-grant recovery review
+
+The authenticated **GET** `/api/live/eth/policy/incident-review` is
+strictly **read-only** and scoped to the authenticated Privy DID. It
+uses one consistent server-side PostgreSQL read of the individual ETH
+policy, LIVE budget revision, stop state, signed-intent status, expiration
+and last known Privy create attempt. It neither exposes the private app
+secret nor returns policy calldata or the complete idempotency key.
+
+1. **41 — One-user incident snapshot:** Classify all local lifecycle states
+   (`PREPARED`, `SUBMITTING`, `UNCERTAIN`,
+   `REMOTE_VERIFIED_UNATTACHED`, `GRANT_VERIFIED`,
+   `REVOKE_REQUESTED`, `REVOKED`) without changing them.
+2. **42 — Stalled creation detection:** The last Privy POST timestamp is
+   reported as elapsed age, with a distinct stale/unknown result; a
+   timestamp alone never means a POST failed or can be retried.
+3. **43 — Remote exact-policy evidence:** For a known policy ID, fetch
+   the corresponding Privy policy through server credentials and run
+   exact six-rule/owner/recipient/ABI comparison. A timeout, 404,
+   modified rule, wrong ID or unverified owner is **not** proof of
+   successful deletion or absent permissions.
+4. **44 — Remote signer presence:** Independently GET the exact
+   user-owned Privy wallet and verify that the explicit additional
+   signer array is present. Only the correct wallet with an empty
+   signer array permits the review to suggest a subsequent *separate*
+   local revoke confirmation.
+5. **45 — Never automatically recover an uncertain POST:** Report
+   `MANUAL_RECONCILIATION_REQUIRED` and keep `safe_to_recreate_policy`,
+   `automatic_retry_allowed`, `can_sign`, `can_submit` and
+   `execution_enabled` permanently **false**. A local
+   `REVOKE_REQUESTED` or `REVOKED` does **not** delete a policy.
+6. **46 — Authenticated GET endpoint:** No new route for Privy POST,
+   signer grant, DELETE, credential exposure or transaction submission.
+   Client-provided wallet IDs or query flags are ignored.
+7. **47 — App recovery status (EN/DE):** The existing on-demand ETH
+   safety check also loads the incident review and displays
+   understandable, non-automated next-action messages. Remote
+   verification failure is shown as unknown, never as successful
+   removal. Paper/Strategist and overall portfolio are untouched.
+8. **48 — Fail-closed regressions:** Offline tests cover stale vs recent
+   submission, incomplete/naive timestamps, exact remote rule and
+   owner alterations, wallet identity spoofing, user revocation,
+   expired policy, missing remote ID, Privy read errors, authenticated
+   endpoints, and frontend refusal to interpret review as permission.
+
+**Important operational limitation:** If a Privy create POST succeeded
+but its HTTP response or follow-up GET failed, the local row can
+lack a remote policy ID. This review cannot discover such an orphan
+automatically and must not claim it did. The owner/operator must
+independently reconcile the account's remote Privy policies and
+wallet signer permissions before any subsequent creation attempt.
+An empty additional signer list is an instant observation, not proof
+of future absence or of policy deletion. MiniNex ETH LIVE trading,
+Privy additional signer offering, real allowance and gas spending,
+and any background trading submissions remain disabled.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
