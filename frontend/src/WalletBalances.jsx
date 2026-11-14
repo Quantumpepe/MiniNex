@@ -2,11 +2,15 @@ import React,{useEffect,useState} from 'react';
 import {RefreshCcw,ShieldCheck} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {ASSETS,validateWalletBalanceResponse} from './walletBalanceValidation.js';
+import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
+  from './multicoinBalanceValidation.js';
 
 export default function WalletBalances({t,getAccessToken,userId}) {
   const [request,setRequest]=useState(0);
   const [status,setStatus]=useState('loading');
   const [balances,setBalances]=useState(null);
+  const [evmBalances,setEvmBalances]=useState(null);
+  const [evmStatus,setEvmStatus]=useState('loading');
 
   useEffect(()=>{
     if(!userId){setBalances(null);setStatus('idle');return;}
@@ -49,7 +53,33 @@ export default function WalletBalances({t,getAccessToken,userId}) {
     return()=>{current=false;};
   },[getAccessToken,userId,request]);
 
-  const loading=status==='loading';
+  // A failure on any additional EVM network never hides BTC/ETH balances.
+  useEffect(()=>{
+    if(!userId){setEvmBalances(null);setEvmStatus('idle');return;}
+    let current=true;
+    setEvmBalances(null);setEvmStatus('loading');
+    (async()=>{
+      try{
+        const token=await getAccessToken();
+        if(!token)throw new Error('No authenticated token');
+        const response=await fetch(API_BASE+'/api/wallet/multicoin-balances',{
+          method:'GET',
+          headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+          cache:'no-store',
+        });
+        if(!response.ok)throw new Error('Additional mainnet balances unavailable');
+        const data=await response.json();
+        if(!validateMulticoinBalanceResponse(data))
+          throw new Error('Unverified additional network balances');
+        if(current){setEvmBalances(data.assets);setEvmStatus('ready');}
+      }catch{
+        if(current){setEvmBalances(null);setEvmStatus('failed');}
+      }
+    })();
+    return()=>{current=false;};
+  },[getAccessToken,userId,request]);
+
+  const loading=status==='loading'||evmStatus==='loading';
   return <details className="privy-hwm-box privy-balances-card mininex-real-balances"
     aria-label={t.privyBalancesTitle}>
     <summary className="mininex-balance-summary">
@@ -74,7 +104,29 @@ export default function WalletBalances({t,getAccessToken,userId}) {
               : t.privyBalancesUnavailable}</strong>
         </div>)}
       </div>}
-      <p className="privy-wallet-description">{t.coinOtherBalancesPending}</p>
+      {evmStatus==='ready'&&<div className="privy-hwm-ledger privy-balances-grid"
+        aria-label="Additional mainnet holdings">
+        {EVM_BALANCE_ASSETS.map(asset=><div className="privy-hwm-row privy-balance-item"
+          key={asset}>
+          <span className="privy-balance-asset"><strong>{asset}</strong>
+            <small className="privy-balance-network">{
+              {BNB:'BNB Smart Chain',POL:'Polygon PoS',AVAX:'Avalanche C-Chain',
+               LINK:'Ethereum ERC-20',UNI:'Ethereum ERC-20'}[asset]
+            }</small>
+          </span>
+          <strong className="privy-balance-value">{
+            evmBalances[asset].status==='verified'
+              ? evmBalances[asset].balance+' '+asset
+              : t.privyBalancesUnavailable
+          }</strong>
+        </div>)}
+      </div>}
+      {evmStatus==='loading'&&<p className="privy-wallet-description" role="status">
+        {t.privyBalancesLoading}
+      </p>}
+      {evmStatus==='failed'&&<p className="privy-wallet-description" role="status">
+        {t.coinOtherBalancesPending}
+      </p>}
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary privy-balance-refresh"
         onClick={()=>setRequest(n=>n+1)} disabled={loading}>
         <RefreshCcw size={16} aria-hidden="true"/> {t.privyBalancesRefresh}
