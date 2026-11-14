@@ -73,6 +73,7 @@ from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
+from .live_trade_router import get_unified_trade_plan
 from .manual_swap_wallet_readiness import get_manual_swap_wallet_readiness
 
 market = MarketDataService()
@@ -451,6 +452,31 @@ async def authenticated_multicoin_balances(
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+class UnifiedLiveTradeRequest(BaseModel):
+    """One exact input-asset quantity, no client-selected router or address."""
+    model_config = ConfigDict(extra="forbid")
+    side: Literal["BUY", "SELL"]
+    stable: Literal["USDC", "USDT"]
+    amount: str
+
+
+@app.post("/api/live/trade-plan/{asset}")
+async def unified_real_market_trade_plan(
+    asset: str, request: UnifiedLiveTradeRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Real quote route for all eleven coins; never signs or moves funds."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await get_unified_trade_plan(
+        did,asset=asset,side=request.side,stable=request.stable,
+        amount=request.amount,
+    )
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
