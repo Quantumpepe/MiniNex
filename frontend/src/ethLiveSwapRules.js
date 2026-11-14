@@ -36,7 +36,7 @@ export function validateOwnerRouter02Call(quote,{wallet,side,stable,amount}){
   if(source!==wantSource||dest!==wantDest||
      recipient!==wallet.toLowerCase()||![500n,3000n].includes(fee)||
      zero!==0n||units<=0n||minOut<=0n||units>=10n**45n||
-     !/^(0|[1-9][0-9]*)(\\.[0-9]+)?$/.test(amount))throw Error('route mismatch');
+     !/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(amount))throw Error('route mismatch');
   const [whole,fraction='']=amount.split('.');
   if(fraction.length>decimals)throw Error('precision');
   const expected=BigInt(whole)*10n**BigInt(decimals)+
