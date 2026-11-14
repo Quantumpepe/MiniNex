@@ -4,6 +4,7 @@ import {API_BASE} from './data.js';
 import {ASSETS,validateWalletBalanceResponse} from './walletBalanceValidation.js';
 import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
   from './multicoinBalanceValidation.js';
+import {NATIVE_COINS,validNativeBalanceResponse} from './nativeBalanceValidation.js';
 
 export default function WalletBalances({t,getAccessToken,userId}) {
   const [request,setRequest]=useState(0);
@@ -11,6 +12,8 @@ export default function WalletBalances({t,getAccessToken,userId}) {
   const [balances,setBalances]=useState(null);
   const [evmBalances,setEvmBalances]=useState(null);
   const [evmStatus,setEvmStatus]=useState('loading');
+  const [nativeBalances,setNativeBalances]=useState(null);
+  const [nativeStatus,setNativeStatus]=useState('loading');
 
   useEffect(()=>{
     if(!userId){setBalances(null);setStatus('idle');return;}
@@ -79,7 +82,32 @@ export default function WalletBalances({t,getAccessToken,userId}) {
     return()=>{current=false;};
   },[getAccessToken,userId,request]);
 
-  const loading=status==='loading'||evmStatus==='loading';
+  // Same wallet screen; network failures never affect BTC/ETH or the EVM panel.
+  useEffect(()=>{
+    if(!userId){setNativeBalances(null);setNativeStatus('idle');return;}
+    let active=true;
+    setNativeBalances(null);setNativeStatus('loading');
+    (async()=>{
+      try{
+        const token=await getAccessToken();
+        if(!token)throw new Error('No authenticated token');
+        const response=await fetch(API_BASE+'/api/wallet/native-balances',{
+          method:'GET',cache:'no-store',
+          headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+        });
+        if(!response.ok)throw new Error('Native balances unavailable');
+        const data=await response.json();
+        if(!validNativeBalanceResponse(data))
+          throw new Error('Invalid native mainnet balance response');
+        if(active){setNativeBalances(data.assets);setNativeStatus('ready');}
+      }catch{
+        if(active){setNativeBalances(null);setNativeStatus('failed');}
+      }
+    })();
+    return()=>{active=false;};
+  },[getAccessToken,userId,request]);
+
+  const loading=status==='loading'||evmStatus==='loading'||nativeStatus==='loading';
   return <details className="privy-hwm-box privy-balances-card mininex-real-balances"
     aria-label={t.privyBalancesTitle}>
     <summary className="mininex-balance-summary">
@@ -126,6 +154,29 @@ export default function WalletBalances({t,getAccessToken,userId}) {
       </p>}
       {evmStatus==='failed'&&<p className="privy-wallet-description" role="status">
         BNB / POL / AVAX / LINK / UNI: {t.privyBalancesUnavailable}
+      </p>}
+      {nativeStatus==='ready'&&<div className="privy-hwm-ledger privy-balances-grid"
+        aria-label="Native SOL XRP TRX holdings">
+        {NATIVE_COINS.map(asset=><div className="privy-hwm-row privy-balance-item" key={asset}>
+          <span className="privy-balance-asset"><strong>{asset}</strong>
+            <small className="privy-balance-network">{
+              {SOL:'Solana',XRP:'XRP Ledger',TRX:'TRON'}[asset]
+            }</small>
+          </span>
+          <strong className="privy-balance-value">{
+            nativeBalances[asset].status==='verified'
+              ? nativeBalances[asset].balance+' '+asset
+              : nativeBalances[asset].status==='wallet_missing'
+                ? t.privyBalancesMissing
+                : t.privyBalancesUnavailable
+          }</strong>
+        </div>)}
+      </div>}
+      {nativeStatus==='loading'&&<p className="privy-wallet-description" role="status">
+        {t.privyBalancesLoading}
+      </p>}
+      {nativeStatus==='failed'&&<p className="privy-wallet-description" role="status">
+        SOL / XRP / TRX: {t.privyBalancesUnavailable}
       </p>}
       <p className="privy-wallet-description">{t.coinOtherBalancesPending}</p>
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary privy-balance-refresh"

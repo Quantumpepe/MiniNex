@@ -26,6 +26,7 @@ from .blockchain_history import fetch_history, validate_request
 from .verified_sync import synchronize_one_page
 from .wallet_balances import get_wallet_balances
 from .multicoin_evm_balances import get_multicoin_evm_balances
+from .native_coin_balances import get_native_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .extra_paper import (
@@ -425,6 +426,18 @@ async def manual_wallet_swap_wallet_readiness(
     return JSONResponse(report, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/wallet/native-balances")
+async def authenticated_native_balances(
+    authorization: str | None = Header(default=None),
+):
+    """Verified real SOL/XRP/TRX wallet holdings from their own networks."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(await get_native_balances(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
