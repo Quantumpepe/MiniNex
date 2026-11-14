@@ -195,6 +195,18 @@ SCHEMA = (
         FOREIGN KEY (privy_did,asset,intent_key)
             REFERENCES mininex_live_order_intents(privy_did,asset,intent_key)
     )""",
+    # One shared strategy template for all eleven tradable coins.
+    # Each coin keeps independent budget, positions, fills, stablecoin and HWM.
+    # ADA stays excluded until its wallet and trading route are implemented.
+    """CREATE TABLE IF NOT EXISTS mininex_unified_strategy_profiles (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        mode TEXT NOT NULL DEFAULT 'LONG'
+            CHECK (mode IN ('LONG','SPOT_SHORT')),
+        horizon TEXT NOT NULL DEFAULT '15m'
+            CHECK (horizon IN ('5m','15m','1h','24h')),
+        revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_trade_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
@@ -384,6 +396,13 @@ def _prepare_rows(cur, did: str) -> None:
     # authorizes real transfers, even when set to 100%.
     cur.execute(
         """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
            VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
         (did,),
     )
