@@ -108,8 +108,11 @@ def live_trade_quantity(*, decision: dict, live_limits: dict,
         if b.get("status")!="verified" or balances.get("wallet_ownership_verified") is not True:
             return None
         source=_positive_decimal(b["balance"],"stable balance")
-        # Preserve some cash for gas/volatility; a new BUY deploys at most 50%.
-        quantity=min(cap,source*_D("0.50"))
+        # Gas is paid in native ETH, not the trade's stablecoin source.
+        # Honor the owner's full selected budget in confirmed uptrends,
+        # without an artificial 50% stablecoin exposure limit. Every order
+        # is still capped by the LIVE per-order limit and daily turnover.
+        quantity=min(cap,source)
         if quantity<_MIN_ORDER:
             return None
         quantity=quantity.quantize(_D("0.000001"),rounding=ROUND_DOWN)

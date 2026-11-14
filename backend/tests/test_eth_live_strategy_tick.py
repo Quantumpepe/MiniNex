@@ -39,7 +39,7 @@ def test_actual_downtrend_generates_sell():
 def test_live_buy_uses_wallet_cash_not_paper_balance():
     dec={"action":"BUY","market_price":"100.5"}
     assert live.live_trade_quantity(decision=dec,live_limits=limits(),
-             balances=balance(),allowance=allowance())=="40.000000"
+             balances=balance(),allowance=allowance())=="80.000000"
     bad=balance();bad["balances"]["USDC"]["status"]="simulated"
     assert live.live_trade_quantity(decision=dec,live_limits=limits(),
              balances=bad,allowance=allowance()) is None
@@ -73,7 +73,7 @@ def test_real_tick_calls_executor_once(monkeypatch):
         "did:privy:me",market=Market(),run_id="run_live_2026",
         stable="USDC",client=None,now=1000))
     assert result["state"]=="SUBMITTED"
-    assert actions[-1]==("send","BUY","40.000000")
+    assert actions[-1]==("send","BUY","80.000000")
     assert len([x for x in actions if x[0]=="send"])==1
 
 def test_live_tick_refuses_paper_market():
@@ -84,3 +84,22 @@ def test_live_tick_refuses_paper_market():
         "did:privy:me",market=FakeMarket(),run_id="run_live_2026",
         stable="USDC",client=None,now=1000))
     assert result["state"]=="WAIT"
+
+
+def test_confirmed_uptrend_can_use_full_selected_budget():
+    decision={"action":"BUY","market_price":"2000"}
+    cash=balance()
+    cash["balances"]["USDC"]["balance"]="100"
+    result=live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=cash,allowance=allowance())
+    assert result=="100.000000"
+
+def test_live_order_cap_still_limits_all_in_cash():
+    decision={"action":"BUY","market_price":"2000"}
+    cash=balance()
+    cash["balances"]["USDC"]["balance"]="1000"
+    result=live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=cash,allowance=allowance())
+    assert result=="100.000000"
