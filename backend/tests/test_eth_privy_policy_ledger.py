@@ -517,3 +517,71 @@ def test_future_remote_attempt_requires_fresh_identical_prepared_record(tamper):
         q.startswith("UPDATE mininex_live_eth_policy_enrollments")
         for q,_ in cursor.queries
     )
+
+
+def test_repeated_prepare_reuses_verified_original_without_new_price_snapshot():
+    cursor = Cursor()
+    original = stage(cursor)
+    reused = ledger._reuse_prepared_locked(
+        cursor, did=DID, evidence=evidence(),
+        owner=OWNER, executor=SIGNER, now=NOW+15,
+    )
+    assert reused == original
+    assert cursor.insert_count == 1
+    assert all(
+        "FOR UPDATE" in q for q,_ in cursor.queries[-3:]
+    )
+
+
+@pytest.mark.parametrize("change", [
+    ("status", "SUBMITTING"),
+    ("status", "UNCERTAIN"),
+    ("status", "REVOKE_REQUESTED"),
+    ("policy_id", "privy_mock_policy"),
+    ("wallet_address", OTHER),
+    ("limits_revision", REVISION+1),
+    ("policy_owner_id", SIGNER),
+    ("execution_signer_id", OWNER),
+    ("expires_at_unix", NOW),
+    ("candidate_sha256", "wrong"),
+    ("idempotency_key", "wrong"),
+])
+def test_reuse_rejects_stale_expired_conflicted_or_remote_policy(change):
+    cursor = Cursor()
+    stage(cursor)
+    cursor.existing[change[0]] = change[1]
+    with pytest.raises(HTTPException) as error:
+        ledger._reuse_prepared_locked(
+            cursor, did=DID, evidence=evidence(),
+            owner=OWNER, executor=SIGNER, now=NOW+20,
+        )
+    assert error.value.status_code == 409
+    assert cursor.insert_count == 1
+
+
+def test_new_price_is_not_fetched_for_already_stored_consent_gated_record(
+    monkeypatch,
+):
+    row = ledger._snapshot({
+        "status": "PREPARED", "wallet_address": WALLET,
+        "limits_revision": REVISION, "idempotency_key": "a"*64,
+        "candidate_sha256": "b"*64,
+    }, current_revision=REVISION)
+    calls = []
+    async def mock_preflight(did):
+        assert did == DID
+        calls.append("wallet")
+        return evidence()
+    def mock_reuse(did, preflight, owner, executor, now):
+        assert did == DID and preflight["verified_wallet_address"] == WALLET
+        assert owner == OWNER and executor == SIGNER
+        calls.append("db_locked_reuse")
+        return row
+    async def forbid_price():
+        raise AssertionError("Existing stored policy must not depend on price churn")
+    monkeypatch.setattr(ledger, "get_eth_user_enrollment_preflight", mock_preflight)
+    monkeypatch.setattr(ledger, "_require_policy_roles", lambda: (OWNER, SIGNER))
+    monkeypatch.setattr(ledger, "_load_existing_prepared", mock_reuse)
+    monkeypatch.setattr(ledger, "fetch_reference_prices", forbid_price)
+    assert asyncio.run(ledger.prepare_eth_policy_record(DID)) == row
+    assert calls == ["wallet", "db_locked_reuse"]
