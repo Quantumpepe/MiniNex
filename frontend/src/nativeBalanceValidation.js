@@ -1,8 +1,9 @@
-// Real SOL, XRP and TRX balances belonging to independently linked Privy wallets.
+// Real SOL, XRP, TRX and DOGE holdings from independently linked native Privy wallets.
 // Unavailable data is never treated as a zero or as simulated capital.
-export const NATIVE_COINS=Object.freeze(['SOL','XRP','TRX']);
+export const NATIVE_COINS=Object.freeze(['SOL','XRP','TRX','DOGE']);
 export const NATIVE_NETWORKS=Object.freeze({
   SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet',
+  DOGE:'dogecoin-mainnet',
 });
 const AMOUNT=/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 
