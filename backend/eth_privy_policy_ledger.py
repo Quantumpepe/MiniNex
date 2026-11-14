@@ -213,6 +213,69 @@ def _stage_locked(
     }, current_revision=values["revision"])
 
 
+def _reuse_prepared_locked(
+    cur, *, did: str, evidence: dict, owner: str,
+    executor: str, now: int,
+) -> dict | None:
+    """Return the original SAME prepared record across repeat requests.
+
+    Do this BEFORE requesting a fresh price snapshot: a new reference price
+    or request second must not generate a different candidate or create
+    a duplicate for an already-signed, unchanged user plan.
+    """
+    values = _require_enrollment_evidence(evidence)
+    _check_locked_limits(cur, did, values)
+    _require_signed_intent(
+        cur, did=did, values=values, owner=owner, executor=executor,
+    )
+    cur.execute(
+        """SELECT wallet_address,limits_revision,policy_owner_id,
+                  execution_signer_id,candidate_sha256,idempotency_key,
+                  status,policy_id,extract(epoch FROM policy_expires_at)::bigint
+                      AS expires_at_unix
+           FROM mininex_live_eth_policy_enrollments
+           WHERE privy_did=%s FOR UPDATE""", (did,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None
+    if (type(row) is not dict
+            or row.get("status") != "PREPARED"
+            or row.get("wallet_address") != values["wallet"]
+            or row.get("limits_revision") != values["revision"]
+            or row.get("policy_owner_id") != owner
+            or row.get("execution_signer_id") != executor
+            or row.get("policy_id") is not None
+            or type(row.get("expires_at_unix")) is not int
+            or row["expires_at_unix"] <= now
+            or type(row.get("candidate_sha256")) is not str
+            or _SHA.fullmatch(row["candidate_sha256"]) is None
+            or type(row.get("idempotency_key")) is not str
+            or _SHA.fullmatch(row["idempotency_key"]) is None):
+        raise HTTPException(
+            409, "Existing Privy policy must be reconciled before another attempt",
+        )
+    return _snapshot(row, current_revision=values["revision"])
+
+
+def _load_existing_prepared(
+    did: str, evidence: dict, owner: str, executor: str, now: int,
+) -> dict | None:
+    try:
+        url = _db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                return _reuse_prepared_locked(
+                    cur, did=did, evidence=evidence,
+                    owner=owner, executor=executor, now=now,
+                )
+    except psycopg.Error:
+        LOG.warning("ETH Privy policy ledger reuse unavailable")
+        raise HTTPException(503, "Policy preparation storage unavailable") from None
+
+
 def _reserve_one_remote_attempt_locked(
     cur, *, did: str, evidence: dict, owner: str,
     executor: str, idempotency_key: str, now: int,
@@ -295,9 +358,16 @@ async def prepare_eth_policy_record(did: str) -> dict:
     evidence = await get_eth_user_enrollment_preflight(did)
     _require_enrollment_evidence(evidence)
     owner, executor = _require_policy_roles()
+    now = int(time.time())
+    # Return the original already-checked row before recalculating prices
+    # or a 24-hour expiry. No remote calls, no duplicate local policy IDs.
+    existing = await asyncio.to_thread(
+        _load_existing_prepared, did, evidence, owner, executor, now,
+    )
+    if existing is not None:
+        return existing
     # Fetch from a fixed independent HTTPS source; never browser prices.
     prices = await fetch_reference_prices()
-    now = int(time.time())
     plan = build_verified_eth_policy_candidate(
         evidence=evidence, snapshot=prices, owner=owner,
         executor=executor, now=now,
