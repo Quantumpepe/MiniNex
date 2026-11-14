@@ -5,7 +5,7 @@ import EthAutoOwnerApproval from './EthAutoOwnerApproval.jsx';
 import {API_BASE} from './data.js';
 import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,validEthPrivyIncidentReview,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
 
-const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
+const FIELDS=['planned_capital_usd'];
 const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
 
 // The user may sign an explicit MiniNex policy creation intent. Wallet
@@ -354,10 +354,8 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
         </div>
         <div className="privy-hwm-box" style={{display:'grid',gap:9}}>
           <strong>{t.liveEthLimitsTitle}</strong>
-          {FIELDS.map((field,i)=><label key={field} style={{display:'grid',gap:4}}>
-            <span className="privy-wallet-description">{[
-              t.liveEthCapital,t.liveEthPerOrder,t.liveEthDaily
-            ][i]} (USD)</span>
+          {FIELDS.map(field=><label key={field} style={{display:'grid',gap:4}}>
+            <span className="privy-wallet-description">{t.liveEthCapital} (USD)</span>
             <input type="text" inputMode="decimal" autoComplete="off"
               value={draft?.[field]||''}
               disabled={busy}
