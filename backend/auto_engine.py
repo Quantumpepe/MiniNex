@@ -100,7 +100,7 @@ class PaperRules:
     max_additions: int = 3
     min_add_discount_pct: float = 0.60
     cooldown_seconds: float = 90.0
-    min_buy_budget_usd: float = 30.0
+    min_buy_budget_usd: float = 0.0
     min_coin_units: float = 1e-10
     early_rebound_prior_drop_pct: float = 0.25
     early_rebound_recovery_pct: float = 0.10

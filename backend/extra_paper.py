@@ -30,8 +30,6 @@ from .user_paper import (
 
 LOG=logging.getLogger("mininex.extra_paper")
 STABLES=("USDC","USDT")
-MIN_BUDGET=100
-MAX_BUDGET=5000
 TICK_SECONDS=12
 
 
@@ -44,8 +42,8 @@ def valid_asset(asset: str) -> str:
 def validate_start(budget: Any, mode: str, stable: str, horizon: str) -> Decimal:
     # Typed integers only: booleans, currency strings and fractions are not
     # permission to fund anything. This is virtual capital, not a wallet grant.
-    if type(budget) is not int or not MIN_BUDGET <= budget <= MAX_BUDGET:
-        raise HTTPException(422,"Virtual budget must be 100–5000 USD")
+    if type(budget) is not int or not 0 < budget <= 9007199254740991:
+        raise HTTPException(422,"A positive, exact virtual budget is required")
     if mode not in MODES or stable not in STABLES or horizon not in WINDOWS:
         raise HTTPException(422,"Invalid paper-only strategy settings")
     return Decimal(budget)

@@ -30,8 +30,10 @@ def _coin(asset: object) -> str:
 
 
 def _budget(value: object) -> int:
-    if type(value) is not int or not 100 <= value <= 5000:
-        raise ValueError("Coin budget must be an integer from 100 to 5000")
+    # No minimum/maximum trading budget imposed by MiniNex.
+    # Only integer values safely transported through the JSON user interface.
+    if type(value) is not int or not 0 < value <= 9007199254740991:
+        raise ValueError("Invalid positive integer coin budget")
     return value
 
 
@@ -51,7 +53,7 @@ def _read(cur, did: str) -> dict:
         data = {field: row[field] for field in DEFAULT}
         if (type(data["revision"]) is not int or data["revision"] <= 0
                 or type(data["budget_usd"]) is not int
-                or not 100 <= data["budget_usd"] <= 5000
+                or not 0 < data["budget_usd"] <= 9007199254740991
                 or data["mode"] not in MODES or data["stable"] not in STABLES
                 or data["horizon"] not in WINDOWS):
             raise ValueError("Invalid persisted coin settings")

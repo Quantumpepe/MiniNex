@@ -39,7 +39,7 @@ def replay_strategy(
 ) -> dict[str, Any]:
     if asset not in REPLAY_ASSETS or mode not in MODES or horizon not in WINDOWS:
         raise ValueError("Invalid replay selection")
-    if not math.isfinite(initial_usd) or not 30 <= initial_usd <= 100000:
+    if not math.isfinite(initial_usd) or initial_usd <= 0:
         raise ValueError("Invalid virtual replay budget")
     if not isinstance(observations,list) or len(observations)>MAX_POINTS:
         raise ValueError("Invalid replay sample count")
