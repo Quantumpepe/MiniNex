@@ -155,6 +155,19 @@ def _begin_locked(cur, *, did: str, session_digest: str, evidence: dict,
                   owner: str, signer: str, now: int, nonce: str) -> dict:
     """One SQL transaction under a LIVE limits row lock; old nonce replaced."""
     _check_locked_limits(cur, did, evidence)
+    # Do not overwrite an already-confirmed enrollment intent while an
+    # immutable policy has been prepared, submitted or revoked. Otherwise
+    # issuing a new challenge would erase the original authorization record
+    # and make remote-policy incident reconciliation impossible.
+    cur.execute(
+        """SELECT status FROM mininex_live_eth_policy_enrollments
+           WHERE privy_did=%s FOR UPDATE""", (did,),
+    )
+    policy = cur.fetchone()
+    if policy is not None:
+        raise HTTPException(
+            409, "Existing Privy policy requires independent reconciliation",
+        )
     expires = now + _EXPIRY_SEC
     message = _message(
         did=did, wallet=evidence["wallet"], session_digest=session_digest,
