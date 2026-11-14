@@ -48,6 +48,10 @@ from .privy_eth_policy import get_eth_policy_review
 from .eth_auto_preflight import get_eth_automatic_preflight
 from .eth_user_enrollment_preflight import get_eth_user_enrollment_preflight
 from .eth_privy_policy_plan import get_eth_policy_candidate_preflight
+from .eth_privy_policy_ledger import (
+    prepare_eth_policy_record, get_eth_policy_ledger_status,
+    get_eth_policy_remote_revocation_review,
+)
 from .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
@@ -580,6 +584,45 @@ async def eth_user_policy_candidate(
     """Verified per-wallet ETH policy draft status; NO Privy API creation."""
     did = verify_privy_bearer(authorization)["user_id"]
     result = await get_eth_policy_candidate_preflight(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/policy/prepare")
+async def eth_privy_policy_prepare(
+    authorization: str | None = Header(default=None),
+):
+    """Persist inert wallet-specific candidate after matching signed intent."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await prepare_eth_policy_record(did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/policy/lifecycle")
+async def eth_privy_policy_lifecycle(
+    authorization: str | None = Header(default=None),
+):
+    """Read persisted user policy state. Never grants wallet authority."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await asyncio.to_thread(get_eth_policy_ledger_status, did)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/policy/revocation-review")
+async def eth_privy_policy_revocation_review(
+    authorization: str | None = Header(default=None),
+):
+    """Verify remote signer absence; does NOT remove signer or policy."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_eth_policy_remote_revocation_review(did)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
