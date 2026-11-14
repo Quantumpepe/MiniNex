@@ -46,6 +46,7 @@ from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_router02_receipts import check_user_router02_receipt
+from .eth_weth9_receipts import check_user_weth9_receipt
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -595,6 +596,22 @@ async def eth_live_chain_receipt(tx_hash: str,
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/weth9-receipt/{tx_hash}")
+async def eth_weth9_real_conversion_receipt(
+    tx_hash: str,
+    operation: Literal["DEPOSIT","WITHDRAW"],
+    authorization: str | None = Header(default=None),
+):
+    """Check owned native ETH wrap/unwrap separately from Router02 swap."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await check_user_weth9_receipt(
+        did,tx_hash,operation=operation)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
