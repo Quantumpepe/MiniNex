@@ -168,7 +168,7 @@ def test_invalid_stable_amount_rejected_without_rpc(provider,bad):
 
 @pytest.mark.parametrize("modify",[
     lambda s:s.update(chain="0x89"),
-    lambda s:s["balances"].update(balances=5),
+    lambda s:s["balances"].update(mode="UNVERIFIED"),
     lambda s:s["balances"]["wallets"].update(ETH="0x"+"b"*40),
     lambda s:s["balances"]["balances"]["ETH"].update(status="unavailable"),
     lambda s:s["balances"]["balances"]["USDC"].update(balance="5"),
