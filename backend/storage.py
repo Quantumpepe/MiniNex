@@ -74,27 +74,6 @@ SCHEMA = (
         revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
-    """DO $migration$
-    DECLARE item RECORD;
-    BEGIN
-      FOR item IN
-        SELECT c.conname, c.conrelid::regclass AS table_name
-        FROM pg_constraint c
-        WHERE c.contype='c'
-          AND c.conrelid IN (
-            'mininex_live_eth_limits'::regclass,
-            'mininex_live_btc_limits'::regclass,
-            'mininex_live_order_intents'::regclass)
-          AND (
-            pg_get_constraintdef(c.oid) LIKE '%10000000%'
-            OR pg_get_constraintdef(c.oid) LIKE '%max_order_usd <=%'
-            OR pg_get_constraintdef(c.oid) LIKE '%max_daily_turnover_usd%'
-          )
-      LOOP
-        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
-                       item.table_name,item.conname);
-      END LOOP;
-    END $migration$""",
     # A signed EIP-191 enrollment intent is NOT Privy wallet authority.
     # One-time pending challenge, independently revocable and wallet-bound.
     """CREATE TABLE IF NOT EXISTS mininex_live_eth_consent_intents (
@@ -468,6 +447,27 @@ SCHEMA = (
        ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
        CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
 
+    """DO $migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+            'mininex_live_eth_limits'::regclass,
+            'mininex_live_btc_limits'::regclass,
+            'mininex_live_order_intents'::regclass)
+          AND (
+            pg_get_constraintdef(c.oid) LIKE '%10000000%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_order_usd <=%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_daily_turnover_usd%'
+          )
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $migration$""",
 )
 
 

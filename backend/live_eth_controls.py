@@ -16,7 +16,7 @@ from psycopg.rows import dict_row
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
 LOG = logging.getLogger("mininex.live_eth_controls")
-MONEY_MAX = Decimal("9999999999999999999999")
+MONEY_MAX = Decimal("10000000000000000000000")
 MONEY_PLACES = Decimal("0.000001")
 _MONEY_RE = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$")
 _ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{7,95}$")

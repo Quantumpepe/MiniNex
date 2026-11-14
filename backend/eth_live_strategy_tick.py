@@ -22,7 +22,7 @@ from .wallet_balances import get_wallet_balances
 from .storage import _safe_did
 
 _D = Decimal
-_MIN_ORDER = _D("15")
+_MIN_ORDER = _D("0")
 _ZERO = _D("0")
 _RESERVE = _D("0.000000000000000001")
 
@@ -75,7 +75,7 @@ def _positive_decimal(value,what):
         raise ValueError(what+" must be exact")
     try: d=_D(value)
     except Exception: raise ValueError(what+" invalid") from None
-    if not d.is_finite() or d<0 or d>=_D("1e20"):
+    if not d.is_finite() or d<0 or d>=_D("1e22"):
         raise ValueError(what+" invalid")
     return d
 
