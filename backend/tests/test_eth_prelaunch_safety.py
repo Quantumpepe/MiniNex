@@ -125,6 +125,14 @@ def test_each_nonremote_policy_status_fails_closed(status,blocker):
     )
 
 
+def test_pending_remote_privy_signer_removal_is_a_separate_blocker():
+    report=safety(p=policy("REVOKE_REQUESTED"))
+    assert "OWNER_PRIVY_SIGNER_REMOVAL_NOT_YET_VERIFIED" in report["blockers"]
+    assert report["manual_policy_reconciliation_required"] is True
+    assert report["real_trading_enabled"] is False
+    assert report["can_submit"] is False
+
+
 def test_expired_policy_wrong_budget_revision_or_privy_readback_blocks():
     p=policy()
     p["policy_expired"]=True
