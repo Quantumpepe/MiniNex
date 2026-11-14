@@ -1143,3 +1143,43 @@ risk/ledger snapshot under a single transaction lock. Do not treat a quote
 preview, an offline calculation, a green test suite or a policy ID as wallet
 authorization. These changes leave Privy signers, current simulations,
 Strategist, coin-separated trade history, and portfolio untouched.
+
+## Stages 57-64: authenticated, non-executable ETH cost preview
+
+A new user-initiated `POST /api/live/eth/cost-preview` accepts the same strict
+BUY/SELL, USDC/USDT and exact input amount as the existing swap-plan endpoint.
+It does **not** modify /swap-plan or the Privy/wallet/PAPER flows.
+
+57. Reuse the validated unsigned one-hop Uniswap V3 swap plan and reject
+    unrecognized chain, input/recipient semantics, incomplete router review,
+    unknown state or previously permitted execution flags.
+58. When approval/Permit2 is required, return a blocked **no-cost-estimate**
+    result. No auto-approval, grant, signed typed data or transaction occurs.
+59. Independently re-check the authenticated Privy user's ETH wallet and
+    separately fetched recent verified ETH/stable balances; never accept a
+    client-provided wallet address.
+60. Fetch server-side CoinGecko ETH/stable USD reference prices with their
+    source update timestamps, enforce a maximum 30-second reference age,
+    reject future/malformed timestamps and off-peg stable prices.
+61. Fetch per-user ETH pending/24h ledger exposure and independently re-read
+    ETH LIVE limits. Detect changes to the budget revision/stop; do not use
+    BTC or PAPER capital, and flag unresolved ETH orders separately.
+62. Apply the previously tested gas, minimum output, provider-fee and
+    asset-isolated capital arithmetic to this *read-only* evidence. It models
+    maximum possible gas, **not** settled or guaranteed transaction cost.
+63. Return **sanitized** indicative USD metadata, blockers and explicit
+    `can_reserve=false`, `can_sign=false`, `can_submit=false`,
+    `live_trading_enabled=false`. Never return swap calldata, signer
+    material, wallet address or untrusted client-supplied route data.
+64. Regression tests cover authenticated identity, spoofed wallets, stale
+    prices, revisions, wrong chain, incomplete router checks, pending orders
+    and refusal to estimate gas on unbuilt approval-required swaps.
+
+**Limitations:** This is not a trading engine. Two independent read-only DB
+reads do not hold the *same transaction lock through order submission*,
+balances are public explorer/RPC estimates rather than proven spendability,
+CoinGecko prices are reference prices rather than executable Uniswap prices,
+and the preview does not sign, approve, create or reserve orders. For the
+current paused accounts the result is expressly blocked. Do not use it as an
+authorization token or auto-trading readiness check. Existing simulation,
+Strategist, coin histories and global Portfolio are unchanged.
