@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
-import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
+import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,validEthPrivyIncidentReview,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
 
 const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
 const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
@@ -18,6 +18,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
   const [policyState,setPolicyState]=useState(null);
   const [grantOffer,setGrantOffer]=useState(null);
   const [safetyAudit,setSafetyAudit]=useState(null);
+  const [incidentReview,setIncidentReview]=useState(null);
   const [draft,setDraft]=useState(null);
   const [phase,setPhase]=useState('loading');
   const [busy,setBusy]=useState(false);
@@ -88,7 +89,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     let active=true;
     if(!enabled||!userId){
       setLimits(null);setGrant(null);setDraft(null);setPolicyState(null);setGrantOffer(null);
-      setSafetyAudit(null);
+      setSafetyAudit(null);setIncidentReview(null);
       setPhase('loading');setConfirmRevoke(false);
       return()=>{active=false;};
     }
@@ -128,7 +129,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
         ...payload,expected_revision:limits.revision
       });
       applyLimits(result);
-      setSafetyAudit(null);
+      setSafetyAudit(null);setIncidentReview(null);
       setMessage(verifiedLocalPrivyRevocationPending(result)
         ?t.liveEthLimitsSavedRevokeNeeded:t.liveEthLimitsSaved);
       try{await refresh();}catch{ /* The saved stop still remains effective. */ }
@@ -144,7 +145,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     try{
       const result=await request('/api/live/eth/stop','POST');
       applyLimits(result);
-      setSafetyAudit(null);
+      setSafetyAudit(null);setIncidentReview(null);
       setMessage(verifiedLocalPrivyRevocationPending(result)
         ?t.liveEthStoppedRevokeNeeded:t.liveEthStopped);
       try{await refresh();}catch{ /* Never claim a remote removal. */ }
@@ -280,8 +281,16 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
       const audit=await request('/api/live/eth/prelaunch-safety');
       if(!validEthReadOnlySafetyReport(audit))throw Error('Invalid read-only ETH audit');
       setSafetyAudit(audit);
+      // A second independent GET does not change a Privy policy, retry a
+      // previously uncertain POST, or remove wallet permissions.
+      try{
+        const incident=await request('/api/live/eth/policy/incident-review');
+        if(!validEthPrivyIncidentReview(incident))
+          throw Error('Unverified read-only incident report');
+        setIncidentReview(incident);
+      }catch{setIncidentReview(null);}
     }catch{
-      setSafetyAudit(null);
+      setSafetyAudit(null);setIncidentReview(null);setIncidentReview(null);
       setMessage(t.liveEthAuditFailed);
     }finally{setBusy(false);}
   };
@@ -380,6 +389,27 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
               <p role="alert" className="privy-wallet-description">
                 {t.liveEthAuditUnresolved}: {safetyAudit.live_ledger.unresolved_order_count}
               </p>}
+            <div className="privy-wallet-description" style={{display:'grid',gap:4}}>
+              <strong>{t.liveEthIncidentTitle}</strong>
+              {incidentReview
+                ?<>
+                  <span>{t.liveEthIncidentActions?.[incidentReview.action_code]
+                    ||t.liveEthIncidentUnknown}</span>
+                  {incidentReview.status==='SUBMITTING'||
+                    incidentReview.status==='UNCERTAIN'
+                    ?<span role="alert">{t.liveEthIncidentNeverRetry}</span>
+                    :null}
+                  {!incidentReview.privy_wallet_signers_verified_now&&
+                    ['GRANT_VERIFIED','REVOKE_REQUESTED','REVOKED'].includes(incidentReview.status)
+                    ?<span role="alert">{t.liveEthIncidentPrivyUnverified}</span>
+                    :null}
+                  {incidentReview.status==='REVOKE_REQUESTED'&&
+                     incidentReview.privy_additional_signers_absent_now&&
+                    <span>{t.liveEthIncidentConfirmRevocation}</span>}
+                </>
+                :<span>{t.liveEthIncidentUnavailable}</span>}
+              <span>{t.liveEthIncidentReadOnly}</span>
+            </div>
             <p className="privy-wallet-description">{t.liveEthAuditNoTrades}</p>
           </div>}
         </div>
