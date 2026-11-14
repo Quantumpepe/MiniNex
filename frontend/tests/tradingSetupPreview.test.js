@@ -42,3 +42,19 @@ test('stored preferences have no signer and cannot enable real trades',()=>{
   assert.match(help,/helpModesText/);
   assert.match(help,/helpHorizonText/);
 });
+
+
+test('each coin keeps its own mode and AUTO without duplicate global selector',()=>{
+  const extraCoin=read('../src/ExtraCoinStrategyReplay.jsx');
+  assert.doesNotMatch(setup,/Eine Strategie für alle 11 Coins|Für alle 11 Coins übernehmen/);
+  assert.doesNotMatch(setup,/Apply to all 11 coins|\/api\/strategy\/profile/);
+  assert.doesNotMatch(setup,/applyGlobal|setGlobalDraft|globalProfile|applySharedStrategyToExtra/);
+  assert.match(setup,/const MODES = \['LONG','SPOT_SHORT','AUTO'\]/);
+  assert.match(setup,/onChange=\{event=>change\(opened,'mode',event.target.value\)\}/);
+  assert.match(setup,/onClick=\{\(\)=>save\(opened\)\}/);
+  assert.match(setup,/setReplayOptions\(old=>\(\{\.\.\.old,\[asset\]:\{\.\.\.old\[asset\],\[key\]:value\}\}\)\)/);
+  assert.match(extraCoin,/onChange=\{event=>onChange\(asset,'mode',event.target.value\)\}/);
+  assert.match(extraCoin,/<option value="AUTO">/);
+  assert.match(strings,/Wähle 5 Minuten, 15 Minuten, 1 Stunde oder 24 Stunden für jeden Coin einzeln/);
+  assert.match(strings,/Choose 5 minutes, 15 minutes, 1 hour or 24 hours for each coin individually/);
+});
