@@ -100,6 +100,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       if(found.transactionHash?.toLowerCase()!==hash.toLowerCase()||
          found.from?.toLowerCase()!==wallet.address.toLowerCase()||
          found.status!=='0x1')throw Error('Reverted or untrusted receipt');
+      if(stage==='approval-submitted')attempted.current=false;
       setStage(stage==='approval-submitted'?'approval-confirmed':'swap-confirmed');
       setReview(null);
     }catch(e){if(id===serial.current)setError(e?.message||'Receipt unavailable');}
@@ -113,7 +114,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
         'Real Ethereum wallet transaction, user confirmation required. Native ETH conversion is not yet integrated.':
         'Echte Ethereum-Wallet-Transaktion mit Bestätigung. Die Umwandlung in natives ETH ist noch nicht integriert.'}
     </p>
-    {!attempted.current&&['idle','failed','expired'].includes(stage)&&
+    {!attempted.current&&['idle','failed','expired','approval-confirmed'].includes(stage)&&
       <button type="button" className="privy-wallet-action"
         disabled={!enabled||busy||!wallet||!amount} onClick={prepare}>
         {busy?'…':'Privy LIVE Swap vorbereiten'}</button>}
