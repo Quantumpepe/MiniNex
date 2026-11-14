@@ -86,7 +86,7 @@ export default function LiveTradePlan({
     <strong>{t.livePlanTitle}</strong>
     <p className="privy-wallet-description">{t.livePlanDescription}</p>
     <form onSubmit={check} className="mininex-extra-replay-form">
-      <label><span>{t.privySetupMode}</span>
+      <label><span>{t.livePlanSide}</span>
         <select value={side} disabled={!enabled||busy}
           onChange={e=>changeSide(e.target.value)}>
           <option value="BUY">{t.livePlanBuy}</option>
