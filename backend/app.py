@@ -47,6 +47,7 @@ from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
 from .eth_auto_preflight import get_eth_automatic_preflight
 from .eth_user_enrollment_preflight import get_eth_user_enrollment_preflight
+from .eth_privy_policy_plan import get_eth_policy_candidate_preflight
 from .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
@@ -566,6 +567,19 @@ def eth_consent_revoke(
     """Atomic LOCAL intent revocation and MiniNex stop; not remote Privy removal."""
     identity = verify_privy_bearer(authorization)
     result = revoke_eth_consent_intent(identity["user_id"])
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/policy-candidate")
+async def eth_user_policy_candidate(
+    authorization: str | None = Header(default=None),
+):
+    """Verified per-wallet ETH policy draft status; NO Privy API creation."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_eth_policy_candidate_preflight(did)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
