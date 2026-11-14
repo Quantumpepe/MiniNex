@@ -129,6 +129,8 @@ def test_stale_after_reservation_expires_without_privy_send(monkeypatch):
 def test_expiration_sql_requires_unbroadcast_and_reserved(monkeypatch):
     class Cursor:
         def __init__(self):self.statements=[];self.calls=0
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
         def execute(self,sql,args):self.statements.append(sql)
         def fetchone(self):
             self.calls+=1
