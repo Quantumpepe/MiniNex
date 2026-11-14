@@ -471,7 +471,8 @@ def test_user_bound_policy_post_and_grant_routes_are_authenticated(auth,monkeypa
         call=getattr(client,method)
         assert call(path).status_code==401
         assert call(path,headers={"Authorization":"Bearer bad"}).status_code==401
-        resp=call(path,headers=auth,json={"wallet_address":OTHER,"signer_id":"evil"} if method=="post" else None)
+        kwargs={"json":{"wallet_address":OTHER,"signer_id":"evil"}} if method=="post" else {}
+        resp=call(path,headers=auth,**kwargs)
         assert resp.status_code==200
         assert resp.json()["execution_enabled"] is False
     assert client.get("/api/live/eth/policy/create",headers=auth).status_code==405
