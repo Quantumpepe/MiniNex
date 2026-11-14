@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 
 from .eth_privy_user_grant import get_eth_user_grant_review
 from .eth_live_strategy_tick import execute_live_eth_strategy_tick
+from .eth_live_auto_dispatch import expire_abandoned_eth_orders
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_auto_native_cycle import (
     send_eth_auto_native_leg,submitted_native_steps,finalize_native_step,
@@ -354,6 +355,12 @@ class EthAutoLiveWorker:
             await asyncio.sleep(_INTERVAL)
             if not _worker_approved():
                 continue
+            # A timed-out quote must not reserve the user's capital forever.
+            # No SENDING/SUBMITTED/uncertain hash is ever modified here.
+            try:
+                await asyncio.to_thread(expire_abandoned_eth_orders)
+            except Exception:
+                LOG.exception("Unsent ETH order expiry unavailable")
             await reconcile_live_eth_orders()
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:

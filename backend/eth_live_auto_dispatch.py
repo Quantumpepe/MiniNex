@@ -118,6 +118,89 @@ def _reserve_verified_live_signal(did:str, signal:EthAutoSignal,
         raise HTTPException(503,"ETH AUTO reservation unavailable") from None
 
 
+def expire_reserved_eth_order_without_broadcast(did:str,key:str)->bool:
+    """Release an unbroadcast order without losing the unique signal binding.
+
+    Only RESERVED with no Privy submission journal can be expired. Row locks
+    serialize against the worker's owner-limit lock and the submit claim.
+    """
+    did=_safe_did(did)
+    try:
+        url=_db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """SELECT trading_paused FROM mininex_live_eth_limits
+                       WHERE privy_did=%s FOR UPDATE""",(did,))
+                if cur.fetchone() is None:
+                    raise HTTPException(503,"ETH order owner limits unavailable")
+                cur.execute(
+                    """UPDATE mininex_live_order_intents o
+                       SET state='EXPIRED',updated_at=now()
+                       WHERE o.privy_did=%s AND o.asset='ETH'
+                         AND o.intent_key=%s AND o.state='RESERVED'
+                         AND o.tx_hash IS NULL
+                         AND NOT EXISTS (
+                            SELECT 1 FROM mininex_live_eth_auto_broadcasts b
+                            WHERE b.privy_did=o.privy_did
+                              AND b.intent_key=o.intent_key
+                         )
+                       RETURNING o.intent_key""",(did,key))
+                return cur.fetchone() is not None
+    except psycopg.Error:
+        raise HTTPException(503,"ETH unbroadcast order cleanup unavailable") from None
+
+
+def expire_abandoned_eth_orders(*,older_than_seconds:int=120)->int:
+    """Clear stuck RESERVED orders only if they NEVER entered Privy SENDING.
+
+    Called by the real ETH worker; already broadcast/uncertain transactions
+    are untouchable until reconciliation.
+    """
+    if not 90<=older_than_seconds<=3600:
+        raise ValueError("Invalid abandoned-order threshold")
+    try:
+        url=_db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """SELECT DISTINCT privy_did FROM mininex_live_order_intents
+                       WHERE asset='ETH' AND state='RESERVED'
+                         AND created_at<now()-(%s*interval '1 second')
+                       ORDER BY privy_did LIMIT 100""",
+                    (older_than_seconds,))
+                owners=[row["privy_did"] for row in cur.fetchall()]
+        cleared=0
+        for did in owners:
+            with psycopg.connect(url,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(
+                        """SELECT revision FROM mininex_live_eth_limits
+                           WHERE privy_did=%s FOR UPDATE""",(did,))
+                    if cur.fetchone() is None:
+                        continue
+                    cur.execute(
+                        """UPDATE mininex_live_order_intents o
+                           SET state='EXPIRED',updated_at=now()
+                           WHERE o.privy_did=%s AND o.asset='ETH'
+                             AND o.state='RESERVED'
+                             AND o.created_at<now()-(%s*interval '1 second')
+                             AND o.tx_hash IS NULL
+                             AND NOT EXISTS (
+                                SELECT 1 FROM mininex_live_eth_auto_broadcasts b
+                                WHERE b.privy_did=o.privy_did
+                                  AND b.intent_key=o.intent_key
+                             )
+                           RETURNING o.intent_key""",
+                        (did,older_than_seconds))
+                    cleared+=len(cur.fetchall())
+        return cleared
+    except psycopg.Error:
+        raise HTTPException(503,"ETH RESERVED order reconciliation unavailable") from None
+
+
 async def execute_eth_auto_signal(
     did:str,signal:EthAutoSignal, *,
     client:httpx.AsyncClient,
@@ -146,7 +229,11 @@ async def execute_eth_auto_signal(
     if claim.get("claim")!="RESERVED_NO_SEND":
         raise HTTPException(503,"ETH AUTO strategy order not reserved")
     if time.time()>=terms["quote_expires_at"]:
-        # The durable RESERVED order remains reviewable; never sign stale quotes.
+        # There is no Privy SENDING state: expire safely while retaining the
+        # immutable strategy signal binding (never replay same signal).
+        await asyncio.to_thread(
+            expire_reserved_eth_order_without_broadcast,
+            did,claim["intent_key"])
         raise HTTPException(409,"ETH quote expired before wallet signing")
     return await submit_privy_eth_auto_order(
         did=did,intent_key=claim["intent_key"],
