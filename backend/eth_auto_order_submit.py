@@ -94,6 +94,14 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
     if type(pending) is not dict or pending.get("pending")!=0:
         raise HTTPException(409,"Existing ETH order must settle first")
     cur.execute(
+        """SELECT COUNT(*) AS pending FROM mininex_live_eth_auto_native_steps
+           WHERE privy_did=%s AND status IN
+             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+        (did,))
+    pending_native=cur.fetchone()
+    if type(pending_native) is not dict or pending_native.get("pending")!=0:
+        raise HTTPException(409,"Native ETH conversion still in progress")
+    cur.execute(
         """SELECT state,side,stable,chain_network
            FROM mininex_live_order_intents
            WHERE privy_did=%s AND asset='ETH' AND intent_key=%s FOR UPDATE""",

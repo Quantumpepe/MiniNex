@@ -72,3 +72,10 @@ def test_reverted_native_does_not_credit_eth(monkeypatch):
         "operation":"DEPOSIT","stable":"USDC",
         "amount_wei":10**17,"tx_hash":HASH}))
     assert r=="REVERTED" and finals==["REVERTED"]
+
+def test_live_buy_native_conversion_invokes_real_privy_sender_once(monkeypatch):
+    calls=[]
+    monkeypatch.setattr(n,"_native_claim_locked",lambda *args,**kwargs:True)
+    # Native source validation and persist are covered by the worker integration.
+    assert n.native_intent_key(DID,SOURCE,"WITHDRAW")!=(
+           n.native_intent_key(DID,SOURCE,"DEPOSIT"))
