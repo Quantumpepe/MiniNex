@@ -109,6 +109,14 @@ class Cursor:
             }
         elif "FROM mininex_live_eth_policy_enrollments" in query:
             self._fetched = self.existing
+        elif query.startswith("UPDATE mininex_live_eth_policy_enrollments"):
+            if "status='SUBMITTING'" not in query or self.existing is None:
+                raise AssertionError("Unexpected submission claim")
+            if self.existing["status"] != "PREPARED":
+                self._fetched = None
+            else:
+                self.existing["status"] = "SUBMITTING"
+                self._fetched = {"status": "SUBMITTING"}
         elif query.startswith("INSERT INTO mininex_live_eth_policy_enrollments"):
             assert len(params) == 9
             (did, wallet, rev, owner, signer, digest, key, candidate_json,
@@ -401,8 +409,53 @@ def test_status_and_remote_review_routes_do_not_mutate_permissions(auth, monkeyp
         assert client.post(route,headers=auth).status_code == 405
 
 
-def test_privy_consent_revoke_is_unchanged_local_only_and_remote_revoke_pending():
-    assert "privy_policy_ledger_revoke_requested" in consent.revoke_eth_consent_intent.__code__.co_consts or True
+def test_privy_consent_revoke_is_atomic_local_only_and_marks_remote_pending(
+    monkeypatch,
+):
+    class Cur:
+        def __init__(self):
+            self.queries = []
+            self.last = None
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def execute(self, sql, params):
+            q = " ".join(sql.split())
+            self.queries.append((q, params))
+            if q.startswith("UPDATE mininex_live_eth_limits"):
+                self.last = {"revision": REVISION+1}
+            elif q.startswith("UPDATE mininex_live_eth_consent_intents"):
+                self.last = None
+            elif q.startswith("UPDATE mininex_live_eth_policy_enrollments"):
+                assert "status='REVOKE_REQUESTED'" in q
+                self.last = {"status": "REVOKE_REQUESTED"}
+            else:
+                raise AssertionError("Unexpected local revoke SQL")
+        def fetchone(self):
+            return self.last
+    cur = Cur()
+    class Connection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def cursor(self, **kwargs):
+            return cur
+    monkeypatch.setattr(consent, "_db_url", lambda: "postgresql://test/never-used")
+    monkeypatch.setattr(consent, "_ensure_schema", lambda _url: None)
+    monkeypatch.setattr(consent, "_prepare_rows", lambda *_args: None)
+    monkeypatch.setattr(
+        consent.psycopg, "connect",
+        lambda url, connect_timeout=6: Connection(),
+    )
+    result = consent.revoke_eth_consent_intent(DID)
+    assert result["mininex_live_sends_paused"] is True
+    assert result["local_consent_intent_revoked"] is True
+    assert result["privy_policy_ledger_revoke_requested"] is True
+    assert result["privy_remote_signer_removed"] is False
+    assert len(cur.queries) == 3
+    assert all(params == (DID,) for _,params in cur.queries)
     # Prove no remote wallet/policy DELETE or wallet grant handler is exposed.
     paths = {route.path for route in api.app.routes}
     assert "/api/live/eth/policy/prepare" in paths
@@ -411,3 +464,56 @@ def test_privy_consent_revoke_is_unchanged_local_only_and_remote_revoke_pending(
     assert "/api/live/eth/attach-signer" not in paths
     assert "/api/live/eth/delegate" not in paths
     assert "/api/live/eth/execute" not in paths
+
+
+def test_future_worker_single_attempt_reservation_cannot_repeat_after_crash():
+    cursor = Cursor()
+    stage(cursor)
+    key = cursor.existing["idempotency_key"]
+    claim = ledger._reserve_one_remote_attempt_locked(
+        cursor, did=DID, evidence=evidence(), owner=OWNER,
+        executor=SIGNER, idempotency_key=key, now=NOW,
+    )
+    assert claim["status"] == "SUBMITTING"
+    assert claim["remote_post_performed"] is False
+    assert claim["remote_post_must_not_retry_after_uncertainty"] is True
+    assert cursor.existing["status"] == "SUBMITTING"
+    assert claim["execution_enabled"] is False
+    with pytest.raises(HTTPException) as error:
+        ledger._reserve_one_remote_attempt_locked(
+            cursor, did=DID, evidence=evidence(), owner=OWNER,
+            executor=SIGNER, idempotency_key=key, now=NOW,
+        )
+    assert error.value.status_code == 409
+    assert cursor.insert_count == 1
+    assert len([
+        q for q,_ in cursor.queries
+        if q.startswith("UPDATE mininex_live_eth_policy_enrollments")
+    ]) == 1
+
+
+@pytest.mark.parametrize("tamper", [
+    ("key", "c"*64), ("expires_at_unix", NOW),
+    ("status", "UNCERTAIN"), ("status", "REVOKE_REQUESTED"),
+    ("limits_revision", REVISION+1),
+    ("wallet_address", OTHER), ("policy_owner_id", SIGNER),
+    ("execution_signer_id", OWNER),
+])
+def test_future_remote_attempt_requires_fresh_identical_prepared_record(tamper):
+    cursor = Cursor()
+    stage(cursor)
+    key = cursor.existing["idempotency_key"]
+    if tamper[0] == "key":
+        key = tamper[1]
+    else:
+        cursor.existing[tamper[0]] = tamper[1]
+    with pytest.raises(HTTPException) as error:
+        ledger._reserve_one_remote_attempt_locked(
+            cursor, did=DID, evidence=evidence(), owner=OWNER,
+            executor=SIGNER, idempotency_key=key, now=NOW,
+        )
+    assert error.value.status_code == 409
+    assert not any(
+        q.startswith("UPDATE mininex_live_eth_policy_enrollments")
+        for q,_ in cursor.queries
+    )
