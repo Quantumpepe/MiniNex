@@ -157,7 +157,10 @@ async def _read_one(client: httpx.AsyncClient, coin: str, address: str) -> str:
     else:
         if ("Error" in body or body.get("address")!=address):
             raise ValueError("TRON confirmed account unavailable")
-        # Activated TRON accounts may omit balance when exactly zero.
+        # A zero may only come from a clearly identified existing account.
+        # Missing/malformed account data is unavailable, never fabricated 0.
+        if "balance" not in body and "create_time" not in body:
+            raise ValueError("TRON account not verifiably activated")
         value = body.get("balance",0)
     return _units(_parse_quantity(value),CHAINS[coin][4])
 
