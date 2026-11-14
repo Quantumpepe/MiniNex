@@ -479,3 +479,13 @@ def test_user_bound_policy_post_and_grant_routes_are_authenticated(auth,monkeypa
     assert client.post("/api/live/eth/policy/grant-review",headers=auth).status_code==405
     assert client.get("/api/live/eth/policy/confirm-grant",headers=auth).status_code==405
     assert "/api/live/eth/execute" not in [r.path for r in api.app.routes]
+
+
+def test_existing_database_status_check_is_migrated_for_privy_grants():
+    from backend.storage import SCHEMA
+    statements="\n".join(SCHEMA)
+    assert "DROP CONSTRAINT IF EXISTS mininex_live_eth_policy_enrollments_status_check" in statements
+    assert "ADD CONSTRAINT mininex_live_eth_policy_enrollments_status_check" in statements
+    assert "'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED'" in statements
+    assert "mininex_live_eth_policy_grant_integrity_check" in statements
+    assert "remote_verified_at IS NOT NULL" in statements
