@@ -143,13 +143,13 @@ export default function LiveTradePlan({
         {result.wallet_funds_verified?t.livePlanWalletChecked:t.livePlanVenueOnly}
       </p>
       <p className="privy-wallet-description">{t.livePlanNotExecutable}</p>
-      {asset==='ETH'&&<EthLiveSwap
-        enabled={enabled} userId={userId} getAccessToken={getAccessToken}
-        side={side} stable={stable} amount={amount} t={t}/>}
       {asset==='ETH'&&<EthPolicyRouteReadiness
         request={quote.request} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}/>}
     </div>}
+    {asset==='ETH'&&request&&<EthLiveSwap
+      enabled={enabled} userId={userId} getAccessToken={getAccessToken}
+      side={side} stable={stable} amount={amount} t={t}/>}
     {['BTC','ETH'].includes(asset)&&<LiveReceiptCheck
       asset={asset} enabled={enabled} userId={userId}
       getAccessToken={getAccessToken} t={t} side={side} stable={stable}/>}
