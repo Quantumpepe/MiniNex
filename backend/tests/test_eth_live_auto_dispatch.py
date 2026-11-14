@@ -93,3 +93,63 @@ def test_duplicate_signal_does_not_broadcast(monkeypatch):
     result=asyncio.run(a.execute_eth_auto_signal(
         "did:privy:verified",signal(),client=None))
     assert result["claim"]=="DUPLICATE_NO_NEW_ORDER"
+
+
+def test_stale_after_reservation_expires_without_privy_send(monkeypatch):
+    async def fake_quote(*args,**kwargs):return quote()
+    async def fake_prices():return prices()
+    async def fake_signer(*args):
+        return {"signer_verified":True,"policy_reference_verified":True}
+    events=[]
+    monkeypatch.setattr(a,"make_policy_compatible_eth_quote",fake_quote)
+    monkeypatch.setattr(a,"fetch_reference_prices",fake_prices)
+    monkeypatch.setattr(a,"get_eth_signer_status",fake_signer)
+    monkeypatch.setattr(a,"get_eth_policy_ledger_status",lambda did:
+        {"status":"GRANT_VERIFIED","live_limits_revision_matches":True})
+    monkeypatch.setattr(a,"_reserve_verified_live_signal",
+        lambda *args:{"claim":"RESERVED_NO_SEND","intent_key":"sig_abcdef1234567890"})
+    monkeypatch.setattr(a,"expire_reserved_eth_order_without_broadcast",
+        lambda did,key:events.append((did,key)) or True)
+    async def never_send(**kwargs):
+        pytest.fail("A stale quote can NEVER reach Privy")
+    monkeypatch.setattr(a,"submit_privy_eth_auto_order",never_send)
+    real_clock=a.time.time
+    ticks=iter([NOW,NOW+20])
+    monkeypatch.setattr(a.time,"time",lambda:next(ticks))
+    try:
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(a.execute_eth_auto_signal(
+                "did:privy:verified",signal(),client=None))
+    finally:
+        monkeypatch.setattr(a.time,"time",real_clock)
+    assert exc.value.status_code==409
+    assert events==[("did:privy:verified","sig_abcdef1234567890")]
+
+
+def test_expiration_sql_requires_unbroadcast_and_reserved(monkeypatch):
+    class Cursor:
+        def __init__(self):self.statements=[];self.calls=0
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,args):self.statements.append(sql)
+        def fetchone(self):
+            self.calls+=1
+            return {"revision":3} if self.calls==1 else {"intent_key":"sig_test"}
+    class Connection:
+        def __init__(self):self.cur=Cursor()
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self.cur
+    db=Connection()
+    monkeypatch.setattr(a,"_db_url",lambda:"mock://db")
+    monkeypatch.setattr(a,"_ensure_schema",lambda url:None)
+    monkeypatch.setattr(a.psycopg,"connect",lambda *args,**kwargs:db)
+    assert a.expire_reserved_eth_order_without_broadcast(
+        "did:privy:verified","sig_abcdef1234567890")
+    sql=" ".join(db.cur.statements[-1].split())
+    assert "state='RESERVED'" in sql
+    assert "o.tx_hash IS NULL" in sql
+    assert "NOT EXISTS" in sql
+    assert "mininex_live_eth_auto_broadcasts" in sql
+    assert "state='EXPIRED'" in sql
+    assert db.cur.calls==2
