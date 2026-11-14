@@ -138,7 +138,8 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
         }
 
     output=result["estimated_output_amount"]
-    if type(output) is not str or not _MONEY.fullmatch(output):
+    if (type(output) is not str or not _MONEY.fullmatch(output)
+            or Decimal(output) <= 0):
         raise HTTPException(502,"Invalid provider trade output")
     if result["minimum_output_amount"] is not None:
         minout=result["minimum_output_amount"]
