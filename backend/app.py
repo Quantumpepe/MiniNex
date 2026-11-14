@@ -52,6 +52,7 @@ from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
 from .live_btc_receipts import check_native_btc_transaction
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
+from .live_btc_controls import get_live_btc_limits, save_live_btc_limits, stop_live_btc
 from .privy_live_signer import get_eth_signer_status
 from .privy_eth_policy import get_eth_policy_review
 from .eth_auto_preflight import get_eth_automatic_preflight
@@ -900,6 +901,44 @@ def live_order_history(asset: str, limit: int = 30,
     return JSONResponse(data, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/btc/limits")
+def btc_live_limits_status(authorization: str | None = Header(default=None)):
+    """Owner-only BTC live cap preferences; no native Bitcoin signer."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_live_btc_limits(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.put("/api/live/btc/limits")
+def btc_live_limits_update(
+    body: LiveEthLimitsRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Save BTC-only limits without touching ETH and keep BTC LIVE paused."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=save_live_btc_limits(
+        did,capital=body.planned_capital_usd,
+        order=body.max_order_usd,daily=body.max_daily_turnover_usd,
+        expected_revision=body.expected_revision,
+    )
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/btc/stop")
+def btc_live_stop(authorization: str | None = Header(default=None)):
+    """Owner BTC stop never resumes trading or alters Privy policies."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(stop_live_btc(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
