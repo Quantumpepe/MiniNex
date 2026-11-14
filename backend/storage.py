@@ -108,7 +108,8 @@ SCHEMA = (
         status TEXT NOT NULL DEFAULT 'PREPARED'
             CHECK (status IN
                 ('PREPARED','SUBMITTING','UNCERTAIN',
-                 'REMOTE_VERIFIED_UNATTACHED','REVOKE_REQUESTED','REVOKED')),
+                 'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED',
+                 'REVOKE_REQUESTED','REVOKED')),
         policy_id TEXT UNIQUE,
         remote_policy_sha256 TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
