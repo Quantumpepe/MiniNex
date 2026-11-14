@@ -23,13 +23,30 @@ _ETH_ADDR = re.compile(r"^0x[a-fA-F0-9]{40}$")
 _PRIVY_WALLET_API = "https://api.privy.io/v1/wallets/"
 
 
-def signer_configuration() -> dict[str, str] | None:
-    """Public quorum/policy IDs may be configured; private signer key stays elsewhere."""
+def signer_configuration(did: str | None = None) -> dict[str, str] | None:
+    """Resolve the exact policy for the owner wallet, never another user's.
+
+    Older single-policy integrations may still specify a static policy ID.
+    MiniNex now publishes a *different* restricted policy per user; with a
+    DID the durable GRANT_VERIFIED policy takes precedence, including when
+    the static env variable is absent. A non-granted policy is not authority.
+    """
     quorum = os.environ.get("MININEX_PRIVY_ETH_SIGNER_ID", "").strip()
-    policy = os.environ.get("MININEX_PRIVY_ETH_POLICY_ID", "").strip()
-    if not _PRIVY_ID.fullmatch(quorum) or not _PRIVY_ID.fullmatch(policy):
+    if not _PRIVY_ID.fullmatch(quorum):
         return None
-    if quorum == policy:
+    policy = os.environ.get("MININEX_PRIVY_ETH_POLICY_ID", "").strip()
+    if did is not None:
+        _safe_did(did)
+        from .eth_privy_policy_ledger import get_eth_policy_ledger_status
+        row = get_eth_policy_ledger_status(did)
+        if (row.get("status") == "GRANT_VERIFIED"
+                and row.get("live_limits_revision_matches") is True
+                and row.get("policy_expired") is False
+                and _PRIVY_ID.fullmatch(str(row.get("policy_id") or ""))):
+            policy = row["policy_id"]
+        elif not _PRIVY_ID.fullmatch(policy):
+            return None
+    if not _PRIVY_ID.fullmatch(policy) or quorum == policy:
         return None
     return {"signer_id": quorum, "policy_id": policy}
 
@@ -129,7 +146,7 @@ async def get_eth_signer_status(did: str) -> dict:
     app/user-controlled values. Even if true, execution is NOT authorized.
     """
     _safe_did(did)
-    config = signer_configuration()
+    config = signer_configuration(did)
     result = {
         "asset": "ETH",
         "chain_id": 1,

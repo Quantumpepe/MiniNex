@@ -169,7 +169,7 @@ async def submit_privy_eth_auto_order(
     """
     did=_safe_did(did)
     key=valid_order_key(intent_key)
-    config=signer_configuration()
+    config=signer_configuration(did)
     if config is None:
         raise HTTPException(503,"Privy ETH additional signer not configured")
     user=await fetch_privy_user(did)
