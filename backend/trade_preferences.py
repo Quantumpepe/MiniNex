@@ -12,7 +12,7 @@ from psycopg.rows import dict_row
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did, ASSETS
 
 LOG = logging.getLogger("mininex.trade_preferences")
-MODES = ("LONG", "SPOT_SHORT")
+MODES = ("LONG", "SPOT_SHORT", "AUTO")
 STABLES = ("USDC", "USDT")
 HORIZONS = ("5m", "15m", "1h", "24h")
 
