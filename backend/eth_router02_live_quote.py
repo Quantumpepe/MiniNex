@@ -143,6 +143,7 @@ def _get_balance(value: object) -> Decimal:
 
 async def make_policy_compatible_eth_quote(
     did: str, *, side: str, stable: str, amount: str,
+    include_user_transaction: bool = False,
 ) -> dict:
     if side not in ("BUY","SELL") or stable not in STABLES:
         raise HTTPException(422,"Unsupported ETH swap pair")
@@ -194,6 +195,17 @@ async def make_policy_compatible_eth_quote(
     stages=native_eth_swap_stages(side=side,stable=stable)
     # Never export executable calldata or claim a signed route from this API.
     return {
+        **({
+            "transaction": {
+                "from": tx["from"], "to": tx["to"],
+                "chainId": tx["chainId"],
+                "value": "0x0", "data": tx["data"],
+            },
+            "transaction_expires_at": int(time.time()) + 15,
+            "requires_user_wallet_signature": True,
+            "requires_separate_erc20_approval": True,
+            "native_eth_settlement_complete": False,
+        } if include_user_transaction is True else {}),
         "mode":"ETH_ROUTER02_POLICY_ABI_QUOTE_ONLY",
         "asset":"ETH","network":"ethereum-mainnet",
         "side":side,"stable":stable,"input_amount":amount,
