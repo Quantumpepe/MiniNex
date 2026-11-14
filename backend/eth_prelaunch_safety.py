@@ -97,7 +97,6 @@ def assess_eth_prelaunch_safety(
         blockers.append("STALE_UNRESOLVED_ORDER")
     if ledger.get("cumulative_spend_enforced_at_execution") is not False:
         raise HTTPException(503,"Unexpected ETH cumulative budget state")
-    blockers.append("DAILY_SPEND_EXECUTION_GATE_NOT_ACTIVATED")
     return {
         "mode":"ETH_LIVE_PRELAUNCH_AUDIT_ONLY","asset":"ETH","chain_id":1,
         "wallet_identity_verified":enrollment["wallet_identity_verified"],

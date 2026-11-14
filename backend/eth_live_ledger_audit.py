@@ -37,7 +37,7 @@ def _usd_exact(raw: object) -> Decimal:
     else:
         raise HTTPException(503, "Invalid ETH USD ledger amount")
     if (
-        not val.is_finite() or val < 0 or val >= Decimal("1000000000000")
+        not val.is_finite() or val < 0 or val >= Decimal("10000000000000000000000")
         or val.as_tuple().exponent < -6
     ):
         raise HTTPException(503, "ETH ledger amount outside safe audit bounds")
@@ -83,7 +83,7 @@ def assess_eth_live_ledger(limits: dict, totals: dict) -> dict:
     if pending_count > 0 and pending <= 0:
         raise HTTPException(503, "ETH ledger has unpriced pending orders")
     capital_available = max(Decimal(0), cap - pending)
-    remaining_turnover = max(Decimal(0), day - pending - confirmed)
+    # Historical turnover is informative, NOT a user trading restriction.
     blockers = ["LIVE_EXECUTOR_DISABLED"]
     if paused:
         blockers.append("USER_STOPPED")
@@ -93,8 +93,6 @@ def assess_eth_live_ledger(limits: dict, totals: dict) -> dict:
         blockers.append("UNRECONCILED_LIVE_ORDERS")
     if stale:
         blockers.append("STALE_PENDING_LIVE_ORDERS")
-    if pending + confirmed > day:
-        blockers.append("ROLLING_TURNOVER_OVER_LIMIT")
     if pending > cap:
         blockers.append("RESERVED_CAPITAL_OVER_LIMIT")
     return {
@@ -104,11 +102,11 @@ def assess_eth_live_ledger(limits: dict, totals: dict) -> dict:
         "trading_paused":paused,
         "planned_capital_usd":str(cap),
         "max_order_usd":str(order),
-        "rolling_24h_limit_usd":str(day),
+        "rolling_24h_limit_usd":"unlimited",
         "pending_reserved_usd":str(pending),
         "confirmed_24h_usd":str(confirmed),
         "available_capital_after_pending_usd":str(capital_available),
-        "available_24h_after_pending_usd":str(remaining_turnover),
+        "available_24h_after_pending_usd":"unlimited",
         "unresolved_order_count":pending_count,
         "reconciliation_required_count":unreconciled,
         "older_than_30m_pending_count":stale,

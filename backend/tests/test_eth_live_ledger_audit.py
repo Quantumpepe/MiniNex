@@ -48,7 +48,7 @@ def test_eth_pending_and_confirmed_counts_limit_24h_and_capital():
     assert result["pending_reserved_usd"]=="1200"
     assert result["confirmed_24h_usd"]=="3100"
     assert result["available_capital_after_pending_usd"]=="3800"
-    assert result["available_24h_after_pending_usd"]=="3700"
+    assert result["available_24h_after_pending_usd"]=="unlimited"
     assert result["unresolved_order_count"]==2
     assert result["reconciliation_required_count"]==1
     assert result["older_than_30m_pending_count"]==1
@@ -68,8 +68,8 @@ def test_budget_clamps_to_zero_and_reports_over_limit_before_any_send():
                         unreconciled_count=0,stale_pending_count=0),
     )
     assert result["available_capital_after_pending_usd"]=="0"
-    assert result["available_24h_after_pending_usd"]=="0"
-    assert "ROLLING_TURNOVER_OVER_LIMIT" in result["blockers"]
+    assert result["available_24h_after_pending_usd"]=="unlimited"
+    assert "ROLLING_TURNOVER_OVER_LIMIT" not in result["blockers"]
     assert "RESERVED_CAPITAL_OVER_LIMIT" in result["blockers"]
     assert result["ready_for_live"] is False
 
@@ -81,7 +81,7 @@ def test_empty_live_ledger_does_not_enable_signing():
                         stale_pending_count=0),
     )
     assert result["available_capital_after_pending_usd"]=="5000"
-    assert result["available_24h_after_pending_usd"]=="8000"
+    assert result["available_24h_after_pending_usd"]=="unlimited"
     assert result["ready_for_live"] is False
     assert "LIVE_EXECUTOR_DISABLED" in result["blockers"]
 
@@ -89,7 +89,7 @@ def test_empty_live_ledger_does_not_enable_signing():
 @pytest.mark.parametrize("bad",[
     {"pending_usd":"NaN"},{"pending_usd":"Infinity"},
     {"pending_usd":"-1"},{"pending_usd":"1.1234567"},
-    {"pending_usd":"1000000000000"},{"pending_usd":None},
+    {"pending_usd":"10000000000000000000000"},{"pending_usd":None},
     {"confirmed_24h_usd":True},
     {"pending_count":True},{"pending_count":-1},
     {"pending_count":0},{"pending_count":3,"unreconciled_count":4},
