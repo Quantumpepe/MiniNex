@@ -86,6 +86,38 @@ def _locked_row(cur, did: str) -> dict:
     return row
 
 
+def _invalidate_eth_user_authority_locked(cur, did: str) -> dict:
+    """Local emergency hold, while the LIVE limits row is already locked.
+
+    Persist consent revoke and policy REVOKE_REQUESTED in the *same*
+    transaction as the stop/limit revision change. This is NOT remote Privy
+    signer removal: a wallet owner may still need to remove their signer
+    through the separately confirmed Privy action.
+    """
+    cur.execute(
+        """UPDATE mininex_live_eth_consent_intents
+           SET status='REVOKED',revoked_at=COALESCE(revoked_at,now())
+           WHERE privy_did=%s AND status<>'REVOKED'
+           RETURNING status""", (did,),
+    )
+    local = cur.fetchone()
+    cur.execute(
+        """UPDATE mininex_live_eth_policy_enrollments
+           SET status='REVOKE_REQUESTED',updated_at=now()
+           WHERE privy_did=%s AND status<>'REVOKED'
+           RETURNING status""", (did,),
+    )
+    policy = cur.fetchone()
+    return {
+        "local_eth_consent_invalidated": type(local) is dict
+            and local.get("status") == "REVOKED",
+        "privy_remote_revocation_requested": type(policy) is dict
+            and policy.get("status") == "REVOKE_REQUESTED",
+        "privy_remote_signer_removed": False,
+        "real_trading_enabled": False,
+    }
+
+
 def get_live_eth_limits(privy_did: str) -> dict:
     did = _safe_did(privy_did)
     try:
@@ -126,7 +158,8 @@ def save_live_eth_limits(privy_did: str, *, capital: str, order: str,
                 row = cur.fetchone()
                 if not row:
                     raise HTTPException(409, "LIVE limits changed; reload before saving")
-                return _snapshot(row)
+                held = _invalidate_eth_user_authority_locked(cur, did)
+                return {**_snapshot(row), **held}
     except psycopg.Error:
         LOG.warning("LIVE ETH limit save unavailable")
         raise HTTPException(503, "LIVE ETH limits could not be saved") from None
@@ -156,7 +189,8 @@ def stop_live_eth(privy_did: str) -> dict:
                         (did,),
                     )
                     row = cur.fetchone()
-                return _snapshot(row)
+                held = _invalidate_eth_user_authority_locked(cur, did)
+                return {**_snapshot(row), **held}
     except psycopg.Error:
         LOG.warning("LIVE ETH stop unavailable")
         raise HTTPException(503, "LIVE ETH stop state unavailable") from None
