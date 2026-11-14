@@ -32,8 +32,19 @@ _POLICY_URL = "https://api.privy.io/v1/policies/"
 _ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
 
 
+# A policy for exactInputSingle still lacks cumulative on-chain day caps
+# and independently checked calldata/quote semantics. An environment value
+# MUST NOT alone expose a transaction-authorized backend signer to users.
+# Grant activation requires a separately reviewed code release and tests.
+_PRIVY_SIGNER_GRANTS_AUDITED_IN_CODE = False
+
+
 def _grant_enabled() -> bool:
-    return os.getenv("MININEX_PRIVY_ETH_GRANT_ENABLED", "").strip() == "enabled-after-audit"
+    return (
+        _PRIVY_SIGNER_GRANTS_AUDITED_IN_CODE
+        and os.getenv("MININEX_PRIVY_ETH_GRANT_ENABLED", "").strip()
+        == "enabled-after-audit"
+    )
 
 
 def _read_policy_for_grant(did: str, *, wallet: str, owner: str,
