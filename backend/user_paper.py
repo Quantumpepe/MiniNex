@@ -21,6 +21,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .auto_engine import PaperAutoEngine, PaperPortfolio
+from .shared_coin_strategy import evaluate_coin_strategy, exit_coin_to_stable
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did, ASSETS
 
 LOG=logging.getLogger("mininex.user_paper")
@@ -386,21 +387,11 @@ def _settle_pending_pause(cur, row: dict, did: str, asset: str,
         if market is None:
             return row
         try:
-            price_feed=market.snapshot(now=now)["markets"][asset]
-            price=price_feed.get("price_usdt")
-            if (price_feed.get("market_data_valid") is not True or
-                type(price) not in (int,float) or
-                not math.isfinite(price) or price<=0):
-                return row
-            engine=PaperAutoEngine(market)
-            quote=engine._sell_quote(asset,p.coin_quantity,float(price))
-            if quote is None:
-                return row  # Negative proceeds after costs: keep pending.
+            if not exit_coin_to_stable(asset,p,market,now):
+                return row  # Keep the paused virtual position pending.
         except Exception:
-            # An unavailable/invalid market must NEVER undo the pause itself.
-            # No SQL or ledger mutations have occurred at this point.
+            # A missing market cannot re-activate a paused session.
             return row
-        engine._paper_sell(p,quote,now,float(price),"USER_PAUSE_TO_STABLE")
         event=p.trade_history[-1]
         cur.execute("""INSERT INTO mininex_user_paper_trades
             (privy_did,asset,event_id,occurred_at,event_json)
@@ -481,7 +472,6 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                     raise HTTPException(409,"Start or resume the personal simulation first")
                 # Shared market snapshot, individual portfolio. We do not connect
                 # to Privy signer or transfer any assets here.
-                engine=PaperAutoEngine(market)
                 p=_restore(asset,row["settlement"],row["state_json"],row["initial_demo_cash"])
                 p.strategy_mode=row["strategy_mode"]
                 # Apply saved percentage to this session, including on a new baseline.
@@ -505,21 +495,10 @@ def step_user_paper(did: str,asset: str,market: Any,now: float) -> dict:
                             (Jsonb(_paper_state_with_runtime(p,row["state_json"],now,active=True)),new_initial,new_percent,did,asset))
                         row=cur.fetchone()
                     return _session_data(row,_trades(cur,did,asset))
-                engine.portfolios={asset:p}
-                feed=market.snapshot(now=now)["markets"][asset]
-                from .auto_engine import PaperRules
-                # The selected period is a lookback, never a mandatory wait.
-                # Real closed exchange candles are loaded asynchronously on
-                # startup. No simulated history and no artificial buy trigger.
-                windows={"5m":300.0,"15m":900.0,"1h":3600.0,
-                         "24h":86400.0}
-                engine.rules=PaperRules(
-                    warmup_seconds=0.0,
-                    min_history_samples=4,
-                    price_window_seconds=windows[row["horizon"]],
-                )
-                engine.process_asset(asset,feed,now)
-                p.last_evaluated_at=now
+                # Shared with BNB/SOL/XRP/TRX/POL/AVAX/LINK/DOGE/UNI.
+                # One signal engine, one market lookback and identical
+                # momentum/DCA/trailing decisions for every asset.
+                evaluate_coin_strategy(asset,p,market,now,row["horizon"])
                 history=list(p.trade_history)
                 for event in history:
                     event_id=p.trade_count
