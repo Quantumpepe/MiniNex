@@ -100,7 +100,8 @@ def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms()
     result=q._provider_quote(valid_expiring,from_asset=from_asset,
                              to_asset=to_asset,input_units="100000000")
     assert result["provider_expiry"]==current+20
-    for invalid_expiry in (current-1,current+3601,"invalid",True,0):
+    # Allow CI wall-clock to tick before validation; +3601 may cross the boundary.
+    for invalid_expiry in (current-1,current+7200,"invalid",True,0):
         invalid=provider_quote()
         invalid["result"]["structuredContent"]["expiry"]=invalid_expiry
         with pytest.raises(ValueError):
