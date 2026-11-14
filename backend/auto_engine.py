@@ -445,7 +445,7 @@ class PaperAutoEngine:
                 return
             # A held LONG position may be topped up only on a confirmed
             # recovery from below the last buy, or a verified strong uptrend.
-            if p.strategy_mode == "LONG":
+            if p.strategy_mode in ("LONG", "AUTO"):
                 strong = self._strong_uptrend(sig, price)
                 anchor = p.last_buy_price or p.entry_price or price
                 discounted = (1 - price / anchor) * 100 >= self.rules.min_add_discount_pct
@@ -497,6 +497,21 @@ class PaperAutoEngine:
             if trailing_armed and enough_gain and reversal_confirmed and peak_drop_pct >= pullback_trigger:
                 self._paper_sell(p, sale, now, price, "DYNAMIC_NET_PROFIT_TRAILING")
                 return
+            # AUTO combines the LONG/DCA path with defensive spot exits.
+            # Sell only coins already held, never borrow or create leverage.
+            # Avoid churn on tiny dips: require a confirmed falling trend,
+            # a meaningful retreat from the held peak and nonnegative net
+            # proceeds after the hypothetical venue/network costs.
+            if p.strategy_mode == "AUTO":
+                auto_bearish = (
+                    sig.get("ready") is True
+                    and sig["momentum_60s_pct"] <= -0.30
+                    and sig["momentum_180s_pct"] <= -0.70
+                    and price < sig.get("recent_mean_price", price)
+                )
+                if auto_bearish and peak_drop_pct >= 0.40 and net_gain >= 0:
+                    self._paper_sell(p, sale, now, price, "AUTO_DOWNTREND_EXIT")
+                    return
             if add_reason and p.add_count < self.rules.max_additions:
                 budget = self._allocation_budget(
                     p, price, self._deployment_target(
@@ -560,13 +575,13 @@ class PaperAutoEngine:
                 recovery_ok = (
                     recovered >= self.rules.early_rebound_recovery_pct
                     and sig["momentum_60s_pct"] >= self.rules.early_rebound_60s_pct
-                ) if p.strategy_mode == "SPOT_SHORT" else (
+                ) if p.strategy_mode in ("SPOT_SHORT", "AUTO") else (
                     recovered >= self.rules.reentry_rebound_pct
                     and sig["momentum_60s_pct"] >= self.rules.min_positive_60s_pct
                 )
                 rebound = discount >= (
                     self.rules.early_rebound_prior_drop_pct
-                    if p.strategy_mode == "SPOT_SHORT" else self.rules.reentry_drop_pct
+                    if p.strategy_mode in ("SPOT_SHORT", "AUTO") else self.rules.reentry_drop_pct
                 ) and recovery_ok
                 if rebound and p.strategy_mode == "SPOT_SHORT":
                     proposed=self._buy_quote(asset,p.stable_cash,price)
@@ -577,7 +592,7 @@ class PaperAutoEngine:
                         rebound=False
                 # Allow confirmed strong breakouts even after a prior exit;
                 # SPOT_SHORT always requires a cheaper, cost-aware rebuy.
-                breakout = (p.strategy_mode == "LONG"
+                breakout = (p.strategy_mode in ("LONG", "AUTO")
                             and self._strong_uptrend(sig, price)
                             and price >= p.last_exit_price * 1.003)
                 trend_continuation = False
@@ -603,7 +618,7 @@ class PaperAutoEngine:
     def _paper_buy(self, p: PaperPortfolio, quote: dict[str, float], at: float,
                    price: float, reason: str) -> None:
         adding = p.coin_quantity > self.rules.min_coin_units
-        if adding and (p.strategy_mode != "LONG" or p.add_count >= self.rules.max_additions):
+        if adding and (p.strategy_mode not in ("LONG", "AUTO") or p.add_count >= self.rules.max_additions):
             raise ValueError("Paper position addition not permitted")
         if quote["total_spent"] > p.stable_cash + 1e-7:
             raise ValueError("All-in paper budget exceeded")
