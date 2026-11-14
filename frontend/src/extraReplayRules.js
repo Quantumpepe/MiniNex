@@ -2,7 +2,7 @@
 export const EXTRA_REPLAY_COINS=Object.freeze([
   'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI',
 ]);
-export const MODES=['LONG','SPOT_SHORT'];
+export const MODES=['LONG','SPOT_SHORT','AUTO'];
 export const HORIZONS=['5m','15m','1h','24h'];
 export const defaultReplayOption=()=>({mode:'LONG',horizon:'15m',budget:'500',stable:'USDC'});
 
