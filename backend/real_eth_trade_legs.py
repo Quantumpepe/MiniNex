@@ -107,10 +107,13 @@ def save_verified_leg(did: str, leg: dict) -> dict:
                 found=cur.fetchone()
                 if type(found) is not dict:
                     raise HTTPException(503,"ETH fill persistence failed")
+                from decimal import Decimal
+                amounts=("source_amount","destination_amount","network_fee_eth")
                 if (found["privy_did"] != did
-                        or any(str(found[k]) != str(leg[k]) for k in (
-                            "tx_hash","side","stable","kind",
-                            "source_amount","destination_amount","network_fee_eth"))):
+                        or any(found[k] != leg[k] for k in
+                               ("tx_hash","side","stable","kind"))
+                        or any(Decimal(str(found[k])) != Decimal(leg[k])
+                               for k in amounts)):
                     raise HTTPException(409,"Transaction already assigned to another ETH trade")
         return {"asset":"ETH",**leg,"recorded":True,
                 "onchain_finalized":True,"full_order_settled":False,
