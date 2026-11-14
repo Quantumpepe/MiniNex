@@ -15,8 +15,9 @@ marking REVOKE_REQUESTED, never falsely claims that Privy access ended.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 import asyncio
+import json
 import logging
 import re
 import time
@@ -199,7 +200,7 @@ def _stage_locked(
         (
             did, values["wallet"], values["revision"], owner, executor,
             info["sha256"], prepared["idempotency_key"],
-            __import__("json").dumps(prepared["candidate"], sort_keys=True),
+            json.dumps(prepared["candidate"], sort_keys=True),
             info["expires_at_unix"],
         ),
     )
