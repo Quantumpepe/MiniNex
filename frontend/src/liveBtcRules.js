@@ -18,7 +18,8 @@ export function validLiveBtcLimits(snapshot){
   const each=usdUnits(snapshot.max_order_usd);
   const daily=usdUnits(snapshot.max_daily_turnover_usd);
   if(cap===null||each===null||daily===null)return false;
-  return cap>=0n;
+  return (cap===0n&&each===0n&&daily===0n)||
+    (cap>0n&&each>0n&&daily>0n&&each<=cap&&each<=daily);
 }
 
 export function validatedLiveBtcDraft(value){

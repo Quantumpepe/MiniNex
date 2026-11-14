@@ -38,10 +38,17 @@ def _money(value: object, *, allow_zero: bool) -> Decimal:
 
 def validate_limits(capital: object, order: object, daily: object) -> tuple[Decimal, Decimal, Decimal]:
     """Inputs are USD *caps*, not balances; no exchange, approval or authorization."""
-    # Only the user's chosen coin budget. Order/day columns are
-    # mirrored for legacy storage but do not enforce trading limits.
+    # These legacy fields remain for previously stored account settings,
+    # but runtime trading does NOT enforce an order or daily-turnover limit.
     cap = _money(capital, allow_zero=True)
-    return cap, cap, cap
+    per_order = _money(order, allow_zero=True)
+    per_day = _money(daily, allow_zero=True)
+    if (cap == 0 or per_order == 0 or per_day == 0):
+        if cap != 0 or per_order != 0 or per_day != 0:
+            raise HTTPException(422, "Live values must be all zero or all nonzero")
+    elif per_order > cap or per_order > per_day:
+        raise HTTPException(422, "Inconsistent legacy values")
+    return cap, per_order, per_day
 
 
 def _rev(value: object) -> int:

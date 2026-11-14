@@ -23,7 +23,8 @@ export function validLiveEthLimits(snapshot) {
   const each=usdUnits(snapshot.max_order_usd);
   const day=usdUnits(snapshot.max_daily_turnover_usd);
   if(cap===null||each===null||day===null)return false;
-  return cap>=0n;
+  return (cap===0n&&each===0n&&day===0n) ||
+    (cap>0n && each>0n && day>0n && each<=cap && each<=day);
 }
 
 export function validSignerStatus(snapshot) {
