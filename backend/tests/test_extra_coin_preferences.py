@@ -152,7 +152,9 @@ def test_routes_require_privy_login_and_scope_writes_by_did(db, signed):
     c = TestClient(api.app)
     url = "/api/coin-preferences"
     assert c.get(url).status_code == 401
-    assert c.put(url+"/SOL", json={}).status_code == 401
+    auth_body = {"budget_usd": 500, "mode": "LONG", "stable": "USDC",
+                 "horizon": "15m", "expected_revision": 0}
+    assert c.put(url+"/SOL", json=auth_body).status_code == 401
     read = c.get(url, headers=signed(DID))
     assert read.status_code == 200
     assert read.headers["cache-control"] == "private, no-store"
