@@ -45,6 +45,7 @@ from .extended_paper_replay import compact_replay_observations
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
+from .eth_router02_receipts import check_user_router02_receipt
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -594,6 +595,23 @@ async def eth_live_chain_receipt(tx_hash: str,
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/eth/router02-receipt/{tx_hash}")
+async def eth_router02_real_swap_leg_receipt(
+    tx_hash: str,
+    side: Literal["BUY","SELL"],
+    stable: Literal["USDC","USDT"],
+    authorization: str | None = Header(default=None),
+):
+    """Real finalized SwapRouter02 ERC20 fills; never claims native ETH exit."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await check_user_router02_receipt(
+        did,tx_hash,side=side,stable=stable)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
