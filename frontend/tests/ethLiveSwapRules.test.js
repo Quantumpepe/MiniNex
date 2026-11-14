@@ -44,3 +44,11 @@ test('exact approval and ERC20 RPC inputs',()=>{
  assert.equal(decodeUint('0x'+'0'.repeat(63)+'a'),10n);
  assert.deepEqual(ownerAccounts([wallet.toUpperCase()],wallet),true);
 });
+
+import {exactEthUnits,wethWithdrawCalldata} from '../src/ethLiveSwapRules.js';
+test('native ETH conversion uses exact 18 decimals',()=>{
+  assert.equal(exactEthUnits('0.1'),100000000000000000n);
+  assert.equal(exactEthUnits('1.000000000000000001'),1000000000000000001n);
+  assert.match(wethWithdrawCalldata(100000000000000000n),/^0x2e1a7d4d[0-9a-f]{64}$/);
+  assert.throws(()=>exactEthUnits('0.0000000000000000001'));
+});

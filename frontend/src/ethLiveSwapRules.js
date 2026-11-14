@@ -69,3 +69,18 @@ export function ownerAccounts(accounts,wallet){
     typeof a==='string'&&a.toLowerCase()===wallet.toLowerCase());
 }
 export const validHash=x=>typeof x==='string'&&HASH.test(x);
+
+export function exactEthUnits(value){
+  if(typeof value!=='string'||!/^(0|[1-9][0-9]*)(\.[0-9]{1,18})?$/.test(value))
+    throw Error('Invalid exact native ETH quantity');
+  const [whole,fraction='']=value.split('.');
+  const units=BigInt(whole)*10n**18n+
+    BigInt((fraction||'').padEnd(18,'0')||'0');
+  if(units<=0n||units>=10n**45n)throw Error('Invalid ETH amount');
+  return units;
+}
+export function wethWithdrawCalldata(units){
+  if(typeof units!=='bigint'||units<=0n||units>=10n**45n)
+    throw Error('Invalid WETH withdrawal');
+  return '0x2e1a7d4d'+units.toString(16).padStart(64,'0');
+}
