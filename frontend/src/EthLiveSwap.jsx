@@ -13,6 +13,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
   const [stage,setStage]=useState('idle');
   const [error,setError]=useState('');
   const [hash,setHash]=useState('');
+  const [realHistory,setRealHistory]=useState([]);
   const [busy,setBusy]=useState(false);
   const serial=useRef(0);
   const attempted=useRef(false);
@@ -24,6 +25,24 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
     setError('');setHash('');setBusy(false);
     provider.current=null;attempted.current=false;
   },[enabled,userId,side,stable,amount]);
+
+  async function refreshRealHistory(){
+    if(!enabled||!getAccessToken)return;
+    try{
+      const token=await getAccessToken();
+      if(!token)return;
+      const res=await fetch(API_BASE+'/api/live/eth/recorded-legs',{
+        headers:{Authorization:'Bearer '+token},cache:'no-store'});
+      if(!res.ok)return;
+      const body=await res.json();
+      if(body?.asset==='ETH'&&body?.source==='FINALIZED_ONCHAIN_LEGS'&&
+         Array.isArray(body.legs))setRealHistory(body.legs.slice(0,8));
+    }catch{/* A historical read must not affect a live wallet transaction. */}
+  }
+  useEffect(()=>{
+    setRealHistory([]);
+    if(enabled)refreshRealHistory();
+  },[userId,enabled]);
 
   async function getProvider(){
     if(!wallet||typeof wallet.getEthereumProvider!=='function')throw Error('wallet');
@@ -150,6 +169,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
           body:JSON.stringify({tx_hash:hash,side,stable,kind:'WRAP'}),
         });
         if(!saved.ok)throw Error('ETH wrap confirmed; history sync pending');
+        await refreshRealHistory();
       }
       if(stage==='approval-submitted'||stage==='wrap-submitted'){
         attempted.current=false;onTradePendingChange?.(false);
@@ -178,6 +198,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
           body:JSON.stringify({tx_hash:hash,side,stable,kind:recordKind}),
         });
         if(!saved.ok)throw Error('Transaction confirmed; history sync pending');
+        await refreshRealHistory();
         if(stage==='unwrap-submitted'){
           if(body.state!=='FINALIZED_WETH9_CONVERSION'||
              body.confirmed_native_conversion!==true){
@@ -235,5 +256,15 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
     {stage==='swap-confirmed'&&<p>{t.liveSwapConfirmed}</p>}
     {error&&<p role="alert">{error}</p>}
     {busy&&<p role="status">{t.liveSwapWaiting}</p>}
+    {realHistory.length>0&&<div className="mininex-live-real-history">
+      <strong>{t.liveSwapRecordedHistory||'Real ETH transactions'}</strong>
+      {realHistory.map(row=><div key={row.tx_hash}>
+        <b>{row.side==='BUY'?'BUY':'SELL'} · {row.kind}</b>
+        {' · '}{row.source_amount} → {row.destination_amount}
+        {' · '}{row.stable}
+        <a href={'https://etherscan.io/tx/'+row.tx_hash}
+          target="_blank" rel="noopener noreferrer">{row.tx_hash.slice(0,12)}…</a>
+      </div>)}
+    </div>}
   </div>;
 }
