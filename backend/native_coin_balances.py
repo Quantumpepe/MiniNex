@@ -1,4 +1,4 @@
-"""Real, read-only SOL / XRP / TRX holdings for native Privy wallets.
+"""Real, read-only SOL / XRP / TRX / DOGE holdings for native Privy wallets.
 
 One account-bound API, three native network adapters. No fake Ethereum address,
 wallet signing, token movement, synthetic balance or paper-ledger modification.
@@ -17,7 +17,7 @@ from .privy_wallet_verification import fetch_privy_user
 from .storage import _safe_did
 from .wallet_balances import _units
 
-ORDER = ("SOL", "XRP", "TRX")
+ORDER = ("SOL", "XRP", "TRX", "DOGE")
 CHAINS = {
     "SOL": ("solana", "solana-mainnet", "https://api.mainnet.solana.com",
             "MININEX_SOLANA_RPC_URL", Decimal(10**9)),
@@ -26,6 +26,9 @@ CHAINS = {
     "TRX": ("tron", "tron-mainnet",
             "https://api.trongrid.io/walletsolidity/getaccount",
             "MININEX_TRON_RPC_URL", Decimal(10**6)),
+    "DOGE": ("dogecoin", "dogecoin-mainnet",
+             "https://api.blockcypher.com/v1/doge/main/addrs",
+             "MININEX_DOGE_EXPLORER_URL", Decimal(10**8)),
 }
 _BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _RIPPLE = "rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz"
@@ -70,6 +73,13 @@ def _valid_address(asset: str, address: object) -> bool:
             return False
         decoded = _decode_b58(address, _BASE58)
         return bool(decoded and len(decoded)==25 and decoded[0]==0x41
+                    and decoded[-4:]==_checksum(decoded[:21]))
+    if asset == "DOGE":
+        # Native Dogecoin P2PKH (D...), NOT an Ethereum or Bitcoin address.
+        if not re.fullmatch(r"D[1-9A-HJ-NP-Za-km-z]{25,34}", address):
+            return False
+        decoded = _decode_b58(address, _BASE58)
+        return bool(decoded and len(decoded)==25 and decoded[0]==0x1e
                     and decoded[-4:]==_checksum(decoded[:21]))
     return False
 
@@ -119,6 +129,22 @@ def _rpc_url(coin: str) -> str:
 
 async def _read_one(client: httpx.AsyncClient, coin: str, address: str) -> str:
     url = _rpc_url(coin)
+    if coin == "DOGE":
+        # BlockCypher's Dogecoin mainnet balance endpoint reports confirmed
+        # koinu under "balance" (NOT "final_balance", which includes mempool).
+        # This reads a single Privy-linked native DOGE address; never signs.
+        response = await client.get(
+            url.rstrip("/") + "/" + address + "/balance",
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        if len(response.content) > 8192:
+            raise ValueError("Oversized DOGE explorer response")
+        data = response.json()
+        if (not isinstance(data, dict) or data.get("address") != address
+                or "balance" not in data):
+            raise ValueError("Unverified Dogecoin mainnet address balance")
+        return _units(_parse_quantity(data["balance"]), CHAINS["DOGE"][4])
     if coin == "SOL":
         payload = {
             "jsonrpc":"2.0","id":1,"method":"getBalance",
