@@ -65,6 +65,27 @@ SCHEMA = (
                (planned_capital_usd > 0 AND max_order_usd > 0 AND
                 max_daily_turnover_usd > 0))
     )""",
+    # BTC native-UTXO LIVE caps are independent of ETH limits and PAPER budgets.
+    # They never grant wallet authority; BTC remains paused until reviewed
+    # native signing, cross-chain settlement and reconciliation are released.
+    """CREATE TABLE IF NOT EXISTS mininex_live_btc_limits (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        planned_capital_usd NUMERIC(28,6) NOT NULL DEFAULT 0
+            CHECK (planned_capital_usd >= 0 AND planned_capital_usd < 10000000),
+        max_order_usd NUMERIC(28,6) NOT NULL DEFAULT 0
+            CHECK (max_order_usd >= 0 AND max_order_usd < 10000000),
+        max_daily_turnover_usd NUMERIC(28,6) NOT NULL DEFAULT 0
+            CHECK (max_daily_turnover_usd >= 0 AND max_daily_turnover_usd < 10000000),
+        trading_paused BOOLEAN NOT NULL DEFAULT TRUE,
+        revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK (max_order_usd <= planned_capital_usd),
+        CHECK (max_order_usd <= max_daily_turnover_usd),
+        CHECK ((planned_capital_usd = 0 AND max_order_usd = 0 AND
+                max_daily_turnover_usd = 0) OR
+               (planned_capital_usd > 0 AND max_order_usd > 0 AND
+                max_daily_turnover_usd > 0))
+    )""",
     # A signed EIP-191 enrollment intent is NOT Privy wallet authority.
     # One-time pending challenge, independently revocable and wallet-bound.
     """CREATE TABLE IF NOT EXISTS mininex_live_eth_consent_intents (
@@ -433,6 +454,12 @@ def _prepare_rows(cur, did: str) -> None:
     # authorizes real transfers, even when set to 100%.
     cur.execute(
         """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
            VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
         (did,),
     )

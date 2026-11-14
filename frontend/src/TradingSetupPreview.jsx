@@ -3,6 +3,7 @@ import {API_BASE} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
 import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
+import LiveBtcControls from './LiveBtcControls.jsx';
 import LiveTradePlan from './LiveTradePlan.jsx';
 import ExtraPaperComparison from './ExtraPaperComparison.jsx';
 import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
@@ -239,6 +240,9 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
           onClick={()=>save(opened)}>{t.privyBudgetSave} {opened}</button>
         {renderBudget?.(opened)}
         {renderSessionControls?.(opened)}
+        {opened==='BTC'&&<LiveBtcControls t={t} enabled={enabled}
+          userId={userId} getAccessToken={getAccessToken}/>}
+
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
