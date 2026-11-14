@@ -64,6 +64,12 @@ def sign_privy_eth_request(*,wallet_id:str,wallet:str,tx:dict,
         side=side,stable=stable,
         input_atomic=input_atomic,
         minimum_output_atomic=minimum_output_atomic)
+    return sign_privy_rpc_payload(url=url,body=body,
+                                  idempotency_key=idempotency_key)
+
+
+def sign_privy_rpc_payload(*,url:str,body:dict,idempotency_key:str)->str:
+    """Sign exact fixed Privy RPC action, also WETH9 deposit/withdraw."""
     payload=_canonical_authorization_payload(
         url=url,body=body,key=idempotency_key)
     encoded=os.environ.get(_KEY_ENV,"").strip()
