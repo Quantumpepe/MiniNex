@@ -725,6 +725,55 @@ Sources: https://docs.privy.io/controls/policies/create-a-policy,
 https://docs.privy.io/controls/policies/get-a-policy,
 and https://docs.privy.io/controls/policies/overview.
 
+## Stage 21: durable per-user Privy policy ledger + revoke-request guard
+
+The authenticated **POST** `/api/live/eth/policy/prepare` requires
+fresh, independently verified Privy wallet metadata, verified LIVE
+capital/order/day limits, separate policy owner and execution signer
+quorums, a current external ETH/USDC/USDT reference price, AND a
+matching, previously authenticated **SIGNED_INTENT** consent record
+(verified EIP-191 message from Stage 17).
+
+The resulting exact six-rule Privy policy *candidate* (not a remote
+policy or wallet delegation) is stored once per user in PostgreSQL:
+the unique verified wallet, LIVE limits revision, independent owner,
+execution signer, six-rule policy JSON, canonical SHA-256,
+deterministic idempotency key and expiration. The database holds its
+LIVE limits, signed intent and policy record row locks in a single
+transaction. Identical repeated prepares return the same original
+record; a different wallet, cap revision, policy digest, expiry or
+previous `SUBMITTING`, `UNCERTAIN`, `REMOTE_VERIFIED_UNATTACHED`
+or revoked state fails closed. A future internal worker-only helper
+can atomically reserve a single `SUBMITTING` attempt before a remote
+POST and refuses a second reservation. No route currently invokes
+this helper or sends a POST to Privy.
+
+The authenticated **GET** `/api/live/eth/policy/lifecycle` returns
+only the user's inert persisted status, SHA-256, wallet/public policy
+ID and whether the LIVE limits revision still matches. Even
+`REMOTE_VERIFIED_UNATTACHED` does **not** grant wallet authority.
+
+The existing **POST** `/api/live/eth/consent/revoke` now stops all
+MiniNex ETH LIVE sends, invalidates the signed intent, and
+atomically marks any stored policy record `REVOKE_REQUESTED`.
+The authenticated **GET**
+`/api/live/eth/policy/revocation-review` independently fetches
+Privy server wallet metadata (not a browser assertion) and reports
+whether all additional signers are absent on the exact verified
+user-owned wallet. A missing field, different owner, other wallet
+or remaining signer fails closed.
+
+**Remote signer removal and remote policy deletion are NOT yet
+implemented.** A local stop and remote GET do not remove a Privy
+signer. Policies must not be deleted before their signing access
+is safely removed: deleting a policy must never inadvertently
+produce an unrestricted signer. A future, separately authorized
+Privy wallet-owner removal flow and owner-signed policy lifecycle
+operations must be independently verified before enabling any
+actual delegation. The policy transport from Stage 20 remains
+hard-disabled in production. No trading, live signing or ERC20
+approval path is activated.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
