@@ -7,7 +7,7 @@ import {ROUTER02,WETH9,abiAllowance,abiBalance,abiApprove,decodeUint,
 
 // A REAL, user-initiated ERC20/WETH swap using the existing embedded Privy wallet.
 // The separate native ETH WETH9 conversion is NOT yet automated or represented as settled.
-export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,amount,t}){
+export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,amount,t,onTradePendingChange}){
   const {wallets}=useWallets();
   const [review,setReview]=useState(null);
   const [stage,setStage]=useState('idle');
@@ -97,7 +97,8 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       permitted[kind]!==stage)return;
     const id=serial.current;
     if(Date.now()>=review.expiresAt){setReview(null);setStage('expired');return;}
-    attempted.current=true;setBusy(true);setError('');setStage('sending');
+    attempted.current=true;onTradePendingChange?.(true);
+    setBusy(true);setError('');setStage('sending');
     try{
       const p=await getProvider();
       const tx=kind==='approval'?{
@@ -115,8 +116,16 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       if(id!==serial.current)return;
       setHash(result);setStage(kind+'-submitted');
     }catch(e){
-      if(id===serial.current){setStage('uncertain');
-        setError('Transaction was rejected or may have been broadcast. Check your wallet before retrying.');}
+      if(id===serial.current){
+        if(e?.code===4001||e?.code==='ACTION_REJECTED'){
+          attempted.current=false;onTradePendingChange?.(false);
+          setReview(null);setStage('idle');
+          setError('Privy signing cancelled; nothing was broadcast.');
+        }else{
+          setStage('uncertain');
+          setError('Transaction may have been broadcast. Check your wallet before retrying.');
+        }
+      }
     }finally{if(id===serial.current)setBusy(false);}
   }
 
@@ -132,7 +141,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
          found.from?.toLowerCase()!==wallet.address.toLowerCase()||
          found.status!=='0x1')throw Error('Reverted or untrusted receipt');
       if(stage==='approval-submitted'||stage==='wrap-submitted'){
-        attempted.current=false;
+        attempted.current=false;onTradePendingChange?.(false);
         setStage(stage==='approval-submitted'?'approval-confirmed':'wrap-confirmed');
         setReview(null);return;
       }
@@ -153,6 +162,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
              body.confirmed_native_conversion!==true){
             setError('Native ETH conversion is not finalized');return;
           }
+          onTradePendingChange?.(false);
           setStage('native-complete');setReview(null);return;
         }
         if(body.state!=='FINALIZED_ERC20_SWAP_LEG'||
@@ -166,7 +176,8 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
             expiresAt:Date.now()+120000});
           attempted.current=false;
           setStage('unwrap-ready');
-        }else{setStage('swap-confirmed');setReview(null);}
+        }else{onTradePendingChange?.(false);
+          setStage('swap-confirmed');setReview(null);}
       }
     }catch(e){if(id===serial.current)setError(e?.message||'Receipt unavailable');}
     finally{if(id===serial.current)setBusy(false);}
