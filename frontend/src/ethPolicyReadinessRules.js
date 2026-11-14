@@ -47,32 +47,9 @@ export function validEthPolicyQuote(data,request){
     : stages[0]==='WRAP_NATIVE_ETH'&&stages[1]==='SWAP_CONFIRMED_WETH_TO_STABLE';
 }
 
-export function validEthPolicyAllowance(data,request){
-  return request?.asset==='ETH'&&data&&typeof data==='object'&&
-    !Array.isArray(data)&&data.mode==='ETH_ROUTER02_REAL_ALLOWANCE_READ_ONLY'&&
-    data.asset==='ETH'&&data.network==='ethereum-mainnet'&&
-    data.side===request.side&&data.stable===request.stable&&
-    data.input_amount===request.amount&&
-    data.source_token===(request.side==='BUY'?request.stable:'WETH')&&
-    data.spending_router?.toLowerCase()===ROUTER.toLowerCase()&&
-    data.wallet_identity_verified===true&&
-    data.signed_erc20_approval_created===false&&
-    data.privy_grant_verified===false&&
-    data.native_eth_unwrap_or_wrap_settled===false&&
-    data.allowance_not_spend_authority===true&&
-    data.execution_enabled===false&&data.can_submit===false&&
-    typeof data.source_funds_sufficient==='boolean'&&
-    typeof data.router_allowance_sufficient==='boolean'&&
-    typeof data.manual_token_approval_would_be_required==='boolean'&&
-    data.manual_token_approval_would_be_required===!data.router_allowance_sufficient&&
-    typeof data.conservative_native_gas_reserve_met==='boolean'&&
-    positive(data.verified_source_balance_atomic)|| // includes zero below
-    false;
-}
-
 export function checkEthPolicyStatus(quote,allowance,request){
   if(!validEthPolicyQuote(quote,request))return 'INVALID_QUOTE';
-  if(!validEthPolicyAllowanceStrict(allowance,request))return 'INVALID_ALLOWANCE';
+  if(!validEthPolicyAllowance(allowance,request))return 'INVALID_ALLOWANCE';
   const expiry=quote.quoted_at*1000+quote.quote_ttl_seconds*1000;
   if(Date.now()>expiry+5000)return 'QUOTE_EXPIRED';
   if(!allowance.source_funds_sufficient)return 'SOURCE_BALANCE_MISSING';
@@ -81,7 +58,7 @@ export function checkEthPolicyStatus(quote,allowance,request){
   return 'PREVIEW_ONLY';
 }
 
-function validEthPolicyAllowanceStrict(data,request){
+export function validEthPolicyAllowance(data,request){
   if(!request||request.asset!=='ETH'||!data||typeof data!=='object'||
      Array.isArray(data)||data.mode!=='ETH_ROUTER02_REAL_ALLOWANCE_READ_ONLY'||
      data.asset!=='ETH'||data.network!=='ethereum-mainnet'||
