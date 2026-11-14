@@ -21,6 +21,7 @@ from psycopg.rows import dict_row
 from .eth_privy_auto_transport import (
     bound_privy_rpc_request,broadcast_privy_eth_swap,
 )
+from .eth_privy_p256_signer import sign_privy_eth_request
 from .live_orders import valid_order_key
 from .storage import _db_url,_ensure_schema,_safe_did
 from .privy_wallet_verification import APP_ID,fetch_privy_user
@@ -150,12 +151,12 @@ def _persist_submission(did:str,key:str,*,digest:str,tx_hash:str|None)->None:
 async def submit_privy_eth_auto_order(
     *,did:str,intent_key:str,tx:dict,side:str,stable:str,
     input_atomic:str,minimum_output_atomic:str,
-    authorization_signature:str,client:httpx.AsyncClient,
+    client:httpx.AsyncClient,
 )->dict:
     """A single non-retriable real Privy send for a previously reserved order.
 
     Called only from a trusted internal strategy executor, not FastAPI.
-    The signer service must sign *this exact RPC body*. No user JWT,
+    The registered server P-256 key signs *this exact RPC body*. No user JWT,
     client-supplied wallet identity, approval or arbitrary recipient accepted.
     """
     did=_safe_did(did)
@@ -192,13 +193,21 @@ async def submit_privy_eth_auto_order(
         _persist_submission(did,key,digest=digest,tx_hash=None)
         raise HTTPException(409,"ETH order terms mismatch")
     try:
+        # Authorization key never crosses an HTTP request or UI boundary.
+        # One signature over the exact canonical Privy RPC payload.
+        signature=sign_privy_eth_request(
+            wallet_id=owned["wallet_id"],wallet=wallet,tx=tx,
+            side=side,stable=stable,
+            input_atomic=input_atomic,
+            minimum_output_atomic=minimum_output_atomic,
+            idempotency_key=key)
         tx_hash=await broadcast_privy_eth_swap(
             wallet_id=owned["wallet_id"],wallet=wallet,
             tx=tx,side=side,stable=stable,
             input_atomic=input_atomic,
             minimum_output_atomic=minimum_output_atomic,
             app_secret=os.environ.get("MININEX_PRIVY_APP_SECRET",""),
-            authorization_signature=authorization_signature,
+            authorization_signature=signature,
             idempotency_key=key,client=client)
     except Exception:
         _persist_submission(did,key,digest=digest,tx_hash=None)
