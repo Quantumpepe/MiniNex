@@ -160,7 +160,13 @@ async def make_policy_compatible_eth_quote(
         holdings=balance["balances"]
         native=_get_balance(holdings["ETH"])
         available=_get_balance(holdings[stable if side=="BUY" else "ETH"])
-        available_native_after_input = native-requested if side=="SELL" else native
+        # In the explicit user-signing route SELL spends WETH (wrapped by
+        # the owner in a preceding transaction), not native ETH directly.
+        if side=="SELL" and include_user_transaction is True:
+            available_native_after_input=native
+            available=requested  # Verified real WETH balance below via RPC.
+        else:
+            available_native_after_input=native-requested if side=="SELL" else native
         if requested>available or available_native_after_input<=ETH_GAS_RESERVE:
             raise HTTPException(409,"Insufficient verified source or ETH gas")
     except (KeyError,TypeError,ValueError,AttributeError):
@@ -175,6 +181,18 @@ async def make_policy_compatible_eth_quote(
             chain=await _rpc(client,method="eth_chainId",params=[],req_id=1)
             if chain!="0x1":
                 raise ValueError("Not Ethereum mainnet")
+            if side=="SELL" and include_user_transaction is True:
+                # Source is real ERC20 WETH; native ETH alone cannot fund
+                # SwapRouter02 exactInputSingle. Read fresh actual balance.
+                owner_word=wallet[2:].lower().rjust(64,"0")
+                raw_weth=await _rpc(client,method="eth_call",req_id=4,
+                    params=[{"to":WETH_MAINNET,
+                             "data":"0x70a08231"+owner_word},"latest"])
+                if (type(raw_weth) is not str or
+                        not re.fullmatch(r"0x[0-9a-fA-F]{64}",raw_weth)):
+                    raise ValueError("Unverified WETH source balance")
+                if int(raw_weth,16)<int(units):
+                    raise HTTPException(409,"Wrap native ETH into WETH before SELL")
             candidates=await asyncio.gather(*(
                 _single_v3_quote(client,token_in,token_out,int(units),fee)
                 for fee in _ALLOWED_FEES

@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import EthPolicyRouteReadiness from './EthPolicyRouteReadiness.jsx';
 import LiveReceiptCheck from './LiveReceiptCheck.jsx';
+import EthLiveSwap from './EthLiveSwap.jsx';
 import {createLivePlanRequest,normalizedLiveStable,validLiveTradePlan,
   LIVE_SETTLEMENTS} from './liveTradePlanRules.js';
 
@@ -15,6 +16,7 @@ export default function LiveTradePlan({
   const [amount,setAmount]=useState('');
   const [quote,setQuote]=useState(null);
   const [busy,setBusy]=useState(false);
+  const [liveLocked,setLiveLocked]=useState(false);
   const [error,setError]=useState(false);
   const [expired,setExpired]=useState(false);
   const ref=useRef({id:0,abort:null});
@@ -37,6 +39,7 @@ export default function LiveTradePlan({
     setAmount('');
     setQuote(null);
     setBusy(false);
+    setLiveLocked(false);
     setError(false);
     setExpired(false);
     return()=>{
@@ -102,25 +105,25 @@ export default function LiveTradePlan({
     <p className="privy-wallet-description">{t.livePlanDescription}</p>
     <form onSubmit={check} className="mininex-extra-replay-form">
       <label><span>{t.livePlanSide}</span>
-        <select value={side} disabled={!enabled||busy}
+        <select value={side} disabled={!enabled||busy||liveLocked}
           onChange={e=>changeSide(e.target.value)}>
           <option value="BUY">{t.livePlanBuy}</option>
           <option value="SELL">{t.livePlanSell}</option>
         </select>
       </label>
       <label><span>{t.privySetupStable}</span>
-        <select value={stable||''} disabled={!enabled||busy}
+        <select value={stable||''} disabled={!enabled||busy||liveLocked}
           onChange={e=>changeStable(e.target.value)}>
           {allowed.map(code=><option value={code} key={code}>{code}</option>)}
         </select>
       </label>
       <label><span>{t.livePlanAmount} · {source}</span>
         <input type="text" inputMode="decimal" autoComplete="off" maxLength={45}
-          disabled={!enabled||busy} value={amount}
+          disabled={!enabled||busy||liveLocked} value={amount}
           onChange={e=>changeAmount(e.target.value)} placeholder="0.00"/>
       </label>
       <button className="privy-wallet-action" type="submit"
-        disabled={!enabled||busy||!request}>
+        disabled={!enabled||busy||liveLocked||!request}>
         {busy?t.livePlanLoading:t.livePlanCheck}
       </button>
     </form>
@@ -146,6 +149,10 @@ export default function LiveTradePlan({
         request={quote.request} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}/>}
     </div>}
+    {asset==='ETH'&&request&&<EthLiveSwap
+      enabled={enabled} userId={userId} getAccessToken={getAccessToken}
+      side={side} stable={stable} amount={amount} t={t}
+      onTradePendingChange={setLiveLocked}/>}
     {['BTC','ETH'].includes(asset)&&<LiveReceiptCheck
       asset={asset} enabled={enabled} userId={userId}
       getAccessToken={getAccessToken} t={t} side={side} stable={stable}/>}
