@@ -151,7 +151,7 @@ def test_pending_pause_only_scheduler_selects_paused_rows_and_never_runs_entry()
     step=inspect.getsource(paper.step_user_paper)
     assert 'row["status"]=="PAUSED"' in step
     assert 'completed=_settle_pending_pause(' in step
-    assert step.index("completed=_settle_pending_pause") < step.index("engine.process_asset(")
+    assert step.index("completed=_settle_pending_pause") < step.index("evaluate_coin_strategy(")
     assert '"status"]!="ACTIVE"' in step
     src=inspect.getsource(paper.set_user_paper_status)
     assert 'row["status"]!=before' in src
