@@ -8,7 +8,6 @@ RPC reads occur. No wallet approval, private key or transaction is needed.
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal
 import os
 import re
 
@@ -31,6 +30,8 @@ _ETH_TOKENS = {
     "UNI": "0x1f9840a85d5af5bf1d1762f925bddadc4201f984",
 }
 ORDER = ("BNB", "POL", "AVAX", "LINK", "UNI")
+# Native EVM units and these two specific Ethereum contracts all use 18 decimals.
+DECIMALS = {asset: 18 for asset in ORDER}
 
 
 async def _rpc(client: httpx.AsyncClient, url: str, method: str, params: list, rid: int) -> int:
@@ -52,6 +53,8 @@ def _entry(asset: str, status: str, balance: str | None = None) -> dict:
     return {
         "asset": asset, "network": network, "status": status,
         "balance": balance, "native": asset not in _ETH_TOKENS,
+        "chain_id": _RPC[asset if asset in _RPC else "ETH_TOKENS"][0],
+        "decimals": DECIMALS[asset],
         "wallet_funds_used_for_paper": False,
     }
 
