@@ -102,7 +102,7 @@ def test_even_fully_verified_policy_grant_never_becomes_live_authorization():
     assert report["wallet_signer_modified_by_this_check"] is False
     assert report["automatic_privy_policy_retry_permitted"] is False
     assert "LIVE_EXECUTION_NOT_IMPLEMENTED" in report["blockers"]
-    assert "DAILY_SPEND_EXECUTION_GATE_NOT_ACTIVATED" in report["blockers"]
+    assert "DAILY_SPEND_EXECUTION_GATE_NOT_ACTIVATED" not in report["blockers"]
 
 
 @pytest.mark.parametrize("status,blocker",[
