@@ -70,6 +70,7 @@ class Cursor:
             "revision": 4,
         }
         self.intent = None
+        self.policy_status = None
         self.result = None
         self.queries = []
 
@@ -94,6 +95,13 @@ class Cursor:
                 "expires_at_unix": params[9],
             }
             self.result = None
+        elif "FROM mininex_live_eth_policy_enrollments" in compact:
+            assert "FOR UPDATE" in compact
+            assert params == (DID,)
+            self.result = (
+                {"status": self.policy_status}
+                if self.policy_status is not None else None
+            )
         elif "FROM mininex_live_eth_consent_intents" in compact:
             assert "FOR UPDATE" in compact
             assert params == (DID,)
@@ -344,3 +352,28 @@ def test_consent_routes_accept_only_user_jwt_and_never_enable_trading(
     assert client.put(base+"/revoke", headers=auth_headers).status_code == 405
     assert not any(r.path == "/api/live/eth/grant" for r in api.app.routes)
     assert not any(r.path == "/api/live/eth/execute" for r in api.app.routes)
+
+
+@pytest.mark.parametrize("status", [
+    "PREPARED", "SUBMITTING", "UNCERTAIN",
+    "REMOTE_VERIFIED_UNATTACHED", "GRANT_VERIFIED",
+    "REVOKE_REQUESTED", "REVOKED",
+])
+def test_new_signature_nonce_cannot_overwrite_existing_privy_policy(status):
+    cur = Cursor()
+    original = issue(cur)["challenge"]
+    cur.policy_status = status
+    with pytest.raises(HTTPException) as error:
+        issue(cur)
+    assert error.value.status_code == 409
+    assert cur.intent["message_text"] == original
+    assert cur.intent["status"] == "PENDING"
+    assert cur.queries[-1][0].startswith("SELECT status FROM mininex_live_eth_policy_enrollments")
+
+
+def test_new_challenge_can_replace_old_pending_consent_only_before_policy():
+    cur = Cursor()
+    first = issue(cur)["challenge"]
+    second = issue(cur)["challenge"]
+    assert first == second  # Same test nonce; this checks no stored policy barrier.
+    assert cur.policy_status is None
