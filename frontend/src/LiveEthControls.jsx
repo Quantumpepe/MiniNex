@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
-import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,usdUnits} from './liveEthRules.js';
+import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,usdUnits} from './liveEthRules.js';
 
 const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
 const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
@@ -17,6 +17,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
   const [grant,setGrant]=useState(null);
   const [policyState,setPolicyState]=useState(null);
   const [grantOffer,setGrantOffer]=useState(null);
+  const [safetyAudit,setSafetyAudit]=useState(null);
   const [draft,setDraft]=useState(null);
   const [phase,setPhase]=useState('loading');
   const [busy,setBusy]=useState(false);
@@ -84,6 +85,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     let active=true;
     if(!enabled||!userId){
       setLimits(null);setGrant(null);setDraft(null);setPolicyState(null);setGrantOffer(null);
+      setSafetyAudit(null);
       setPhase('loading');setConfirmRevoke(false);
       return()=>{active=false;};
     }
@@ -262,6 +264,19 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     }
   };
 
+  const reviewSafety=async()=>{
+    if(busy||phase!=='ready'||!enabled)return;
+    setBusy(true);setMessage('');
+    try{
+      const audit=await request('/api/live/eth/prelaunch-safety');
+      if(!validEthReadOnlySafetyReport(audit))throw Error('Invalid read-only ETH audit');
+      setSafetyAudit(audit);
+    }catch{
+      setSafetyAudit(null);
+      setMessage(t.liveEthAuditFailed);
+    }finally{setBusy(false);}
+  };
+
   const changes=FIELDS.some(f=>draft?.[f]!==limits?.[f]);
   const canSave=phase==='ready'&&!busy&&!!validatedLiveEthDraft(draft)&&changes;
 
@@ -330,6 +345,34 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
           {!validScopedGrantOffer(grantOffer,ownAddress)&&
              policyState?.status==='REMOTE_VERIFIED_UNATTACHED'&&
             <p className="privy-wallet-description">{t.liveEthGrantAuditLocked}</p>}
+        </div>
+        <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
+          <strong>{t.liveEthAuditTitle}</strong>
+          <p className="privy-wallet-description">{t.liveEthAuditIntro}</p>
+          <button className="privy-wallet-action privy-wallet-action--secondary"
+            type="button" disabled={busy} onClick={reviewSafety}>
+            {t.liveEthAuditButton}</button>
+          {safetyAudit&&<div style={{display:'grid',gap:4}}>
+            <p role="status" className="privy-wallet-description">
+              {t.liveEthAuditBlocked} ({safetyAudit.blockers.length})
+            </p>
+            <p className="privy-wallet-description">
+              {t.liveEthAuditPending}: {safetyAudit.live_ledger.pending_reserved_usd} USD
+              {' · '}{t.liveEthAuditConfirmed}: {safetyAudit.live_ledger.confirmed_24h_usd} USD
+              {' · '}{t.liveEthAuditRemaining}: {safetyAudit.live_ledger.available_24h_after_pending_usd} USD
+            </p>
+            {safetyAudit.manual_policy_reconciliation_required&&
+              <p role="alert" className="privy-wallet-description">
+                {t.liveEthAuditManualReview}</p>}
+            {safetyAudit.policy_expired&&
+              <p role="alert" className="privy-wallet-description">
+                {t.liveEthAuditPolicyExpired}</p>}
+            {safetyAudit.live_ledger.unresolved_order_count>0&&
+              <p role="alert" className="privy-wallet-description">
+                {t.liveEthAuditUnresolved}: {safetyAudit.live_ledger.unresolved_order_count}
+              </p>}
+            <p className="privy-wallet-description">{t.liveEthAuditNoTrades}</p>
+          </div>}
         </div>
         <button className="privy-wallet-action privy-wallet-action--secondary"
           type="button" onClick={stop} disabled={busy}>{t.liveEthStopButton}</button>

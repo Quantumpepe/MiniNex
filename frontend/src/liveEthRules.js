@@ -118,3 +118,34 @@ export function validEthPolicyLifecycle(data){
     data?.can_submit===false && data?.can_sign===false &&
     data?.policy_created_in_privy===false;
 }
+
+
+// Never display a stale/partially privileged server response as a
+// successful prelaunch audit. It must be owned by the authenticated user
+// and still assert that all signing and transaction submission are off.
+export function validEthReadOnlySafetyReport(report){
+  const ledger=report?.live_ledger;
+  return report?.mode==='ETH_LIVE_PRELAUNCH_AUDIT_ONLY' &&
+    report?.asset==='ETH' && report?.chain_id===1 &&
+    report?.read_only===true &&
+    report?.policy_created_by_this_check===false &&
+    report?.wallet_signer_modified_by_this_check===false &&
+    report?.real_trading_enabled===false &&
+    report?.can_sign===false && report?.can_submit===false &&
+    report?.execution_enabled===false &&
+    report?.automatic_privy_policy_retry_permitted===false &&
+    Array.isArray(report.blockers) && report.blockers.length>0 &&
+    report.blockers.every(s=>typeof s==='string'&&s.length>0&&s.length<=90) &&
+    ledger?.mode==='ETH_LIVE_LEDGER_READ_ONLY' &&
+    ledger?.asset==='ETH' && ledger?.chain_id===1 &&
+    ledger?.ready_for_live===false && ledger?.execution_enabled===false &&
+    ledger?.paper_simulation_included===false &&
+    ledger?.can_submit===false &&
+    typeof ledger.pending_reserved_usd==='string' &&
+    typeof ledger.confirmed_24h_usd==='string' &&
+    typeof ledger.available_24h_after_pending_usd==='string' &&
+    Number.isInteger(ledger.unresolved_order_count) &&
+    ledger.unresolved_order_count>=0 &&
+    Number.isInteger(ledger.reconciliation_required_count) &&
+    ledger.reconciliation_required_count>=0;
+}

@@ -185,6 +185,18 @@ def _finish_locked(cur, *, did: str, validated: dict,
     # NEVER resuscitate or overwrite the revoked wallet record.
     if row.get("status") != "SUBMITTING":
         raise HTTPException(409, "Privy policy was stopped or changed while creating")
+    # A returned object is NOT trusted merely because the HTTP POST
+    # completed. If its fields are malformed or do not match the exact
+    # remote readback, persist UNCERTAIN instead of leaving SUBMITTING
+    # indefinitely or exposing an apparent success.
+    if result is not None and (
+        type(result) is not dict
+        or result.get("remote_exact_match") is not True
+        or result.get("policy_sha256") != validated["candidate_sha256"]
+        or type(result.get("policy_id")) is not str
+        or len(result["policy_id"]) < 6
+    ):
+        result = None
     if result is None:
         cur.execute(
             """UPDATE mininex_live_eth_policy_enrollments

@@ -72,6 +72,10 @@ def _snapshot(row: object, *, current_revision: object = None) -> dict:
         "live_limits_revision_matches": False,
         "reconciliation_required": False,
         "privy_remote_revocation_requested": False,
+        "policy_expires_at_unix": None,
+        "policy_expired": False,
+        "policy_seconds_remaining": None,
+        "remote_policy_recorded": False,
         **_LIVE_DISABLED,
     }
     if type(row) is not dict:
@@ -96,7 +100,19 @@ def _snapshot(row: object, *, current_revision: object = None) -> dict:
             "SUBMITTING", "UNCERTAIN", _REVOKE_REQUESTED,
         },
         "privy_remote_revocation_requested": status == _REVOKE_REQUESTED,
+        "remote_policy_recorded": (
+            row.get("policy_id") is not None and status in {
+                "REMOTE_VERIFIED_UNATTACHED", "GRANT_VERIFIED",
+                "REVOKE_REQUESTED", "REVOKED",
+            }
+        ),
     })
+    expires = row.get("expires_at_unix")
+    if type(expires) is int and expires > 0:
+        remaining = expires - int(time.time())
+        base["policy_expires_at_unix"] = expires
+        base["policy_expired"] = remaining <= 0
+        base["policy_seconds_remaining"] = max(0, remaining)
     # This is an inert local database record: even an independent GET or a
     # recorded policy ID does not prove an actual wallet grant.
     return base
@@ -210,6 +226,7 @@ def _stage_locked(
         "candidate_sha256": info["sha256"],
         "idempotency_key": prepared["idempotency_key"],
         "status": "PREPARED",
+        "expires_at_unix": info["expires_at_unix"],
     }, current_revision=values["revision"])
 
 
@@ -390,6 +407,8 @@ def get_eth_policy_ledger_status(did: str) -> dict:
                     """SELECT policy.wallet_address,policy.limits_revision,
                               policy.candidate_sha256,policy.idempotency_key,
                               policy.status,policy.policy_id,
+                              extract(epoch FROM policy.policy_expires_at)::bigint
+                                  AS expires_at_unix,
                               live.revision AS live_revision
                        FROM mininex_live_eth_policy_enrollments policy
                        JOIN mininex_live_eth_limits live

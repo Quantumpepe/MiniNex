@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer} from '../src/liveEthRules.js';
+import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport} from '../src/liveEthRules.js';
 
 const limits=()=>{
   return {
@@ -160,4 +160,45 @@ test('explicit Privy signer grant offer must be independent and wallet-bound',()
   ])assert.equal(validScopedGrantOffer({...scopedGrant(),...patch},address),false);
   assert.equal(validScopedGrantOffer(scopedGrant(),'0x'+'b'.repeat(40)),false);
   assert.equal(validScopedGrantOffer(null,address),false);
+});
+
+
+const readOnlyPrelaunch=()=>({
+  mode:'ETH_LIVE_PRELAUNCH_AUDIT_ONLY',asset:'ETH',chain_id:1,
+  read_only:true,
+  policy_created_by_this_check:false,
+  wallet_signer_modified_by_this_check:false,
+  real_trading_enabled:false,can_sign:false,can_submit:false,
+  execution_enabled:false,
+  automatic_privy_policy_retry_permitted:false,
+  blockers:['LIVE_EXECUTION_NOT_IMPLEMENTED'],
+  live_ledger:{
+    mode:'ETH_LIVE_LEDGER_READ_ONLY',asset:'ETH',chain_id:1,
+    ready_for_live:false,execution_enabled:false,can_submit:false,
+    paper_simulation_included:false,
+    pending_reserved_usd:'1200.00',
+    confirmed_24h_usd:'3100.00',
+    available_24h_after_pending_usd:'3700.00',
+    unresolved_order_count:2,reconciliation_required_count:1,
+  },
+});
+
+test('read-only ETH safety card can never claim trading authorization',()=>{
+  assert.equal(validEthReadOnlySafetyReport(readOnlyPrelaunch()),true);
+  assert.equal(validEthReadOnlySafetyReport(null),false);
+  for(const patch of [
+    {mode:'LIVE_EXECUTION'}, {asset:'BTC'}, {chain_id:137},
+    {read_only:false},{policy_created_by_this_check:true},
+    {wallet_signer_modified_by_this_check:true},{real_trading_enabled:true},
+    {can_sign:true},{can_submit:true},{execution_enabled:true},
+    {automatic_privy_policy_retry_permitted:true},
+    {blockers:[]},{blockers:['']},{blockers:[5]},
+    {live_ledger:{...readOnlyPrelaunch().live_ledger,ready_for_live:true}},
+    {live_ledger:{...readOnlyPrelaunch().live_ledger,paper_simulation_included:true}},
+    {live_ledger:{...readOnlyPrelaunch().live_ledger,can_submit:true}},
+    {live_ledger:{...readOnlyPrelaunch().live_ledger,unresolved_order_count:-1}},
+    {live_ledger:{...readOnlyPrelaunch().live_ledger,confirmed_24h_usd:42}},
+  ]){
+    assert.equal(validEthReadOnlySafetyReport({...readOnlyPrelaunch(),...patch}),false);
+  }
 });
