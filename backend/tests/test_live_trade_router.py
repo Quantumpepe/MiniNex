@@ -131,11 +131,12 @@ def test_wrong_provider_quote_never_claims_live_order(venues,monkeypatch,field,v
 
 @pytest.mark.parametrize("amount",["NaN","-1","0.00000","",None])
 def test_untrusted_provider_output_never_becomes_order(venues,monkeypatch,amount):
+    invalid_output=amount
     async def invalid(did,*,side,stable,amount):
         return {
             "mode":"BTC_CROSSCHAIN_INDICATIVE_ONLY","asset":"BTC",
             "side":side,"source_asset":"BTC","destination_asset":stable,
-            "estimated_output_amount":amount,
+            "estimated_output_amount":invalid_output,
             "execution_enabled":False,"can_submit":False,
         }
     monkeypatch.setattr(router,"quote_native_btc",invalid)
