@@ -585,3 +585,23 @@ def test_new_price_is_not_fetched_for_already_stored_consent_gated_record(
     monkeypatch.setattr(ledger, "fetch_reference_prices", forbid_price)
     assert asyncio.run(ledger.prepare_eth_policy_record(DID)) == row
     assert calls == ["wallet", "db_locked_reuse"]
+
+
+def test_expired_privy_policy_is_reported_inert_without_grant_permission(monkeypatch):
+    monkeypatch.setattr(ledger.time,"time",lambda:1900000010)
+    expired=ledger._snapshot({
+        "status":"GRANT_VERIFIED","policy_id":"policy_review_123",
+        "expires_at_unix":1900000001,
+    },current_revision=8)
+    assert expired["remote_policy_recorded"] is True
+    assert expired["policy_expired"] is True
+    assert expired["policy_seconds_remaining"]==0
+    assert expired["execution_enabled"] is False
+    future=ledger._snapshot({
+        "status":"REMOTE_VERIFIED_UNATTACHED","policy_id":"policy_review_123",
+        "expires_at_unix":1900000045,
+    })
+    assert future["policy_expired"] is False
+    assert future["policy_seconds_remaining"]==35
+    assert future["remote_policy_recorded"] is True
+    assert ledger._snapshot({"status":"PREPARED"})["remote_policy_recorded"] is False
