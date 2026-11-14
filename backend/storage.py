@@ -201,6 +201,21 @@ SCHEMA = (
         CHECK (state NOT IN ('CONFIRMED','REVERTED','CANCELLED','EXPIRED')
                OR finalized_at IS NOT NULL)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_verified_legs (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        tx_hash TEXT PRIMARY KEY CHECK (tx_hash ~ '^0x[0-9a-f]{64}$'),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        kind TEXT NOT NULL CHECK (kind IN ('SWAP','WRAP','UNWRAP')),
+        source_amount NUMERIC(45,18) NOT NULL CHECK (source_amount > 0),
+        destination_amount NUMERIC(45,18) NOT NULL CHECK (destination_amount > 0),
+        network_fee_eth NUMERIC(45,18) NOT NULL CHECK (network_fee_eth >= 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK ((kind='WRAP' AND side='SELL') OR
+               (kind='UNWRAP' AND side='BUY') OR kind='SWAP')
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
+       ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
     """CREATE INDEX IF NOT EXISTS mininex_live_orders_by_account
        ON mininex_live_order_intents(privy_did,asset,created_at DESC)""",
     # Future executor must atomically bind the immutable signal to an order.
