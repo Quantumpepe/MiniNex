@@ -489,3 +489,23 @@ def test_existing_database_status_check_is_migrated_for_privy_grants():
     assert "'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED'" in statements
     assert "mininex_live_eth_policy_grant_integrity_check" in statements
     assert "remote_verified_at IS NOT NULL" in statements
+
+
+@pytest.mark.parametrize("remote", [
+    None, {}, [], "ok",
+    {"remote_exact_match": False, "policy_id": POLICY_ID,
+     "policy_sha256": validated()["candidate_sha256"]},
+    {"remote_exact_match": True, "policy_id": POLICY_ID,
+     "policy_sha256": "b"*64},
+    {"remote_exact_match": True, "policy_id": "bad",
+     "policy_sha256": validated()["candidate_sha256"]},
+])
+def test_privy_malformed_or_mismatched_create_readback_is_uncertain(remote):
+    cur=FinishCursor()
+    result=provision._finish_locked(
+        cur,did=DID,validated=validated(),result=remote,
+    )
+    assert cur.status=="UNCERTAIN"
+    assert result["status"]=="UNCERTAIN"
+    assert result["can_sign"] is False
+    assert result["execution_enabled"] is False
