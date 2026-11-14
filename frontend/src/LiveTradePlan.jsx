@@ -14,6 +14,7 @@ export default function LiveTradePlan({
   const [quote,setQuote]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState(false);
+  const [expired,setExpired]=useState(false);
   const ref=useRef({id:0,abort:null});
   const allowed=LIVE_SETTLEMENTS[asset]||[];
   const request=createLivePlanRequest(asset,side,stable,amount);
@@ -23,6 +24,7 @@ export default function LiveTradePlan({
     ref.current.abort=null;
     setQuote(null);
     setError(false);
+    setExpired(false);
   };
   useEffect(()=>{
     ref.current.id+=1;
@@ -34,12 +36,23 @@ export default function LiveTradePlan({
     setQuote(null);
     setBusy(false);
     setError(false);
+    setExpired(false);
     return()=>{
       ref.current.id+=1;
       ref.current.abort?.abort();
       ref.current.abort=null;
     };
   },[asset,defaultStable,enabled,userId]);
+
+  // An indicative market price is never indefinitely current.
+  useEffect(()=>{
+    if(!quote)return;
+    const timer=setTimeout(()=>{
+      setQuote(current=>current===quote?null:current);
+      setExpired(true);
+    },30_000);
+    return()=>clearTimeout(timer);
+  },[quote]);
 
   const changeSide=value=>{reset();setSide(value);};
   const changeStable=value=>{reset();setStable(value);};
@@ -53,7 +66,7 @@ export default function LiveTradePlan({
     const abort=new AbortController();
     ref.current.abort=abort;
     const timeout=setTimeout(()=>abort.abort(),15_000);
-    setBusy(true);setQuote(null);setError(false);
+    setBusy(true);setQuote(null);setError(false);setExpired(false);
     try{
       const token=await getAccessToken();
       if(!token||abort.signal.aborted)throw Error('Authentication required');
@@ -113,6 +126,8 @@ export default function LiveTradePlan({
       {t.livePlanInvalidAmount}</p>}
     {error&&<p role="alert" className="privy-wallet-description">
       {t.livePlanUnavailable}</p>}
+    {expired&&<p role="status" className="privy-wallet-description">
+      {t.livePlanExpired}</p>}
     {quote&&result&&<div className="mininex-swap-quote" role="status">
       <div className="mininex-swap-summary">
         <span>{t.walletSwapFrom}: <b>{quote.request.amount} {source}</b></span>
