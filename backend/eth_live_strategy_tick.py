@@ -15,6 +15,7 @@ import httpx
 from fastapi import HTTPException
 
 from .eth_live_auto_dispatch import EthAutoSignal,execute_eth_auto_signal
+from .eth_auto_native_cycle import send_eth_auto_native_leg
 from .eth_router02_allowance import inspect_router02_approval
 from .live_eth_controls import get_live_eth_limits
 from .wallet_balances import get_wallet_balances
@@ -154,6 +155,27 @@ async def execute_live_eth_strategy_tick(did: str, *, market,
         decision=decision,live_limits=limits,
         balances=balances,allowance=probe)
     if amount is None:
+        # The owner actually holds native ETH, not WETH. A defensive
+        # spot SELL first wraps the intended quantity into real WETH9
+        # before Router02 can exchange it for USDC/USDT on a later tick.
+        if decision["action"]=="SELL":
+            native=balances.get("balances",{}).get("ETH",{})
+            if (balances.get("wallet_ownership_verified") is True
+                    and native.get("status")=="verified"):
+                held=_positive_decimal(native["balance"],"ETH balance")
+                cap=min(
+                    _positive_decimal(limits["planned_capital_usd"],"capital"),
+                    _positive_decimal(limits["max_order_usd"],"order"))
+                price=_positive_decimal(decision["market_price"],"price")
+                quantity=min(max(_ZERO,held-_D("0.01")),cap/price)
+                quantity=quantity.quantize(
+                    _D("0.000000000000000001"),rounding=ROUND_DOWN)
+                if quantity*price>=_MIN_ORDER:
+                    source=f"wrap_{run_id}_{int(now//180)}"
+                    return await send_eth_auto_native_leg(
+                        did,source_key=source,operation="DEPOSIT",
+                        amount_wei=int(quantity*10**18),
+                        stable=stable,client=client)
         return {"state":"WAIT","reason":"NO_FUNDED_LIVE_POSITION","asset":"ETH"}
     funded=await inspect_router02_approval(
         did,side=decision["action"],stable=stable,amount=amount)

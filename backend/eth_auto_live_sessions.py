@@ -20,6 +20,10 @@ from psycopg.rows import dict_row
 from .eth_privy_user_grant import get_eth_user_grant_review
 from .eth_live_strategy_tick import execute_live_eth_strategy_tick
 from .eth_router02_receipts import check_user_router02_receipt
+from .eth_auto_native_cycle import (
+    send_eth_auto_native_leg,submitted_native_steps,finalize_native_step,
+    confirmed_buy_native_conversions,
+)
 from .real_eth_trade_legs import validated_finalized_leg,save_verified_leg
 from .storage import _db_url,_ensure_schema,_prepare_rows,_safe_did
 
@@ -193,6 +197,11 @@ def active_sessions(limit:int=10)->list[dict]:
                          AND p.status='GRANT_VERIFIED'
                          AND p.limits_revision=l.revision
                          AND p.policy_expires_at>now()+interval '120 seconds'
+                         AND NOT EXISTS (
+                             SELECT 1 FROM mininex_live_eth_auto_native_steps n
+                             WHERE n.privy_did=s.privy_did AND n.status IN
+                              ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                         )
                        ORDER BY s.updated_at ASC LIMIT %s""",(max(1,min(20,limit)),))
                 return cur.fetchall()
     except psycopg.Error:
@@ -293,6 +302,38 @@ async def reconcile_live_eth_orders():
     return done
 
 
+async def reconcile_and_resume_native_eth(client:httpx.AsyncClient):
+    """Actual WETH9 sends and settlement, connected to the LIVE worker."""
+    if not _worker_approved():
+        return 0
+    done=0
+    rows=await asyncio.to_thread(submitted_native_steps)
+    for row in rows:
+        try:
+            result=await finalize_native_step(row)
+            if result!="PENDING":
+                done+=1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception("ETH native conversion receipt unavailable")
+    # Real BUY has paid stable and received finalized WETH. Convert that
+    # exact WETH acquired amount to native ETH, once via Privy signing.
+    waiting=await asyncio.to_thread(confirmed_buy_native_conversions)
+    for row in waiting:
+        try:
+            wei=int(Decimal(str(row["destination_amount"]))*10**18)
+            await send_eth_auto_native_leg(
+                row["privy_did"],source_key=row["source_key"],
+                operation="WITHDRAW",amount_wei=wei,
+                stable=row["stable"],client=client)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception("ETH LIVE purchased WETH conversion not completed")
+    return done
+
+
 class EthAutoLiveWorker:
     def __init__(self,market):
         self.market=market
@@ -314,9 +355,10 @@ class EthAutoLiveWorker:
             if not _worker_approved():
                 continue
             await reconcile_live_eth_orders()
-            sessions=await asyncio.to_thread(active_sessions)
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                await reconcile_and_resume_native_eth(client)
+                sessions=await asyncio.to_thread(active_sessions)
                 for row in sessions:
                     if not _worker_approved(): break
                     try:
