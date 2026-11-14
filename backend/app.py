@@ -47,6 +47,7 @@ from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_router02_allowance import inspect_router02_approval
+from .eth_owner_auto_approval import make_eth_owner_approval_plan
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .eth_native_cycle_comparison import compare_eth_native_cycle
@@ -571,6 +572,19 @@ async def eth_verified_token_allowance(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+@app.get("/api/live/eth/owner-approval-plan")
+async def eth_owner_live_auto_allowance(
+    token: Literal["USDC","USDT","WETH"],
+    authorization: str | None = Header(default=None),
+):
+    """Provide only bounded, owner-wallet-signable ERC20 approve calldata."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await make_eth_owner_approval_plan(did,token=token)
+    return JSONResponse(
+        result,headers={"Cache-Control":"private, no-store",
+                        "X-Content-Type-Options":"nosniff"})
 
 
 @app.post("/api/live/eth/router02-user-transaction")
