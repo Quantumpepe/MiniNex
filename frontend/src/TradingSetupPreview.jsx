@@ -5,8 +5,6 @@ import {coinBySymbol} from './coins.js';
 import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
 import ExtraPaperComparison from './ExtraPaperComparison.jsx';
 import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
-import {validSharedStrategyProfile,applySharedStrategyToExtra}
-  from './sharedStrategyProfile.js';
 
 // Persisted preferences are display/configuration only: no signer authority.
 const INITIAL = Object.freeze({
@@ -28,15 +26,11 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
   const [busy,setBusy]=useState(false);
-  const [globalProfile,setGlobalProfile]=useState(null);
-  const [globalDraft,setGlobalDraft]=useState({mode:'LONG',horizon:'15m'});
-  const [globalStatus,setGlobalStatus]=useState('loading');
-  const [globalBusy,setGlobalBusy]=useState(false);
   // Retain independent virtual backtest settings when switching among coins.
   // These are local hypothetical budgets, not live or stored trade permissions.
   const [replayOptions,setReplayOptions]=useState(()=>Object.fromEntries(
@@ -77,68 +71,6 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
     })();
     return()=>{active=false;};
   },[enabled,getAccessToken]);
-
-  useEffect(()=>{
-    if(!enabled||!getAccessToken||!userId){
-      setGlobalProfile(null);setGlobalStatus('loading');
-      setGlobalDraft({mode:'LONG',horizon:'15m'});
-      return;
-    }
-    let active=true;
-    setGlobalStatus('loading');setGlobalProfile(null);
-    (async()=>{
-      try{
-        const token=await getAccessToken();
-        if(!token)throw Error('Login required');
-        const response=await fetch(API_BASE+'/api/strategy/profile',{
-          headers:{Authorization:'Bearer '+token,Accept:'application/json'},
-          cache:'no-store',
-        });
-        if(!response.ok)throw Error('Shared strategy unavailable');
-        const data=await response.json();
-        if(!validSharedStrategyProfile(data))throw Error('Invalid shared strategy');
-        if(active){
-          setGlobalProfile(data);
-          setGlobalDraft({mode:data.strategy_mode,horizon:data.horizon});
-          setReplayOptions(previous=>applySharedStrategyToExtra(previous,data));
-          setGlobalStatus('ready');
-        }
-      }catch{if(active){setGlobalStatus('failed');setGlobalProfile(null);}}
-    })();
-    return()=>{active=false;};
-  },[enabled,getAccessToken,userId]);
-
-  const applyGlobal=async()=>{
-    if(!enabled||globalBusy||globalStatus!=='ready'||!globalProfile)return;
-    setGlobalBusy(true);
-    try{
-      const token=await getAccessToken();
-      if(!token)throw Error('Login required');
-      const response=await fetch(API_BASE+'/api/strategy/profile',{
-        method:'PUT',cache:'no-store',
-        headers:{Authorization:'Bearer '+token,Accept:'application/json',
-                 'Content-Type':'application/json'},
-        body:JSON.stringify({...globalDraft,expected_revision:globalProfile.revision}),
-      });
-      if(!response.ok)throw Error('Could not save shared strategy');
-      const next=await response.json();
-      if(!validSharedStrategyProfile(next)||!next.core_settings||
-         !['BTC','ETH'].every(coin=>{
-           const row=next.core_settings[coin];
-           return row&&MODES.includes(row.mode)&&HORIZONS.includes(row.horizon)&&
-             STABLES.includes(row.stable)&&Number.isSafeInteger(row.revision);
-         }))throw Error('Incomplete saved core strategy');
-      setGlobalProfile(next);
-      setGlobalDraft({mode:next.strategy_mode,horizon:next.horizon});
-      setReplayOptions(previous=>applySharedStrategyToExtra(previous,next));
-      // The API commits BOTH legacy BTC/ETH preferences in that same DB
-      // transaction, so update their revision and selected options together.
-      applyResponse({mode:'PREFERENCES_ONLY',trading_enabled:false,
-                     signing_authorized:false,settings:next.core_settings});
-      setGlobalStatus('ready');
-    }catch{setGlobalStatus('failed');}
-    finally{setGlobalBusy(false);}
-  };
 
   const change=(asset,field,value)=>{
     const accepted=field==='mode'?MODES:field==='stable'?STABLES:
@@ -189,38 +121,6 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
 
   return <div className="privy-trading-settings" aria-label={t.privySetupTitle}>
     <div className="privy-trading-settings-heading">{t.privySetupTitle}</div>
-    {enabled&&<div className="privy-hwm-box mininex-shared-strategy">
-      <strong>{lang==='de'?'Eine Strategie für alle 11 Coins':'One strategy for all 11 coins'}</strong>
-      <p className="privy-wallet-description">
-        {lang==='de'
-          ?'Modus und Zeithorizont einmal einstellen. Jeder Coin behält sein eigenes Budget und seine bisherigen Trades.'
-          :'Set mode and time horizon once. Every coin retains its own budget and trade history.'}
-      </p>
-      <div className="privy-asset-settings-fields">
-        <label><span>{t.privySetupMode}</span>
-          <select value={globalDraft.mode} disabled={globalStatus!=='ready'||globalBusy}
-            onChange={e=>setGlobalDraft(old=>({...old,mode:e.target.value}))}>
-            <option value="LONG">{t.privySetupLong}</option>
-            <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
-            <option value="AUTO">{t.privySetupAuto}</option>
-          </select>
-        </label>
-        <label><span>{t.privySetupHorizon}</span>
-          <select value={globalDraft.horizon} disabled={globalStatus!=='ready'||globalBusy}
-            onChange={e=>setGlobalDraft(old=>({...old,horizon:e.target.value}))}>
-            {HORIZONS.map(h=><option key={h} value={h}>{h}</option>)}
-          </select>
-        </label>
-      </div>
-      <button type="button" className="privy-wallet-action"
-        disabled={globalStatus!=='ready'||globalBusy}
-        onClick={applyGlobal}>
-        {lang==='de'?'Für alle 11 Coins übernehmen':'Apply to all 11 coins'}
-      </button>
-      {globalStatus==='failed'&&<p role="alert" className="privy-wallet-description">
-        {t.tradeSettingsFailed}
-      </p>}
-    </div>}
     {paperAvailable&&<ExtraPaperComparison t={t} enabled={enabled} getAccessToken={getAccessToken}
       userId={userId}/>}
     <CoinGrid t={t} lang={lang} selected={opened} onSelect={toggleAsset}
