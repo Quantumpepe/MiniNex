@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {NATIVE_COINS,validNativeBalanceResponse} from '../src/nativeBalanceValidation.js';
 
-const network={SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet'};
+const network={SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet',DOGE:'dogecoin-mainnet'};
 function response(){
   return {
     mode:'NATIVE_MAINNET_BALANCES_READ_ONLY',
@@ -19,12 +19,13 @@ function response(){
   };
 }
 
-test('wallet accepts independently reported SOL, XRP and TRX on mainnet',()=>{
-  assert.deepEqual(NATIVE_COINS,['SOL','XRP','TRX']);
+test('wallet accepts independently reported SOL, XRP, TRX and DOGE on mainnet',()=>{
+  assert.deepEqual(NATIVE_COINS,['SOL','XRP','TRX','DOGE']);
   assert.equal(validNativeBalanceResponse(response()),true);
   const data=response();
   data.assets.XRP={...data.assets.XRP,status:'wallet_missing',balance:null};
   data.assets.TRX={...data.assets.TRX,status:'unavailable',balance:null};
+  data.assets.DOGE={...data.assets.DOGE,status:'wallet_missing',balance:null};
   assert.equal(validNativeBalanceResponse(data),true);
 });
 
@@ -36,6 +37,8 @@ test('native wallet response cannot mix networks, paper balances or fake zeros',
     d=>{d.assets.SOL.balance='NaN';},
     d=>{d.assets.SOL.native=false;},
     d=>{d.assets.TRX.wallet_funds_used_for_paper=true;},
+    d=>{d.assets.DOGE.network='bitcoin-mainnet';},
+    d=>{d.assets.DOGE.status='wallet_missing';d.assets.DOGE.balance='0';},
     d=>{d.real_trading_enabled=true;},
     d=>{d.execution_available=true;},
     d=>{d.wallet_ownership_verified=false;},

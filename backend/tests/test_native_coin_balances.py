@@ -94,10 +94,10 @@ def sources(monkeypatch):
 def test_native_mainnet_balances_are_exact_and_separate(sources):
     calls,_=sources
     result=asyncio.run(native.get_native_balances(DID))
-    assert result["asset_order"] == ["SOL","XRP","TRX"]
+    assert result["asset_order"] == ["SOL","XRP","TRX","DOGE"]
     assert {k:v["balance"] for k,v in result["assets"].items()} == {
-        "SOL":"1.5","XRP":"2.5","TRX":"3.1"}
-    assert [coin for coin,_ in calls] == list(native.ORDER)
+        "SOL":"1.5","XRP":"2.5","TRX":"3.1","DOGE":None}
+    assert [coin for coin,_ in calls] == ["SOL","XRP","TRX"]
     assert result["wallet_ownership_verified"] is True
     assert result["real_trading_enabled"] is False
     assert result["wallet_funds_used_for_paper"] is False
