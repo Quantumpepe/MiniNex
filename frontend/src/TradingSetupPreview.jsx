@@ -13,7 +13,7 @@ const INITIAL = Object.freeze({
   BTC: {mode:'LONG', stable:'USDC', horizon:'15m'},
   ETH: {mode:'LONG', stable:'USDC', horizon:'15m'},
 });
-const MODES = ['LONG','SPOT_SHORT'];
+const MODES = ['LONG','SPOT_SHORT','AUTO'];
 const STABLES = ['USDC','USDT'];
 const HORIZONS = ['5m','15m','1h','24h'];
 
@@ -202,6 +202,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
             onChange={e=>setGlobalDraft(old=>({...old,mode:e.target.value}))}>
             <option value="LONG">{t.privySetupLong}</option>
             <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
+            <option value="AUTO">AUTO (Long + Spot)</option>
           </select>
         </label>
         <label><span>{t.privySetupHorizon}</span>
@@ -239,6 +240,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
               onChange={event=>change(opened,'mode',event.target.value)}>
               <option value="LONG">{t.privySetupLong}</option>
               <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
+            <option value="AUTO">AUTO (Long + Spot)</option>
             </select>
           </label>
           <label>
