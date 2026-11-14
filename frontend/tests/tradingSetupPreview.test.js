@@ -58,3 +58,11 @@ test('each coin keeps its own mode and AUTO without duplicate global selector',(
   assert.match(strings,/Wähle 5 Minuten, 15 Minuten, 1 Stunde oder 24 Stunden für jeden Coin einzeln/);
   assert.match(strings,/Choose 5 minutes, 15 minutes, 1 hour or 24 hours for each coin individually/);
 });
+
+
+test('wallet comparison receives the user id; no ReferenceError/blank wallet screen',()=>{
+  assert.match(panel,/userId=\{user\?\.id\}/);
+  assert.match(setup,/function TradingSetupPreview\(\{t,getAccessToken,enabled,userId,/);
+  assert.match(setup,/<ExtraPaperComparison[\s\S]*?userId=\{userId\}\/>/);
+  assert.doesNotMatch(setup,/Für alle 11 Coins übernehmen|Apply to all 11 coins/);
+});
