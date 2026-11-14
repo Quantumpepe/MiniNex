@@ -42,9 +42,7 @@ export function validSignerStatus(snapshot) {
 export function validatedLiveEthDraft(draft) {
   if(!draft)return null;
   const cap=usdUnits(draft.planned_capital_usd);
-  const order=usdUnits(draft.max_order_usd);
-  const daily=usdUnits(draft.max_daily_turnover_usd);
-  if(cap===null||order===null||daily===null)return null;
+  if(cap===null)return null;
   if(cap===null)return null;
   // Old fields are mirrored only to remain compatible with the LIVE API.
   // No order/day value can override the owner's chosen budget.
