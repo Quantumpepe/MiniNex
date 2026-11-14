@@ -16,7 +16,7 @@ from .auto_engine import PaperAutoEngine, PaperPortfolio, PaperRules, clean
 from .extra_market_data import EXTRA_ASSETS
 
 WINDOWS = {"5m":300.0,"15m":900.0,"1h":3600.0,"24h":86400.0}
-MODES = ("LONG","SPOT_SHORT")
+MODES = ("LONG","SPOT_SHORT","AUTO")
 MAX_POINTS = 3600
 # ADA remains IN ARBEIT. Other assets borrow the proven BTC/ETH strategy only
 # for independent, on-demand PAPER replay -- never for live/automatic orders.
@@ -86,7 +86,7 @@ def replay_strategy(
         price_window_seconds=WINDOWS[horizon],
     ))
     start=points[0]["price_usdt"]
-    if mode=="LONG":
+    if mode in ("LONG", "AUTO"):
         holding=PaperPortfolio(asset=asset,settlement="USDC",
                                strategy_mode=mode,stable_cash=initial_usd,
                                initial_equity=initial_usd)
