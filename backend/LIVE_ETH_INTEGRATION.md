@@ -680,6 +680,51 @@ for Privy authorization.
 References: https://docs.privy.io/controls/policies/create-a-policy
 and https://docs.privy.io/controls/policies/overview.
 
+## Stage 20: Privy REST policy transport and exact readback (DISABLED)
+
+`eth_privy_policy_transport.py` implements the low-level Privy REST
+`POST /v1/policies` request format (with `version:1.0`, Ethereum
+`chain_type`, six individually restricted rules, exact `owner_id` equal
+to the **independent policy owner quorum**, and the
+`privy-idempotency-key` request header). The backend can verify the exact
+server-retrieved policy using `GET /v1/policies/{id}`. The owner is
+**not** the execution-signing quorum. Application Basic authentication
+uses the server-held Privy app secret, never the browser.
+
+Before a request is prepared, the full individual wallet/caps/version
+template must match the audited Stage 15 builder. A deterministic
+idempotency value binds exact policy bytes to the verified account, wallet
+and LIVE limits revision. On remote readback, comparison strips only
+Privy-generated policy/rule IDs and timestamps and rejects missing,
+duplicated, modified or additional ALLOW/DENY rules, broadened calldata,
+changed addresses, wrong owner and malformed server responses. Privy
+policy creation alone does not attach any signer or authorize fund movement.
+
+**Shipping and safety status:** The lower-level HTTP transport is exercised
+ONLY via test mocks. `provision_eth_privy_policy` always fails closed and
+there is no public policy-creation or signer-grant endpoint. A saved
+EIP-191 enrollment intent is still NOT a scoped Privy signer grant.
+No real HTTP POST is made from the production route graph. All LIVE
+signing and execution stay disabled.
+
+Before allowing a worker to call this transport, implement durable,
+per-DID/wallet policy creation state: persist a `SUBMITTING` record
+under a database lock BEFORE any remote POST; recover uncertain network
+outcomes without blindly reposting (Privy idempotency is only
+time-bounded); pin the full remote policy and matched owner; collect
+a separate user-approved Privy delegation of the *exact restricted*
+policy; independently verify its signer attachment; implement and
+test remote Privy revocation and a local stop switch. Also finish
+allowance strategy, quote/calldata verification, cumulative budget
+enforcement, settlement recovery and independent policy review
+before any LIVE launch. Do not turn on a hidden environment toggle
+or attach existing user wallets merely because a policy candidate
+exists.
+
+Sources: https://docs.privy.io/controls/policies/create-a-policy,
+https://docs.privy.io/controls/policies/get-a-policy,
+and https://docs.privy.io/controls/policies/overview.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
