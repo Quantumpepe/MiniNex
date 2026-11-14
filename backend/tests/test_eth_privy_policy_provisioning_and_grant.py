@@ -324,14 +324,14 @@ def test_new_policy_is_not_permission_without_independent_wallet_owner_click(mon
     assert offer["cumulative_spend_enforced_by_policy"] is False
 
 
-def test_grant_offer_only_after_explicit_operator_audit_flag(monkeypatch):
-    monkeypatch.setenv("MININEX_PRIVY_ETH_GRANT_ENABLED","enabled-after-audit")
-    offer=assess()
-    assert offer["grant_offer_enabled"] is True
-    assert offer["can_request_user_grant"] is True
-    assert offer["execution_enabled"] is False
-    monkeypatch.setenv("MININEX_PRIVY_ETH_GRANT_ENABLED","true")
-    assert assess()["can_request_user_grant"] is False
+def test_environment_switch_alone_cannot_expose_privy_wallet_grant(monkeypatch):
+    assert grant._PRIVY_SIGNER_GRANTS_AUDITED_IN_CODE is False
+    for value in ("enabled-after-audit", "true", "1", ""):
+        monkeypatch.setenv("MININEX_PRIVY_ETH_GRANT_ENABLED", value)
+        offer=assess()
+        assert offer["grant_offer_enabled"] is False
+        assert offer["can_request_user_grant"] is False
+        assert offer["execution_enabled"] is False
 
 
 def test_wrong_policy_owner_extra_rules_or_another_wallet_denies_offer(monkeypatch):
