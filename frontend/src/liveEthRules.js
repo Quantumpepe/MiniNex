@@ -149,3 +149,14 @@ export function validEthReadOnlySafetyReport(report){
     Number.isInteger(ledger.reconciliation_required_count) &&
     ledger.reconciliation_required_count>=0;
 }
+
+
+// A local stop or limits edit cannot remove a signer from Privy. Surface
+// the required owner action instead of misleadingly calling it complete.
+export function verifiedLocalPrivyRevocationPending(snapshot){
+  return validLiveEthLimits(snapshot) &&
+    snapshot.trading_paused===true &&
+    snapshot.privy_remote_revocation_requested===true &&
+    snapshot.privy_remote_signer_removed===false &&
+    snapshot.real_trading_enabled===false;
+}
