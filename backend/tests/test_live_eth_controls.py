@@ -165,3 +165,97 @@ def test_live_endpoints_are_owner_scoped_and_never_activate(headers, monkeypatch
     assert all(entry[1] == DID for entry in seen)
     assert not any("/api/live/eth/start" == r.path for r in api.app.routes)
     assert not any("/api/live/eth/execute" == r.path for r in api.app.routes)
+
+
+
+def test_eth_limit_change_locally_revokes_consent_and_requests_policy_removal(
+    monkeypatch,
+):
+    """The UI budget editor cannot silently preserve an old Privy grant."""
+    cur = _build_emergency_cursor()
+    _patch_inert_eth_storage(monkeypatch, cur)
+    saved=controls.save_live_eth_limits(
+        DID,capital="2500",order="500",daily="2000",
+        expected_revision=8,
+    )
+    assert saved["revision"]==9
+    assert saved["trading_paused"] is True
+    assert saved["local_eth_consent_invalidated"] is True
+    assert saved["privy_remote_revocation_requested"] is True
+    assert saved["privy_remote_signer_removed"] is False
+    assert saved["live_trading_enabled"] is False
+    assert cur.calls==["save_limits","revoke_consent","mark_policy_revoke"]
+
+
+def test_repeated_eth_emergency_stop_revokes_local_authority_even_when_paused(
+    monkeypatch,
+):
+    cur=_build_emergency_cursor()
+    _patch_inert_eth_storage(monkeypatch,cur)
+    stopped=controls.stop_live_eth(DID)
+    assert stopped["trading_paused"] is True
+    assert stopped["local_eth_consent_invalidated"] is True
+    assert stopped["privy_remote_revocation_requested"] is True
+    assert stopped["privy_remote_signer_removed"] is False
+    assert cur.calls==["read_limits","revoke_consent","mark_policy_revoke"]
+
+
+def test_eth_emergency_stop_has_no_false_remote_claim_without_policy(monkeypatch):
+    cur=_build_emergency_cursor(with_grant=False)
+    _patch_inert_eth_storage(monkeypatch,cur)
+    stopped=controls.stop_live_eth(DID)
+    assert stopped["trading_paused"] is True
+    assert stopped["privy_remote_revocation_requested"] is False
+    assert stopped["local_eth_consent_invalidated"] is False
+    assert stopped["privy_remote_signer_removed"] is False
+
+
+def _build_emergency_cursor(*,with_grant=True):
+    class Cursor:
+        def __init__(self):
+            self.calls=[]
+            self.response=None
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,params):
+            q=" ".join(sql.split())
+            assert params[-1]==DID or DID in params
+            if q.startswith("SELECT planned_capital_usd"):
+                self.calls.append("read_limits")
+                self.response={
+                    "planned_capital_usd":Decimal("2500"),
+                    "max_order_usd":Decimal("500"),
+                    "max_daily_turnover_usd":Decimal("2000"),
+                    "revision":8,"trading_paused":True,
+                }
+            elif q.startswith("UPDATE mininex_live_eth_limits"):
+                self.calls.append("save_limits")
+                self.response={
+                    "planned_capital_usd":Decimal("2500"),
+                    "max_order_usd":Decimal("500"),
+                    "max_daily_turnover_usd":Decimal("2000"),
+                    "revision":9,"trading_paused":True,
+                }
+            elif q.startswith("UPDATE mininex_live_eth_consent_intents"):
+                self.calls.append("revoke_consent")
+                self.response={"status":"REVOKED"} if with_grant else None
+            elif q.startswith("UPDATE mininex_live_eth_policy_enrollments"):
+                self.calls.append("mark_policy_revoke")
+                self.response={"status":"REVOKE_REQUESTED"} if with_grant else None
+            else:raise AssertionError("Unexpected SQL in emergency hold")
+        def fetchone(self):return self.response
+    return Cursor()
+
+
+def _patch_inert_eth_storage(monkeypatch,cur):
+    class Connection:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kw):return cur
+    monkeypatch.setattr(controls,"_db_url",lambda:"postgresql://test/never")
+    monkeypatch.setattr(controls,"_ensure_schema",lambda u:None)
+    monkeypatch.setattr(controls,"_prepare_rows",lambda *args:None)
+    monkeypatch.setattr(
+        controls.psycopg,"connect",
+        lambda url,connect_timeout=6:Connection(),
+    )
