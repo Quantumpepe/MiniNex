@@ -202,7 +202,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
             onChange={e=>setGlobalDraft(old=>({...old,mode:e.target.value}))}>
             <option value="LONG">{t.privySetupLong}</option>
             <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
-            <option value="AUTO">AUTO (Long + Spot)</option>
+            <option value="AUTO">{t.privySetupAuto}</option>
           </select>
         </label>
         <label><span>{t.privySetupHorizon}</span>
@@ -240,7 +240,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
               onChange={event=>change(opened,'mode',event.target.value)}>
               <option value="LONG">{t.privySetupLong}</option>
               <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
-            <option value="AUTO">AUTO (Long + Spot)</option>
+            <option value="AUTO">{t.privySetupAuto}</option>
             </select>
           </label>
           <label>
