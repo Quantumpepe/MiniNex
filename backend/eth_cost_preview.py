@@ -20,13 +20,15 @@ from .eth_privy_policy_plan import fetch_reference_prices, _parsed_price
 from .eth_live_ledger_audit import get_eth_live_ledger_audit
 from .live_eth_controls import get_live_eth_limits
 from .live_eth_quotes import _quantity
-from .live_eth_swap_plan import make_eth_swap_plan
+from .live_eth_swap_plan import make_eth_swap_plan, _ROUTER, _ROUTER_VERSION
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import get_wallet_balances, verified_addresses
 from .storage import _safe_did
 
 _BALANCE = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 _MAX_AGE = 30
+_QUOTE_TTL = 15
+_GAS_ETH_PATTERN = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$")
 _ALWAYS_BLOCKED = (
     "LIVE_EXECUTOR_DISABLED",
     "PRIVY_WALLET_SIGNING_NOT_AUTHORIZED_BY_PREVIEW",
@@ -60,7 +62,8 @@ def _fresh_reference(snapshot: object, symbol: str, *, now: int) -> tuple[str, i
     return format(price, "f"), age
 
 
-def _checked_plan(plan: object, *, side: str, stable: str, amount: str) -> bool:
+def _checked_plan(plan: object, *, side: str, stable: str, amount: str,
+                  now: int | None = None) -> bool:
     """Return False only for the known unbuilt approval/permit branch."""
     if type(plan) is not dict or any((
         plan.get("mode") != "LIVE_ETH_SWAP_PLAN_ONLY",
@@ -75,12 +78,34 @@ def _checked_plan(plan: object, *, side: str, stable: str, amount: str) -> bool:
         plan.get("automatic_signing_enabled") is not False,
     )):
         raise ValueError("Unrecognized or inconsistent verified swap plan")
+    # A server-created preview is only informative for a short period.
+    checked_at = plan.get("quote_checked_at_unix")
+    valid_until = plan.get("quote_expires_at_unix")
+    checked_now = int(time.time()) if now is None else now
+    if (type(checked_now) is not int or type(checked_at) is not int
+            or type(valid_until) is not int
+            or checked_at <= 0 or valid_until != checked_at + _QUOTE_TTL
+            or checked_at > checked_now or checked_now > valid_until):
+        raise ValueError("Unverifiable or expired Uniswap quote")
     if plan.get("state") == "APPROVAL_OR_PERMIT_REQUIRED":
         if plan.get("transaction_built") is not False:
             raise ValueError("Conflicting approval-only swap plan")
         return False
     if plan.get("state") != "UNSIGNED_TX_REVIEW_REQUIRED":
         raise ValueError("Unrecognized unsigned swap plan state")
+    if (plan.get("router", "").lower() != _ROUTER.lower()
+            or plan.get("router_version") != _ROUTER_VERSION
+            or plan.get("calldata_security_review_complete") is not False):
+        raise ValueError("Unrecognized ETH execution router preview")
+    # Treat plan output bounds as untrusted when composing independent costs.
+    try:
+        _, expected = _quantity(plan.get("expected_output_amount"), 18 if side == "BUY" else 6)
+        _, minimum = _quantity(plan.get("minimum_output_amount"), 18 if side == "BUY" else 6)
+    except HTTPException:
+        raise ValueError("Invalid quoted output decimals") from None
+    expected_units, min_units = int(expected), int(minimum)
+    if min_units > expected_units or (min_units + 1) * 200 < expected_units * 199:
+        raise ValueError("Unverified quoted slippage or output bound")
     if plan.get("transaction_built") is not True or not all(
         plan.get(k) is True for k in (
             "tx_outer_fields_verified", "router_command_pattern_verified",
@@ -99,6 +124,9 @@ def _ledger_limits(ledger: object, limits: object) -> tuple[dict, str, str, tupl
             or ledger.get("asset") != "ETH" or ledger.get("chain_id") != 1
             or ledger.get("execution_enabled") is not False
             or ledger.get("paper_simulation_included") is not False
+            or ledger.get("ready_for_live") is not False
+            or ledger.get("can_submit") is not False
+            or ledger.get("cumulative_spend_enforced_at_execution") is not False
             or type(limits) is not dict or limits.get("asset") != "ETH"
             or limits.get("chain_id") != 1 or limits.get("trading_paused") is not True):
         raise ValueError("Verified user ETH ledger or stop state unavailable")
@@ -129,6 +157,25 @@ def _ledger_limits(ledger: object, limits: object) -> tuple[dict, str, str, tupl
     }
     return (data, str(ledger["pending_reserved_usd"]),
             str(ledger["confirmed_24h_usd"]), tuple(blockers))
+
+
+def _limits_from_locked_eth_ledger(ledger: object) -> dict:
+    """Derive LIVE limits from the SAME PostgreSQL row-locked ledger read.
+
+    Never perform a second, time-separated budget GET and pretend the two
+    snapshots are atomic. The lock has been released before this preview
+    returns; it is still NOT an executable reservation.
+    """
+    if type(ledger) is not dict or ledger.get("mode") != "ETH_LIVE_LEDGER_READ_ONLY":
+        raise ValueError("Unrecognized ETH risk snapshot")
+    return {
+        "asset": ledger.get("asset"), "chain_id": ledger.get("chain_id"),
+        "revision": ledger.get("limits_revision"),
+        "trading_paused": ledger.get("trading_paused"),
+        "planned_capital_usd": ledger.get("planned_capital_usd"),
+        "max_order_usd": ledger.get("max_order_usd"),
+        "max_daily_turnover_usd": ledger.get("rolling_24h_limit_usd"),
+    }
 
 
 def _fresh_wallet(snapshot: object, user: object, did: str, input_symbol: str) -> tuple[int, int]:
@@ -167,7 +214,7 @@ def _review_verified_evidence(
     user: object, wallet: object, prices: object, ledger: object,
     limits: object, now: int,
 ) -> dict:
-    if not _checked_plan(plan, side=side, stable=stable, amount=amount):
+    if not _checked_plan(plan, side=side, stable=stable, amount=amount, now=now):
         raise ValueError("Incomplete Uniswap plan cannot receive gas-cost review")
     input_symbol = stable if side == "BUY" else "ETH"
     input_balance, eth_balance = _fresh_wallet(wallet, user, did, input_symbol)
@@ -190,6 +237,11 @@ def _review_verified_evidence(
     gas_wei = Decimal(fee_gwei) * 10**9
     if gas_wei != gas_wei.to_integral_value():
         raise ValueError("Fractional gas wei")
+    advertised_gas_eth = plan.get("max_possible_gas_eth")
+    if (type(advertised_gas_eth) is not str
+            or not _GAS_ETH_PATTERN.fullmatch(advertised_gas_eth)
+            or Decimal(advertised_gas_eth) != Decimal(gas_limit) * gas_wei / Decimal(10**18)):
+        raise ValueError("Uniswap maximum gas estimate is internally inconsistent")
     review = review_eth_cost_budget(
         side=side, stable=stable, input_atomic=int(atomic),
         minimum_output_atomic=int(min_atomic),
@@ -201,12 +253,19 @@ def _review_verified_evidence(
         live_limits=budget, pending_capital_usd=pending,
         spent_24h_usd=spent,
     )
-    review["operational_blockers"] = list(_ALWAYS_BLOCKED + ledger_blockers)
+    review["operational_blockers"] = list(
+        _ALWAYS_BLOCKED + ledger_blockers +
+        ("PROVIDER_FEES_NOT_INDEPENDENTLY_VERIFIED",)
+    )
     review["mode"] = "ETH_LIVE_COST_PREVIEW_ONLY"
     review["state"] = "INDICATIVE_COST_REVIEW"
     review["cost_estimate_available"] = True
     review["wallet_identity_checked_at_preview"] = True
     review["price_reference_source"] = "COINGECKO_LAST_UPDATED_AT"
+    review["quote_expires_at_unix"] = plan["quote_expires_at_unix"]
+    review["provider_fee_status"] = "UNKNOWN_NOT_PROVEN_ZERO"
+    review["fee_coverage_complete"] = False
+    review["quoted_max_total_excludes_unknown_provider_fees"] = True
     review["onchain_balance_source"] = "EXPLORER_OR_PUBLIC_RPC_ESTIMATE"
     review["same_transaction_budget_lock_held"] = False
     review["can_reserve"] = False
@@ -221,7 +280,8 @@ async def get_eth_readonly_cost_preview(did: str, *, side: str, stable: str, amo
     did = _safe_did(did)
     plan = await make_eth_swap_plan(did, side=side, stable=stable, amount=amount)
     try:
-        reviewed = _checked_plan(plan, side=side, stable=stable, amount=amount)
+        reviewed = _checked_plan(plan, side=side, stable=stable, amount=amount,
+                                 now=int(time.time()))
     except (ValueError, TypeError):
         raise HTTPException(503, "Unable to verify ETH swap plan evidence") from None
     if not reviewed:
@@ -234,13 +294,15 @@ async def get_eth_readonly_cost_preview(did: str, *, side: str, stable: str, amo
             "live_trading_enabled": False,
         }
     try:
-        user, wallet, prices, ledger, limits = await asyncio.gather(
+        user, wallet, prices, ledger = await asyncio.gather(
             fetch_privy_user(did),
             get_wallet_balances(did),
             fetch_reference_prices(),
             asyncio.to_thread(get_eth_live_ledger_audit, did),
-            asyncio.to_thread(get_live_eth_limits, did),
         )
+        # The ledger fetch already inspected the LIVE limits with its
+        # per-user row lock. Do not issue a second drifting DB read.
+        limits = _limits_from_locked_eth_ledger(ledger)
         return _review_verified_evidence(
             plan=plan, did=did, side=side, stable=stable, amount=amount,
             user=user, wallet=wallet, prices=prices, ledger=ledger,
