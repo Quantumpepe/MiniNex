@@ -126,7 +126,7 @@ def test_stale_after_reservation_expires_without_privy_send(monkeypatch):
     assert events==[("did:privy:verified","sig_abcdef1234567890")]
 
 
-def test_expiration_sql_requires_unbroadcast_and_reserved():
+def test_expiration_sql_requires_unbroadcast_and_reserved(monkeypatch):
     class Cursor:
         def __init__(self):self.statements=[];self.calls=0
         def execute(self,sql,args):self.statements.append(sql)
@@ -139,5 +139,15 @@ def test_expiration_sql_requires_unbroadcast_and_reserved():
         def __exit__(self,*args):return False
         def cursor(self,**kwargs):return self.cur
     db=Connection()
-    # The actual SQL is exercised in the sender/reconciliation integration.
-    assert db.cur.calls==0
+    monkeypatch.setattr(a,"_db_url",lambda:"mock://db")
+    monkeypatch.setattr(a,"_ensure_schema",lambda url:None)
+    monkeypatch.setattr(a.psycopg,"connect",lambda *args,**kwargs:db)
+    assert a.expire_reserved_eth_order_without_broadcast(
+        "did:privy:verified","sig_abcdef1234567890")
+    sql=" ".join(db.cur.statements[-1].split())
+    assert "state='RESERVED'" in sql
+    assert "o.tx_hash IS NULL" in sql
+    assert "NOT EXISTS" in sql
+    assert "mininex_live_eth_auto_broadcasts" in sql
+    assert "state='EXPIRED'" in sql
+    assert db.cur.calls==2
