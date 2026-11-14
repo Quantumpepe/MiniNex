@@ -48,6 +48,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_router02_allowance import inspect_router02_approval
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
+from .eth_native_cycle_comparison import compare_eth_native_cycle
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -646,6 +647,40 @@ async def eth_router02_real_swap_leg_receipt(
     return JSONResponse(result,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/eth/native-cycle-compare")
+async def eth_compare_verified_native_cycle(
+    swap_tx_hash: str,
+    conversion_tx_hash: str,
+    side: Literal["BUY", "SELL"],
+    stable: Literal["USDC", "USDT"],
+    authorization: str | None = Header(default=None),
+):
+    """Owner-authenticated dual-receipt diagnostic, NOT an order settlement.
+
+    Each independent reader resolves the wallet from the SAME Privy DID and
+    verifies its finalized on-chain receipt. Never credits a portfolio.
+    """
+    did = verify_privy_bearer(authorization)["user_id"]
+    if swap_tx_hash.lower() == conversion_tx_hash.lower():
+        raise HTTPException(422, "Swap and conversion hashes must differ")
+    swap = await check_user_router02_receipt(
+        did, swap_tx_hash, side=side, stable=stable)
+    conversion = await check_user_weth9_receipt(
+        did, conversion_tx_hash,
+        operation="WITHDRAW" if side == "BUY" else "DEPOSIT")
+    try:
+        result = compare_eth_native_cycle(
+            swap=swap, conversion=conversion, side=side, stable=stable)
+    except ValueError:
+        raise HTTPException(
+            409, "ETH cycle receipts do not prove matching finalized legs"
+        ) from None
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
     })
 
 
