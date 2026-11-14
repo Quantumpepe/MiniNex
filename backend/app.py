@@ -529,8 +529,8 @@ class LiveEthLimitsRequest(BaseModel):
     """Explicit LIVE risk-limit preferences, never a delegated wallet grant."""
     model_config = ConfigDict(extra="forbid")
     planned_capital_usd: str
-    max_order_usd: str
-    max_daily_turnover_usd: str
+    max_order_usd: str | None = None
+    max_daily_turnover_usd: str | None = None
     expected_revision: StrictInt
 
 
@@ -1124,8 +1124,8 @@ def eth_live_limits_update(body: LiveEthLimitsRequest,
     limits = save_live_eth_limits(
         did,
         capital=body.planned_capital_usd,
-        order=body.max_order_usd,
-        daily=body.max_daily_turnover_usd,
+        order=body.max_order_usd or body.planned_capital_usd,
+        daily=body.max_daily_turnover_usd or body.planned_capital_usd,
         expected_revision=body.expected_revision,
     )
     return JSONResponse(limits, headers={"Cache-Control": "private, no-store"})

@@ -1,6 +1,6 @@
 // Dedicated LIVE ETH controls. Never derive a LIVE authorization from PAPER settings.
 const AMOUNT=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/;
-const MAX=10000000n*1000000n;
+const MAX=10n**28n;
 
 export function usdUnits(value) {
   if(typeof value!=='string'||value.length>48||!AMOUNT.test(value))return null;
@@ -42,18 +42,15 @@ export function validSignerStatus(snapshot) {
 export function validatedLiveEthDraft(draft) {
   if(!draft)return null;
   const cap=usdUnits(draft.planned_capital_usd);
-  const order=usdUnits(draft.max_order_usd);
-  const daily=usdUnits(draft.max_daily_turnover_usd);
-  if(cap===null||order===null||daily===null)return null;
-  if((cap===0n && order===0n && daily===0n) ||
-     (cap>0n && order>0n && daily>0n && order<=cap && order<=daily)){
-    return {
-      planned_capital_usd:draft.planned_capital_usd,
-      max_order_usd:draft.max_order_usd,
-      max_daily_turnover_usd:draft.max_daily_turnover_usd
-    };
-  }
-  return null;
+  if(cap===null)return null;
+  if(cap===null)return null;
+  // Old fields are mirrored only to remain compatible with the LIVE API.
+  // No order/day value can override the owner's chosen budget.
+  return {
+    planned_capital_usd:draft.planned_capital_usd,
+    max_order_usd:draft.planned_capital_usd,
+    max_daily_turnover_usd:draft.planned_capital_usd
+  };
 }
 
 

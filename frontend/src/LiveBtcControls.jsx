@@ -5,7 +5,7 @@ import {validLiveBtcLimits,validatedLiveBtcDraft} from './liveBtcRules.js';
 // BTC's own live cap editor, INSIDE the selected BTC coin settings only.
 // Unlike ETH, there is no Bitcoin Privy policy or delegated signer UI yet.
 // Saving caps does NOT activate BTC live trading or change the PAPER budget.
-const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
+const FIELDS=['planned_capital_usd'];
 export default function LiveBtcControls({t,enabled,getAccessToken,userId}){
   const [limits,setLimits]=useState(null);
   const [draft,setDraft]=useState(null);
@@ -82,9 +82,9 @@ export default function LiveBtcControls({t,enabled,getAccessToken,userId}){
     {phase==='ready'&&limits&&<>
       {FIELDS.map((field,index)=><label key={field} style={{display:'grid',gap:4,marginBottom:8}}>
         <span className="privy-wallet-description">{
-          [t.liveEthCapital,t.liveEthPerOrder,t.liveEthDaily][index]} (USD)</span>
+          t.liveEthCapital} (USD)</span>
         <input type="text" inputMode="decimal" autoComplete="off"
-          aria-label={[t.liveEthCapital,t.liveEthPerOrder,t.liveEthDaily][index]}
+          aria-label={t.liveEthCapital}
           value={draft?.[field]??''} disabled={busy}
           onChange={event=>setDraft(old=>({...old,[field]:event.target.value}))}/>
       </label>)}

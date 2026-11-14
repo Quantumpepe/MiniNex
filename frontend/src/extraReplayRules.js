@@ -39,6 +39,6 @@ export function validExtraReplayResult(value,asset,options) {
 // A virtual budget is per-coin, never a real wallet allocation.
 export function validExtraReplayBudget(value) {
   const amount=Number(value);
-  return typeof value==='string'&&/^[1-9][0-9]{2,3}$/.test(value)&&
-    Number.isInteger(amount)&&amount>=100&&amount<=5000;
+  return typeof value==='string'&&/^[1-9][0-9]*$/.test(value)&&
+    Number.isSafeInteger(amount)&&amount>0;
 }

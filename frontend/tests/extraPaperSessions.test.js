@@ -45,7 +45,7 @@ test('individual virtual budgets and USD stable settlement validate without auth
     settings.budget=symbol==='SOL'?'250':'900';
     assert.equal(extraPaperCanStart(settings),true);
   }
-  assert.equal(extraPaperCanStart({...defaultReplayOption(),budget:'5001'}),false);
+  assert.equal(extraPaperCanStart({...defaultReplayOption(),budget:'5001'}),true);
   assert.equal(extraPaperCanStart({...defaultReplayOption(),stable:'BTC'}),false);
   assert.equal(extraPaperCanStart({...defaultReplayOption(),mode:'LEVERAGED_SHORT'}),false);
   assert.equal(extraPaperCanStart({...defaultReplayOption(),horizon:'36h'}),false);
@@ -64,7 +64,7 @@ test('server active and paused paper records must be wallet-free, account-specif
   for(const patch of [
     {asset:'XRP'},{status:'LIVE'},{paper_only:false},{simulation_only:false},
     {real_trading_enabled:true},{wallet_funds_used:true},{budget_isolated:false},
-    {cost_model:'LIVE_SWAP'}, {budget_usd:5001}, {budget_usd:0},
+    {cost_model:'LIVE_SWAP'}, {budget_usd:9007199254740992}, {budget_usd:0},
     {settlement:'ETH'}, {strategy_mode:'MARGIN'}, {horizon:'36h'},
     {pause_exit_pending:null},{revision:-1},
     {position:{...fixture.position,stable_cash:'NaN'}},

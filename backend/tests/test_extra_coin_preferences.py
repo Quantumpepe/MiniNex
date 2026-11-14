@@ -126,7 +126,7 @@ def test_changes_persist_with_version_and_no_cross_asset_updates(db):
 
 
 @pytest.mark.parametrize("patch", [
-    {"budget_usd": 0}, {"budget_usd": 5001}, {"budget_usd": True},
+    {"budget_usd": 0}, {"budget_usd": 9007199254740992}, {"budget_usd": True},
     {"mode": "LEVERAGED_SHORT"}, {"stable": "DAI"}, {"horizon": "2h"},
     {"expected_revision": -1}, {"expected_revision": "0"},
 ])

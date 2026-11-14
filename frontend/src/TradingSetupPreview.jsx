@@ -118,8 +118,8 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
     if(!enabled||!getAccessToken||extraSettingsStatus!=='ready'||
        extraSaving||!EXTRA_REPLAY_COINS.includes(asset)||!prior||
        !coinPreferenceChanged(selected,prior)||
-       !Number.isInteger(Number(selected?.budget))||
-       Number(selected.budget)<100||Number(selected.budget)>5000)return;
+       !Number.isSafeInteger(Number(selected?.budget))||
+       Number(selected.budget)<=0)return;
     setExtraSaving(asset);
     try{
       const token=await getAccessToken();

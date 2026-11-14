@@ -66,7 +66,7 @@ def test_exact_micro_usd_no_float_rounding_or_invalid_values():
     assert orders.valid_notional("500.000000") == Decimal("500.000000")
     assert orders.valid_notional("0.000000", allow_zero=True) == 0
     for raw in ("0", "0.000000", "-5", "1e9", "NaN", "Infinity",
-                " 10", "10000000", "1.0000001", "", "01", True, None, 2.0):
+                " 10", "10000000000000000000000", "1.0000001", "", "01", True, None, 2.0):
         with pytest.raises(ValueError):
             orders.valid_notional(raw)
 
@@ -147,16 +147,21 @@ def test_rollover_exposure_includes_pending_without_underestimating_24h():
             "rolling_24h_including_pending_usd": "100.000000",
         }
     for pending, settled, proposed in (
-        ("195", "0", "25"), ("0", "160", "25"),
-        ("0", "0", "76"), ("0", "0", "10000000"),
+        ("195", "0", "25"), ("0", "0", "10000000000000000000000"),
     ):
         with pytest.raises((HTTPException, ValueError)):
             orders.build_risk_snapshot(
                 budget, unfilled_total_usd=pending,
                 confirmed_24h_usd=settled, proposed_usd=proposed)
+    # Repeat trading with the user's own capital after completed sales is
+    # not subject to the former daily-turnover or per-order quotas.
+    assert orders.build_risk_snapshot(
+        budget,unfilled_total_usd="0",
+        confirmed_24h_usd="160",proposed_usd="100"
+    )["proposed_usd"]=="100"
     for gate in (
         {"trading_paused": True}, {"privy_grant_verified": False},
-        {"max_order_usd": "0"}, {"planned_capital_usd": "0"},
+        {"planned_capital_usd": "0"},
     ):
         with pytest.raises(HTTPException):
             orders.build_risk_snapshot(

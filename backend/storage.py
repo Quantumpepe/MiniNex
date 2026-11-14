@@ -50,20 +50,14 @@ SCHEMA = (
     """CREATE TABLE IF NOT EXISTS mininex_live_eth_limits (
         privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
         planned_capital_usd NUMERIC(28,6) NOT NULL DEFAULT 0
-            CHECK (planned_capital_usd >= 0 AND planned_capital_usd < 10000000),
+            CHECK (planned_capital_usd >= 0),
         max_order_usd NUMERIC(28,6) NOT NULL DEFAULT 0
-            CHECK (max_order_usd >= 0 AND max_order_usd < 10000000),
+            CHECK (max_order_usd >= 0),
         max_daily_turnover_usd NUMERIC(28,6) NOT NULL DEFAULT 0
-            CHECK (max_daily_turnover_usd >= 0 AND max_daily_turnover_usd < 10000000),
+            CHECK (max_daily_turnover_usd >= 0),
         trading_paused BOOLEAN NOT NULL DEFAULT TRUE,
         revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        CHECK (max_order_usd <= planned_capital_usd),
-        CHECK (max_order_usd <= max_daily_turnover_usd),
-        CHECK ((planned_capital_usd = 0 AND max_order_usd = 0 AND
-                max_daily_turnover_usd = 0) OR
-               (planned_capital_usd > 0 AND max_order_usd > 0 AND
-                max_daily_turnover_usd > 0))
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
     # BTC native-UTXO LIVE caps are independent of ETH limits and PAPER budgets.
     # They never grant wallet authority; BTC remains paused until reviewed
@@ -71,20 +65,14 @@ SCHEMA = (
     """CREATE TABLE IF NOT EXISTS mininex_live_btc_limits (
         privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
         planned_capital_usd NUMERIC(28,6) NOT NULL DEFAULT 0
-            CHECK (planned_capital_usd >= 0 AND planned_capital_usd < 10000000),
+            CHECK (planned_capital_usd >= 0),
         max_order_usd NUMERIC(28,6) NOT NULL DEFAULT 0
-            CHECK (max_order_usd >= 0 AND max_order_usd < 10000000),
+            CHECK (max_order_usd >= 0),
         max_daily_turnover_usd NUMERIC(28,6) NOT NULL DEFAULT 0
-            CHECK (max_daily_turnover_usd >= 0 AND max_daily_turnover_usd < 10000000),
+            CHECK (max_daily_turnover_usd >= 0),
         trading_paused BOOLEAN NOT NULL DEFAULT TRUE,
         revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        CHECK (max_order_usd <= planned_capital_usd),
-        CHECK (max_order_usd <= max_daily_turnover_usd),
-        CHECK ((planned_capital_usd = 0 AND max_order_usd = 0 AND
-                max_daily_turnover_usd = 0) OR
-               (planned_capital_usd > 0 AND max_order_usd > 0 AND
-                max_daily_turnover_usd > 0))
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
     # A signed EIP-191 enrollment intent is NOT Privy wallet authority.
     # One-time pending challenge, independently revocable and wallet-bound.
@@ -185,7 +173,7 @@ SCHEMA = (
                              'SUBMITTED','CONFIRMED','REVERTED','REORG_PENDING',
                              'CANCELLED','EXPIRED')),
         reserved_notional_usd NUMERIC(28,6) NOT NULL
-            CHECK (reserved_notional_usd > 0 AND reserved_notional_usd < 10000000),
+            CHECK (reserved_notional_usd > 0),
         tx_hash TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         submitted_at TIMESTAMPTZ,
@@ -358,8 +346,8 @@ SCHEMA = (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
             ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
-        budget_usd INTEGER NOT NULL DEFAULT 500
-            CHECK (budget_usd BETWEEN 100 AND 5000),
+        budget_usd BIGINT NOT NULL DEFAULT 500
+            CHECK (budget_usd > 0),
         mode TEXT NOT NULL DEFAULT 'LONG'
             CHECK (mode IN ('LONG','SPOT_SHORT','AUTO')),
         stable TEXT NOT NULL DEFAULT 'USDC'
@@ -382,7 +370,7 @@ SCHEMA = (
         strategy_mode TEXT NOT NULL CHECK (strategy_mode IN ('LONG','SPOT_SHORT')),
         horizon TEXT NOT NULL CHECK (horizon IN ('5m','15m','1h','24h')),
         initial_demo_cash NUMERIC(28,8) NOT NULL
-            CHECK (initial_demo_cash BETWEEN 100 AND 5000),
+            CHECK (initial_demo_cash > 0),
         state_json JSONB NOT NULL DEFAULT '{}'::jsonb,
         revision BIGINT NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -459,6 +447,45 @@ SCHEMA = (
        ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
        CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
 
+    """DO $paper_budget_migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+              'mininex_extra_coin_preferences'::regclass,
+              'mininex_extra_paper_sessions'::regclass)
+          AND pg_get_constraintdef(c.oid) LIKE '%5000%'
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $paper_budget_migration$""",
+    """ALTER TABLE mininex_extra_coin_preferences
+       ALTER COLUMN budget_usd TYPE BIGINT""",
+    """DO $migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+            'mininex_live_eth_limits'::regclass,
+            'mininex_live_btc_limits'::regclass,
+            'mininex_live_order_intents'::regclass)
+          AND (
+            pg_get_constraintdef(c.oid) LIKE '%10000000%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_order_usd <=%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_daily_turnover_usd%'
+          )
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $migration$""",
 )
 
 

@@ -44,7 +44,7 @@ def test_live_amounts_and_caps_are_exact():
         ("1e6", "1", "1"),
         ("NaN", "1", "1"),
         ("1.0000001", "1", "1"),
-        ("10000000", "100", "100"),
+        ("10000000000000000000000", "100", "100"),
         (True, "1", "1"),
     ):
         with pytest.raises(HTTPException) as err:
@@ -73,16 +73,16 @@ def test_spend_guard_defaults_to_closed_even_with_saved_budget():
     assert controls.validate_spend_limits(
         budget=fields, order_usd="80", reserved_usd="20",
         spent_today_usd="150") == Decimal("80")
-    for order, reserved, spent in (
-        ("101", "0", "0"),
-        ("70", "450", "0"),
-        ("70", "0", "200"),
-    ):
-        with pytest.raises(HTTPException) as err:
+    # Neither a smaller legacy order cap nor yesterday's turnover limits
+    # a new trade. Only the owner budget and active reserved capital matter.
+    assert controls.validate_spend_limits(
+        budget=fields,order_usd="101",
+        reserved_usd="0",spent_today_usd="100000")==Decimal("101")
+    for order, reserved in (("70","450"),("501","0")):
+        with pytest.raises(HTTPException):
             controls.validate_spend_limits(
-                budget=fields, order_usd=order,
-                reserved_usd=reserved, spent_today_usd=spent)
-        assert err.value.status_code == 409
+                budget=fields,order_usd=order,
+                reserved_usd=reserved,spent_today_usd="0")
     with pytest.raises(HTTPException):
         controls.validate_spend_limits(
             budget=fields, order_usd="NaN", reserved_usd="0", spent_today_usd="0")
@@ -99,8 +99,8 @@ def test_schema_has_separate_paused_eth_limits_and_no_authorization_column():
     ddl = "\n".join(SCHEMA)
     assert "CREATE TABLE IF NOT EXISTS mininex_live_eth_limits" in ddl
     assert "trading_paused BOOLEAN NOT NULL DEFAULT TRUE" in ddl
-    assert "max_order_usd <= planned_capital_usd" in ddl
-    assert "max_order_usd <= max_daily_turnover_usd" in ddl
+    assert "max_order_usd <= planned_capital_usd" not in ddl
+    assert "max_order_usd <= max_daily_turnover_usd" not in ddl
     assert "mininex_budget_preferences" in ddl
     assert "mininex_user_paper_sessions" in ddl
     assert "INSERT INTO mininex_live_eth_limits(privy_did)" in __import__(

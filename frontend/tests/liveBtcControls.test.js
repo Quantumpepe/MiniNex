@@ -25,8 +25,12 @@ test('BTC live budget allows more than 5000 without changing paper limits',()=>{
     planned_capital_usd:'9900',max_order_usd:'1000',
     max_daily_turnover_usd:'7000',
   };
-  assert.deepEqual(validatedLiveBtcDraft(draft),draft);
-  assert.equal(validatedLiveBtcDraft({...draft,max_order_usd:'7001'}),null);
+  assert.deepEqual(validatedLiveBtcDraft(draft),{
+    planned_capital_usd:'9900',max_order_usd:'9900',
+    max_daily_turnover_usd:'9900'});
+  assert.deepEqual(validatedLiveBtcDraft({...draft,max_order_usd:'7001'}),{
+    planned_capital_usd:'9900',max_order_usd:'9900',
+    max_daily_turnover_usd:'9900'});
   assert.equal(validatedLiveBtcDraft({...draft,planned_capital_usd:'NaN'}),null);
 });
 

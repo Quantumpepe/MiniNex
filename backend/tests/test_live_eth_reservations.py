@@ -192,11 +192,8 @@ def test_one_strategist_signal_claims_once_and_replays_never_resend():
 
 @pytest.mark.parametrize("pending,confirmed,amount", [
     ("410", "0", "100"),
-    ("0", "290", "100"),
-    ("250", "10", "100"),
-    ("0", "0", "151"),
 ])
-def test_pending_capital_and_daily_turnover_reject_overspend(
+def test_only_owner_selected_pending_capital_blocks_overspend(
     pending, confirmed, amount,
 ):
     db = MockTransaction(pending=pending, confirmed=confirmed)
@@ -204,6 +201,20 @@ def test_pending_capital_and_daily_turnover_reject_overspend(
         db.transaction(lambda: attempt(db, amount=amount))
     assert not db.orders
     assert not db.bindings
+
+
+@pytest.mark.parametrize("pending,confirmed,amount", [
+    ("0", "290", "100"),
+    ("250", "10", "100"),
+    ("0", "0", "151"),
+])
+def test_no_per_order_or_daily_cap_for_owner_budget(
+    pending,confirmed,amount,
+):
+    db=MockTransaction(pending=pending,confirmed=confirmed)
+    result=db.transaction(lambda:attempt(db,amount=amount))
+    assert result["claim"]=="RESERVED_NO_SEND"
+    assert len(db.orders)==1
 
 
 def test_sql_transaction_rollback_prevents_half_binding_after_failure():

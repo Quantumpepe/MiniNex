@@ -91,7 +91,7 @@ def derive_policy_atomic_caps(
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError("Bad verified per-order cap") from None
     if (not order.is_finite() or order <= 0
-            or order >= Decimal("10000000")
+            or order >= Decimal("9999999999999999999999")
             or order.as_tuple().exponent < -6):
         raise ValueError("Invalid policy order cap")
     rates = {k: _parsed_price(snapshot, k, now) for k in _TOKENS}

@@ -20,8 +20,8 @@ export function validExtraPaperState(data,asset){
     return false;
   if(data.status==='NOT_STARTED')
     return data.trades.length===0;
-  if(!Number.isFinite(data.budget_usd)||data.budget_usd<100||
-     data.budget_usd>5000||!MODES.has(data.strategy_mode)||
+  if(!Number.isSafeInteger(data.budget_usd)||data.budget_usd<=0||
+     !MODES.has(data.strategy_mode)||
      !STABLES.has(data.settlement)||!HORIZONS.has(data.horizon)||
      !Number.isInteger(data.revision)||data.revision<0||
      !data.position||typeof data.position!=='object')return false;
