@@ -350,8 +350,20 @@ def revoke_eth_consent_intent(did: str) -> dict:
                        WHERE privy_did=%s""",
                     (did,),
                 )
+                # All local state transitions are ONE transaction. A remote
+                # signer is NOT removed by this DB update. It must be
+                # independently revoked and verified in Privy later.
+                cur.execute(
+                    """UPDATE mininex_live_eth_policy_enrollments
+                       SET status='REVOKE_REQUESTED',updated_at=now()
+                       WHERE privy_did=%s AND status<>'REVOKED'
+                       RETURNING status""",
+                    (did,),
+                )
+                policy_revocation_recorded = type(cur.fetchone()) is dict
         return {
             "mode": "ETH_CONSENT_SIGNED_INTENT_ONLY",
+            "privy_policy_ledger_revoke_requested": policy_revocation_recorded,
             "asset": "ETH", "status": "REVOKED_LOCALLY",
             "mininex_live_sends_paused": True,
             "local_consent_intent_revoked": True,
