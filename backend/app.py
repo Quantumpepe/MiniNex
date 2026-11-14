@@ -40,6 +40,7 @@ from .strategy_replay import (
 from .extended_paper_replay import compact_replay_observations
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
+from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
 from .live_eth_controls import get_live_eth_limits, save_live_eth_limits, stop_live_eth
@@ -483,6 +484,21 @@ async def eth_unsigned_swap_preview(
     """Provider-backed ETH swap plan: never returns calldata or executes."""
     did = verify_privy_bearer(authorization)["user_id"]
     result = await make_eth_swap_plan(
+        did, side=request.side, stable=request.stable, amount=request.amount)
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/cost-preview")
+async def eth_readonly_cost_preview(
+    request: EthLiveQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """User-scoped indicative ETH costs; never an executable order."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await get_eth_readonly_cost_preview(
         did, side=request.side, stable=request.stable, amount=request.amount)
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
