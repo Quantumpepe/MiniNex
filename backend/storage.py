@@ -270,6 +270,24 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
        ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
+    # Permanent individual setup for the nine additional coins. This is NOT
+    # shared across coins and does not modify a running PAPER or LIVE session.
+    """CREATE TABLE IF NOT EXISTS mininex_extra_coin_preferences (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
+        budget_usd INTEGER NOT NULL DEFAULT 500
+            CHECK (budget_usd BETWEEN 100 AND 5000),
+        mode TEXT NOT NULL DEFAULT 'LONG'
+            CHECK (mode IN ('LONG','SPOT_SHORT','AUTO')),
+        stable TEXT NOT NULL DEFAULT 'USDC'
+            CHECK (stable IN ('USDC','USDT')),
+        horizon TEXT NOT NULL DEFAULT '15m'
+            CHECK (horizon IN ('5m','15m','1h','24h')),
+        revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset)
+    )""",
     # Independent virtual accounts for nine extra coins. BTC/ETH schemas and
     # real HWM/fee/live ledgers remain untouched. ADA stays unavailable.
     """CREATE TABLE IF NOT EXISTS mininex_extra_paper_sessions (

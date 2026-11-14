@@ -5,6 +5,8 @@ import {coinBySymbol} from './coins.js';
 import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
 import ExtraPaperComparison from './ExtraPaperComparison.jsx';
 import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
+import {validSavedExtraCoinPreferences,savedExtraOptions,coinPreferenceChanged}
+  from './extraCoinPreferenceRules.js';
 
 // Persisted preferences are display/configuration only: no signer authority.
 const INITIAL = Object.freeze({
@@ -31,6 +33,10 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
   const [busy,setBusy]=useState(false);
+  const [savedExtra,setSavedExtra]=useState(null);
+  const [extraSettingsStatus,setExtraSettingsStatus]=useState('loading');
+  const [extraSaving,setExtraSaving]=useState(null);
+  const [extraRefresh,setExtraRefresh]=useState(0);
   // Retain independent virtual backtest settings when switching among coins.
   // These are local hypothetical budgets, not live or stored trade permissions.
   const [replayOptions,setReplayOptions]=useState(()=>Object.fromEntries(
@@ -71,6 +77,73 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
     })();
     return()=>{active=false;};
   },[enabled,getAccessToken]);
+
+  // All nine additional coins persist independently, as BTC and ETH do.
+  useEffect(()=>{
+    let active=true;
+    setSavedExtra(null);
+    setExtraSettingsStatus('loading');
+    setReplayOptions(Object.fromEntries(
+      EXTRA_REPLAY_COINS.map(coin=>[coin,defaultReplayOption()])));
+    if(!enabled||!getAccessToken||!userId)return()=>{active=false;};
+    (async()=>{
+      try{
+        const token=await getAccessToken();
+        if(!token)throw Error('Authentication required');
+        const response=await fetch(API_BASE+'/api/coin-preferences',{
+          method:'GET',cache:'no-store',
+          headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+        });
+        if(!response.ok)throw Error('Individual settings unavailable');
+        const data=await response.json();
+        if(!validSavedExtraCoinPreferences(data))throw Error('Invalid saved settings');
+        if(active){
+          setSavedExtra(data.settings);
+          setReplayOptions(savedExtraOptions(data));
+          setExtraSettingsStatus('ready');
+        }
+      }catch{
+        // Until Render deploy, keep the original individual-coin forms usable.
+        if(active){setSavedExtra(null);setExtraSettingsStatus('failed');}
+      }
+    })();
+    return()=>{active=false;};
+  },[enabled,getAccessToken,userId,extraRefresh]);
+
+  const saveExtra=async asset=>{
+    const selected=replayOptions[asset];
+    const prior=savedExtra?.[asset];
+    if(!enabled||!getAccessToken||extraSettingsStatus!=='ready'||
+       extraSaving||!EXTRA_REPLAY_COINS.includes(asset)||!prior||
+       !coinPreferenceChanged(selected,prior)||
+       !Number.isInteger(Number(selected?.budget))||
+       Number(selected.budget)<100||Number(selected.budget)>5000)return;
+    setExtraSaving(asset);
+    try{
+      const token=await getAccessToken();
+      if(!token)throw Error('Authentication required');
+      const response=await fetch(API_BASE+'/api/coin-preferences/'+asset,{
+        method:'PUT',cache:'no-store',
+        headers:{Authorization:'Bearer '+token,Accept:'application/json',
+                 'Content-Type':'application/json'},
+        body:JSON.stringify({
+          budget_usd:Number(selected.budget),mode:selected.mode,
+          stable:selected.stable,horizon:selected.horizon,
+          expected_revision:prior.revision,
+        }),
+      });
+      if(!response.ok)throw Error('Save failed');
+      const next=await response.json();
+      if(!validSavedExtraCoinPreferences(next))throw Error('Invalid saved settings');
+      setSavedExtra(next.settings);
+      setReplayOptions(old=>({
+        ...old,[asset]:savedExtraOptions(next)[asset],
+      }));
+      setExtraSettingsStatus('ready');
+    }catch{
+      setExtraSettingsStatus('failed');
+    }finally{setExtraSaving(null);}
+  };
 
   const change=(asset,field,value)=>{
     const accepted=field==='mode'?MODES:field==='stable'?STABLES:
@@ -168,7 +241,12 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
-        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]} onChange={changeReplay}/>)}
+        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]}
+        onChange={changeReplay} onSavePreference={saveExtra}
+        preferenceStatus={extraSettingsStatus}
+        preferenceSaved={savedExtra?.[opened]||null}
+        preferenceSaving={extraSaving===opened}
+        onRetryPreference={()=>setExtraRefresh(n=>n+1)}/>)}
     </section>}
     {paperAvailable&&status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
     {paperAvailable&&status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"

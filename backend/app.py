@@ -18,6 +18,7 @@ from .auth import verify_privy_bearer
 from .storage import get_account_summary
 from .budgets import get_budget_preferences, save_budget_preference
 from .trade_preferences import get_trade_preferences, save_trade_preference
+from .extra_coin_preferences import get_coin_preferences, save_coin_preference
 from .unified_strategy_profile import get_strategy_profile, save_strategy_profile
 from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_year
 from .blockchain_preview import fetch_preview, check_address
@@ -850,6 +851,44 @@ def budgets_update(
     return JSONResponse(
         save_budget_preference(did, asset, body.percent, body.expected_revision),
         headers={"Cache-Control": "no-store"},
+    )
+
+
+class IndependentCoinPreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    budget_usd: StrictInt = Field(ge=100, le=5000)
+    mode: Literal["LONG", "SPOT_SHORT", "AUTO"]
+    stable: Literal["USDC", "USDT"]
+    horizon: Literal["5m", "15m", "1h", "24h"]
+    expected_revision: StrictInt = Field(ge=0, lt=2_000_000_000)
+
+
+@app.get("/api/coin-preferences")
+def coin_preferences_status(
+    authorization: str | None = Header(default=None),
+):
+    """Load nine independent saved preferences for this one Privy account."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_coin_preferences(did), headers={
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.put("/api/coin-preferences/{asset}")
+def coin_preferences_update(
+    asset: str, body: IndependentCoinPreferenceRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Save this coin only; no active session, wallet or order mutation."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        save_coin_preference(
+            did, asset, budget_usd=body.budget_usd, mode=body.mode,
+            stable=body.stable, horizon=body.horizon,
+            expected_revision=body.expected_revision,
+        ),
+        headers={"Cache-Control": "private, no-store",
+                 "X-Content-Type-Options": "nosniff"},
     )
 
 
