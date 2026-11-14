@@ -44,6 +44,7 @@ from .strategy_replay import (
 from .extended_paper_replay import compact_replay_observations
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
+from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -543,6 +544,24 @@ async def eth_unsigned_swap_preview(
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/eth/router02-quote")
+async def eth_swaprouter02_quote_preview(
+    request: EthLiveQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Real onchain V3 quote + prepared matching ABI, not a signed order.
+
+    Stable/WETH quote is separate from the final native ETH wrap/unwrap.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await make_policy_compatible_eth_quote(
+        did,side=request.side,stable=request.stable,amount=request.amount)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
