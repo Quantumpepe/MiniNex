@@ -1,18 +1,22 @@
 import React,{useEffect,useState} from 'react';
-import {useSigners} from '@privy-io/react-auth';
+import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
-import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence} from './liveEthRules.js';
+import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,usdUnits} from './liveEthRules.js';
 
 const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
 const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
 
-// This panel NEVER grants trading permission. Privy addSigners must only be
-// exposed after an independently audited, bounded MiniNex signer policy exists.
+// The user may sign an explicit MiniNex policy creation intent. Wallet
+// delegation requires a SEPARATE user-approved Privy addSigners call, and is
+// hidden unless the server has independently verified an audited policy.
 // The existing revoke button removes ALL additional signers per Privy's API.
 export default function LiveEthControls({t,user,address,getAccessToken,enabled}) {
-  const {removeSigners}=useSigners();
+  const {removeSigners,addSigners}=useSigners();
+  const {signMessage}=useSignMessage();
   const [limits,setLimits]=useState(null);
   const [grant,setGrant]=useState(null);
+  const [policyState,setPolicyState]=useState(null);
+  const [grantOffer,setGrantOffer]=useState(null);
   const [draft,setDraft]=useState(null);
   const [phase,setPhase]=useState('loading');
   const [busy,setBusy]=useState(false);
@@ -58,34 +62,50 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     });
   };
   const refresh=async()=>{
-    const [currentLimits,currentGrant]=await Promise.all([
+    const [currentLimits,currentGrant,currentPolicy]=await Promise.all([
       request('/api/live/eth/limits'),
       request('/api/live/eth/authorization'),
+      request('/api/live/eth/policy/lifecycle'),
     ]);
-    if(!validLiveEthLimits(currentLimits)||!validSignerStatus(currentGrant))
+    if(!validLiveEthLimits(currentLimits)||!validSignerStatus(currentGrant)||
+       !validEthPolicyLifecycle(currentPolicy))
       throw Error('Unverified LIVE ETH response');
     applyLimits(currentLimits);
     setGrant(currentGrant);
+    setPolicyState(currentPolicy);
+    if(['REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED'].includes(currentPolicy.status)){
+      try{setGrantOffer(await request('/api/live/eth/policy/grant-review'));}
+      catch{setGrantOffer(null);}
+    }else setGrantOffer(null);
     setPhase('ready');
   };
 
   useEffect(()=>{
     let active=true;
     if(!enabled||!userId){
-      setLimits(null);setGrant(null);setDraft(null);
+      setLimits(null);setGrant(null);setDraft(null);setPolicyState(null);setGrantOffer(null);
       setPhase('loading');setConfirmRevoke(false);
       return()=>{active=false;};
     }
     setPhase('loading');
     (async()=>{
       try{
-        const [lim,authorization]=await Promise.all([
+        const [lim,authorization,lifecycle]=await Promise.all([
           request('/api/live/eth/limits'),
           request('/api/live/eth/authorization'),
+          request('/api/live/eth/policy/lifecycle'),
         ]);
-        if(!validLiveEthLimits(lim)||!validSignerStatus(authorization))throw Error('Unverified status');
+        if(!validLiveEthLimits(lim)||!validSignerStatus(authorization)||
+           !validEthPolicyLifecycle(lifecycle))throw Error('Unverified status');
         if(!active)return;
-        applyLimits(lim);setGrant(authorization);setPhase('ready');
+        applyLimits(lim);setGrant(authorization);setPolicyState(lifecycle);
+        if(['REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED'].includes(lifecycle.status)){
+          try{
+            const offer=await request('/api/live/eth/policy/grant-review');
+            if(active)setGrantOffer(offer);
+          }catch{if(active)setGrantOffer(null);}
+        }else setGrantOffer(null);
+        setPhase('ready');
       }catch{
         if(active){setLimits(null);setGrant(null);setPhase('failed');}
       }
@@ -172,6 +192,76 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     finally{setBusy(false);}
   };
 
+  const setupPolicy=async()=>{
+    if(busy||phase!=='ready'||!ownAddress||!limits?.trading_paused||
+       !policyState||!['NOT_PREPARED','PREPARED'].includes(policyState.status)||
+       usdUnits(limits.max_order_usd)<=0n||mayHaveSigners)return;
+    setBusy(true);setMessage('');
+    try{
+      if(policyState.status==='NOT_PREPARED'){
+        // This EIP-191 signature records enrollment intent ONLY. It does
+        // not delegate a wallet or authorize an on-chain transaction.
+        const challenge=await request('/api/live/eth/consent/challenge','POST');
+        if(challenge?.wallet?.toLowerCase()!==ownAddress.toLowerCase()||
+           challenge?.execution_enabled!==false||typeof challenge?.challenge!=='string')
+          throw Error('Unverified consent challenge');
+        const signed=await signMessage({message:challenge.challenge},{
+          address:ownAddress
+        });
+        if(typeof signed?.signature!=='string')throw Error('Wallet signature missing');
+        const confirmed=await request('/api/live/eth/consent/confirm','POST',{
+          signature:signed.signature
+        });
+        if(confirmed?.execution_enabled!==false||confirmed?.status!=='SIGNED_INTENT')
+          throw Error('Unsigned enrollment intent');
+        const prepared=await request('/api/live/eth/policy/prepare','POST');
+        if(prepared?.status!=='PREPARED'||prepared?.execution_enabled!==false)
+          throw Error('Policy preparation not verified');
+      }
+      // This POST can create one non-delegated Privy policy after a DB
+      // SUBMITTING reservation. An uncertain result may NEVER auto-retry.
+      const published=await request('/api/live/eth/policy/create','POST');
+      if(published?.status!=='REMOTE_VERIFIED_UNATTACHED'||
+         published?.execution_enabled!==false)throw Error('Policy readback missing');
+      setMessage(t.liveEthPolicyCreated);
+    }catch{
+      setMessage(t.liveEthPolicySetupFailed);
+    }finally{
+      try{await refresh();}catch{setPhase('failed');}
+      setBusy(false);
+    }
+  };
+
+  const grantPrivySigner=async()=>{
+    if(busy||!ownAddress||!validScopedGrantOffer(grantOffer,ownAddress)||
+       !limits?.trading_paused||mayHaveSigners)return;
+    setBusy(true);setMessage('');
+    try{
+      const offer=await request('/api/live/eth/policy/grant-review');
+      if(!validScopedGrantOffer(offer,ownAddress)||
+         offer.policy_id!==grantOffer.policy_id||
+         offer.execution_signer_id!==grantOffer.execution_signer_id)
+        throw Error('Privy grant terms changed');
+      // THE USER must explicitly accept Privy's native owner authorization.
+      // No empty policyIds, alternate contracts or broad wallet delegates.
+      await addSigners({
+        address:ownAddress,
+        signers:[{signerId:offer.execution_signer_id,policyIds:[offer.policy_id]}]
+      });
+      const checked=await request('/api/live/eth/policy/confirm-grant','POST');
+      if(checked?.status!=='GRANT_VERIFIED'||
+         checked?.signer_policy_exactly_verified!==true||
+         checked?.execution_enabled!==false)
+        throw Error('Privy signer grant not independently verified');
+      setMessage(t.liveEthGrantVerified);
+    }catch{
+      setMessage(t.liveEthGrantVerificationFailed);
+    }finally{
+      try{await refresh();}catch{setPhase('failed');}
+      setBusy(false);
+    }
+  };
+
   const changes=FIELDS.some(f=>draft?.[f]!==limits?.[f]);
   const canSave=phase==='ready'&&!busy&&!!validatedLiveEthDraft(draft)&&changes;
 
@@ -212,6 +302,34 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
             type="button" onClick={save} disabled={!canSave}>{t.liveEthSaveLimits}</button>
           {changes&&!validatedLiveEthDraft(draft)&&
             <p role="alert" className="privy-wallet-description">{t.liveEthInvalidLimits}</p>}
+        </div>
+        <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
+          <strong>{t.liveEthPolicyTitle}</strong>
+          <p className="privy-wallet-description">
+            {policyState?.status==='REMOTE_VERIFIED_UNATTACHED'
+              ?t.liveEthPolicyCreated:policyState?.status==='GRANT_VERIFIED'
+              ?t.liveEthGrantVerified:policyState?.status==='PREPARED'
+              ?t.liveEthPolicyPrepared:policyState?.status==='NOT_PREPARED'
+              ?t.liveEthPolicyNotPrepared:t.liveEthPolicyNeedsReview}
+          </p>
+          {['NOT_PREPARED','PREPARED'].includes(policyState?.status)&&
+            <button className="privy-wallet-action privy-wallet-action--secondary"
+              type="button" onClick={setupPolicy}
+              disabled={busy||!ownAddress||mayHaveSigners||!limits.trading_paused||
+                usdUnits(limits.max_order_usd)===0n||changes}>
+              {t.liveEthPolicySetupButton}</button>}
+          {validScopedGrantOffer(grantOffer,ownAddress)&&
+            <>
+              <p role="alert" className="privy-wallet-description">
+                {t.liveEthPrivyGrantWarning}
+              </p>
+              <button type="button" className="privy-wallet-action"
+                disabled={busy||mayHaveSigners||changes||!limits.trading_paused}
+                onClick={grantPrivySigner}>{t.liveEthGrantButton}</button>
+            </>}
+          {!validScopedGrantOffer(grantOffer,ownAddress)&&
+             policyState?.status==='REMOTE_VERIFIED_UNATTACHED'&&
+            <p className="privy-wallet-description">{t.liveEthGrantAuditLocked}</p>}
         </div>
         <button className="privy-wallet-action privy-wallet-action--secondary"
           type="button" onClick={stop} disabled={busy}>{t.liveEthStopButton}</button>
