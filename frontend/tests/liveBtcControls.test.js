@@ -60,7 +60,7 @@ test('BTC live limits appear only under selected BTC coin, never global',()=>{
   assert.match(setup,/opened==='BTC'&&<LiveBtcControls/);
   assert.match(setup,/userId=\{userId\} getAccessToken=\{getAccessToken\}/);
   assert.match(setup,/renderSessionControls\?\.\(opened\)/);
-  assert.match(panel,/<LiveEthControls/);
+  assert.doesNotMatch(panel,/<LiveEthControls/);
   assert.doesNotMatch(btc,/sendTransaction\(|eth_sendTransaction|addSigners\(|sendBitcoin/);
   assert.match(btc,/\/api\/live\/btc\/limits/);
   assert.match(btc,/\/api\/live\/btc\/stop/);
