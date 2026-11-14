@@ -89,6 +89,44 @@ SCHEMA = (
         CHECK (expires_at <= issued_at + interval '5 minutes'),
         CHECK (policy_owner_id <> execution_signer_id)
     )""",
+    # Stage 21: durable per-account pending Privy policy lifecycle.
+    # Never conflate a policy record with wallet delegation or trade rights.
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_policy_enrollments (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        wallet_address TEXT NOT NULL
+            CHECK (wallet_address ~ '^0x[0-9a-f]{40}$'),
+        limits_revision BIGINT NOT NULL CHECK (limits_revision >= 0),
+        policy_owner_id TEXT NOT NULL CHECK (length(policy_owner_id) BETWEEN 6 AND 160),
+        execution_signer_id TEXT NOT NULL
+            CHECK (length(execution_signer_id) BETWEEN 6 AND 160),
+        candidate_sha256 TEXT NOT NULL
+            CHECK (candidate_sha256 ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL UNIQUE
+            CHECK (idempotency_key ~ '^[0-9a-f]{64}$'),
+        candidate_json JSONB NOT NULL,
+        policy_expires_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PREPARED'
+            CHECK (status IN
+                ('PREPARED','SUBMITTING','UNCERTAIN',
+                 'REMOTE_VERIFIED_UNATTACHED','REVOKE_REQUESTED','REVOKED')),
+        policy_id TEXT UNIQUE,
+        remote_policy_sha256 TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        last_attempt_at TIMESTAMPTZ,
+        remote_verified_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        CHECK (policy_owner_id <> execution_signer_id),
+        CHECK (policy_id IS NULL OR policy_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        CHECK (remote_policy_sha256 IS NULL OR
+               remote_policy_sha256 ~ '^[0-9a-f]{64}$'),
+        CHECK (status <> 'REMOTE_VERIFIED_UNATTACHED' OR
+               (policy_id IS NOT NULL AND remote_policy_sha256 IS NOT NULL
+                AND remote_verified_at IS NOT NULL)),
+        CHECK (status NOT IN ('SUBMITTING','UNCERTAIN') OR
+               last_attempt_at IS NOT NULL),
+        CHECK (status <> 'REVOKED' OR revoked_at IS NOT NULL)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_order_intents (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
