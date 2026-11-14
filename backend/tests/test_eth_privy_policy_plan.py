@@ -10,6 +10,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend import app as api
@@ -65,7 +66,7 @@ def test_independent_live_user_caps_not_100_usdc():
     caps = plan["snapshot"]["caps"]
     assert caps["usdc_max_input_micro"] == "5000000000"
     assert caps["usdt_max_input_micro"] == "5000000000"
-    assert caps["weth_max_input_wei"] == str((5*10**21)//3)
+    assert caps["weth_max_input_wei"] == str((5*10**18)//3)
     assert caps["native_wrap_max_wei"] == caps["weth_max_input_wei"]
     assert plan["snapshot"]["wallet"] == WALLET
     assert plan["snapshot"]["limits_revision"] == 3
@@ -151,7 +152,7 @@ def test_unverified_wallet_owner_signer_paused_or_caps_fail_closed(bad):
 
 def test_missing_or_same_quorum_ids_are_rejected():
     for owner, signer in ((OWNER, OWNER), ("", SIGNER), (OWNER, "")):
-        with pytest.raises((ValueError, Exception)):
+        with pytest.raises((ValueError, HTTPException)):
             planner.build_verified_eth_policy_candidate(
                 evidence=verified(), snapshot=rates(), owner=owner,
                 executor=signer, now=NOW,
