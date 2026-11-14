@@ -71,6 +71,7 @@ export default function ExtraCoinStrategyReplay({asset,t,enabled,options,onChang
           onChange={event=>onChange(asset,'mode',event.target.value)}>
           <option value="LONG">{t.privySetupLong}</option>
           <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
+           <option value="AUTO">AUTO (Long + Spot)</option>
         </select>
       </label>
       <label><span>{t.privySetupHorizon}</span>
