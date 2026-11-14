@@ -156,11 +156,11 @@ export default function WalletBalances({t,getAccessToken,userId}) {
         BNB / POL / AVAX / LINK / UNI: {t.privyBalancesUnavailable}
       </p>}
       {nativeStatus==='ready'&&<div className="privy-hwm-ledger privy-balances-grid"
-        aria-label="Native SOL XRP TRX holdings">
+        aria-label="Native SOL XRP TRX DOGE holdings">
         {NATIVE_COINS.map(asset=><div className="privy-hwm-row privy-balance-item" key={asset}>
           <span className="privy-balance-asset"><strong>{asset}</strong>
             <small className="privy-balance-network">{
-              {SOL:'Solana',XRP:'XRP Ledger',TRX:'TRON'}[asset]
+              {SOL:'Solana',XRP:'XRP Ledger',TRX:'TRON',DOGE:'Dogecoin'}[asset]
             }</small>
           </span>
           <strong className="privy-balance-value">{
@@ -176,7 +176,7 @@ export default function WalletBalances({t,getAccessToken,userId}) {
         {t.privyBalancesLoading}
       </p>}
       {nativeStatus==='failed'&&<p className="privy-wallet-description" role="status">
-        SOL / XRP / TRX: {t.privyBalancesUnavailable}
+        SOL / XRP / TRX / DOGE: {t.privyBalancesUnavailable}
       </p>}
       <p className="privy-wallet-description">{t.coinOtherBalancesPending}</p>
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary privy-balance-refresh"
