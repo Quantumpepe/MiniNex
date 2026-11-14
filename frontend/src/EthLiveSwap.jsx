@@ -108,31 +108,27 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
   }
 
   return <div className="mininex-swap-quote" aria-label="ETH Privy real swap">
-    <strong>ETH · Privy LIVE ERC20/WETH</strong>
-    <p className="privy-wallet-description">
-      {t?.language==='en'?
-        'Real Ethereum wallet transaction, user confirmation required. Native ETH conversion is not yet integrated.':
-        'Echte Ethereum-Wallet-Transaktion mit Bestätigung. Die Umwandlung in natives ETH ist noch nicht integriert.'}
-    </p>
+    <strong>{t.liveSwapTitle}</strong>
+    <p className="privy-wallet-description">{t.liveSwapNote}</p>
     {!attempted.current&&['idle','failed','expired','approval-confirmed'].includes(stage)&&
       <button type="button" className="privy-wallet-action"
         disabled={!enabled||busy||!wallet||!amount} onClick={prepare}>
-        {busy?'…':'Privy LIVE Swap vorbereiten'}</button>}
+        {busy?'…':t.liveSwapPrepare}</button>}
     {stage==='approval'&&<button type="button" className="privy-wallet-action"
       disabled={busy||Date.now()>=review?.expiresAt} onClick={()=>submit('approval')}>
-      Token-Ausgabe für diesen Betrag genehmigen</button>}
+      {t.liveSwapApprove}</button>}
     {stage==='ready'&&<button type="button" className="privy-wallet-action"
       disabled={busy||Date.now()>=review?.expiresAt} onClick={()=>submit('swap')}>
-      Echten ERC20/WETH-Swap mit Privy signieren</button>}
+      {t.liveSwapSign}</button>}
     {hash&&<div><code>{hash}</code>
       <a target="_blank" rel="noopener noreferrer"
-        href={'https://etherscan.io/tx/'+hash}>Etherscan</a></div>}
+        href={'https://etherscan.io/tx/'+hash}>{t.liveSwapExplorer}</a></div>}
     {['approval-submitted','swap-submitted'].includes(stage)&&
       <button type="button" className="privy-wallet-action"
-        disabled={busy} onClick={receipt}>Transaktion bestätigen</button>}
-    {stage==='approval-confirmed'&&<p>Token-Freigabe bestätigt. Für einen frischen Swap-Kurs erneut vorbereiten.</p>}
-    {stage==='swap-confirmed'&&<p>ERC20/WETH-Tausch in einem Block bestätigt. Native ETH-Abrechnung bleibt ausstehend.</p>}
+        disabled={busy} onClick={receipt}>{t.liveSwapCheckReceipt}</button>}
+    {stage==='approval-confirmed'&&<p>{t.liveSwapApprovalConfirmed}</p>}
+    {stage==='swap-confirmed'&&<p>{t.liveSwapConfirmed}</p>}
     {error&&<p role="alert">{error}</p>}
-    {busy&&<p role="status">Privy / Ethereum …</p>}
+    {busy&&<p role="status">{t.liveSwapWaiting}</p>}
   </div>;
 }
