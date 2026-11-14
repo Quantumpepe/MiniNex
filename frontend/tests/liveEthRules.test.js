@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft} from '../src/liveEthRules.js';
+import {usdUnits,validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence} from '../src/liveEthRules.js';
 
 const limits=()=>{
   return {
@@ -61,4 +61,49 @@ test('Privy signer status must never be mistaken for active trading',()=>{
     {automated_signing_enabled:true}, {trading_approved:true},
     {policy_contents_verified:true}, {chain_id:56}, {asset:'BTC'}
   ])assert.equal(validSignerStatus({...status(),...patch}),false);
+});
+
+
+const walletAddress = '0x'+'a'.repeat(40);
+const remoteAbsence = ()=>({
+  mode:'PRIVY_SIGNER_ABSENCE_REMOTE_READ_ONLY',
+  asset:'ETH',chain_id:1,
+  verified_wallet_address:walletAddress,
+  wallet_identity_verified:true,
+  wallet_owned_by_authenticated_user:true,
+  remote_wallet_metadata_verified:true,
+  additional_signers_field_verified:true,
+  signer_absence_verified:true,
+  privy_remote_signer_removed_by_backend:false,
+  privy_policy_deleted:false,
+  execution_enabled:false,can_sign:false,can_submit:false,
+});
+
+test('confirmed Privy signer absence requires exact verified wallet',()=>{
+  assert.equal(validWalletSignerAbsence(remoteAbsence(),walletAddress),true);
+  assert.equal(validWalletSignerAbsence(remoteAbsence(),walletAddress.toUpperCase().replace('0X','0x')),true);
+  assert.equal(validWalletSignerAbsence(remoteAbsence(),'0x'+'b'.repeat(40)),false);
+  for(const invalid of [null,'',0,undefined,'abcdef']) {
+    assert.equal(validWalletSignerAbsence(remoteAbsence(),invalid),false);
+  }
+});
+
+test('a successful SDK removal without independent remote readback is never proof',()=>{
+  const original=remoteAbsence();
+  for(const patch of [
+    {mode:'USER_CONFIRMED'}, {chain_id:56}, {asset:'BTC'},
+    {wallet_identity_verified:false},
+    {wallet_owned_by_authenticated_user:false},
+    {remote_wallet_metadata_verified:false},
+    {additional_signers_field_verified:false},
+    {signer_absence_verified:false},
+    {signer_absence_verified:null},
+    {verified_wallet_address:null},
+    {verified_wallet_address:'0x'+'b'.repeat(40)},
+    {privy_policy_deleted:true},
+    {privy_remote_signer_removed_by_backend:true},
+    {execution_enabled:true},{can_sign:true},{can_submit:true},
+  ])assert.equal(validWalletSignerAbsence({...original,...patch},walletAddress),false);
+  assert.equal(validWalletSignerAbsence({walletRemovedBySdk:true},walletAddress),false);
+  assert.equal(validWalletSignerAbsence(null,walletAddress),false);
 });
