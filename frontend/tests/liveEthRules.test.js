@@ -23,7 +23,7 @@ test('USD limits use exact integer base units; reject invalid numeric forms',()=
   assert.equal(usdUnits('9999999.999999'),9999999999999n);
   for(const bad of [
     null,0,100,false,'-1','NaN','Infinity','1e3','01',' 1','1.0000001',
-    '10000000','1,000','1.2.3','', '0x12'
+    '10000000000000000000000','1,000','1.2.3','', '0x12'
   ])assert.equal(usdUnits(bad),null);
 });
 
@@ -39,17 +39,19 @@ test('ETH limit snapshots are safe only when LIVE signer and order access are of
   for(const patch of denied)assert.equal(validLiveEthLimits({...limits(),...patch}),false);
 });
 
-test('exact LIVE spending draft must respect caps',()=>{
-  const draft={
-    planned_capital_usd:'150.10',max_order_usd:'60',max_daily_turnover_usd:'70',
-  };
-  assert.deepEqual(validatedLiveEthDraft(draft),draft);
-  assert.deepEqual(validatedLiveEthDraft({
+test('only user-selected ETH budget is editable, without extra quotas',()=>{
+  const draft={planned_capital_usd:'150.10'};
+  assert.deepEqual(validatedLiveEthDraft(draft),{
+    planned_capital_usd:'150.10',
+    max_order_usd:'150.10',max_daily_turnover_usd:'150.10'
+  });
+  assert.deepEqual(validatedLiveEthDraft({planned_capital_usd:'0'}),{
     planned_capital_usd:'0',max_order_usd:'0',max_daily_turnover_usd:'0'
-  }),{planned_capital_usd:'0',max_order_usd:'0',max_daily_turnover_usd:'0'});
-  assert.equal(validatedLiveEthDraft({...draft,max_order_usd:'180'}),null);
-  assert.equal(validatedLiveEthDraft({...draft,max_daily_turnover_usd:'10'}),null);
-  assert.equal(validatedLiveEthDraft({...draft,planned_capital_usd:'0'}),null);
+  });
+  assert.deepEqual(validatedLiveEthDraft({planned_capital_usd:'10000000'}),{
+    planned_capital_usd:'10000000',
+    max_order_usd:'10000000',max_daily_turnover_usd:'10000000'
+  });
   assert.equal(validatedLiveEthDraft({...draft,planned_capital_usd:'1e5'}),null);
 });
 
