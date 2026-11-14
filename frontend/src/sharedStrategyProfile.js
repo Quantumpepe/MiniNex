@@ -4,7 +4,7 @@ import {EXTRA_REPLAY_COINS} from './extraReplayRules.js';
 // Same eleven trading assets for every user; ADA stays "In Arbeit".
 export const SHARED_STRATEGY_COINS=Object.freeze(
   COINS.filter(coin=>coin.inProgress!==true).map(coin=>coin.symbol));
-const MODES=new Set(['LONG','SPOT_SHORT']);
+const MODES=new Set(['LONG','SPOT_SHORT','AUTO']);
 const HORIZONS=new Set(['5m','15m','1h','24h']);
 
 export function validSharedStrategyProfile(data){
