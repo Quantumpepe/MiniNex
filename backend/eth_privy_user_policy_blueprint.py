@@ -137,7 +137,6 @@ def build_eth_privy_user_policy_blueprint(
         for side in ("BUY", "SELL"):
             source = token if side == "BUY" else WETH_MAINNET
             target = WETH_MAINNET if side == "BUY" else token
-            cap = caps[stable] if side == "BUY" else max_weth
             conditions = _base(SWAPROUTER02_MAINNET, expires_at) + [
                 _tx("value", "eq", "0"),
                 _call("function_name", "eq", "exactInputSingle",
@@ -153,8 +152,6 @@ def build_eth_privy_user_policy_blueprint(
                 _call("exactInputSingle.params.sqrtPriceLimitX96", "eq", "0",
                       EXACT_INPUT_SINGLE_ABI),
                 _call("exactInputSingle.params.amountIn", "gt", "0",
-                      EXACT_INPUT_SINGLE_ABI),
-                _call("exactInputSingle.params.amountIn", "lte", cap,
                       EXACT_INPUT_SINGLE_ABI),
                 # This does NOT by itself enforce the quoted market slippage:
                 # the future executor must independently bind minimumOut to
@@ -176,7 +173,6 @@ def build_eth_privy_user_policy_blueprint(
         "conditions": _base(WETH_MAINNET, expires_at) + [
             _call("function_name", "eq", "deposit", WETH_DEPOSIT_ABI),
             _tx("value", "gt", "0"),
-            _tx("value", "lte", max_wrap),
         ],
     })
     rules.append({
@@ -187,7 +183,6 @@ def build_eth_privy_user_policy_blueprint(
             _call("function_name", "eq", "withdraw", WETH_WITHDRAW_ABI),
             _tx("value", "eq", "0"),
             _call("withdraw.wad", "gt", "0", WETH_WITHDRAW_ABI),
-            _call("withdraw.wad", "lte", max_weth, WETH_WITHDRAW_ABI),
         ],
     })
 

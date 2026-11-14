@@ -52,9 +52,7 @@ def _start_locked(cur,did,stable,grant):
            WHERE privy_did=%s FOR UPDATE""",(did,))
     limits=cur.fetchone()
     if (type(limits) is not dict or
-            min(Decimal(str(limits["planned_capital_usd"])),
-                Decimal(str(limits["max_order_usd"])),
-                Decimal(str(limits["max_daily_turnover_usd"])))<Decimal("15")):
+            Decimal(str(limits["planned_capital_usd"]))<=0):
         raise HTTPException(409,"ETH AUTO live limits not configured")
     cur.execute(
         """SELECT status,policy_id,wallet_address,limits_revision,

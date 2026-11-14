@@ -79,7 +79,7 @@ def valid_notional(raw: object, *, allow_zero: bool = False) -> Decimal:
         amount = Decimal(raw)
     except InvalidOperation:
         raise ValueError("Invalid exact USD notional") from None
-    if not amount.is_finite() or amount < 0 or (amount == 0 and not allow_zero) or amount >= 10_000_000:
+    if not amount.is_finite() or amount < 0 or (amount == 0 and not allow_zero) or amount >= Decimal("9999999999999999999999"):
         raise ValueError("USD notional outside supported range")
     return amount
 
