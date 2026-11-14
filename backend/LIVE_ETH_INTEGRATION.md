@@ -1104,3 +1104,42 @@ pilots, and explicit owner deployment approval are mandatory.
 Uniswap docs: https://developers.uniswap.org/docs/trading/swapping-api/start-building/integration-guide
 
 Privy policy documentation: https://docs.privy.io/security/wallet-infrastructure/policy-and-controls
+
+## Stages 49-56: dormant ETH cost and asset-isolated budget arithmetic
+
+Pull request #82 adds the standalone \`backend/eth_cost_budget_review.py\` and 26
+offline regression cases, with no new HTTP endpoint and **no call path** from
+\`/api/live/eth/swap-plan\`. The reviewer models:
+
+49. Exact ETH (18 decimal) and stablecoin (6 decimal) atomic input and minimum
+    output, without floating-point conversion or implicit rounding.
+50. Maximum possible gas liability (gas limit times max fee per gas), explicit
+    maximums, and at least 0.005 ETH retained in the wallet.
+51. Independently **supplied** fresh ETH and stablecoin USD reference prices.
+    A reference older than 30 seconds, missing price or stablecoin depeg beyond
+    the prototype 0.98-1.02 window fails closed. The function does **not**
+    fetch, verify or guarantee those prices itself.
+52. Explicit provider fee (in stablecoin atomic units), estimated worst-case
+    USD gas, and minimum output not over 2% lower than reference input value.
+    These are **indicative** values and not actual blockchain settlement fees.
+53. ETH-specific LIVE limit version, separate input balances and a hard
+    rejection of another asset's capital limits or PAPER funds.
+54. Independently **supplied** pending ETH order capital and confirmed rolling
+    24-hour spending, including worst-case transaction costs in budget checks.
+    The caller must hold the same-user PostgreSQL risk lock in a future executor.
+55. Explicit conservative blocker codes. Even a cost review with no arithmetic
+    blockers returns \`can_reserve=false\`, \`can_sign=false\`,
+    \`can_submit=false\`, \`live_trading_enabled=false\`, and truthfully reports
+    that input provenance and database locking were **not verified here**.
+56. Targeted adversarial tests for spoofed cross-asset budgets, stale prices,
+    fee and gas extremes, insufficient native/stable balances and stop state.
+
+**This is not a completed swap integration.** The reviewer is deliberately
+dormant; no code path uses its output to move funds. Before exposing its
+figures to app users or a future worker, independently obtain verified wallet
+balances, current quote/token units, trusted independent ETH and stablecoin
+reference prices, up-to-date provider fee/gas evidence, and the per-user ETH
+risk/ledger snapshot under a single transaction lock. Do not treat a quote
+preview, an offline calculation, a green test suite or a policy ID as wallet
+authorization. These changes leave Privy signers, current simulations,
+Strategist, coin-separated trade history, and portfolio untouched.
