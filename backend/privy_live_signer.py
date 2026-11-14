@@ -38,14 +38,22 @@ def signer_configuration(did: str | None = None) -> dict[str, str] | None:
     if did is not None:
         _safe_did(did)
         from .eth_privy_policy_ledger import get_eth_policy_ledger_status
-        row = get_eth_policy_ledger_status(did)
-        if (row.get("status") == "GRANT_VERIFIED"
-                and row.get("live_limits_revision_matches") is True
-                and row.get("policy_expired") is False
-                and _PRIVY_ID.fullmatch(str(row.get("policy_id") or ""))):
-            policy = row["policy_id"]
-        elif not _PRIVY_ID.fullmatch(policy):
-            return None
+        try:
+            row = get_eth_policy_ledger_status(did)
+        except HTTPException:
+            # Preserve legacy single-policy diagnostics when a database is
+            # unavailable. Live submission additionally requires its own
+            # locked GRANT_VERIFIED database row and fails closed there.
+            if not _PRIVY_ID.fullmatch(policy):
+                return None
+        else:
+            if (row.get("status") == "GRANT_VERIFIED"
+                    and row.get("live_limits_revision_matches") is True
+                    and row.get("policy_expired") is False
+                    and _PRIVY_ID.fullmatch(str(row.get("policy_id") or ""))):
+                policy = row["policy_id"]
+            elif not _PRIVY_ID.fullmatch(policy):
+                return None
     if not _PRIVY_ID.fullmatch(policy) or quorum == policy:
         return None
     return {"signer_id": quorum, "policy_id": policy}
