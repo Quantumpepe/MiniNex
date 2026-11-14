@@ -132,3 +132,19 @@ def test_auto_never_uses_or_changes_a_different_coin_portfolio(monkeypatch):
     previous=(eth.coin_quantity,eth.stable_cash,eth.trade_count)
     evaluate_coin_strategy("BTC",btc,OneAssetMarket("BTC",200.0),1000.0,"15m")
     assert (eth.coin_quantity,eth.stable_cash,eth.trade_count)==previous
+
+def test_auto_discount_reentry_never_buys_above_last_exit_on_weak_recovery(monkeypatch):
+    monkeypatch.setattr(PaperAutoEngine, "_signal",
+                        lambda self, name, at, price: signals(falling=False))
+    p=PaperPortfolio(
+        asset="BTC", settlement="USDC", strategy_mode="AUTO",
+        stable_cash=100.0, coin_quantity=0.0, cost_basis=0.0,
+        last_exit_price=200.0, post_exit_low=195.0, last_trade_at=1000.0,
+        last_sold_quantity=0.4, initial_equity=100.0,
+    )
+    # Recovered from 195 but now HIGHER than the earlier exit at 200.
+    # AUTO must not confuse a higher entry with a cheaper spot rebuy.
+    result=evaluate_coin_strategy("BTC",p,OneAssetMarket("BTC",201.0),1200.0,"15m")
+    assert result.action == "WAIT"
+    assert p.coin_quantity == 0.0
+    assert p.trade_count == 0
