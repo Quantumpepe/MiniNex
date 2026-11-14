@@ -121,7 +121,7 @@ SCHEMA = (
         CHECK (policy_id IS NULL OR policy_id ~ '^[A-Za-z0-9_-]{6,160}$'),
         CHECK (remote_policy_sha256 IS NULL OR
                remote_policy_sha256 ~ '^[0-9a-f]{64}$'),
-        CHECK (status <> 'REMOTE_VERIFIED_UNATTACHED' OR
+        CHECK (status NOT IN ('REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED') OR
                (policy_id IS NOT NULL AND remote_policy_sha256 IS NOT NULL
                 AND remote_verified_at IS NOT NULL)),
         CHECK (status NOT IN ('SUBMITTING','UNCERTAIN') OR
