@@ -84,6 +84,8 @@ def derive_policy_atomic_caps(
     """
     if type(now) is not int or now <= 0:
         raise ValueError("Bad timestamp")
+    if type(max_order_usd) is not str:
+        raise ValueError("Exact verified LIVE order amount required")
     try:
         order = Decimal(max_order_usd)
     except (InvalidOperation, TypeError, ValueError):
