@@ -956,6 +956,67 @@ submission, fresh executable quotes, allowances, receipts, revoke
 enforcement and failure recovery is mandatory before any live launch.
 **Never** assume a policy record alone means real funds can move.
 
+## Stages 33–40: protect wallet authority while editing ETH limits
+
+These stages further harden **live-disabled** per-user ETH controls. They do
+not enable transactions, grant signers, delete policies at Privy, or
+automatically liquidate positions.
+
+33. **Compile-time signer grant safety gate.** Privy backend signers can
+    authorize spending within a policy even when MiniNex's trade executor is
+    off. Therefore `MININEX_PRIVY_ETH_GRANT_ENABLED` alone can no longer
+    expose `addSigners`: an independent code-level audit guard remains
+    **hard-disabled** until wallet-owner policy-parser, exact quote,
+    cumulative spending and revoke guarantees have passed real-safe review.
+34. **ETH limit-change invalidation.** Editing per-user LIVE ETH capital,
+    max-order or daily turnover now atomically pauses sends, increments
+    revision, revokes any old EIP-191 consent, and marks every existing
+    unreconciled/restricted Privy policy `REVOKE_REQUESTED`. Previously,
+    a changed local budget could invalidate the backend consent but leave an
+    existing backend signer with its old remote on-chain policy.
+35. **Emergency stop invalidation.** A stop request now performs the same
+    local consent/policy revocation *even if the trading_paused boolean was
+    already true*, preserving the same LIVE row-lock/consent/policy order.
+    A backend-local stop **does not remove Privy additional signers**, undo
+    submitted blockchain transactions, sell to stables or prove permission
+    revoked at the wallet provider.
+36. **Database transaction regressions.** Tests verify the exact atomic
+    order of the limit update or stop, consent revocation, and policy
+    REVOKE_REQUESTED transition; repeated stop is safe and no missing policy
+    is reported as a completed remote revoke.
+37. **Owner-facing revoke reminder.** After editing LIVE limits or stopping,
+    MiniNex shows a separate DE/EN warning when the server reports a
+    pending Privy signer removal. A stored REVOKE_REQUESTED state also
+    keeps the explicit native-Privy revoke control available even if the
+    app's `delegated` hint is out of date.
+38. **Verified enrollment source of truth.** Client-provided `delegated`
+    metadata no longer blocks initial policy preparation or a reviewed
+    scoped-grant offer; the server must independently fetch exact Privy
+    wallet ownership, additional signers and full policy bytes before it
+    permits any restricted operation. This avoids blocking clean user
+    wallets based on an unrelated SDK boolean while retaining server-side
+    safety.
+39. **Explicit Privy unresolved-signers blocker.** The read-only
+    `GET /api/live/eth/prelaunch-safety` audit reports
+    `OWNER_PRIVY_SIGNER_REMOVAL_NOT_YET_VERIFIED` for
+    `REVOKE_REQUESTED` rather than silently treating a local stop as
+    actual Privy signer removal.
+40. **Full CI and release review.** Run Python/Node regression suites,
+    frontend production build and update-package validation before
+    merging. After merge, identify the correct MiniNex Render service,
+    verify the deployed commit, and never use a blanket deploy or
+    modify an unrelated application.
+
+**Still open:** An authenticated one-shot policy create does not remove
+remote wallet signing risk by itself. Before real trades, independently
+review ABI parser interpretation and calldata bytes, exact Quote/minOut,
+ERC-20 approvals and allowance revocation, gas and fees, real wallet
+balances, rolling 24h anti-replay spend ledger *inside the transaction
+submission path*, recovery of ambiguous POSTs/receipts, Privy owner
+permission removal, and end-to-end execution tests. The current code and
+UI do not claim that budget values are wallet balances or that pressing
+Stop converts a position into USDC/USDT.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
