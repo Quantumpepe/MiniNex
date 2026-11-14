@@ -1107,9 +1107,9 @@ Privy policy documentation: https://docs.privy.io/security/wallet-infrastructure
 
 ## Stages 49-56: dormant ETH cost and asset-isolated budget arithmetic
 
-Pull request #82 adds the standalone \`backend/eth_cost_budget_review.py\` and 26
+Pull request #82 adds the standalone `backend/eth_cost_budget_review.py` and 26
 offline regression cases, with no new HTTP endpoint and **no call path** from
-\`/api/live/eth/swap-plan\`. The reviewer models:
+`/api/live/eth/swap-plan`. The reviewer models:
 
 49. Exact ETH (18 decimal) and stablecoin (6 decimal) atomic input and minimum
     output, without floating-point conversion or implicit rounding.
@@ -1128,8 +1128,8 @@ offline regression cases, with no new HTTP endpoint and **no call path** from
     24-hour spending, including worst-case transaction costs in budget checks.
     The caller must hold the same-user PostgreSQL risk lock in a future executor.
 55. Explicit conservative blocker codes. Even a cost review with no arithmetic
-    blockers returns \`can_reserve=false\`, \`can_sign=false\`,
-    \`can_submit=false\`, \`live_trading_enabled=false\`, and truthfully reports
+    blockers returns `can_reserve=false`, `can_sign=false`,
+    `can_submit=false`, `live_trading_enabled=false`, and truthfully reports
     that input provenance and database locking were **not verified here**.
 56. Targeted adversarial tests for spoofed cross-asset budgets, stale prices,
     fee and gas extremes, insufficient native/stable balances and stop state.
