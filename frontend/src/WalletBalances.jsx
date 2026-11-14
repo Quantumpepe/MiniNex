@@ -125,8 +125,9 @@ export default function WalletBalances({t,getAccessToken,userId}) {
         {t.privyBalancesLoading}
       </p>}
       {evmStatus==='failed'&&<p className="privy-wallet-description" role="status">
-        {t.coinOtherBalancesPending}
+        BNB / POL / AVAX / LINK / UNI: {t.privyBalancesUnavailable}
       </p>}
+      <p className="privy-wallet-description">{t.coinOtherBalancesPending}</p>
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary privy-balance-refresh"
         onClick={()=>setRequest(n=>n+1)} disabled={loading}>
         <RefreshCcw size={16} aria-hidden="true"/> {t.privyBalancesRefresh}

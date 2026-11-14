@@ -5,7 +5,8 @@ export const EVM_BALANCE_NETWORKS=Object.freeze({
   BNB:'bsc-mainnet',POL:'polygon-pos-mainnet',
   AVAX:'avalanche-c-mainnet',LINK:'ethereum-mainnet',UNI:'ethereum-mainnet',
 });
-const DECIMAL=/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+export const EVM_BALANCE_CHAIN_IDS=Object.freeze({BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1});
+const DECIMAL=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$/;
 
 export function validateMulticoinBalanceResponse(data){
   if(!data||typeof data!=='object'||Array.isArray(data)||
@@ -24,6 +25,9 @@ export function validateMulticoinBalanceResponse(data){
     const isToken=asset==='LINK'||asset==='UNI';
     return row&&row.asset===asset&&
       row.network===EVM_BALANCE_NETWORKS[asset]&&
+      // Accept the previous API during rolling deployment, but reject conflicting metadata.
+      (row.chain_id===undefined||row.chain_id===EVM_BALANCE_CHAIN_IDS[asset])&&
+      (row.decimals===undefined||row.decimals===18)&&
       row.native===!isToken&&
       row.wallet_funds_used_for_paper===false&&
       (row.status==='unavailable'&&row.balance===null||

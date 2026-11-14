@@ -276,8 +276,8 @@ export const DICTIONARY = {
     coinWalletRetry: 'Retry wallet creation',
     coinAddressReadOnly: 'Read-only wallet preview. Deposits, transfers and LIVE trading are not enabled. Do not send funds.',
 
-    coinBalanceSummaryHint: 'Tap to show verified BTC / ETH / USDC / USDT balances',
-    coinOtherBalancesPending: 'Real balances for BNB, POL, SOL, XRP, ADA and TRX will appear only after their native wallets and blockchain verification are ready. No amounts are estimated.',
+    coinBalanceSummaryHint: 'Tap to show verified balances on Bitcoin, Ethereum, BNB Chain, Polygon and Avalanche',
+    coinOtherBalancesPending: 'SOL, XRP, TRX and DOGE balance integration is pending; ADA is in progress. Displayed holdings do not enable trading. No amounts are estimated.',
     privySetupTitle: 'Trading settings · 8 coins',
     privySetupPreview: 'LOCAL PREVIEW',
     privySetupMode: 'Market mode',
@@ -773,8 +773,8 @@ export const DICTIONARY = {
     coinWalletRetry: 'Wallet-Erstellung erneut versuchen',
     coinAddressReadOnly: 'Nur Wallet-Vorschau. Einzahlungen, Transfers und LIVE-Handel sind nicht freigegeben. Bitte keine Coins senden.',
 
-    coinBalanceSummaryHint: 'Antippen: geprüfte BTC-/ETH-/USDC-/USDT-Guthaben anzeigen',
-    coinOtherBalancesPending: 'Echte Guthaben für BNB, POL, SOL, XRP, ADA und TRX erscheinen erst nach Anbindung ihrer nativen Wallets und Blockchain-Prüfung. Es werden keine Beträge geschätzt.',
+    coinBalanceSummaryHint: 'Antippen: geprüfte Guthaben auf Bitcoin, Ethereum, BNB Chain, Polygon und Avalanche',
+    coinOtherBalancesPending: 'Die Guthaben-Anbindung für SOL, XRP, TRX und DOGE steht noch aus; ADA ist in Arbeit. Angezeigte Bestände aktivieren keinen Handel. Es werden keine Beträge geschätzt.',
     privySetupTitle: 'Handelseinstellungen · 8 Coins',
     privySetupPreview: 'LOKALE VORSCHAU',
     privySetupMode: 'Marktmodus',

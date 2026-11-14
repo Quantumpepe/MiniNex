@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import re
 
 import httpx
@@ -35,7 +35,10 @@ def _units(value: object, divisor: Decimal) -> str:
     number=int(raw)
     if number>MAX_UINT256:
         raise ValueError("Balance outside uint256 range")
-    return format(Decimal(number)/divisor,"f")
+    # A uint256 has up to 78 digits; the default precision (28) rounds holdings.
+    with localcontext() as context:
+        context.prec = 78
+        return format(Decimal(number)/divisor,"f")
 
 
 def verified_addresses(user: dict, did: str) -> dict[str,str|None]:
