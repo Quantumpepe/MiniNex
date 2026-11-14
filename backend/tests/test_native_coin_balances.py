@@ -108,7 +108,6 @@ def test_sol_xrp_trx_address_checks_reject_bad_keys_and_external_accounts():
         assert native._valid_address(coin,address)
         assert not native._valid_address(coin,address[:-1]+"0")
         assert not native._valid_address(coin,"0x"+"f"*40)
-    assert native.verified_native_addresses(user(),"did:privy:someoneelse") if False else True
     with pytest.raises(ValueError):
         native.verified_native_addresses(user(),"did:privy:someoneelse")
     external=user()
