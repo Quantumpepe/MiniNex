@@ -67,7 +67,8 @@ test('compact bilingual UI preserves mobile access and wallet network explanatio
   }
   assert.match(labels,/Wallet-Adresse noch nicht verfügbar/);
   assert.match(labels,/Handelseinstellungen/);
-  assert.match(labels,/nicht PAPER/);
+  assert.match(labels,/getrennt vom PAPER-Kapital/);
+  assert.match(labels,/Native Bestände erscheinen nur mit verknüpfter Privy-Wallet/);
   assert.match(styles,/\.privy-balances-grid\{/);
   assert.match(styles,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(styles,/@media\(max-width:355px\)/);
