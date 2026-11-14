@@ -360,7 +360,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
               value={draft?.[field]||''}
               disabled={busy}
               onChange={e=>setDraft(current=>({...current,[field]:e.target.value}))}
-              aria-label={[t.liveEthCapital,t.liveEthPerOrder,t.liveEthDaily][i]}
+              aria-label={t.liveEthCapital}
               style={{padding:'9px 12px',borderRadius:9,border:'1px solid var(--border-color, #475569)',background:'transparent',color:'inherit',width:'100%',boxSizing:'border-box'}}/>
           </label>)}
           <p className="privy-wallet-description">{t.liveEthLimitsSafety}</p>
