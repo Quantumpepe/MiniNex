@@ -7,7 +7,6 @@ import {API_BASE} from './data.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
-import LiveEthControls from './LiveEthControls.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
@@ -491,10 +490,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             renderCoinAddress={renderCoinAddress}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
-
-          <LiveEthControls t={t} user={user} address={address}
-            getAccessToken={getAccessToken}
-            enabled={identityStatus==='verified' && databaseStatus==='stored'}/>
 
           <details className="privy-disclosure privy-technical-section">
             <summary>
