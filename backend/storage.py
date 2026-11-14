@@ -216,6 +216,25 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_auto_broadcasts (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        intent_key TEXT NOT NULL,
+        asset TEXT NOT NULL DEFAULT 'ETH' CHECK (asset='ETH'),
+        wallet_address TEXT NOT NULL,
+        wallet_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        status TEXT NOT NULL CHECK (
+           status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')),
+        tx_hash TEXT CHECK (tx_hash IS NULL OR tx_hash ~ '^0x[a-f0-9]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,intent_key),
+        FOREIGN KEY(privy_did,asset,intent_key)
+           REFERENCES mininex_live_order_intents(privy_did,asset,intent_key),
+        CHECK (status <> 'SUBMITTED' OR tx_hash IS NOT NULL)
+    )""",
     """CREATE INDEX IF NOT EXISTS mininex_live_orders_by_account
        ON mininex_live_order_intents(privy_did,asset,created_at DESC)""",
     # Future executor must atomically bind the immutable signal to an order.
