@@ -19,6 +19,8 @@ from psycopg.rows import dict_row
 
 from .eth_privy_user_grant import get_eth_user_grant_review
 from .eth_live_strategy_tick import execute_live_eth_strategy_tick
+from .eth_router02_receipts import check_user_router02_receipt
+from .real_eth_trade_legs import validated_finalized_leg,save_verified_leg
 from .storage import _db_url,_ensure_schema,_prepare_rows,_safe_did
 
 LOG=logging.getLogger("mininex.eth_live_auto_sessions")
@@ -198,6 +200,99 @@ def active_sessions(limit:int=10)->list[dict]:
         return []
 
 
+def submitted_live_orders(limit:int=20)->list[dict]:
+    """Find previously broadcast real ETH orders, including paused sessions."""
+    if not _worker_approved():
+        return []
+    try:
+        url=_db_url();_ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """SELECT privy_did,intent_key,side,stable,tx_hash
+                       FROM mininex_live_order_intents
+                       WHERE asset='ETH' AND state='SUBMITTED'
+                       ORDER BY submitted_at ASC LIMIT %s""",
+                    (max(1,min(25,limit)),))
+                return cur.fetchall()
+    except psycopg.Error:
+        LOG.exception("ETH LIVE broadcast settlement scan failed")
+        return []
+
+
+def _finalize_order(did:str,key:str,tx_hash:str,state:str)->bool:
+    if state not in ("CONFIRMED","REVERTED"):
+        raise ValueError("Final state required")
+    try:
+        url=_db_url();_ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """SELECT tx_hash,state FROM mininex_live_order_intents
+                       WHERE privy_did=%s AND asset='ETH'
+                         AND intent_key=%s FOR UPDATE""",(did,key))
+                row=cur.fetchone()
+                if type(row) is not dict:
+                    raise HTTPException(409,"ETH order no longer exists")
+                if row["tx_hash"]!=tx_hash:
+                    raise HTTPException(409,"ETH settled hash changed")
+                if row["state"]==state:
+                    return False
+                if row["state"]!="SUBMITTED":
+                    raise HTTPException(409,"ETH order requires separate reconciliation")
+                cur.execute(
+                    """UPDATE mininex_live_order_intents
+                       SET state=%s,finalized_at=now(),updated_at=now()
+                       WHERE privy_did=%s AND asset='ETH'
+                         AND intent_key=%s AND state='SUBMITTED'""",
+                    (state,did,key))
+                return True
+    except psycopg.Error:
+        raise HTTPException(503,"ETH on-chain settlement unavailable") from None
+
+
+async def reconcile_one_live_eth_order(row:dict)->str:
+    """Complete an actual broadcast order after canonical chain finality.
+
+    Only real confirmed on-chain amounts enter the LIVE activity ledger.
+    A reverted transaction never creates a synthetic trade fill.
+    """
+    did=_safe_did(row["privy_did"])
+    receipt=await check_user_router02_receipt(
+        did,row["tx_hash"],side=row["side"],stable=row["stable"])
+    state=receipt.get("state")
+    if state=="FINALIZED_ERC20_SWAP_LEG":
+        leg=validated_finalized_leg(
+            tx_hash=row["tx_hash"],side=row["side"],
+            stable=row["stable"],kind="SWAP",receipt=receipt)
+        await asyncio.to_thread(save_verified_leg,did,leg)
+        await asyncio.to_thread(_finalize_order,
+            did,row["intent_key"],row["tx_hash"],"CONFIRMED")
+        return "CONFIRMED"
+    if state=="FINALIZED_REVERTED" and receipt.get("transaction_finalized") is True:
+        await asyncio.to_thread(_finalize_order,
+            did,row["intent_key"],row["tx_hash"],"REVERTED")
+        return "REVERTED"
+    return "PENDING"
+
+
+async def reconcile_live_eth_orders():
+    if not _worker_approved():
+        return 0
+    pending=await asyncio.to_thread(submitted_live_orders)
+    done=0
+    for row in pending:
+        try:
+            state=await reconcile_one_live_eth_order(row)
+            if state!="PENDING":
+                done+=1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception("ETH LIVE order settlement failed; will inspect original hash again")
+    return done
+
+
 class EthAutoLiveWorker:
     def __init__(self,market):
         self.market=market
@@ -218,6 +313,7 @@ class EthAutoLiveWorker:
             await asyncio.sleep(_INTERVAL)
             if not _worker_approved():
                 continue
+            await reconcile_live_eth_orders()
             sessions=await asyncio.to_thread(active_sessions)
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:

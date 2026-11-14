@@ -66,3 +66,52 @@ def test_worker_disabled_without_explicit_deployment(monkeypatch):
     monkeypatch.delenv("MININEX_ETH_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     assert not mod._worker_approved()
+
+def test_real_finalized_swap_unblocks_next_eth_auto_order(monkeypatch):
+    import asyncio
+    entry={"privy_did":DID,"intent_key":"sig_abcdef0123456789",
+           "tx_hash":"0x"+"a"*64,"side":"BUY","stable":"USDC"}
+    actions=[]
+    async def evidence(*args,**kwargs):
+        return {"state":"FINALIZED_ERC20_SWAP_LEG",
+                "transaction_finalized":True}
+    def validated(**kwargs):
+        actions.append("validate")
+        return {"tx_hash":entry["tx_hash"]}
+    def persist(did,leg):actions.append("persist")
+    def finalize(did,key,hash,state):
+        actions.append(state)
+        assert state=="CONFIRMED"
+        return True
+    monkeypatch.setattr(mod,"check_user_router02_receipt",evidence)
+    monkeypatch.setattr(mod,"validated_finalized_leg",validated)
+    monkeypatch.setattr(mod,"save_verified_leg",persist)
+    monkeypatch.setattr(mod,"_finalize_order",finalize)
+    assert asyncio.run(mod.reconcile_one_live_eth_order(entry))=="CONFIRMED"
+    assert actions==["validate","persist","CONFIRMED"]
+
+def test_pending_chain_transaction_never_creates_fill(monkeypatch):
+    import asyncio
+    entry={"privy_did":DID,"intent_key":"sig_abcdef0123456789",
+           "tx_hash":"0x"+"a"*64,"side":"BUY","stable":"USDC"}
+    async def evidence(*args,**kwargs):
+        return {"state":"INCLUDED_SUCCESS","transaction_finalized":False}
+    monkeypatch.setattr(mod,"check_user_router02_receipt",evidence)
+    monkeypatch.setattr(mod,"save_verified_leg",
+                        lambda *args:pytest.fail("premature fill"))
+    assert asyncio.run(mod.reconcile_one_live_eth_order(entry))=="PENDING"
+
+def test_reverted_chain_order_releases_pending_status_without_fake_trade(monkeypatch):
+    import asyncio
+    entry={"privy_did":DID,"intent_key":"sig_abcdef0123456789",
+           "tx_hash":"0x"+"a"*64,"side":"SELL","stable":"USDT"}
+    async def evidence(*args,**kwargs):
+        return {"state":"FINALIZED_REVERTED","transaction_finalized":True}
+    monkeypatch.setattr(mod,"check_user_router02_receipt",evidence)
+    monkeypatch.setattr(mod,"save_verified_leg",
+                        lambda *args:pytest.fail("revert cannot create fill"))
+    states=[]
+    monkeypatch.setattr(mod,"_finalize_order",
+                        lambda did,key,hash,state:states.append(state))
+    assert asyncio.run(mod.reconcile_one_live_eth_order(entry))=="REVERTED"
+    assert states==["REVERTED"]
