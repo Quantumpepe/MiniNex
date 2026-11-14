@@ -29,6 +29,7 @@ from .multicoin_evm_balances import get_multicoin_evm_balances
 from .native_coin_balances import get_native_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
+from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
 from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
     set_status as set_extra_paper_status,
@@ -88,6 +89,7 @@ market = MarketDataService()
 extra_markets = ExtraMarketData()
 paper = PaperAutoEngine(market)
 personal_paper = PersonalPaperWorker(market,extra_markets)
+eth_auto_live = EthAutoLiveWorker(market)
 
 
 @asynccontextmanager
@@ -97,9 +99,11 @@ async def lifespan(app: FastAPI):
     if _paper_visible():
         await paper.start()
     await personal_paper.start()
+    await eth_auto_live.start()
     try:
         yield
     finally:
+        await eth_auto_live.stop()
         await personal_paper.stop()
         await paper.stop()
         await extra_markets.stop()
@@ -728,6 +732,38 @@ async def record_finalized_eth_trade_leg(
         did,tx_hash=request.tx_hash,side=request.side,
         stable=request.stable,kind=request.kind)
     return JSONResponse(record,headers={"Cache-Control":"private, no-store"})
+
+
+class EthAutoSessionStart(BaseModel):
+    stable: Literal["USDC","USDT"]
+
+
+@app.get("/api/live/eth/auto/session")
+def eth_auto_session_status(
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_eth_auto_session(did),
+                        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/eth/auto/start")
+async def eth_auto_start(
+    request: EthAutoSessionStart,
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await start_eth_auto(did,request.stable)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/eth/auto/pause")
+def eth_auto_pause(
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(pause_eth_auto(did),
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/eth/recorded-legs")

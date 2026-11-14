@@ -15,6 +15,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
   const {signMessage}=useSignMessage();
   const [limits,setLimits]=useState(null);
   const [grant,setGrant]=useState(null);
+  const [ethAuto,setEthAuto]=useState(null);
   const [policyState,setPolicyState]=useState(null);
   const [grantOffer,setGrantOffer]=useState(null);
   const [safetyAudit,setSafetyAudit]=useState(null);
@@ -82,6 +83,8 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
       try{setGrantOffer(await request('/api/live/eth/policy/grant-review'));}
       catch{setGrantOffer(null);}
     }else setGrantOffer(null);
+    try{setEthAuto(await request('/api/live/eth/auto/session'));}
+    catch{setEthAuto(null);}
     setPhase('ready');
   };
 
@@ -111,6 +114,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
             if(active)setGrantOffer(offer);
           }catch{if(active)setGrantOffer(null);}
         }else setGrantOffer(null);
+        try{
+          const state=await request('/api/live/eth/auto/session');
+          if(active)setEthAuto(state);
+        }catch{if(active)setEthAuto(null);}
         setPhase('ready');
       }catch{
         if(active){setLimits(null);setGrant(null);setPhase('failed');}
@@ -274,6 +281,32 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     }
   };
 
+  const startEthAuto=async()=>{
+    if(busy||ethAuto?.status==='ACTIVE'||!limits?.trading_paused||
+       policyState?.status!=='GRANT_VERIFIED'||!ownAddress)return;
+    setBusy(true);setMessage('');
+    try{
+      const result=await request('/api/live/eth/auto/start','POST',{
+        stable:ethAuto?.stable||'USDC'});
+      if(result?.status!=='ACTIVE')throw Error('start');
+      setMessage(t.liveEthAutoStarted);
+      await refresh();
+    }catch{setMessage(t.liveEthAutoStartFailed);}
+    finally{setBusy(false);}
+  };
+  const pauseEthAuto=async()=>{
+    if(busy||ethAuto?.status!=='ACTIVE')return;
+    setBusy(true);setMessage('');
+    try{
+      const result=await request('/api/live/eth/auto/pause','POST');
+      if(result?.status!=='PAUSED'||result?.future_auto_orders_blocked!==true)
+        throw Error('pause');
+      setMessage(t.liveEthAutoPaused);
+      await refresh();
+    }catch{setMessage(t.liveEthAutoPauseFailed);}
+    finally{setBusy(false);}
+  };
+
   const reviewSafety=async()=>{
     if(busy||phase!=='ready'||!enabled)return;
     setBusy(true);setMessage('');
@@ -363,6 +396,23 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
           {!validScopedGrantOffer(grantOffer,ownAddress)&&
              policyState?.status==='REMOTE_VERIFIED_UNATTACHED'&&
             <p className="privy-wallet-description">{t.liveEthGrantAuditLocked}</p>}
+        </div>
+        <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
+          <strong>{t.liveEthAutoTitle}</strong>
+          <p className="privy-wallet-description">{t.liveEthAutoDescription}</p>
+          <p className="privy-wallet-description">
+            {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
+          </p>
+          {ethAuto?.status==='ACTIVE'
+            ?<button className="privy-wallet-action" type="button"
+                disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
+            :<button className="privy-wallet-action" type="button"
+                disabled={busy||!ethAuto?.worker_deployed||changes||
+                  policyState?.status!=='GRANT_VERIFIED'||
+                  !limits?.trading_paused||!ownAddress}
+                onClick={startEthAuto}>{t.liveEthAutoStart}</button>}
+          {!ethAuto?.worker_deployed&&
+            <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
         </div>
         <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
           <strong>{t.liveEthAuditTitle}</strong>
