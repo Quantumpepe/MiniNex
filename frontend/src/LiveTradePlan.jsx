@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
+import LiveReceiptCheck from './LiveReceiptCheck.jsx';
 import {createLivePlanRequest,normalizedLiveStable,validLiveTradePlan,
   LIVE_SETTLEMENTS} from './liveTradePlanRules.js';
 
@@ -141,5 +142,8 @@ export default function LiveTradePlan({
       </p>
       <p className="privy-wallet-description">{t.livePlanNotExecutable}</p>
     </div>}
+    {['BTC','ETH'].includes(asset)&&<LiveReceiptCheck
+      asset={asset} enabled={enabled} userId={userId}
+      getAccessToken={getAccessToken} t={t} side={side} stable={stable}/>}
   </section>;
 }
