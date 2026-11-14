@@ -22,7 +22,7 @@ export function validSavedExtraCoinPreferences(data){
     return row&&typeof row==='object'&&!Array.isArray(row)&&
       ACTIVE_MODES.has(row.mode)&&STABLES.has(row.stable)&&
       TIMEFRAMES.has(row.horizon)&&
-      Number.isSafeInteger(row.budget_usd)&&row.budget_usd>0&&&&Number.isInteger(row.revision)&&row.revision>=0;
+      Number.isSafeInteger(row.budget_usd)&&row.budget_usd>0&&Number.isInteger(row.revision)&&row.revision>=0;
   });
 }
 
