@@ -5,7 +5,7 @@ the Privy SDK addSigners UI, may grant one exact backend signing quorum and
 one reviewed user-specific override policy. Operator grant flag defaults OFF
 until a separate controlled Privy ABI and cumulative spend security audit.
 
-All real trade, signing and transaction submission remain disabled.
+This module neither signs nor submits trades. Owner approval does not\nstart AUTO: the separate session-start path is still required.
 """
 from __future__ import annotations
 
@@ -32,19 +32,19 @@ _POLICY_URL = "https://api.privy.io/v1/policies/"
 _ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
 
 
-# A policy for exactInputSingle still lacks cumulative on-chain day caps
-# and independently checked calldata/quote semantics. An environment value
-# MUST NOT alone expose a transaction-authorized backend signer to users.
-# Grant activation requires a separately reviewed code release and tests.
-_PRIVY_SIGNER_GRANTS_AUDITED_IN_CODE = False
+# Privy grant exposure is a separate deliberate operator release AND an
+# explicit wallet-owner addSigners click. The latter is the *only* wallet
+# delegation: this flag alone never grants keys, signs or broadcasts.
+# Every offered policy is re-read remotely and checked against the exact
+# user-owned wallet and restricted six-rule Router02/WETH9 blueprint.
+# Cumulative order limits are enforced by MiniNex's locked ETH LIVE ledger,
+# not remotely by Privy's individual transaction policy.
+_GRANT_RELEASE_PHRASE = "enabled-with-owner-consent-v1"
 
 
 def _grant_enabled() -> bool:
-    return (
-        _PRIVY_SIGNER_GRANTS_AUDITED_IN_CODE
-        and os.getenv("MININEX_PRIVY_ETH_GRANT_ENABLED", "").strip()
-        == "enabled-after-audit"
-    )
+    return (os.getenv("MININEX_PRIVY_ETH_GRANT_ENABLED", "").strip()
+            == _GRANT_RELEASE_PHRASE)
 
 
 def _read_policy_for_grant(did: str, *, wallet: str, owner: str,

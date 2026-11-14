@@ -324,18 +324,26 @@ def test_new_policy_is_not_permission_without_independent_wallet_owner_click(mon
     assert offer["cumulative_spend_enforced_by_policy"] is False
 
 
-def test_environment_switch_alone_cannot_expose_privy_wallet_grant(monkeypatch):
-    assert grant._PRIVY_SIGNER_GRANTS_AUDITED_IN_CODE is False
+def test_explicit_owner_consent_release_does_not_delegate_without_click(monkeypatch):
     for value in ("enabled-after-audit", "true", "1", ""):
         monkeypatch.setenv("MININEX_PRIVY_ETH_GRANT_ENABLED", value)
         offer=assess()
         assert offer["grant_offer_enabled"] is False
         assert offer["can_request_user_grant"] is False
         assert offer["execution_enabled"] is False
+    monkeypatch.setenv(
+        "MININEX_PRIVY_ETH_GRANT_ENABLED", "enabled-with-owner-consent-v1")
+    offer=assess()
+    assert offer["grant_offer_enabled"] is True
+    assert offer["can_request_user_grant"] is True
+    assert offer["user_privy_grant_verified"] is False
+    assert offer["execution_enabled"] is False
+    assert offer["can_sign"] is False
+    assert offer["can_submit"] is False
 
 
 def test_wrong_policy_owner_extra_rules_or_another_wallet_denies_offer(monkeypatch):
-    monkeypatch.setenv("MININEX_PRIVY_ETH_GRANT_ENABLED","enabled-after-audit")
+    monkeypatch.setenv("MININEX_PRIVY_ETH_GRANT_ENABLED","enabled-with-owner-consent-v1")
     altered=remote_policy()
     altered["rules"].append(deepcopy(altered["rules"][0]))
     assert assess(remote=altered)["can_request_user_grant"] is False
