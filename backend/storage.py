@@ -242,6 +242,26 @@ SCHEMA = (
         status TEXT NOT NULL DEFAULT 'PAUSED' CHECK(status IN ('ACTIVE','PAUSED')),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_eth_auto_native_steps (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        source_key TEXT NOT NULL,
+        intent_key TEXT NOT NULL UNIQUE,
+        operation TEXT NOT NULL CHECK(operation IN ('DEPOSIT','WITHDRAW')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        amount_wei NUMERIC(45,0) NOT NULL CHECK(amount_wei>0),
+        wallet_address TEXT NOT NULL,
+        wallet_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN
+            ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+             'CONFIRMED','REVERTED')),
+        tx_hash TEXT UNIQUE CHECK(
+            tx_hash IS NULL OR tx_hash ~ '^0x[a-f0-9]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,source_key,operation)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_live_eth_native_pending
+       ON mininex_live_eth_auto_native_steps(privy_did,status)""",
     """CREATE INDEX IF NOT EXISTS mininex_live_orders_by_account
        ON mininex_live_order_intents(privy_did,asset,created_at DESC)""",
     # Future executor must atomically bind the immutable signal to an order.
