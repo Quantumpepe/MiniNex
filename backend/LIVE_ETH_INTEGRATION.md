@@ -636,6 +636,50 @@ The backend preserves the current Universal Router swap preview,
 paper trading, account budgets and global Portfolio. Real trading remains
 disabled and no Privy policy or additional signer can be created.
 
+## Stage 19: automatic per-user Privy ETH policy candidate (preview only)
+
+An authenticated read-only `GET /api/live/eth/policy-candidate` now joins
+the independently verified, **unique user-owned Privy wallet** (Stage 16),
+the LIVE ETH capital/order/day limits (NOT paper capital), two separate
+configured Privy quorum IDs, fresh ETH/USDC/USDT CoinGecko reference
+prices and the six-route ETH policy blueprint (Stage 15).
+
+The backend automatically constructs a **separate** user-wallet policy
+candidate with exact EVM mainnet/router/ABI/call/asset/recipient restrictions,
+positive trade amounts, a quote-output minimum check, per-order token
+atomic caps, and a 24-hour expiry. It refuses malformed, expired or
+off-peg references (stablecoin outside $0.99-$1.01); order caps are
+calculated from that user's exact LIVE maximum order, **not** a fixed
+100 USDC demo value. These atomic caps are **not** cumulative. Existing
+daily limits and reserved capital must still be enforced atomically by a
+future real trade engine, with independently refreshed on-chain prices,
+slippage, verified balances and ERC20 allowances.
+
+The GET response contains only validity and canonical policy candidate
+SHA-256, not reusable policy contents or wallet secrets. No unverified
+browser-provided wallet address, pricing, limits or signer identity can
+influence the candidate. A missing Privy wallet, unavailable spot prices,
+unrecognized additional signer, disabled/malformed budget or absent policy
+owner cause fail-closed results. Public CoinGecko prices are a preliminary
+reference, **not** an executable Uniswap quote or reliable authority for
+real spending.
+
+**Not enabled / deliberately NOT done in this stage:** No Privy policy
+POST/PUT/DELETE, no wallet additional signer, no Privy user delegation,
+no on-chain ERC20 allowance, no irrevocable unlimited token approval,
+no execution or automated live trading. A valid policy *candidate* is
+never authorization. The EIP-191 signed intent of Stage 17 does not
+create or verify a Privy additional signer; users must explicitly grant
+one in Privy for the exact restricted policy and be able to revoke it
+remotely. A future provisioner must compare the whole fetched Privy
+policy to the exact expected owner-bound body, store an idempotent
+wallet-specific policy ID and refuse broadened rules or old revisions
+before attaching the user signer. Do not assume a GET report is sufficient
+for Privy authorization.
+
+References: https://docs.privy.io/controls/policies/create-a-policy
+and https://docs.privy.io/controls/policies/overview.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
