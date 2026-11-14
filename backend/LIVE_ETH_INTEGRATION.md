@@ -897,6 +897,65 @@ https://docs.privy.io/wallets/using-wallets/signers/add-signers
 https://docs.privy.io/wallets/using-wallets/ethereum/sign-a-message
 https://docs.privy.io/wallets/using-wallets/signers/remove-signers
 
+## Stages 25–32: immutable consent, fail-closed policy recovery and LIVE risk audit
+
+After Stage 24, all actual signing and trades stay disabled. The following
+non-executable, per-user safeguards are implemented and tested together:
+
+1. **Stage 25 – Consent immutability.** EIP-191 consent challenges refuse
+   a new nonce when the authenticated DID already has a durable Privy policy
+   record, including PREPARED, UNCERTAIN, REVOKED or GRANT_VERIFIED. This
+   prevents a second challenge from erasing a prior signed/revoked intent
+   before remote Privy policy reconciliation. New challenges before any
+   policy still replace their previous unconfirmed nonce as intended.
+2. **Stage 26 – Uncertain Privy POST handling.** Malformed, mismatched
+   and improperly identified remote policy create/readback results are
+   atomically marked `UNCERTAIN`; no false success, automatic POST
+   retry, signer grant or trade is permitted.
+3. **Stage 27 – Expiration reporting.** The authenticated existing
+   `GET /api/live/eth/policy/lifecycle` now reports the remote policy
+   record/expiry and seconds remaining, while all signing flags remain
+   false. Expiry does **not** automatically renew a grant.
+4. **Stage 28 – Rolling ETH LIVE exposure.** New authenticated read-only
+   `GET /api/live/eth/ledger-audit` acquires the user's ETH LIVE risk
+   row lock, separately totals **all unresolved pending orders** (even old
+   SENDING/REORG_PENDING) and confirmed orders from the last 24 hours.
+   Pending orders consume both reserved capital and rolling daily
+   turnover, old unresolved orders remain blocked until reconciled.
+   Does not count Paper trades or infer live token balances.
+5. **Stage 29 – Consolidated safety checks.** Read-only backend review
+   combines independently verified Privy wallet ownership, policy
+   lifecycle/expiry and LIVE revision, explicit wallet grant readback
+   when applicable, unresolved order counts and spending limits.
+   It always reports execution disabled, and clearly lists blockers
+   such as uncertain policies, stale orders, invalid wallets, expired
+   grants and missing ABI/approval safeguards.
+6. **Stage 30 – User-bound diagnostic route.** Authenticated
+   `GET /api/live/eth/prelaunch-safety` exposes this report to the
+   user's own Privy DID only. No client-provided wallet address,
+   policy ID, signer identity or balance can alter it. No POST route
+   accepts a readiness report as authorization to move funds.
+7. **Stage 31 – Mobile-friendly EN/DE review.** The existing ETH
+   controls panel gains an explicit on-demand **ETH safety check**
+   button and a compact explanation of reserved capital, 24h confirmed
+   exposure, remaining daily risk budget, expired policies and
+   pending reconciliation. The report never displays Paper funds as
+   deposited capital or purports to convert coins automatically.
+8. **Stage 32 – Regression coverage.** Tests protect wallet replay
+   and consent lockout, malformed Privy readback, stale/overspent
+   USD counts, pending-state SQL row locks, cross-user JWT isolation,
+   remote Privy failures and frontend refusal to display an unsafe
+   response as LIVE readiness.
+
+No LIVE trading, on-chain spending, gas fees, ERC20 allowance,
+additional signing permission, policy self-renewal or auto liquidation
+is activated by these features. A policy `GRANT_VERIFIED` status is
+NOT sufficient for real execution. A separate audit of Privy's
+ABI interpretation, cumulative spend enforcement at transaction
+submission, fresh executable quotes, allowances, receipts, revoke
+enforcement and failure recovery is mandatory before any live launch.
+**Never** assume a policy record alone means real funds can move.
+
 ## Execution work still required – ordered
 
 1. **Privy authorization**: obtain explicit, revocable scoped wallet signer
