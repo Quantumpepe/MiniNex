@@ -67,7 +67,7 @@ export default function ExtraCoinStrategyReplay({
     <p className="privy-wallet-description">{t.extraReplayExplanation}</p>
     <form className="mininex-extra-replay-form" onSubmit={run}>
       <label><span>{t.extraReplayBudget}</span>
-        <input type="number" inputMode="numeric" min="100" max="5000" step="50"
+        <input type="number" inputMode="numeric" min="1" step="1"
           value={options.budget} disabled={!enabled||busy}
           onChange={event=>onChange(asset,'budget',event.target.value)}/>
       </label>
