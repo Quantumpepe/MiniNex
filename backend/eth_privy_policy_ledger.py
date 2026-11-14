@@ -226,6 +226,7 @@ def _stage_locked(
         "candidate_sha256": info["sha256"],
         "idempotency_key": prepared["idempotency_key"],
         "status": "PREPARED",
+        "expires_at_unix": info["expires_at_unix"],
     }, current_revision=values["revision"])
 
 
