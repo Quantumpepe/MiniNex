@@ -1,13 +1,18 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import ExtraCoinPaperControl from './ExtraCoinPaperControl.jsx';
+import {coinPreferenceChanged} from './extraCoinPreferenceRules.js';
 import {EXTRA_REPLAY_COINS,MODES,HORIZONS,validExtraReplayBudget,
   validExtraReplayResult} from './extraReplayRules.js';
 
 // A single explicit historical simulation run; no wallet/private credentials,
 // auto-started user paper sessions, orders, live quotes or background polling.
 // Individual virtual budgets are held by the parent per coin for this UI visit.
-export default function ExtraCoinStrategyReplay({asset,t,enabled,options,onChange,getAccessToken}) {
+export default function ExtraCoinStrategyReplay({
+  asset,t,enabled,options,onChange,getAccessToken,
+  onSavePreference,preferenceStatus,preferenceSaved,preferenceSaving,
+  onRetryPreference,
+}) {
   const [result,setResult]=useState(null);
   const [busy,setBusy]=useState(false);
   const [failed,setFailed]=useState(false);
@@ -85,6 +90,20 @@ export default function ExtraCoinStrategyReplay({asset,t,enabled,options,onChang
         {busy?t.extraReplayRunning:t.extraReplayRun}
       </button>
     </form>
+    <div className="mininex-extra-preference-save">
+      {preferenceStatus==='ready'&&
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          disabled={!enabled||busy||preferenceSaving||
+            !coinPreferenceChanged(options,preferenceSaved)||!budgetOk}
+          onClick={()=>onSavePreference?.(asset)}>
+          {preferenceSaving?(t.extraPaperLoading||'Saving…'):(t.privyBudgetSave+' '+asset)}
+        </button>}
+      {preferenceStatus==='failed'&&<>
+        <p className="privy-wallet-description" role="status">{t.tradeSettingsFailed}</p>
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          onClick={onRetryPreference}>{t.privyBudgetReload}</button>
+      </>}
+    </div>
     <ExtraCoinPaperControl asset={asset} t={t} enabled={enabled}
       getAccessToken={getAccessToken} options={options} onChange={onChange}/>
     {!budgetOk&&<p className="privy-wallet-description" role="alert">
