@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
-import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft} from './liveEthRules.js';
+import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence} from './liveEthRules.js';
 
 const FIELDS=['planned_capital_usd','max_order_usd','max_daily_turnover_usd'];
 const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
@@ -125,21 +125,48 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     if(busy||!confirmRevoke||!ownAddress||!mayHaveSigners||!enabled)return;
     setBusy(true);setMessage('');
     let serverStopped=false;
-    let walletRevoked=false;
-    // Always attempt server stop first, but a backend failure MUST NOT block
-    // user-owned wallet revocation via the Privy SDK.
+    let walletRemovalRequested=false;
+    let remotelyVerified=false;
+    // The user explicitly confirms removing ALL additional signers.
+    // First atomically stop LIVE sends and revoke the MiniNex signed intent
+    // plus any durable per-wallet policy. A backend outage must not prevent
+    // the wallet owner from using Privy's native revoke control.
     try{
-      const result=await request('/api/live/eth/stop','POST');
-      applyLimits(result);
-      serverStopped=true;
-    }catch{ /* Privy revocation still proceeds to protect the user. */ }
+      const local=await request('/api/live/eth/consent/revoke','POST');
+      serverStopped=local?.mininex_live_sends_paused===true &&
+        local?.local_consent_intent_revoked===true &&
+        local?.execution_enabled===false;
+    }catch{
+      // Last-resort LOCAL stop even if consent ledger is unavailable.
+      try{
+        const fallback=await request('/api/live/eth/stop','POST');
+        if(validLiveEthLimits(fallback)&&fallback.trading_paused===true){
+          applyLimits(fallback);
+          serverStopped=true;
+        }
+      }catch{ /* Privy removal still proceeds with user confirmation. */ }
+    }
     try{
       await removeSigners({address:ownAddress});
-      walletRevoked=true;
-    }catch{ /* Never claim all wallet permissions were revoked. */ }
+      walletRemovalRequested=true;
+    }catch{ /* Never infer all signers were removed from an SDK error. */ }
+    if(walletRemovalRequested){
+      try{
+        const observed=await request('/api/live/eth/policy/wallet-signer-absence');
+        remotelyVerified=validWalletSignerAbsence(observed,ownAddress);
+        if(remotelyVerified&&serverStopped){
+          // Optional per-wallet local ledger finalization. Legacy users may
+          // have no staged policy record; never treat its absence as an
+          // excuse to reattach signers or to claim policy deletion.
+          try{await request('/api/live/eth/policy/confirm-revocation','POST');}
+          catch{ /* Only independent remote signer absence is reported. */ }
+        }
+      }catch{ /* Remotely unverified is NOT a successful revocation. */ }
+    }
     setConfirmRevoke(false);
-    setMessage(walletRevoked&&serverStopped?t.liveEthRevoked:
-      walletRevoked?t.liveEthRevokedServerFailed:
+    setMessage(remotelyVerified&&serverStopped?t.liveEthRevoked:
+      remotelyVerified?t.liveEthRevokedServerFailed:
+      walletRemovalRequested?t.liveEthRevocationVerificationPending:
       serverStopped?t.liveEthRevocationFailed:t.liveEthBothFailed);
     try{await refresh();}catch{setPhase('failed');}
     finally{setBusy(false);}
