@@ -49,6 +49,7 @@ from .eth_router02_allowance import inspect_router02_approval
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .eth_native_cycle_comparison import compare_eth_native_cycle
+from .real_eth_trade_legs import record_real_eth_leg, get_real_eth_legs
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -707,6 +708,35 @@ async def eth_compare_verified_native_cycle(
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
+
+
+class EthVerifiedLegRequest(BaseModel):
+    tx_hash: str
+    side: Literal["BUY","SELL"]
+    stable: Literal["USDC","USDT"]
+    kind: Literal["SWAP","WRAP","UNWRAP"]
+
+
+@app.post("/api/live/eth/record-finalized-leg")
+async def record_finalized_eth_trade_leg(
+    request: EthVerifiedLegRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Persist one actually finalized owner-wallet transaction, no paper fills."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    record=await record_real_eth_leg(
+        did,tx_hash=request.tx_hash,side=request.side,
+        stable=request.stable,kind=request.kind)
+    return JSONResponse(record,headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/eth/recorded-legs")
+def eth_recorded_onchain_trades(
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_real_eth_legs(did),
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/btc/tx-receipt/{tx_hash}")

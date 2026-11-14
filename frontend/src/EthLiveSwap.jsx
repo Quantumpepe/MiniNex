@@ -140,6 +140,17 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       if(found.transactionHash?.toLowerCase()!==hash.toLowerCase()||
          found.from?.toLowerCase()!==wallet.address.toLowerCase()||
          found.status!=='0x1')throw Error('Reverted or untrusted receipt');
+      if(stage==='wrap-submitted'){
+        const token=await getAccessToken();
+        if(!token)throw Error('Login expired');
+        const saved=await fetch(API_BASE+'/api/live/eth/record-finalized-leg',{
+          method:'POST',cache:'no-store',
+          headers:{Authorization:'Bearer '+token,
+            Accept:'application/json','Content-Type':'application/json'},
+          body:JSON.stringify({tx_hash:hash,side,stable,kind:'WRAP'}),
+        });
+        if(!saved.ok)throw Error('ETH wrap confirmed; history sync pending');
+      }
       if(stage==='approval-submitted'||stage==='wrap-submitted'){
         attempted.current=false;onTradePendingChange?.(false);
         setStage(stage==='approval-submitted'?'approval-confirmed':'wrap-confirmed');
@@ -157,6 +168,16 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
           cache:'no-store'});
         if(!response.ok)throw Error('On-chain proof not yet available');
         const body=await response.json();
+        // Durable on-chain trade history, completely separate from Paper.
+        // Unknown database result never causes a second chain send.
+        const recordKind=stage==='swap-submitted'?'SWAP':'UNWRAP';
+        const saved=await fetch(API_BASE+'/api/live/eth/record-finalized-leg',{
+          method:'POST',cache:'no-store',
+          headers:{Authorization:'Bearer '+token,
+            Accept:'application/json','Content-Type':'application/json'},
+          body:JSON.stringify({tx_hash:hash,side,stable,kind:recordKind}),
+        });
+        if(!saved.ok)throw Error('Transaction confirmed; history sync pending');
         if(stage==='unwrap-submitted'){
           if(body.state!=='FINALIZED_WETH9_CONVERSION'||
              body.confirmed_native_conversion!==true){
