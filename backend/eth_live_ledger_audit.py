@@ -154,7 +154,7 @@ def _query_eth_live_ledger(did: str) -> dict:
                              AS stale_pending_count
                        FROM mininex_live_order_intents
                        WHERE privy_did=%s AND asset='ETH'""",
-                    (_PENDING,did if False else _PENDING,_PENDING,did),
+                    (_PENDING,_PENDING,_PENDING,did),
                 )
                 totals = cur.fetchone()
                 return assess_eth_live_ledger(limits, totals)
