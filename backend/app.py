@@ -47,6 +47,7 @@ from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_router02_allowance import inspect_router02_approval
+from .eth_live_wallet_equity import read_owner_eth_live_wallet_value
 from .eth_owner_auto_approval import make_eth_owner_approval_plan
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
@@ -778,6 +779,17 @@ def eth_auto_pause(
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(pause_eth_auto(did),
                         headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/eth/real-wallet-value")
+async def eth_wallet_real_network_equity(
+    authorization: str | None = Header(default=None),
+):
+    """Real ETH/WETH/stable balance totals, with no fake PnL or PAPER value."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        await read_owner_eth_live_wallet_value(did),
+        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/eth/recorded-legs")
