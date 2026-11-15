@@ -126,6 +126,8 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
     const record=balances?.[asset];
     if(record?.status==='verified')return record.balance+' '+asset;
     if(record?.status==='wallet_missing')return t.privyBalancesMissing;
+    if(status==='privy-setup')return t.privyBalancesPrivySetup;
+    if(status==='privy-failed')return t.privyBalancesPrivyFailed;
     return status==='loading'?t.privyBalancesLoading:t.privyBalancesUnavailable;
   };
   return <section className="mininex-stablecoin-holdings" aria-label={t.privyBalancesTitle}>
