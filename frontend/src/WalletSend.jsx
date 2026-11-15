@@ -10,10 +10,10 @@ import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
 // Native BTC/SOL/XRP/TRX/DOGE/ADA sending is not claimed supported here.
-export default function WalletSend({t,enabled,userId}) {
+export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoin=false}) {
   const {wallets}=useWallets();
   const [open,setOpen]=useState(false);
-  const [coin,setCoin]=useState('ETH');
+  const [coin,setCoin]=useState(initialCoin);
   const [destination,setDestination]=useState('');
   const [amount,setAmount]=useState('');
   const [review,setReview]=useState(null);
@@ -261,11 +261,11 @@ export default function WalletSend({t,enabled,userId}) {
       <p className="privy-wallet-description">{t.walletSendManualOnly}</p>
       <form className="mininex-send-form" onSubmit={event=>prepare(false,event)}>
         <label><span>{t.walletSendAsset}</span>
-          <select value={coin} disabled={busy||sending.current}
+          {lockedCoin?<strong>{coin}</strong>:<select value={coin} disabled={busy||sending.current}
             onChange={e=>change(setCoin,e.target.value)}>
             {labels.filter(row=>SEND_ASSETS.includes(row.symbol)).map(row=>
               <option key={row.symbol} value={row.symbol}>{row.label}</option>)}
-          </select>
+          </select>}
         </label>
         <label><span>{t.walletSendRecipient}</span>
           <input value={destination} disabled={busy||sending.current||!spec}
