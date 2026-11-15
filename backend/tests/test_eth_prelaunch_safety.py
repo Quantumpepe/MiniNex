@@ -266,6 +266,9 @@ def test_valid_local_p256_key_does_not_imply_privy_member_verification(monkeypat
     result = safety()
     assert result["backend_signer_key_configured"] is True
     assert result["backend_signer_key_format_valid"] is True
+    assert result["backend_signer_public_key_pin_valid"] is False
+    assert result["backend_signer_key_pair_matches_pin"] is False
+    assert "PRIVY_SIGNER_PUBLIC_KEY_PIN_MISSING_OR_INVALID" in result["blockers"]
     assert result["backend_signer_quorum_member_verified"] is False
     assert "PRIVY_P256_SIGNER_KEY_NOT_CONFIGURED_OR_INVALID" not in result["blockers"]
     assert "PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED" in result["blockers"]
@@ -280,3 +283,25 @@ def test_invalid_private_signer_key_is_never_considered_ready(monkeypatch, bad):
     assert result["backend_signer_key_format_valid"] is False
     assert bad not in str(result)
     assert result["can_submit"] is False
+
+
+def test_pinned_privy_key_pair_matches_without_claiming_remote_grant(monkeypatch):
+    import base64
+    private = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption())
+    spki = private.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
+                      base64.b64encode(der).decode())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                      base64.b64encode(spki).decode())
+    report = safety()
+    assert report["backend_signer_key_pair_matches_pin"] is True
+    assert report["backend_signer_public_key_pin_valid"] is True
+    assert report["backend_signer_quorum_member_verified"] is False
+    assert report["can_sign"] is False
+    assert report["can_submit"] is False
+    assert base64.b64encode(der).decode() not in str(report)
+    assert base64.b64encode(spki).decode() not in str(report)
