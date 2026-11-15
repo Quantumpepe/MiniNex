@@ -302,6 +302,8 @@ def test_extra_worker_scans_only_opted_in_and_keeps_failures_isolated(monkeypatc
     assert worker.process_extra_sessions(FakeMarkets())==1
     assert touched==[("did:privy:good","DOGE")]
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    assert worker.process_extra_sessions(FakeMarkets())==1
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","false")
     assert worker.process_extra_sessions(FakeMarkets())==0
 
 
@@ -345,8 +347,9 @@ def test_public_paper_endpoints_require_privy_auth_and_ada_is_disabled(signed,mo
         extra_paper.valid_asset("ADA")
 
 
-def test_live_cutover_shuts_off_extra_paper_routes_and_worker(signed,monkeypatch):
+def test_explicit_paper_cutover_shuts_off_extra_paper_routes_and_worker(signed,monkeypatch):
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","false")
     client=TestClient(api.app)
     assert client.get("/api/extra-paper/SOL",headers=signed()).status_code==404
     assert client.post("/api/extra-paper/SOL/start",headers=signed(),
