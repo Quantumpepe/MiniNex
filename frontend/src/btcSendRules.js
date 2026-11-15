@@ -1,6 +1,6 @@
 import {Buffer} from 'buffer';
 import * as bitcoin from 'bitcoinjs-lib';
-import * as ecc from 'tiny-secp256k1';
+import {secp256k1} from '@noble/curves/secp256k1';
 
 // Native Bitcoin P2WPKH only. Never treat a TEE-created address as proof
 // of signing authority; the user must approve the Privy signature.
@@ -22,8 +22,8 @@ export function btcOwnedPublicKey(wallet) {
   const key=String(wallet?.publicKey||wallet?.public_key||'').replace(/^0x/,'');
   if(!/^(?:[0-9a-fA-F]{66}|[0-9a-fA-F]{130})$/.test(key))return null;
   const bytes=Buffer.from(key,'hex');
-  if(!ecc.isPoint(bytes))return null;
-  return Buffer.from(ecc.pointCompress(bytes,true));
+  try {return Buffer.from(secp256k1.ProjectivePoint.fromHex(bytes).toRawBytes(true));}
+  catch{return null;}
 }
 export function btcOwnerScript(address,pubkey) {
   if(!address||!pubkey||!/^bc1q[ac-hj-np-z02-9]{38,59}$/.test(address))return null;
@@ -127,13 +127,13 @@ export async function btcSignAndBroadcast(plan,{address,pubkey,signRawHash,signa
     if(!/^[0-9a-fA-F]{128}(?:[0-9a-fA-F]{2})?$/.test(text))
       throw Error('Unexpected Privy signature format');
     const bytes=Buffer.from(text.slice(0,128),'hex');
-    if(!ecc.verify(Buffer.from(hash),pubkey,bytes))
+    if(!secp256k1.verify(Buffer.from(hash),pubkey,bytes))
       throw Error('Privy signature did not verify');
     return bytes;
   }};
   for(let i=0;i<plan.utxos.length;i++)await psbt.signInputAsync(i,walletSigner);
   if(!psbt.validateSignaturesOfAllInputs((key,hash,sig)=>
-     ecc.verify(Buffer.from(hash),Buffer.from(key),Buffer.from(sig))))
+     secp256k1.verify(Buffer.from(hash),Buffer.from(key),Buffer.from(sig))))
     throw Error('Bitcoin signatures invalid');
   psbt.finalizeAllInputs();
   const tx=psbt.extractTransaction();
