@@ -21,6 +21,7 @@ from .privy_wallet_verification import APP_ID
 from .eth_privy_auto_transport import bound_privy_rpc_request
 
 _KEY_ENV="MININEX_PRIVY_ETH_AUTH_P256_PKCS8"
+_PUBLIC_ENV="MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI"
 _KEY_ID=re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 
 
@@ -49,27 +50,66 @@ def _canonical_authorization_payload(*,url:str,body:dict,key:str) -> bytes:
     return raw
 
 
-def inspect_privy_p256_key_configuration() -> dict:
-    """Inspect signer key locally without signing, exporting or revealing it.
-
-    This does NOT prove that the public key belongs to the Privy quorum.
-    A matching remote member must still be independently verified before LIVE.
-    """
+def _read_valid_p256_private_key() -> ec.EllipticCurvePrivateKey | None:
     encoded = os.environ.get(_KEY_ENV, "").strip()
-    valid = False
-    if encoded and len(encoded) <= 4096:
-        try:
-            der = base64.b64decode(encoded, validate=True)
-            private = serialization.load_der_private_key(der, password=None)
-            valid = (
-                isinstance(private, ec.EllipticCurvePrivateKey)
-                and isinstance(private.curve, ec.SECP256R1)
-            )
-        except (ValueError, TypeError, binascii.Error):
-            valid = False
+    if not encoded or len(encoded) > 4096:
+        return None
+    try:
+        der = base64.b64decode(encoded, validate=True)
+        private = serialization.load_der_private_key(der, password=None)
+        if (isinstance(private, ec.EllipticCurvePrivateKey)
+                and isinstance(private.curve, ec.SECP256R1)):
+            return private
+    except (ValueError, TypeError, binascii.Error):
+        pass
+    return None
+
+
+def _configured_quorum_public_key() -> ec.EllipticCurvePublicKey | None:
+    """Pinned public SPKI copied from the Privy Backend-Signer quorum member.
+
+    Never trust a caller-provided value. An empty or malformed pin fails closed.
+    This proves only equality with the configured pin, not a live Privy GET.
+    """
+    encoded = os.environ.get(_PUBLIC_ENV, "").strip()
+    if not encoded or len(encoded) > 2048:
+        return None
+    try:
+        der = base64.b64decode(encoded, validate=True)
+        public = serialization.load_der_public_key(der)
+        if (isinstance(public, ec.EllipticCurvePublicKey)
+                and isinstance(public.curve, ec.SECP256R1)):
+            return public
+    except (ValueError, TypeError, binascii.Error):
+        pass
+    return None
+
+
+def _private_key_matches_public_pin(
+    private: ec.EllipticCurvePrivateKey | None,
+    public: ec.EllipticCurvePublicKey | None,
+) -> bool:
+    if private is None or public is None:
+        return False
+    return private.public_key().public_numbers() == public.public_numbers()
+
+
+def inspect_privy_p256_key_configuration() -> dict:
+    """Return booleans only; no private key, full public key or key fingerprint.
+
+    Pin must be copied from the existing registered Privy quorum member.
+    A local match does not prove current remote enrollment or wallet consent.
+    """
+    private = _read_valid_p256_private_key()
+    public = _configured_quorum_public_key()
     return {
-        "key_configured": bool(encoded),
-        "p256_private_key_valid": valid,
+        "key_configured": bool(os.environ.get(_KEY_ENV, "").strip()),
+        "p256_private_key_valid": private is not None,
+        "quorum_member_public_key_configured":
+            bool(os.environ.get(_PUBLIC_ENV, "").strip()),
+        "quorum_member_public_key_format_valid": public is not None,
+        "local_private_key_matches_configured_quorum_member":
+            _private_key_matches_public_pin(private, public),
         "privy_quorum_public_key_match_verified": False,
         "authorized_to_broadcast": False,
     }
@@ -98,16 +138,11 @@ def sign_privy_rpc_payload(*,url:str,body:dict,idempotency_key:str)->str:
     """Sign exact fixed Privy RPC action, also WETH9 deposit/withdraw."""
     payload=_canonical_authorization_payload(
         url=url,body=body,key=idempotency_key)
-    encoded=os.environ.get(_KEY_ENV,"").strip()
-    if not encoded or len(encoded)>4096:
-        raise HTTPException(503,"Privy additional signer key not configured")
-    try:
-        der=base64.b64decode(encoded,validate=True)
-        private=serialization.load_der_private_key(der,password=None)
-        if (not isinstance(private,ec.EllipticCurvePrivateKey)
-                or not isinstance(private.curve,ec.SECP256R1)):
-            raise ValueError("Wrong signer key curve")
-        signature=private.sign(payload,ec.ECDSA(hashes.SHA256()))
-        return base64.b64encode(signature).decode("ascii")
-    except (ValueError,TypeError,binascii.Error):
-        raise HTTPException(503,"Privy additional signer key invalid") from None
+    private = _read_valid_p256_private_key()
+    if private is None:
+        raise HTTPException(503, "Privy additional signer key not configured or invalid")
+    public = _configured_quorum_public_key()
+    if not _private_key_matches_public_pin(private, public):
+        raise HTTPException(503, "Privy signer key does not match configured quorum member")
+    signature = private.sign(payload, ec.ECDSA(hashes.SHA256()))
+    return base64.b64encode(signature).decode("ascii")
