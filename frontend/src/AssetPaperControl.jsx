@@ -48,8 +48,7 @@ export default function AssetPaperControl({asset,t,getAccessToken,enabled}){
         const response=await fetch(API_BASE+'/api/user-paper/availability',{cache:'no-store'});
         if(!response.ok)throw Error('Simulation availability unavailable');
         const availability=await response.json();
-        if(availability?.paper_available!==true||
-           availability?.live_trading_enabled!==false){
+        if(availability?.paper_available!==true){
           if(active){setReady(false);setSession(null);}return;
         }
         const data=await refresh();

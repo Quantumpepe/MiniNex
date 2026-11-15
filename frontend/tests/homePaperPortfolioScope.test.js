@@ -140,17 +140,18 @@ test('portfolio ALWAYS totals all started coins while ONLY trades follow selecte
   assert.match(labels,/homePortfolioCapital: 'Virtual starting capital'/);
 });
 
-test('live cutover hides all PAPER UI and leaves wallet tools visible',()=>{
+test('independent PAPER cutover leaves LIVE wallet tools and coin settings visible',()=>{
   assert.match(app,/getJson\('\/api\/user-paper\/availability'\)/);
   assert.match(app,/window\.setInterval\(\(\)=>\{/);
-  assert.match(app,/setPaperVisible\(\s*data\?\.paper_available===true&&data\?\.live_trading_enabled===false/);
+  assert.match(app,/setPaperVisible\(\s*data\?\.paper_available===true/);
   assert.match(mobile,/\{showSimulatedTrades&&<PaperPortfolioCard/);
   assert.match(mobile,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
   assert.match(app,/\{paperVisible&&<UserPaperSessions/);
   assert.match(wallet,/paperAvailable=\{paperAvailable\}/);
   assert.match(settings,/\{paperAvailable&&<ExtraPaperComparison/);
-  assert.match(settings,/\{paperAvailable&&\(selectedSettings \? <>/);
+  assert.match(settings,/\{selectedSettings \? <>/);
+  assert.match(settings,/\{paperAvailable&&renderSessionControls\?\.\(opened\)\}/);
   assert.match(wallet,/<WalletSend/);
   assert.match(wallet,/<ManualSwapPreview/);
   assert.match(wallet,/<WalletBalances/);

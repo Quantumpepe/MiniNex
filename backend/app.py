@@ -100,7 +100,8 @@ async def lifespan(app: FastAPI):
     await extra_markets.start()
     if _paper_visible():
         await paper.start()
-    await personal_paper.start()
+    if _paper_visible():
+        await personal_paper.start()
     await eth_auto_live.start()
     try:
         yield
@@ -1353,9 +1354,12 @@ async def blockchain_import_verified_page(
 
 
 def _paper_visible() -> bool:
-    # Future live-mode cutover: NEVER display or execute simulated sessions.
-    # This flag only DISABLES paper mode; it cannot enable real trading.
-    return os.getenv("MININEX_LIVE_TRADING_ENABLED","false").lower() != "true"
+    """PAPER is independent from LIVE; only an explicit PAPER cutover hides it.
+
+    A separately authorized ETH LIVE worker may run alongside a still-visible
+    simulation. PAPER session data never grants wallet signing authority.
+    """
+    return os.getenv("MININEX_PAPER_ENABLED","true").strip().lower() != "false"
 
 
 def _require_paper_visible() -> None:
@@ -1367,7 +1371,8 @@ def _require_paper_visible() -> None:
 def user_paper_availability():
     return JSONResponse({
         "paper_available":_paper_visible(),
-        "live_trading_enabled":False,
+        # Informational global flag only; not a user wallet permission.
+        "live_trading_enabled":os.getenv("MININEX_LIVE_TRADING_ENABLED","false").lower()=="true",
     },headers={"Cache-Control":"no-store"})
 
 

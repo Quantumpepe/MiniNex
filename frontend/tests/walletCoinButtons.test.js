@@ -36,7 +36,7 @@ test('editing or saving BTC/ETH settings cannot close selected coin panel',()=>{
   }
   assert.match(setup,/onClick=\{\(\)=>save\(opened\)\}/);
   assert.match(setup,/\{renderBudget\?\.\(opened\)\}/);
-  assert.match(setup,/\{renderSessionControls\?\.\(opened\)\}/);
+  assert.match(setup,/\{paperAvailable&&renderSessionControls\?\.\(opened\)\}/);
   assert.match(wallet,/onClick=\{\(\)=>saveBudget\(asset\)\}/);
   assert.match(wallet,/onChange=\{event=>setPreviewBudgets/);
   assert.match(setup,/\{selectedCoin&&<section/);
