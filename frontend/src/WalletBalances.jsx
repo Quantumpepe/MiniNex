@@ -112,7 +112,7 @@ export default function WalletBalances({t,getAccessToken,userId}) {
     aria-label={t.privyBalancesTitle}>
     <summary className="mininex-balance-summary">
       <span><ShieldCheck size={17} aria-hidden="true"/> <strong>{t.privyBalancesTitle}</strong></span>
-      <small>{t.coinBalanceSummaryHint}</small>
+
     </summary>
     <div className="mininex-balance-expanded">
       <p className="privy-wallet-description">{t.privyBalancesCompactNote}</p>
