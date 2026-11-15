@@ -161,8 +161,11 @@ def test_api_requires_privy_token_and_paper_mode(monkeypatch):
     assert reply.headers["x-content-type-options"]=="nosniff"
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     assert client.get("/api/home/paper-trades",
+        headers={"Authorization":"Bearer verified-session"}).status_code==200
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","false")
+    assert client.get("/api/home/paper-trades",
         headers={"Authorization":"Bearer verified-session"}).status_code==404
-    assert checked==["Bearer verified-session"]
+    assert checked==["Bearer verified-session","Bearer verified-session"]
 
 
 @pytest.mark.parametrize("asset,table", [
