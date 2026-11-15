@@ -207,7 +207,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
         <span>{selectedCoin.inProgress?t.coinInProgress:!paperAvailable?t.wallet:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
       </div>
       {renderCoinAddress?.(opened)}
-      {paperAvailable&&(selectedSettings ? <>
+      {selectedSettings ? <>
         <div className="privy-asset-settings-fields">
           <label>
             <span>{t.privySetupMode}</span>
@@ -239,20 +239,20 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
             ['mode','stable','horizon'].every(key=>selectedSettings[key]===saved[opened][key])}
           onClick={()=>save(opened)}>{t.privyBudgetSave} {opened}</button>
         {renderBudget?.(opened)}
-        {renderSessionControls?.(opened)}
+        {paperAvailable&&renderSessionControls?.(opened)}
         {renderLiveControls?.(opened,selectedSettings.stable)}
         {opened==='BTC'&&<LiveBtcControls t={t} enabled={enabled}
           userId={userId} getAccessToken={getAccessToken}/>}
 
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
-      </p> : <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
+      </p> : paperAvailable ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled
         t={t} getAccessToken={getAccessToken} options={replayOptions[opened]}
         onChange={changeReplay} onSavePreference={saveExtra}
         preferenceStatus={extraSettingsStatus}
         preferenceSaved={savedExtra?.[opened]||null}
         preferenceSaving={extraSaving===opened}
-        onRetryPreference={()=>setExtraRefresh(n=>n+1)}/>)}
+        onRetryPreference={()=>setExtraRefresh(n=>n+1)}/> : null}
       {!selectedCoin.inProgress&&<LiveTradePlan
         key={opened} asset={opened} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}
