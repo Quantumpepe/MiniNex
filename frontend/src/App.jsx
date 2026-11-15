@@ -402,14 +402,14 @@ export default function App() {
       getJson('/api/user-paper/availability')
         .then(data=>{
           if(active)setPaperVisible(
-            data?.paper_available===true&&data?.live_trading_enabled===false
+            data?.paper_available===true
           );
         })
         .catch(()=>{if(active)setPaperVisible(false);});
     };
     verifyMode();
-    // An environment cutover hides PAPER without a new APK, page reload
-    // or further frontend redesign, and the server itself blocks paper APIs.
+    // Only the independent PAPER availability flag controls simulation UI.
+    // ETH LIVE readiness never implicitly hides the still-running simulation.
     const timer=window.setInterval(()=>{
       if(!document.hidden)verifyMode();
     },20000);
