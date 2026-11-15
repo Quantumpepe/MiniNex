@@ -361,7 +361,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   // The address belongs to the coin's own open settings panel. No central
   // wallet-address section and no address from an unverified native chain.
   const renderCoinAddress = asset => {
-    if(asset==='BTC')return <div className="mininex-coin-wallet-address">
+    if(asset==='BTC')return <div className="mininex-coin-wallet-address" role="group" aria-label={t.privyBtcTitle}>
       {!btcWallet.address&&<div role="status" className="privy-wallet-description">
         {btcWallet.state==='creating'?t.privyBtcCreating:
          btcWallet.state==='failed'?t.privyBtcFailed:t.privyBtcPending}
