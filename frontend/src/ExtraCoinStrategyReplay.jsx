@@ -64,7 +64,6 @@ export default function ExtraCoinStrategyReplay({
   const pct=value=>(value>0?'+':'')+value.toFixed(2)+'%';
   return <section className="mininex-extra-replay" aria-label={asset+' '+t.extraReplayTitle}>
     <strong>{t.extraReplayTitle}</strong>
-    <p className="privy-wallet-description">{t.extraReplayExplanation}</p>
     <form className="mininex-extra-replay-form" onSubmit={run}>
       <label><span>{t.extraReplayBudget}</span>
         <input type="number" inputMode="numeric" min="1" step="1"
@@ -136,7 +135,6 @@ export default function ExtraCoinStrategyReplay({
             <strong>{Number(trade.total_spent??trade.net_proceeds??0).toFixed(2)} $</strong>
           </div>)}
       </div>}
-      <p className="privy-wallet-description">{t.extraReplayCostWarning}</p>
     </div>}
   </section>;
 }

@@ -102,7 +102,7 @@ export default function LiveTradePlan({
   const result=quote?.result;
   return <section className="mininex-live-trade-plan" aria-label={asset+' '+t.livePlanTitle}>
     <strong>{t.livePlanTitle}</strong>
-    <p className="privy-wallet-description">{t.livePlanDescription}</p>
+    
     <form onSubmit={check} className="mininex-extra-replay-form">
       <label><span>{t.livePlanSide}</span>
         <select value={side} disabled={!enabled||busy||liveLocked}

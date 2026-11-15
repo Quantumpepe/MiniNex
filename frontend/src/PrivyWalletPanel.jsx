@@ -361,12 +361,11 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   // The address belongs to the coin's own open settings panel. No central
   // wallet-address section and no address from an unverified native chain.
   const renderCoinAddress = asset => {
-    if(asset==='BTC')return <div className="mininex-coin-wallet-address">
-      <div className="privy-wallet-description"><strong>{t.privyBtcTitle}</strong> · {
-        btcWallet.address?t.privyBtcCreated:
-        btcWallet.state==='creating'?t.privyBtcCreating:
-        btcWallet.state==='failed'?t.privyBtcFailed:t.privyBtcPending
-      }</div>
+    if(asset==='BTC')return <div className="mininex-coin-wallet-address" role="group" aria-label={t.privyBtcTitle}>
+      {!btcWallet.address&&<div role="status" className="privy-wallet-description">
+        {btcWallet.state==='creating'?t.privyBtcCreating:
+         btcWallet.state==='failed'?t.privyBtcFailed:t.privyBtcPending}
+      </div>}
       {btcWallet.address &&
         <CopyWalletAddress address={btcWallet.address} network="BTC" t={t}/>}
       {btcWallet.state==='failed'&&!btcWallet.address&&
@@ -374,9 +373,9 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
           onClick={btcWallet.retry}>{t.privyBtcRetry}</button>}
     </div>;
     if(asset==='ETH')return <div className="mininex-coin-wallet-address">
-      <div className="privy-wallet-description">
-        {address?t.privyConnected:(walletsReady?t.privyNoWallet:t.privyLoading)} · {t.privyEvm}
-      </div>
+      {!address&&<div role="status" className="privy-wallet-description">
+        {walletsReady?t.privyNoWallet:t.privyLoading}
+      </div>}
       {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
     </div>;
 
@@ -391,13 +390,11 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
         : evmNetworkAddress(chain,address);
       return <div className="mininex-coin-wallet-address" role="group"
         aria-label={asset+' '+t.privyFullAddress}>
-        <p className="privy-wallet-description">{t.coinEvmSharedAddress}</p>
         {evmAddress
           ? <CopyWalletAddress address={evmAddress} network={network} t={t}/>
           : <div role="status" className="privy-wallet-description">
               {walletsReady?t.privyNoWallet:t.privyLoading}
             </div>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     if(asset==='SOL'||asset==='TRX'){
@@ -405,17 +402,15 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       const network=asset==='SOL'?'Solana':'TRON';
       return <div className="mininex-coin-wallet-address" role="group"
         aria-label={asset+' '+t.privyFullAddress}>
-        <div className="privy-wallet-description" role="status">
-          {nativeWallet.address?t.coinWalletReady:
-            nativeWallet.state==='creating'?t.coinWalletCreating:
+        {!nativeWallet.address&&<div className="privy-wallet-description" role="status">
+          {nativeWallet.state==='creating'?t.coinWalletCreating:
             nativeWallet.state==='failed'?t.coinWalletFailed:t.privyBtcPending}
-        </div>
+        </div>}
         {nativeWallet.address&&
           <CopyWalletAddress address={nativeWallet.address} network={network} t={t}/>}
         {nativeWallet.state==='failed'&&!nativeWallet.address&&
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
             onClick={nativeWallet.retry}>{t.coinWalletRetry}</button>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     // XRPL is a native Privy extended-chain wallet; create only for the
@@ -424,17 +419,15 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     if(asset==='XRP'){
       return <div className="mininex-coin-wallet-address" role="group"
         aria-label={asset+' '+t.privyFullAddress}>
-        <div className="privy-wallet-description" role="status">
-          {xrpWallet.address?t.coinWalletReady:
-            xrpWallet.state==='creating'?t.coinWalletCreating:
+        {!xrpWallet.address&&<div className="privy-wallet-description" role="status">
+          {xrpWallet.state==='creating'?t.coinWalletCreating:
             ['failed','invalid'].includes(xrpWallet.state)?t.coinWalletFailed:t.coinAddressPending}
-        </div>
+        </div>}
         {xrpWallet.address&&
           <CopyWalletAddress address={xrpWallet.address} network="XRP Ledger" t={t}/>}
         {xrpWallet.state==='failed'&&!xrpWallet.address&&
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
             onClick={xrpWallet.retry}>{t.coinWalletRetry}</button>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     // Cardano remains "In Arbeit". No fabricated address or wallet creation.
@@ -448,7 +441,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
           : <div role="status" className="privy-wallet-description">
               {t.coinAddressPending}
             </div>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     if(asset==='DOGE'){
@@ -465,13 +457,12 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   // EVM sends use the verified wallet signer. Swap is still preview-only.
   const renderCoinBalance = asset => {
     const record=verifiedCoinHoldings?.[asset];
-    return <div className="mininex-coin-real-balance" role="status">
-      <strong>{t.privyBalancesTitle} · {asset}</strong>
-      <span>{record?.status==='verified'
-        ? record.balance+' '+asset
-        : record?.status==='wallet_missing'
-          ? t.privyBalancesMissing:t.privyBalancesUnavailable}</span>
-    </div>;
+    return <span className="mininex-coin-header-balance" role="status"
+      aria-label={t.privyBalancesTitle+' '+asset}>
+      {record?.status==='verified' ? record.balance+' '+asset :
+       record?.status==='wallet_missing' ? t.privyBalancesMissing :
+       t.privyBalancesUnavailable}
+    </span>;
   };
 
   const renderCoinActions = asset => <div className="mininex-coin-wallet-actions">

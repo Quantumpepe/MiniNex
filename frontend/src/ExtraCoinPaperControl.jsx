@@ -136,7 +136,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
           <option value="USDC">USDC</option><option value="USDT">USDT</option>
         </select>
       </label>
-      <p className="privy-wallet-description">{t.extraPaperStartNote}</p>
+      
       <button type="button" className="privy-wallet-action" disabled={busy||!canStart}
         onClick={()=>command('start')}>
         {t.extraPaperStart} · {asset}
@@ -156,7 +156,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         <div><span>{t.extraPaperRuntime}</span>
           <strong>{hours}h {mins}m</strong></div>
       </div>
-      <p className="privy-wallet-description">{t.extraPaperRunningNote}</p>
+      
       {data.history_coverage&&<p className="privy-wallet-description"
         role="status">
         {t.extraPaperHistoryCoverage}: {
@@ -190,6 +190,6 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
           <p className="privy-wallet-description">{t.extraPaperNoTrades}</p>}
       </div>
     </>}
-    <p className="privy-wallet-description">{t.extraPaperOnly}</p>
+    
   </section>;
 }
