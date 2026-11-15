@@ -32,6 +32,28 @@ export function btcOwnerScript(address,pubkey) {
     return payment.address===address?payment.output:null;
   }catch{return null;}
 }
+// Derive a P2WPKH compressed public key from a one-time Privy proof
+// signature. Never trust the recovered key unless it exactly produces the
+// already-linked, user-owned Bitcoin address. This is a proof, not a send.
+export function btcRecoverPublicKey(address, hash, signed) {
+  if(typeof address!=='string'||!/^bc1q[ac-hj-np-z02-9]{38}$/.test(address))
+    return null;
+  const digest=Buffer.from(hash||[]);
+  const text=typeof signed==='string'?signed.replace(/^0x/,''):'';
+  if(digest.length!==32||!/^[0-9a-fA-F]{128}(?:[0-9a-fA-F]{2})?$/.test(text))
+    return null;
+  const signature=Buffer.from(text.slice(0,128),'hex');
+  for(let bit=0;bit<4;bit++){
+    try {
+      const candidate=Buffer.from(secp256k1.Signature.fromCompact(signature)
+        .addRecoveryBit(bit).recoverPublicKey(digest).toRawBytes(true));
+      if(secp256k1.verify(signature,digest,candidate)&&
+         btcOwnerScript(address,candidate))return candidate;
+    } catch{/* Try the next valid ECDSA recovery bit. */}
+  }
+  return null;
+}
+
 export function btcRecipientScript(destination) {
   if(typeof destination!=='string'||destination.trim()!==destination)return null;
   try {return bitcoin.address.toOutputScript(destination,bitcoin.networks.bitcoin);}
