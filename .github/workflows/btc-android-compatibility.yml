@@ -66,6 +66,28 @@ jobs:
           chmod +x android/gradlew
           cd android
           ./gradlew --no-daemon assembleDebug
+      - name: Android emulator app-start smoke test (without real wallet)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            adb install -r frontend/android/app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am start -n com.mininex.preview/.MainActivity
+            sleep 15
+            adb shell pidof com.mininex.preview
+            adb shell dumpsys activity activities | grep -F com.mininex.preview
+            if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|Process: com.mininex.preview' | grep -F com.mininex.preview; then
+              echo 'Android application crash detected'
+              exit 1
+            fi
+            adb shell input keyevent 3
+            adb shell am start -n com.mininex.preview/.MainActivity
+            sleep 4
+            adb shell pidof com.mininex.preview
       - name: Save test APK only on this PR (not an OTA or installable release)
         uses: actions/upload-artifact@v4
         with:
