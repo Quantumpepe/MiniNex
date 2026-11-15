@@ -82,9 +82,9 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
       // Re-check the current confirmed UTXO set after review, before signing.
       const fresh=btcValidatedUtxos(await btcFetch(
         '/address/'+encodeURIComponent(address)+'/utxo',{signal:ctrl.signal}));
-      const reviewed=review.utxos.map(u=>u.txid+':'+u.vout+':'+u.value).sort();
-      const current=fresh?.map(u=>u.txid+':'+u.vout+':'+u.value).sort();
-      if(!current||JSON.stringify(current)!==JSON.stringify(reviewed))
+      const reviewed=review.utxos.map(u=>u.txid+':'+u.vout+':'+u.value);
+      const current=new Set(fresh?.map(u=>u.txid+':'+u.vout+':'+u.value)||[]);
+      if(!fresh||reviewed.some(key=>!current.has(key)))
         throw Error('Bitcoin funds changed; review again');
       const hash=await btcSignAndBroadcast(review,{address,pubkey:publicKey,
         signRawHash,signal:ctrl.signal});
