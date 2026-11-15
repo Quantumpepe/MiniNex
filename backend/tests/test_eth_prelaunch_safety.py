@@ -240,3 +240,43 @@ def test_readiness_endpoint_authenticated_readonly_no_submission(auth,monkeypatc
     assert r.json()["read_only"] is True
     assert client.post(path,headers=auth).status_code==405
     assert "/api/live/eth/execute" not in [x.path for x in api.app.routes]
+
+
+def test_missing_p256_backend_signer_is_visible_as_read_only_blocker(monkeypatch):
+    monkeypatch.delenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8", raising=False)
+    result = safety()
+    assert result["backend_signer_key_configured"] is False
+    assert result["backend_signer_key_format_valid"] is False
+    assert result["backend_signer_quorum_member_verified"] is False
+    assert "PRIVY_P256_SIGNER_KEY_NOT_CONFIGURED_OR_INVALID" in result["blockers"]
+    assert "PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED" in result["blockers"]
+    assert result["can_sign"] is False
+    assert result["can_submit"] is False
+
+
+def test_valid_local_p256_key_does_not_imply_privy_member_verification(monkeypatch):
+    import base64
+    private = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    encoded = base64.b64encode(der).decode("ascii")
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8", encoded)
+    result = safety()
+    assert result["backend_signer_key_configured"] is True
+    assert result["backend_signer_key_format_valid"] is True
+    assert result["backend_signer_quorum_member_verified"] is False
+    assert "PRIVY_P256_SIGNER_KEY_NOT_CONFIGURED_OR_INVALID" not in result["blockers"]
+    assert "PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED" in result["blockers"]
+    assert encoded not in str(result)
+    assert result["execution_enabled"] is False
+
+
+@pytest.mark.parametrize("bad", ["not-base64", "AA==", "a" * 4097])
+def test_invalid_private_signer_key_is_never_considered_ready(monkeypatch, bad):
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8", bad)
+    result = safety()
+    assert result["backend_signer_key_format_valid"] is False
+    assert bad not in str(result)
+    assert result["can_submit"] is False
