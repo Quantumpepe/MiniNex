@@ -15,6 +15,7 @@ from .eth_privy_policy_ledger import get_eth_policy_ledger_status
 from .eth_live_ledger_audit import get_eth_live_ledger_audit
 from .eth_privy_user_grant import get_eth_user_grant_review
 from .storage import _safe_did
+from .eth_privy_p256_signer import inspect_privy_p256_key_configuration
 
 _POLICIES_REMOTE = {"REMOTE_VERIFIED_UNATTACHED", "GRANT_VERIFIED"}
 _UNCERTAIN = {"SUBMITTING","UNCERTAIN","REVOKE_REQUESTED"}
@@ -44,6 +45,13 @@ def assess_eth_prelaunch_safety(
         raise HTTPException(503, "Unknown ETH policy status")
     blockers = ["LIVE_EXECUTION_NOT_IMPLEMENTED", "REAL_TRADE_ABI_AUDIT_PENDING",
                 "GAS_ALLOWANCE_SETTLEMENT_AUDIT_PENDING"]
+    signer_key = inspect_privy_p256_key_configuration()
+    if signer_key["p256_private_key_valid"] is not True:
+        blockers.append("PRIVY_P256_SIGNER_KEY_NOT_CONFIGURED_OR_INVALID")
+    # A valid local secret does not prove that its public key matches
+    # the remotely registered Privy Backend-Signer quorum member.
+    if signer_key["privy_quorum_public_key_match_verified"] is not True:
+        blockers.append("PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED")
     if not all(enrollment.get(field) is True for field in (
         "wallet_identity_verified", "wallet_owned_by_authenticated_user",
         "wallet_chain_verified", "policy_owner_independent",
@@ -114,6 +122,9 @@ def assess_eth_prelaunch_safety(
             type(grant) is dict and grant.get("grant_offer_enabled") is True
         ),
         "signed_wallet_owner_grant_required":True,
+        "backend_signer_key_configured":signer_key["key_configured"],
+        "backend_signer_key_format_valid":signer_key["p256_private_key_valid"],
+        "backend_signer_quorum_member_verified":False,
         "live_limits_revision":ledger.get("limits_revision"),
         "live_ledger":ledger,
         "manual_policy_reconciliation_required":state in _UNCERTAIN,
