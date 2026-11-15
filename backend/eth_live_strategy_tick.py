@@ -157,9 +157,22 @@ async def execute_live_eth_strategy_tick(did: str, *, market,
         decision=decision,live_limits=limits,
         balances=balances,allowance=probe)
     if amount is None:
-        # The owner actually holds native ETH, not WETH. A defensive
-        # spot SELL first wraps the intended quantity into real WETH9
-        # before Router02 can exchange it for USDC/USDT on a later tick.
+        # If the wallet already owns WETH, a missing Router02 approval must
+        # NEVER cause a second native ETH->WETH conversion. Wait for the
+        # owner's explicit ERC20 approval instead of accumulating WETH.
+        if decision["action"]=="SELL":
+            if (allowance.get("wallet_identity_verified") is not True
+                    or allowance.get("side")!="SELL"
+                    or allowance.get("stable")!=stable):
+                return {"state":"WAIT","reason":"LIVE_WETH_BALANCE_UNVERIFIED","asset":"ETH"}
+            existing_weth=_positive_decimal(
+                allowance.get("verified_source_balance"),"WETH balance")
+            if existing_weth>_ZERO:
+                return {"state":"WAIT",
+                        "reason":"OWNER_APPROVAL_OR_BALANCE_REQUIRED",
+                        "asset":"ETH"}
+        # Only a verified zero WETH balance permits wrapping actual native
+        # ETH before the later stablecoin SELL. No PAPER inventory is used.
         if decision["action"]=="SELL":
             native=balances.get("balances",{}).get("ETH",{})
             if (balances.get("wallet_ownership_verified") is True
