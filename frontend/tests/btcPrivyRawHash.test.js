@@ -55,6 +55,16 @@ test('explicit confirmation + signer preflight gate prevents unsolicited Privy c
   });
   assert.deepEqual(signed,{ok:true,signature});
   assert.equal(calls,1);
+  const oneIntent=review();
+  const first=await requestReviewedBitcoinSignature({
+    preflight,intent:oneIntent,approve:signer,verifySignature:async()=>true
+  });
+  const second=await requestReviewedBitcoinSignature({
+    preflight,intent:oneIntent,approve:signer,verifySignature:async()=>true
+  });
+  assert.equal(first.ok,true);
+  assert.deepEqual(second,{ok:false,reason:'signer_not_ready'});
+  assert.equal(calls,2);
 });
 test('Privy adapter is never loaded by production App entry',()=>{
   const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8');
