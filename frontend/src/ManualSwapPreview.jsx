@@ -109,6 +109,10 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const items=[...COINS.map(coin=>({value:coin.symbol,
     label:coin.symbol+(coin.inProgress?' · '+t.coinInProgress:'')})),
     {value:'USDC',label:'USDC'},{value:'USDT',label:'USDT'}];
+  // The selected coin is fixed; only its stablecoin pair is offered here.
+  const visibleItems=lockedCoin
+    ? items.filter(item=>[initialCoin,'USDC','USDT'].includes(item.value))
+    : items;
   const estimated=quote?.data?.expected_output_amount||
     quote?.data?.estimated_output_amount;
   const minimum=quote?.data?.minimum_output_amount;
@@ -129,7 +133,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       <form onSubmit={checkQuote} className="mininex-swap-form">
         <label><span>{t.walletSwapFrom}</span>
           <select value={from} onChange={event=>changeFrom(event.target.value)}>
-            {items.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}
+            {visibleItems.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
         <button type="button" className="privy-wallet-action privy-wallet-action--secondary mininex-swap-flip"
@@ -139,7 +143,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         </button>
         <label><span>{t.walletSwapTo}</span>
           <select value={to} onChange={event=>changeTo(event.target.value)}>
-            {items.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}
+            {visibleItems.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label className="mininex-swap-amount"><span>{t.walletSwapAmount} · {from}</span>
