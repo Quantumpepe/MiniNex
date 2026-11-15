@@ -49,6 +49,32 @@ def _canonical_authorization_payload(*,url:str,body:dict,key:str) -> bytes:
     return raw
 
 
+def inspect_privy_p256_key_configuration() -> dict:
+    """Inspect signer key locally without signing, exporting or revealing it.
+
+    This does NOT prove that the public key belongs to the Privy quorum.
+    A matching remote member must still be independently verified before LIVE.
+    """
+    encoded = os.environ.get(_KEY_ENV, "").strip()
+    valid = False
+    if encoded and len(encoded) <= 4096:
+        try:
+            der = base64.b64decode(encoded, validate=True)
+            private = serialization.load_der_private_key(der, password=None)
+            valid = (
+                isinstance(private, ec.EllipticCurvePrivateKey)
+                and isinstance(private.curve, ec.SECP256R1)
+            )
+        except (ValueError, TypeError, binascii.Error):
+            valid = False
+    return {
+        "key_configured": bool(encoded),
+        "p256_private_key_valid": valid,
+        "privy_quorum_public_key_match_verified": False,
+        "authorized_to_broadcast": False,
+    }
+
+
 def sign_privy_eth_request(*,wallet_id:str,wallet:str,tx:dict,
                            side:str,stable:str,input_atomic:str,
                            minimum_output_atomic:str,
