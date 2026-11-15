@@ -110,8 +110,8 @@ function findNativeBtcWallet(user) {
   );
 }
 
-// This component is mounted only after Privy identity and account persistence
-// are confirmed. No BTC signing, transactions or transfers are enabled.
+// Native BTC wallet creation remains independent of signing or funds movement.
+// Manual sends require a separate explicit user review in BtcWalletSend.
 function useNativeBtcWallet(user, enabled) {
   const {createWallet} = useCreateExtendedWallet();
   // Keep provisioning mounted while the wallet page is open even if no coin
@@ -161,8 +161,8 @@ function useNativeBtcWallet(user, enabled) {
   return {address,wallet:existing||createdForUser,state,retry:()=>setRetry(n=>n+1)};
 }
 
-// Deliberately no sendTransaction, withdrawal or delegation path here.
-// The existing backend is PAPER-only, even when a user signs in to Privy.
+// This wallet panel keeps PAPER automation separate from manually confirmed
+// native BTC sending. No background withdrawal or delegated BTC signing.
 function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=true}) {
   const {ready, authenticated, user, login, logout, getAccessToken} = usePrivy();
   const {wallets, ready:walletsReady} = useWallets();
