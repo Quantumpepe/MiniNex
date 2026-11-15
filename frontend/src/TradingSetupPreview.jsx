@@ -30,7 +30,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,renderLiveControls,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -240,6 +240,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
           onClick={()=>save(opened)}>{t.privyBudgetSave} {opened}</button>
         {renderBudget?.(opened)}
         {renderSessionControls?.(opened)}
+        {renderLiveControls?.(opened,selectedSettings.stable)}
         {opened==='BTC'&&<LiveBtcControls t={t} enabled={enabled}
           userId={userId} getAccessToken={getAccessToken}/>}
 
