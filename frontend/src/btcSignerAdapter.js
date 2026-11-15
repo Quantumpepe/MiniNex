@@ -14,6 +14,7 @@ const MAINNET_P2WPKH=/^bc1q[ac-hj-np-z02-9]{38}$/;
 const COMPRESSED_PUBLIC_KEY=/^(02|03)[0-9a-f]{64}$/i;
 const SHA256=/^[a-f0-9]{64}$/i;
 const ECDSA_COMPACT=/^[a-f0-9]{128}$/i;
+const confirmedIntents=new WeakSet();
 
 export function bitcoinSignerPreflight({wallet,address,publicKey,approve}={}){
   // A linked BTC address is necessary but never sufficient for signing.
@@ -33,10 +34,12 @@ export function bitcoinSigningIntent({walletId,address,hashHex,reviewId,confirme
      typeof hashHex!=='string'||!SHA256.test(hashHex)||
      typeof reviewId!=='string'||!reviewId.trim()||
      confirmedByUser!==true)return null;
-  return Object.freeze({
+  const intent=Object.freeze({
     chainType:'bitcoin-segwit',walletId,address,
     hashHex:hashHex.toLowerCase(),reviewId
   });
+  confirmedIntents.add(intent);
+  return intent;
 }
 export function parseBitcoinRawSignature(value){
   // Privy SDK response mapping must be explicit, not guessed from arbitrary
@@ -49,7 +52,7 @@ export async function requestReviewedBitcoinSignature({
   preflight,intent,approve,verifySignature
 }={}){
   if(preflight?.state!==BTC_SIGNER_STATES.ready||
-     !intent||intent.address!==preflight.address||
+     !intent||!confirmedIntents.has(intent)||intent.address!==preflight.address||
      typeof approve!=='function'||typeof verifySignature!=='function')
     return {ok:false,reason:'signer_not_ready'};
   // Only invoke the injected, SDK-version-verified adapter after the caller
