@@ -12,7 +12,7 @@ const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
 // delegation requires a SEPARATE user-approved Privy addSigners call, and is
 // hidden unless the server has independently verified an audited policy.
 // The existing revoke button removes ALL additional signers per Privy's API.
-export default function LiveEthControls({t,user,address,getAccessToken,enabled}) {
+export default function LiveEthControls({t,user,address,getAccessToken,enabled,compact=false,stable='USDC'}) {
   const {removeSigners,addSigners}=useSigners();
   const {signMessage}=useSignMessage();
   const [limits,setLimits]=useState(null);
@@ -289,7 +289,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
     setBusy(true);setMessage('');
     try{
       const result=await request('/api/live/eth/auto/start','POST',{
-        stable:ethAuto?.stable||'USDC'});
+        stable:compact?stable:(ethAuto?.stable||'USDC')});
       if(result?.status!=='ACTIVE')throw Error('start');
       setMessage(t.liveEthAutoStarted);
       await refresh();
@@ -332,6 +332,41 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled})
 
   const changes=FIELDS.some(f=>draft?.[f]!==limits?.[f]);
   const canSave=phase==='ready'&&!busy&&!!validatedLiveEthDraft(draft)&&changes;
+
+  // Compact variant is shown ONLY inside the existing ETH coin settings.
+  // Keep Privy owner consent explicit; never start live trading on mount.
+  if(compact)return <div className="privy-paper-action" aria-label="ETH LIVE AUTO">
+    {phase==='loading'&&<p className="privy-wallet-description">{t.liveEthLoading}</p>}
+    {phase==='failed'&&<p role="alert" className="privy-wallet-description">{t.liveEthUnavailable}</p>}
+    {phase==='ready'&&limits&&<>
+      <div className="privy-paper-action-top">
+        <span>{t.liveEthAutoTitle}</span>
+        <strong>{ethAuto?.status||'OFF'}</strong>
+      </div>
+      {['NOT_PREPARED','PREPARED'].includes(policyState?.status)&&
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          disabled={busy||!ownAddress||!limits.trading_paused||
+            usdUnits(limits.max_order_usd)===0n} onClick={setupPolicy}>
+          {t.liveEthPolicySetupButton}</button>}
+      {validScopedGrantOffer(grantOffer,ownAddress)&&<>
+        <p role="alert" className="privy-wallet-description">{t.liveEthPrivyGrantWarning}</p>
+        <button type="button" className="privy-wallet-action"
+          disabled={busy||!limits.trading_paused} onClick={grantPrivySigner}>
+          {t.liveEthGrantButton}</button>
+      </>}
+      {ethAuto?.status==='ACTIVE'
+        ?<button type="button" className="privy-wallet-action"
+            disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
+        :<button type="button" className="privy-wallet-action"
+            disabled={busy||!ethAuto?.worker_deployed||
+              policyState?.status!=='GRANT_VERIFIED'||
+              !limits.trading_paused||!ownAddress}
+            onClick={startEthAuto}>{t.liveEthAutoStart}</button>}
+      {!ethAuto?.worker_deployed&&
+        <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
+      {message&&<p role="status" className="privy-wallet-description">{message}</p>}
+    </>}
+  </div>;
 
   return <details className="privy-disclosure privy-technical-section">
     <summary>
