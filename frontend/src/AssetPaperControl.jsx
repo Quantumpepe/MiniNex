@@ -126,10 +126,6 @@ export default function AssetPaperControl({asset,t,getAccessToken,enabled}){
     {pending&&<p className="privy-wallet-description" role="status">
       {t.privyPaperPendingInfo} {stable}.
     </p>}
-    {session.status==='PAUSED'&&!pending&&session.pause_exit_completed===true&&
-      <p className="privy-wallet-description">{t.privyPaperStableReady} {stable}.</p>}
-    {session.status==='ACTIVE'&&
-      <p className="privy-wallet-description">{t.privyPaperStopNote}</p>}
     {failed&&<p role="alert" className="privy-wallet-description">
       {t.personalDemoFailed}
       <button type="button" className="privy-paper-retry" onClick={async()=>{
