@@ -1,4 +1,4 @@
-name: MiniNex emergency Android recovery APK
+name: MiniNex last-good signed recovery APK
 
 on:
   workflow_dispatch:
@@ -18,8 +18,10 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - name: Checkout MiniNex
+      - name: Checkout last confirmed working MiniNex (USDC and USDT tiles)
         uses: actions/checkout@v4
+        with:
+          ref: 6c3893ae6b848bbe7e76f66ed64b17ecafba0c08
       - name: Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -48,7 +50,7 @@ jobs:
           # Public app ID must match backend JWT audience and existing user wallets.
           VITE_PRIVY_APP_ID: cmw7sb7ty013o0gl55aqyzi3y
           VITE_MININEX_NATIVE_ABI: ${{ env.MININEX_NATIVE_ABI }}
-          VITE_MININEX_BUILD_SHA: ${{ github.sha }}
+          VITE_MININEX_BUILD_SHA: 6c3893ae6b848bbe7e76f66ed64b17ecafba0c08
           VITE_MININEX_BUILD_AT: ${{ env.MININEX_BUILD_AT }}
       - name: Create native Android project
         run: npx cap add android
@@ -159,7 +161,7 @@ jobs:
       - name: Upload Android debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: MiniNex-Android-Recovery
+          name: MiniNex-Last-Good-Recovery
           path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
