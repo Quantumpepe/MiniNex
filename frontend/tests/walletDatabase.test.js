@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const wallet=readFileSync(new URL('../src/PrivyWalletPanel.jsx',import.meta.url),'utf8');
+const technical=readFileSync(new URL('../src/WalletTechnicalInfo.jsx',import.meta.url),'utf8');
 const styles=readFileSync(new URL('../src/styles.css',import.meta.url),'utf8');
 const langs=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
 test('database lookup only follows valid backend Privy identity',()=>{
@@ -10,9 +11,9 @@ test('database lookup only follows valid backend Privy identity',()=>{
   assert.match(wallet,/API_BASE\+'\/api\/account'/);
   assert.match(wallet,/Authorization:'Bearer '\+token/);
 });
-test('read-only HWM values stay in detailed wallet page',()=>{
-  assert.match(wallet,/assetLedger\[asset\]\?\.high_water_mark_usd/);
-  assert.match(wallet,/\['BTC','ETH'\]\.map/);
+test('read-only HWM values move into Settings technical section',()=>{
+  assert.match(technical,/ledger\[asset\]\?\.high_water_mark_usd/);
+  assert.match(technical,/\['BTC','ETH'\]\.map/);
   assert.doesNotMatch(wallet,/method:'POST'|method:'DELETE'/);
   assert.match(styles,/\.privy-hwm-box/);
 });
@@ -31,10 +32,10 @@ test('failed Privy/database check is recoverable without funds or extra permissi
 });
 
 test('HWM numbers are formatted as ordinary USD amounts, not PostgreSQL exponent strings',()=>{
-  assert.match(wallet,/function formatHwmUsd\(value\)/);
-  assert.match(wallet,/Number\(value\)/);
-  assert.match(wallet,/minimumFractionDigits: 2, maximumFractionDigits: 2/);
-  assert.match(wallet,/formatHwmUsd\(assetLedger\[asset\]\?\.high_water_mark_usd\)/);
+  assert.match(technical,/function displayUsd\(value\)/);
+  assert.match(technical,/Number\(value\)/);
+  assert.match(technical,/minimumFractionDigits:2,maximumFractionDigits:2/);
+  assert.match(technical,/displayUsd\(ledger\[asset\]\?\.high_water_mark_usd\)/);
 });
 test('wallet introductory copy reflects integrated Privy login, not future integration',()=>{
   assert.doesNotMatch(langs,/Privy-Wallet wird erst in einer späteren Version integriert/);
