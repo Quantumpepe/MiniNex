@@ -127,13 +127,13 @@ export async function btcSignAndBroadcast(plan,{address,pubkey,signRawHash,signa
     if(!/^[0-9a-fA-F]{128}(?:[0-9a-fA-F]{2})?$/.test(text))
       throw Error('Unexpected Privy signature format');
     const bytes=Buffer.from(text.slice(0,128),'hex');
-    if(!secp256k1.verify(Buffer.from(hash),pubkey,bytes))
+    if(!secp256k1.verify(bytes,Buffer.from(hash),pubkey))
       throw Error('Privy signature did not verify');
     return bytes;
   }};
   for(let i=0;i<plan.utxos.length;i++)await psbt.signInputAsync(i,walletSigner);
   if(!psbt.validateSignaturesOfAllInputs((key,hash,sig)=>
-     secp256k1.verify(Buffer.from(hash),Buffer.from(key),Buffer.from(sig))))
+     secp256k1.verify(Buffer.from(sig),Buffer.from(hash),Buffer.from(key))))
     throw Error('Bitcoin signatures invalid');
   psbt.finalizeAllInputs();
   const tx=psbt.extractTransaction();
