@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as bitcoin from 'bitcoinjs-lib';
-import * as ecc from 'tiny-secp256k1';
+import {secp256k1} from '@noble/curves/secp256k1';
 import {Buffer} from 'buffer';
 import {btcSatoshis,btcOwnedPublicKey,btcOwnerScript,btcRecipientScript,
   btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,btcSignAndBroadcast,BTC_REVIEW_MAX_AGE_MS}
@@ -10,10 +10,10 @@ import {btcSatoshis,btcOwnedPublicKey,btcOwnerScript,btcRecipientScript,
 
 const source=path=>readFileSync(new URL(path,import.meta.url),'utf8');
 const priv=Buffer.alloc(32);priv[31]=1;
-const publicKey=Buffer.from(ecc.pointFromScalar(priv,true));
+const publicKey=Buffer.from(secp256k1.getPublicKey(priv,true));
 const address=bitcoin.payments.p2wpkh({pubkey:publicKey}).address;
 const recipient=bitcoin.payments.p2wpkh({
-  pubkey:Buffer.from(ecc.pointFromScalar(Buffer.from([ ...Array(31).fill(0),2]),true))
+  pubkey:Buffer.from(secp256k1.getPublicKey(Buffer.from([ ...Array(31).fill(0),2]),true))
 }).address;
 const script=btcOwnerScript(address,publicKey);
 const utxo=[{txid:'a'.repeat(64),vout:0,value:100000n}];
@@ -102,7 +102,7 @@ test('real P2WPKH PSBT signs all inputs with Privy-style raw hashes and verifies
         assert.equal(signerAddress,address);
         assert.equal(chainType,'bitcoin-segwit');
         return {signature:'0x'+Buffer.from(
-          ecc.sign(Buffer.from(hash.slice(2),'hex'),priv)).toString('hex')};
+          secp256k1.sign(Buffer.from(hash.slice(2),'hex'),priv).toCompactRawBytes()).toString('hex')};
       }});
     assert.equal(result,broadcast.getId());
     assert.equal(broadcast.ins.length,1);
