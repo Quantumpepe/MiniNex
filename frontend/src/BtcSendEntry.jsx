@@ -2,7 +2,13 @@ import React,{Suspense,useState} from 'react';
 import {Send} from 'lucide-react';
 
 // Keep Bitcoin cryptography outside the initial Android WebView bundle.
-const loadBtcSend=()=>import('./BtcWalletSend.jsx');
+const loadBtcSend=async()=>{
+  // bitcoinjs-lib and its transitive dependencies expect Node's Buffer global.
+  // Install it only on explicit BTC Send tap, before evaluating the BTC chunk.
+  const {Buffer}=await import('buffer');
+  if(typeof globalThis.Buffer==='undefined')globalThis.Buffer=Buffer;
+  return import('./BtcWalletSend.jsx');
+};
 
 function classifyLoadError(error) {
   const message=String(error?.message||error||'');
