@@ -12,8 +12,8 @@ const css=read('../src/styles.css');
 
 test('wallet Swap is manual, accessible, directly below balances and no execution path',()=>{
   assert.match(wallet,/import ManualSwapPreview from '\.\/ManualSwapPreview\.jsx'/);
-  assert.ok(wallet.indexOf('<ManualSwapPreview')>wallet.indexOf('<WalletBalances'));
-  assert.ok(wallet.indexOf('<ManualSwapPreview')<wallet.indexOf('<TradingSetupPreview'));
+  assert.match(wallet,/renderCoinActions = asset/);
+  assert.match(wallet,/<ManualSwapPreview key=\{'swap-'\+asset\} initialCoin=\{asset\} lockedCoin/);
   assert.match(component,/aria-expanded=\{open\}/);
   assert.match(component,/getAccessToken\(\)/);
   assert.match(component,/walletSwapNotEnabled/);
