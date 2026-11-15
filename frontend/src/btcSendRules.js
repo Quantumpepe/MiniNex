@@ -42,13 +42,16 @@ export function btcFeeRate(fees) {
   return Number.isInteger(rate)&&rate>0&&rate<=100000?rate:null;
 }
 export function btcValidatedUtxos(data) {
-  if(!Array.isArray(data)||!data.length)return null;
+  if(!Array.isArray(data))return null;
+  // Unconfirmed outputs are not spendable yet; they must not block already
+  // confirmed funds from being sent.
+  const confirmed=data.filter(u=>u?.status?.confirmed===true);
+  if(!confirmed.length)return null;
   const used=new Set(),utxos=[];
-  for(const u of data){
+  for(const u of confirmed){
     if(!/^[a-fA-F0-9]{64}$/.test(u?.txid||'')||
       !Number.isSafeInteger(u?.vout)||u.vout<0||
-      !Number.isSafeInteger(u?.value)||u.value<=0||
-      u.status?.confirmed!==true)return null;
+      !Number.isSafeInteger(u?.value)||u.value<=0)return null;
     const key=u.txid+':'+u.vout;
     if(used.has(key))return null;
     used.add(key);
@@ -62,21 +65,28 @@ export function btcPlan({destination,amount,utxos,feeRate,sourceScript}) {
   const recipientScript=btcRecipientScript(destination);
   if(!sats||!recipientScript||!sourceScript||!Array.isArray(utxos)||!utxos.length||
     !Number.isSafeInteger(feeRate)||feeRate<=0)return null;
-  const total=utxos.reduce((sum,u)=>sum+u.value,0n);
-  const baseSize=11+69*utxos.length+outputVbytes(recipientScript);
-  const withChange=BigInt(Math.ceil(baseSize+outputVbytes(sourceScript)))*BigInt(feeRate);
-  let change=total-sats-withChange;
-  let fee=withChange;
-  if(change<DUST){
-    fee=BigInt(Math.ceil(baseSize))*BigInt(feeRate);
-    change=total-sats-fee;
-    if(change<0n)return null;
-    // Remaining dust is miner fee, not a new spendable output.
-    fee=total-sats;change=0n;
+  const chosen=[];
+  let total=0n;
+  // Prefer fewer inputs and therefore lower miner fees; do not invent any
+  // trading limit or send limit. Each selected UTXO is verified before signing.
+  for(const utxo of [...utxos].sort((a,b)=>a.value>b.value?-1:a.value<b.value?1:0)){
+    chosen.push(utxo);total+=utxo.value;
+    const baseSize=11+69*chosen.length+outputVbytes(recipientScript);
+    const withoutChange=BigInt(baseSize)*BigInt(feeRate);
+    const withChange=BigInt(baseSize+outputVbytes(sourceScript))*BigInt(feeRate);
+    if(total>=sats+withChange+DUST){
+      const change=total-sats-withChange;
+      return {utxos:chosen,sourceScript,recipientScript,destination,amount,
+        sats,fee:withChange,change,total,feeRate,createdAt:Date.now()};
+    }
+    // An output below dust threshold is not relayable. Only the dust-size
+    // remainder may become fee; never silently donate a large change amount.
+    if(total>=sats+withoutChange&&total-sats-withoutChange<DUST){
+      return {utxos:chosen,sourceScript,recipientScript,destination,amount,
+        sats,fee:total-sats,change:0n,total,feeRate,createdAt:Date.now()};
+    }
   }
-  if(fee<=0n||sats>total-fee)return null;
-  return {utxos,sourceScript,recipientScript,destination,amount,sats,fee,change,
-    total,feeRate,createdAt:Date.now()};
+  return null;
 }
 export async function btcFetch(path,{method='GET',body,signal}={}) {
   const response=await fetch(API+path,{method,body,signal,cache:'no-store',
