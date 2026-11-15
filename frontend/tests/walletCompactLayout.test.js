@@ -8,6 +8,13 @@ const setup=source('../src/TradingSetupPreview.jsx');
 const balances=source('../src/WalletBalances.jsx');
 const styles=source('../src/styles.css');
 const labels=source('../src/i18n.js');
+const app=source('../src/App.jsx');
+
+test('settings hides technical info without changing fee or ledger implementation',()=>{
+  assert.doesNotMatch(app,/import WalletTechnicalInfo|<WalletTechnicalInfo/);
+  assert.match(app,/<UpdateStatus lang=\{language\}\/>/);
+  assert.match(source('../src/WalletTechnicalInfo.jsx'),/ledger\[asset\]\?\.high_water_mark_usd/);
+});
 
 test('wallet puts native BTC and ETH addresses in each coin instead of an extra field',()=>{
   const balance=wallet.indexOf('<WalletBalances t={t}');
