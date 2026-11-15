@@ -997,3 +997,115 @@
   .mininex-stablecoin-details strong{font-size:12px}
   .mininex-stablecoin-value{font-size:11px}
 }
+
+
+/* Compact wallet polish: clearer native balance, coin address and BTC send.
+   Presentation only: no changes to signer, transaction or trading controls. */
+.mininex-selected-asset .mininex-coin-wallet-address{
+  padding:14px 15px;
+  gap:10px;
+  border-radius:16px;
+  border:1px solid rgba(104,198,176,.36);
+  background:linear-gradient(150deg,rgba(16,64,62,.85),rgba(6,36,42,.88));
+}
+.mininex-selected-asset .mininex-coin-wallet-address .privy-wallet-network{
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  padding:4px 10px;
+  border:1px solid rgba(108,224,181,.3);
+  border-radius:999px;
+  background:rgba(56,170,131,.13);
+  color:#bdf5db;
+  font-size:12px;
+  letter-spacing:.04em;
+}
+.mininex-selected-asset .mininex-coin-wallet-address .privy-wallet-description{
+  line-height:1.5;
+}
+.mininex-selected-asset .mininex-coin-real-balance{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:5px 12px;
+  padding:13px 15px;
+  border:1px solid rgba(79,158,150,.38);
+  border-radius:16px;
+  background:linear-gradient(115deg,rgba(13,53,56,.78),rgba(8,37,43,.68));
+}
+.mininex-coin-real-balance-label{
+  color:#b6d7d2;
+  font-size:12px;
+  font-weight:650;
+  letter-spacing:.015em;
+}
+.mininex-coin-real-balance-amount{
+  min-width:0;
+  overflow-wrap:anywhere;
+  color:#f1fff7;
+  font-size:clamp(17px,4vw,21px);
+  font-weight:800;
+  font-variant-numeric:tabular-nums;
+}
+.mininex-selected-asset .mininex-coin-wallet-actions{
+  gap:10px;
+  align-items:flex-start;
+}
+.mininex-selected-asset .mininex-coin-wallet-actions .privy-wallet-action{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:44px;
+  padding:11px 15px;
+  border-radius:12px;
+}
+.mininex-selected-asset .mininex-btc-send{
+  width:100%;
+  min-width:0;
+}
+.mininex-selected-asset .mininex-btc-send .mininex-swap-content{
+  margin-top:10px;
+  padding:16px;
+  border-radius:16px;
+  border-color:rgba(99,190,170,.42);
+  background:linear-gradient(145deg,#10373b,#0b2933);
+  box-shadow:0 9px 24px rgba(0,0,0,.12);
+}
+.mininex-selected-asset .mininex-btc-send .mininex-send-form{
+  gap:14px;
+}
+.mininex-selected-asset .mininex-btc-send .mininex-send-form label{
+  gap:7px;
+  font-size:13px;
+  color:#c2e3da;
+}
+.mininex-selected-asset .mininex-btc-send .mininex-send-form input{
+  min-height:48px;
+  padding:12px 13px;
+  border-radius:12px;
+  border-color:#36746b;
+  background:#092733;
+  color:#f0fff9;
+  font-size:15px;
+}
+.mininex-selected-asset .mininex-btc-send .mininex-send-form input:focus-visible{
+  border-color:#67e2b7;
+  outline:2px solid rgba(103,226,183,.45);
+  outline-offset:2px;
+}
+.mininex-selected-asset .mininex-btc-send .mininex-send-form button[type="submit"]{
+  width:max-content;
+  max-width:100%;
+  min-height:46px;
+  padding:11px 17px;
+  border-radius:12px;
+}
+@media(max-width:390px){
+  .mininex-selected-asset .mininex-coin-wallet-address,
+  .mininex-selected-asset .mininex-coin-real-balance{padding:12px}
+  .mininex-selected-asset .mininex-btc-send .mininex-swap-content{padding:12px}
+  .mininex-coin-real-balance-amount{font-size:17px}
+}
