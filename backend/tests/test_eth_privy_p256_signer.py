@@ -31,6 +31,12 @@ def test_signs_the_exact_privy_rpc_payload(monkeypatch):
         encryption_algorithm=serialization.NoEncryption())
     monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
                       base64.b64encode(der).decode())
+    public = private.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                      base64.b64encode(public).decode())
     sig=base64.b64decode(sign_privy_eth_request(**args()),validate=True)
     body_url,body=bound_privy_rpc_request(wallet_id=ID,wallet=WALLET,
         tx=tx(),side="BUY",stable="USDC",
@@ -66,3 +72,47 @@ def test_wrong_curve_rejected(monkeypatch):
     with pytest.raises(HTTPException) as e:
         sign_privy_eth_request(**args())
     assert e.value.status_code==503
+
+
+def test_missing_public_pin_refuses_signing(monkeypatch):
+    from fastapi import HTTPException
+    private = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
+                      base64.b64encode(der).decode())
+    monkeypatch.delenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI", raising=False)
+    with pytest.raises(HTTPException) as err:
+        sign_privy_eth_request(**args())
+    assert err.value.status_code == 503
+
+
+def test_wrong_quorum_public_pin_refuses_signing(monkeypatch):
+    from fastapi import HTTPException
+    private = ec.generate_private_key(ec.SECP256R1())
+    other = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    other_pub = other.public_key().public_bytes(serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo)
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
+                      base64.b64encode(der).decode())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                      base64.b64encode(other_pub).decode())
+    with pytest.raises(HTTPException) as err:
+        sign_privy_eth_request(**args())
+    assert err.value.status_code == 503
+
+
+@pytest.mark.parametrize("pin", ["not-base64", "AA==", "x" * 3000])
+def test_invalid_quorum_pin_never_authorizes_signing(monkeypatch, pin):
+    from fastapi import HTTPException
+    private = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(serialization.Encoding.DER,
+        serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
+                      base64.b64encode(der).decode())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI", pin)
+    with pytest.raises(HTTPException) as err:
+        sign_privy_eth_request(**args())
+    assert err.value.status_code == 503
