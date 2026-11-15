@@ -89,4 +89,8 @@ test('PAPER remains visible while independently authorized LIVE engine is enable
   assert.match(backend,/if _paper_visible\(\):\s*await personal_paper.start\(\)/);
   assert.match(ethAuto,/MININEX_LIVE_TRADING_ENABLED/);
   assert.match(ethAuto,/MININEX_ETH_AUTO_WORKER_ENABLED/);
+  const settings=read('../src/TradingSetupPreview.jsx');
+  assert.match(settings,/\{selectedSettings \? <>/);
+  assert.match(settings,/paperAvailable&&renderSessionControls\?\.\(opened\)/);
+  assert.doesNotMatch(settings,/paperAvailable&&\(selectedSettings \? <>/);
 });
