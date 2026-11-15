@@ -103,3 +103,52 @@ def test_owner_selected_budget_controls_all_in_cash():
         decision=decision,live_limits=limits(),
         balances=cash,allowance=allowance())
     assert result=="200.000000"
+
+
+def test_sell_with_existing_weth_and_missing_approval_never_wraps(monkeypatch):
+    """Lacking router approval is not an instruction to wrap more native ETH."""
+    monkeypatch.setattr(live,"get_live_eth_limits",lambda did:limits())
+    async def wallet(did):
+        return {"wallet_ownership_verified":True,"balances":{
+            "ETH":{"status":"verified","balance":"2"}}}
+    async def inspect(did,*,side,stable,amount):
+        return {**allowance("SELL"),"router_allowance_sufficient":False,
+                "verified_source_balance":"0.5"}
+    async def reject_wrap(*args,**kwargs):
+        pytest.fail("Wallet already holds WETH: must not convert more ETH")
+    async def reject_swap(*args,**kwargs):
+        pytest.fail("Router02 approval is still missing")
+    monkeypatch.setattr(live,"get_wallet_balances",wallet)
+    monkeypatch.setattr(live,"inspect_router02_approval",inspect)
+    monkeypatch.setattr(live,"send_eth_auto_native_leg",reject_wrap)
+    monkeypatch.setattr(live,"execute_eth_auto_signal",reject_swap)
+    result=asyncio.run(live.execute_live_eth_strategy_tick(
+        "did:privy:me",market=Market("down"),run_id="run_live_2026",
+        stable="USDC",client=None,now=1000))
+    assert result=={"state":"WAIT",
+                    "reason":"OWNER_APPROVAL_OR_BALANCE_REQUIRED","asset":"ETH"}
+
+
+def test_sell_with_zero_verified_weth_can_wrap_native_once(monkeypatch):
+    """The native conversion is still reachable if the wallet has no WETH."""
+    monkeypatch.setattr(live,"get_live_eth_limits",lambda did:limits())
+    async def wallet(did):
+        return {"wallet_ownership_verified":True,"balances":{
+            "ETH":{"status":"verified","balance":"2"}}}
+    async def inspect(did,*,side,stable,amount):
+        return {**allowance("SELL"),"router_allowance_sufficient":False,
+                "verified_source_balance":"0"}
+    calls=[]
+    async def wrap(did,*,source_key,operation,amount_wei,stable,client):
+        calls.append((operation,amount_wei,stable))
+        return {"state":"SUBMITTED"}
+    monkeypatch.setattr(live,"get_wallet_balances",wallet)
+    monkeypatch.setattr(live,"inspect_router02_approval",inspect)
+    monkeypatch.setattr(live,"send_eth_auto_native_leg",wrap)
+    result=asyncio.run(live.execute_live_eth_strategy_tick(
+        "did:privy:me",market=Market("down"),run_id="run_live_2026",
+        stable="USDC",client=None,now=1000))
+    assert result["state"]=="SUBMITTED"
+    assert len(calls)==1
+    assert calls[0][0]=="DEPOSIT"
+    assert calls[0][1]>0
