@@ -87,15 +87,8 @@ jobs:
             # Require visible MiniNex text in Android's accessibility hierarchy.
             adb shell uiautomator dump /sdcard/mininex-window.xml
             adb shell cat /sdcard/mininex-window.xml > /tmp/mininex-window.xml
-            if ! grep -qi 'mininex' /tmp/mininex-window.xml; then
-              echo 'MiniNex UI title missing; possible blank WebView'
-              head -c 1600 /tmp/mininex-window.xml
-              exit 1
-            fi
-            if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|Process: com.mininex.preview' | grep -F com.mininex.preview; then
-              echo 'Android application crash detected'
-              exit 1
-            fi
+            grep -qi 'mininex' /tmp/mininex-window.xml || { echo 'MiniNex UI title missing; possible blank WebView'; head -c 1600 /tmp/mininex-window.xml; exit 1; }
+            ! adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|Process: com.mininex.preview' | grep -F com.mininex.preview || { echo 'Android application crash detected'; exit 1; }
             adb shell input keyevent 3
             adb shell am start -n com.mininex.preview/.MainActivity
             sleep 4
