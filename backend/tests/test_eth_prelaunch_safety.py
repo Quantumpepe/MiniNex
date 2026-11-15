@@ -305,3 +305,54 @@ def test_pinned_privy_key_pair_matches_without_claiming_remote_grant(monkeypatch
     assert report["can_submit"] is False
     assert base64.b64encode(der).decode() not in str(report)
     assert base64.b64encode(spki).decode() not in str(report)
+
+
+def test_verified_remote_quorum_does_not_leave_stale_signer_blocker(monkeypatch):
+    import base64
+    private = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption())
+    public = private.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo)
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
+                       base64.b64encode(der).decode())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                       base64.b64encode(public).decode())
+    result = review.assess_eth_prelaunch_safety(
+        enrollment=enrollment(), policy=policy(), ledger=ledger(),
+        grant=grant(),
+        quorum={"remote_quorum_get_succeeded": True,
+                "remote_quorum_public_key_verified": True},
+    )
+    assert result["backend_signer_quorum_member_verified"] is True
+    assert "PRIVY_BACKEND_SIGNER_REMOTE_QUORUM_NOT_VERIFIED" not in result["blockers"]
+    assert "PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED" not in result["blockers"]
+    assert result["can_sign"] is False
+    assert result["can_submit"] is False
+    assert result["execution_enabled"] is False
+
+
+def test_unverified_remote_quorum_keeps_both_signer_blockers(monkeypatch):
+    import base64
+    private = ec.generate_private_key(ec.SECP256R1())
+    der = private.private_bytes(
+        serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption())
+    public = private.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo)
+    monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
+                       base64.b64encode(der).decode())
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                       base64.b64encode(public).decode())
+    result = review.assess_eth_prelaunch_safety(
+        enrollment=enrollment(), policy=policy(), ledger=ledger(),
+        grant=grant(),
+        quorum={"remote_quorum_get_succeeded": True,
+                "remote_quorum_public_key_verified": False},
+    )
+    assert result["backend_signer_quorum_member_verified"] is False
+    assert "PRIVY_BACKEND_SIGNER_REMOTE_QUORUM_NOT_VERIFIED" in result["blockers"]
+    assert "PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED" in result["blockers"]
