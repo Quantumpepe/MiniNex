@@ -30,7 +30,7 @@ def auto_worker_allowed() -> bool:
     return (
         bool(os.environ.get("DATABASE_URL","").strip())
         and os.environ.get("MININEX_PAPER_AUTO_ENABLED","true").lower()=="true"
-        and os.environ.get("MININEX_LIVE_TRADING_ENABLED","false").lower()!="true"
+        and os.environ.get("MININEX_PAPER_ENABLED","true").strip().lower()!="false"
     )
 
 
