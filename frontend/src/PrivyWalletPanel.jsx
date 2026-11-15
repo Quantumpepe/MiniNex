@@ -170,6 +170,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   const [identityStatus,setIdentityStatus]=useState('idle');
   const [databaseStatus,setDatabaseStatus]=useState('idle');
   const [assetLedger,setAssetLedger]=useState(null);
+  const [verifiedCoinHoldings,setVerifiedCoinHoldings]=useState(null);
   const [routeCapabilities,setRouteCapabilities]=useState(null);
   const [previewBudgets,setPreviewBudgets]=useState({BTC:0,ETH:0});
   const [savedBudgets,setSavedBudgets]=useState(null);
@@ -461,6 +462,17 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   // ETH LIVE shares the existing per-coin settings window; no global technical panel.
   // Existing wallet actions appear with the selected coin, not globally.
   // EVM sends use the verified wallet signer. Swap is still preview-only.
+  const renderCoinBalance = asset => {
+    const record=verifiedCoinHoldings?.[asset];
+    return <div className="mininex-coin-real-balance" role="status">
+      <strong>{t.privyBalancesTitle} · {asset}</strong>
+      <span>{record?.status==='verified'
+        ? record.balance+' '+asset
+        : record?.status==='wallet_missing'
+          ? t.privyBalancesMissing:t.privyBalancesUnavailable}</span>
+    </div>;
+  };
+
   const renderCoinActions = asset => <div className="mininex-coin-wallet-actions">
     {['ETH','BNB','POL','AVAX','LINK','UNI'].includes(asset)&&
       <WalletSend key={'send-'+asset} initialCoin={asset} lockedCoin
@@ -486,7 +498,8 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
         !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
           {identityStatus==='verified' && databaseStatus==='stored' &&
-            <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
+            <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}
+              onSnapshot={setVerifiedCoinHoldings}/>}
 
           {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
             <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}
@@ -501,7 +514,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             renderCoinAddress={renderCoinAddress} renderLiveControls={renderLiveControls}
-            renderCoinActions={renderCoinActions}
+            renderCoinActions={renderCoinActions} renderCoinBalance={renderCoinBalance}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
           <button className="privy-wallet-action privy-wallet-action--secondary privy-wallet-logout"
