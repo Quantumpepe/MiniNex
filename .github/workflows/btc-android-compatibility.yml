@@ -66,6 +66,9 @@ jobs:
           chmod +x android/gradlew
           cd android
           ./gradlew --no-daemon assembleDebug
+      - name: Enable emulator hardware acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
       - name: Android emulator app-start smoke test (without real wallet)
         uses: reactivecircus/android-emulator-runner@v2
         with:
