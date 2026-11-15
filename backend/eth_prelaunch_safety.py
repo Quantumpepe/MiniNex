@@ -16,6 +16,7 @@ from .eth_live_ledger_audit import get_eth_live_ledger_audit
 from .eth_privy_user_grant import get_eth_user_grant_review
 from .storage import _safe_did
 from .eth_privy_p256_signer import inspect_privy_p256_key_configuration
+from .eth_privy_remote_quorum import check_privy_backend_quorum
 
 _POLICIES_REMOTE = {"REMOTE_VERIFIED_UNATTACHED", "GRANT_VERIFIED"}
 _UNCERTAIN = {"SUBMITTING","UNCERTAIN","REVOKE_REQUESTED"}
@@ -23,7 +24,7 @@ _UNCERTAIN = {"SUBMITTING","UNCERTAIN","REVOKE_REQUESTED"}
 
 def assess_eth_prelaunch_safety(
     *, enrollment: dict, policy: dict, ledger: dict,
-    grant: dict | None,
+    grant: dict | None, quorum: dict | None = None,
 ) -> dict:
     for data, mode in (
         (enrollment,"ETH_PRIVY_USER_ENROLLMENT_REVIEW_ONLY"),
@@ -46,6 +47,10 @@ def assess_eth_prelaunch_safety(
     blockers = ["LIVE_EXECUTION_NOT_IMPLEMENTED", "REAL_TRADE_ABI_AUDIT_PENDING",
                 "GAS_ALLOWANCE_SETTLEMENT_AUDIT_PENDING"]
     signer_key = inspect_privy_p256_key_configuration()
+    if type(quorum) is not dict or quorum.get(
+        "remote_quorum_public_key_verified"
+    ) is not True:
+        blockers.append("PRIVY_BACKEND_SIGNER_REMOTE_QUORUM_NOT_VERIFIED")
     if signer_key["p256_private_key_valid"] is not True:
         blockers.append("PRIVY_P256_SIGNER_KEY_NOT_CONFIGURED_OR_INVALID")
     # A valid local secret does not prove that its public key matches
@@ -132,7 +137,10 @@ def assess_eth_prelaunch_safety(
             signer_key["quorum_member_public_key_format_valid"],
         "backend_signer_key_pair_matches_pin":
             signer_key["local_private_key_matches_configured_quorum_member"],
-        "backend_signer_quorum_member_verified":False,
+        "backend_signer_quorum_member_verified":(
+            type(quorum) is dict
+            and quorum.get("remote_quorum_public_key_verified") is True
+        ),
         "live_limits_revision":ledger.get("limits_revision"),
         "live_ledger":ledger,
         "manual_policy_reconciliation_required":state in _UNCERTAIN,
@@ -161,6 +169,10 @@ async def get_eth_prelaunch_safety_report(did: str) -> dict:
         except (HTTPException, ValueError, TypeError):
             # External Privy unavailable; report blocked, do not claim grant.
             pass
+    # Independent read-only Privy GET. A network or missing-key error is
+    # surfaced as a blocker, never inferred as remote signer approval.
+    quorum = await check_privy_backend_quorum()
     return assess_eth_prelaunch_safety(
-        enrollment=enrollment,policy=policy,ledger=ledger,grant=grant,
+        enrollment=enrollment,policy=policy,ledger=ledger,
+        grant=grant,quorum=quorum,
     )
