@@ -3,7 +3,6 @@ import {Send} from 'lucide-react';
 
 // Keep Bitcoin cryptography outside the initial Android WebView bundle.
 const loadBtcSend=()=>import('./BtcWalletSend.jsx');
-const BtcSendFeature=React.lazy(loadBtcSend);
 
 function classifyLoadError(error) {
   const message=String(error?.message||error||'');
@@ -49,7 +48,13 @@ class BtcSendErrorBoundary extends React.Component {
 export default function BtcSendEntry({t,lang='de',userId,wallet,enabled}) {
   const [requested,setRequested]=useState(false);
   const [attempt,setAttempt]=useState(0);
-  const retry=()=>{setRequested(false);setAttempt(value=>value+1);};
+  // Create a fresh lazy component on retry; React.lazy caches rejected imports.
+  const [BtcSendFeature,setBtcSendFeature]=useState(()=>React.lazy(loadBtcSend));
+  const retry=()=>{
+    setRequested(false);
+    setAttempt(value=>value+1);
+    setBtcSendFeature(()=>React.lazy(loadBtcSend));
+  };
   return <div className="mininex-btc-send-entry">
     {!requested&&<button type="button" className="privy-wallet-action mininex-swap-open"
       disabled={!enabled}
