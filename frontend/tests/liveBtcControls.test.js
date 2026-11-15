@@ -60,7 +60,11 @@ test('BTC live limits appear only under selected BTC coin, never global',()=>{
   assert.match(setup,/opened==='BTC'&&<LiveBtcControls/);
   assert.match(setup,/userId=\{userId\} getAccessToken=\{getAccessToken\}/);
   assert.match(setup,/renderSessionControls\?\.\(opened\)/);
-  assert.doesNotMatch(panel,/<LiveEthControls/);
+  // ETH LIVE belongs exclusively to its existing coin settings, not a global wallet panel.
+  assert.match(panel,/renderLiveControls = \(asset,stable\) => asset==='ETH'/);
+  assert.match(panel,/<LiveEthControls compact/);
+  assert.match(setup,/renderLiveControls\?\.\(opened,selectedSettings\.stable\)/);
+  assert.doesNotMatch(panel,/\n\s*<LiveEthControls t=/);
   assert.doesNotMatch(btc,/sendTransaction\(|eth_sendTransaction|addSigners\(|sendBitcoin/);
   assert.match(btc,/\/api\/live\/btc\/limits/);
   assert.match(btc,/\/api\/live\/btc\/stop/);
