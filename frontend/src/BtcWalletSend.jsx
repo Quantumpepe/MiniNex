@@ -1,9 +1,10 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {Send} from 'lucide-react';
+import {Buffer} from 'buffer';
 import {useSignRawHash} from '@privy-io/react-auth/extended-chains';
 import {btcSatoshis,btcOwnerScript,btcOwnedPublicKey,btcRecipientScript,
   btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,
-  btcFetch,btcSignAndBroadcast,BTC_REVIEW_MAX_AGE_MS} from './btcSendRules.js';
+  btcFetch,btcSignAndBroadcast,btcRecoverPublicKey,BTC_REVIEW_MAX_AGE_MS} from './btcSendRules.js';
 
 // This is the native BTC wallet, not an EVM/wrapped-BTC route. The user
 // explicitly reviews every Bitcoin mainnet spend; no delegation or auto-send.
@@ -20,9 +21,11 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
   const request=useRef(0);
   const controller=useRef(null);
   const [nonce,setNonce]=useState(0);
+  const [verifiedPubkey,setVerifiedPubkey]=useState(null);
+  const [verifying,setVerifying]=useState(false);
   const de=lang==='de';
   const address=wallet?.address||null;
-  const publicKey=btcOwnedPublicKey(wallet);
+  const publicKey=btcOwnedPublicKey(wallet)||verifiedPubkey;
   const ownerScript=btcOwnerScript(address,publicKey);
   const supported=enabled&&ownerScript&&typeof signRawHash==='function';
 
@@ -33,8 +36,26 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     pending.current=false;
     setOpen(false);setDestination('');setAmount('');setReview(null);
     setStage('idle');setTxid(null);setIssue('');
+    setVerifiedPubkey(null);setVerifying(false);
   },[userId,address,enabled,nonce]);
 
+  const verifyWallet=async()=>{
+    if(!enabled||verifying||!address||!/^bc1q[ac-hj-np-z02-9]{38}$/.test(address)||
+       typeof signRawHash!=='function')return;
+    setVerifying(true);setIssue('');
+    try {
+      if(!globalThis.crypto?.getRandomValues)throw Error('Secure random source unavailable');
+      const challenge=globalThis.crypto.getRandomValues(new Uint8Array(32));
+      const signed=await signRawHash({address,chainType:'bitcoin-segwit',
+        hash:'0x'+Buffer.from(challenge).toString('hex')});
+      const key=btcRecoverPublicKey(address,challenge,signed?.signature);
+      if(!key)throw Error('Wallet public key did not match the linked address');
+      setVerifiedPubkey(key);
+    }catch{
+      setIssue(de?'Die Privy-BTC-Signatur konnte nicht bestätigt werden. Nichts versendet.':
+        'Could not verify Privy BTC signature. Nothing was sent.');
+    }finally{setVerifying(false);}
+  };
   const clearReview=()=>{
     request.current++;
     controller.current?.abort();
@@ -109,6 +130,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         {de?'Bitcoin Mainnet · nur manuell aus deiner BTC-Wallet':
           'Bitcoin Mainnet · manual transfers from your BTC wallet'}
       </p>
+      {!supported&&enabled&&address&&typeof signRawHash==='function'&&
+        <button type="button" className="privy-wallet-action"
+          onClick={verifyWallet} disabled={verifying}>
+          {verifying?(de?'BTC-Wallet wird geprüft…':'Verifying BTC wallet…'):
+            (de?'BTC-Wallet mit Privy prüfen':'Verify BTC wallet with Privy')}
+        </button>}
       {!supported&&<p className="privy-wallet-description" role="status">
         {de?'BTC-Signierung dieser Privy-Wallet ist noch nicht verifiziert. Kein Versand möglich.':
           'BTC signing for this Privy wallet is not verified yet. Sending unavailable.'}
