@@ -56,3 +56,19 @@ test('existing privileges, independent budget persistence, wallet balances and b
   assert.match(labels,/privyPriceLive: 'Live price'/);
   assert.doesNotMatch(setup,/signMessage|sendTransaction|sendBitcoin|delegateWallet|privateKey/);
 });
+
+test('wallet actions remain inside selected coin, technical information moves to Settings',()=>{
+  const settingsPage=read('../src/App.jsx');
+  const send=read('../src/WalletSend.jsx');
+  const swap=read('../src/ManualSwapPreview.jsx');
+  const technical=read('../src/WalletTechnicalInfo.jsx');
+  assert.match(setup,/renderCoinActions\?\.\(opened\)/);
+  assert.match(wallet,/renderCoinActions = asset/);
+  assert.match(wallet,/<WalletSend key=\{'send-'\+asset\} initialCoin=\{asset\} lockedCoin/);
+  assert.match(wallet,/<ManualSwapPreview key=\{'swap-'\+asset\} initialCoin=\{asset\} lockedCoin/);
+  assert.doesNotMatch(wallet,/<details className="privy-disclosure privy-technical-section">/);
+  assert.match(settingsPage,/<WalletTechnicalInfo t=\{t\}\/>/);
+  assert.match(technical,/privyTechnicalTitle/);
+  assert.match(send,/lockedCoin\?<strong>\{coin\}<\/strong>/);
+  assert.match(swap,/const visibleItems=lockedCoin/);
+});
