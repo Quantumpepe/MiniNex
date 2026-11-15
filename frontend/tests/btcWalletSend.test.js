@@ -52,7 +52,8 @@ test('BTC crypto is lazy-loaded only from user action with a render fallback',()
   const entry=source('../src/BtcSendEntry.jsx');
   const startup=source('../src/PrivyWalletPanel.jsx');
   const main=source('../src/main.jsx');
-  assert.match(entry,/React.lazy\(\(\)=>import\('\.\/BtcWalletSend\.jsx'\)\)/);
+  assert.match(entry,/const loadBtcSend=\(\)=>import\('\.\/BtcWalletSend\.jsx'\)/);
+  assert.match(entry,/React.lazy\(loadBtcSend\)/);
   assert.match(entry,/getDerivedStateFromError/);
   assert.match(entry,/onClick=\{\(\)=>setRequested\(true\)\}/);
   assert.doesNotMatch(startup+main,/import .*btcSendRules|import .*BtcWalletSend\.jsx/);
