@@ -411,7 +411,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
         {nativeWallet.state==='failed'&&!nativeWallet.address&&
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
             onClick={nativeWallet.retry}>{t.coinWalletRetry}</button>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     // XRPL is a native Privy extended-chain wallet; create only for the
@@ -423,13 +422,12 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
         {!xrpWallet.address&&<div className="privy-wallet-description" role="status">
           {xrpWallet.state==='creating'?t.coinWalletCreating:
             ['failed','invalid'].includes(xrpWallet.state)?t.coinWalletFailed:t.coinAddressPending}
-        </div>
+        </div>}
         {xrpWallet.address&&
           <CopyWalletAddress address={xrpWallet.address} network="XRP Ledger" t={t}/>}
         {xrpWallet.state==='failed'&&!xrpWallet.address&&
           <button className="privy-wallet-action privy-wallet-action--secondary" type="button"
             onClick={xrpWallet.retry}>{t.coinWalletRetry}</button>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     // Cardano remains "In Arbeit". No fabricated address or wallet creation.
@@ -443,7 +441,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
           : <div role="status" className="privy-wallet-description">
               {t.coinAddressPending}
             </div>}
-        <p className="privy-wallet-description">{t.coinAddressReadOnly}</p>
       </div>;
     }
     if(asset==='DOGE'){
