@@ -50,6 +50,10 @@ def assess_eth_prelaunch_safety(
         blockers.append("PRIVY_P256_SIGNER_KEY_NOT_CONFIGURED_OR_INVALID")
     # A valid local secret does not prove that its public key matches
     # the remotely registered Privy Backend-Signer quorum member.
+    if signer_key["quorum_member_public_key_format_valid"] is not True:
+        blockers.append("PRIVY_SIGNER_PUBLIC_KEY_PIN_MISSING_OR_INVALID")
+    if signer_key["local_private_key_matches_configured_quorum_member"] is not True:
+        blockers.append("PRIVY_SIGNER_LOCAL_KEY_PAIR_MISMATCH")
     if signer_key["privy_quorum_public_key_match_verified"] is not True:
         blockers.append("PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED")
     if not all(enrollment.get(field) is True for field in (
@@ -124,6 +128,10 @@ def assess_eth_prelaunch_safety(
         "signed_wallet_owner_grant_required":True,
         "backend_signer_key_configured":signer_key["key_configured"],
         "backend_signer_key_format_valid":signer_key["p256_private_key_valid"],
+        "backend_signer_public_key_pin_valid":
+            signer_key["quorum_member_public_key_format_valid"],
+        "backend_signer_key_pair_matches_pin":
+            signer_key["local_private_key_matches_configured_quorum_member"],
         "backend_signer_quorum_member_verified":False,
         "live_limits_revision":ledger.get("limits_revision"),
         "live_ledger":ledger,
