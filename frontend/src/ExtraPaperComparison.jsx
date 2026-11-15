@@ -76,7 +76,7 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
       {t.extraCompareTitle} · 9
     </button>
     {expanded&&<div className="mininex-paper-compare-body">
-      <p className="privy-wallet-description">{t.extraCompareHelp}</p>
+      
       {busy&&<p role="status" className="privy-wallet-description">
         {t.extraCompareLoading}
       </p>}
@@ -150,7 +150,7 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
           </>}
         </div>)}
       </div>}
-      {data&&<p className="privy-wallet-description">{t.extraCompareDisclaimer}</p>}
+      
     </div>}
   </section>;
 }
