@@ -924,3 +924,36 @@
 
 /* Extra coins show public market previews without enabling any trade controls. */
 .compact-market-readonly{margin:6px 12px 0;font-size:12px;line-height:1.25;color:#91b2b3;text-align:center}
+
+/* Wallet: one quiet balance row and compact actions in the selected coin. */
+.privy-wallet-layout .privy-balances-card.mininex-real-balances{
+  padding:10px 13px;
+  border-radius:13px;
+  background:rgba(15,48,52,.55);
+}
+.mininex-balance-summary{
+  display:flex;
+  align-items:center;
+  min-height:32px;
+  padding:2px 26px 2px 0;
+}
+.mininex-balance-summary span{font-size:14px}
+.mininex-balance-summary::after{top:50%;transform:translateY(-50%)}
+.mininex-coin-wallet-actions{
+  display:flex;
+  gap:9px;
+  align-items:flex-start;
+  flex-wrap:wrap;
+}
+.mininex-coin-wallet-actions .mininex-wallet-send,
+.mininex-coin-wallet-actions .mininex-wallet-swap{
+  flex:0 1 auto;
+  min-width:0;
+}
+.mininex-coin-wallet-actions .mininex-swap-content{
+  width:100%;
+  box-sizing:border-box;
+}
+.mininex-coin-wallet-actions:has(.mininex-swap-content) > *{
+  flex:1 1 100%;
+}
