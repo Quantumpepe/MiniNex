@@ -14,6 +14,7 @@ const MAINNET_P2WPKH=/^bc1q[ac-hj-np-z02-9]{38}$/;
 const COMPRESSED_PUBLIC_KEY=/^(02|03)[0-9a-f]{64}$/i;
 const SHA256=/^[a-f0-9]{64}$/i;
 const ECDSA_COMPACT=/^[a-f0-9]{128}$/i;
+const ECDSA_WITH_RECOVERY=/^[a-f0-9]{128}(?:00|01|1b|1c)$/i;
 const confirmedIntents=new WeakSet();
 const usedIntents=new WeakSet();
 
@@ -47,7 +48,9 @@ export function parseBitcoinRawSignature(value){
   // envelopes or numeric/string coercions. Allow just verified compact hex.
   if(typeof value!=='string')return null;
   const hex=value.startsWith('0x')?value.slice(2):value;
-  return ECDSA_COMPACT.test(hex)?hex.toLowerCase():null;
+  if(ECDSA_COMPACT.test(hex))return hex.toLowerCase();
+  if(ECDSA_WITH_RECOVERY.test(hex))return hex.slice(0,128).toLowerCase();
+  return null;
 }
 export async function requestReviewedBitcoinSignature({
   preflight,intent,approve,verifySignature
