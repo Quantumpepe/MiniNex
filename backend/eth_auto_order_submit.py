@@ -22,6 +22,7 @@ from .eth_privy_auto_transport import (
     bound_privy_rpc_request,broadcast_privy_eth_swap,
 )
 from .eth_privy_p256_signer import sign_privy_eth_request
+from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .live_orders import valid_order_key
 from .storage import _db_url,_ensure_schema,_safe_did
 from .privy_wallet_verification import APP_ID,fetch_privy_user
@@ -179,6 +180,11 @@ async def submit_privy_eth_auto_order(
     metadata=await fetch_privy_wallet_metadata(owned["wallet_id"])
     if not _scoped_signer(metadata,did=did,address=owned["address"],config=config):
         raise HTTPException(409,"Restricted Privy wallet signer not verified")
+    # Re-verify the exact registered Privy signing quorum before any durable
+    # SENDING claim. A locally matching key pair is never sufficient.
+    quorum_review = await check_privy_backend_quorum()
+    if quorum_review.get("remote_quorum_public_key_verified") is not True:
+        raise HTTPException(503, "Privy backend signing quorum not verified")
     wallet=owned["address"]
     digest=_request_digest(
         owned["wallet_id"],tx,wallet=wallet,side=side,stable=stable,
