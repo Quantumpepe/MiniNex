@@ -18,7 +18,6 @@ import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
-import WalletTechnicalInfo from './WalletTechnicalInfo.jsx';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
 import UserPaperSessions from './UserPaperSessions.jsx';
@@ -543,7 +542,6 @@ export default function App() {
               <History size={17}/>{t.activity}<ChevronDown size={16} className="settings-activity-chevron"/>
             </button>
           </section>
-          <WalletTechnicalInfo t={t}/>
           <UpdateStatus lang={language}/>
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><LockKeyhole size={21}/></span><div><h2>{t.tradingUnavailable}</h2></div></div></section>
         </>}
