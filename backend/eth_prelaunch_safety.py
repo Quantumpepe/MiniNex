@@ -59,7 +59,10 @@ def assess_eth_prelaunch_safety(
         blockers.append("PRIVY_SIGNER_PUBLIC_KEY_PIN_MISSING_OR_INVALID")
     if signer_key["local_private_key_matches_configured_quorum_member"] is not True:
         blockers.append("PRIVY_SIGNER_LOCAL_KEY_PAIR_MISMATCH")
-    if signer_key["privy_quorum_public_key_match_verified"] is not True:
+    # The local-only inspector intentionally never asserts remote membership.
+    # Use the independently fetched Privy quorum result instead.
+    if (type(quorum) is not dict
+            or quorum.get("remote_quorum_public_key_verified") is not True):
         blockers.append("PRIVY_SIGNER_QUORUM_MEMBER_NOT_VERIFIED")
     if not all(enrollment.get(field) is True for field in (
         "wallet_identity_verified", "wallet_owned_by_authenticated_user",
