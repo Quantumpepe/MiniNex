@@ -124,8 +124,8 @@ test('fee and amount review is tied to one wallet/network for 90 seconds',()=>{
 
 test('send UI uses current Privy-owned wallet, explicit send tap and no automatic transfers',()=>{
   assert.match(panel,/import WalletSend from '\.\/WalletSend\.jsx'/);
-  assert.ok(panel.indexOf('<WalletSend')>panel.indexOf('<WalletBalances'));
-  assert.ok(panel.indexOf('<WalletSend')<panel.indexOf('<ManualSwapPreview'));
+  assert.match(panel,/renderCoinActions = asset/);
+  assert.match(panel,/<WalletSend key=\{'send-'\+asset\} initialCoin=\{asset\} lockedCoin/);
   assert.match(sender,/useWallets\(\)/);
   assert.match(sender,/walletClientType==='privy'/);
   assert.match(sender,/getEthereumProvider/);
