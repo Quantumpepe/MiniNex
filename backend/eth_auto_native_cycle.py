@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .eth_privy_native_rpc import send_privy_native_weth9
+from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import (
@@ -190,6 +191,11 @@ async def send_eth_auto_native_leg(did:str, *, source_key:str,operation:str,
     wallet=await fetch_privy_wallet_metadata(owned["wallet_id"])
     if not _scoped_signer(wallet,did=did,address=owned["address"],config=config):
         raise HTTPException(409,"Privy WETH9 policy does not match user")
+    # Re-verify the exact registered Privy signing quorum before any durable
+    # SENDING claim. A locally matching key pair is never sufficient.
+    quorum_review = await check_privy_backend_quorum()
+    if quorum_review.get("remote_quorum_public_key_verified") is not True:
+        raise HTTPException(503, "Privy backend signing quorum not verified")
     # Enforce actual owner wallet inventory before any irreversible send.
     if operation=="WITHDRAW":
         check=await inspect_router02_approval(
