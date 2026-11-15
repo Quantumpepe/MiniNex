@@ -15,6 +15,7 @@ const COMPRESSED_PUBLIC_KEY=/^(02|03)[0-9a-f]{64}$/i;
 const SHA256=/^[a-f0-9]{64}$/i;
 const ECDSA_COMPACT=/^[a-f0-9]{128}$/i;
 const confirmedIntents=new WeakSet();
+const usedIntents=new WeakSet();
 
 export function bitcoinSignerPreflight({wallet,address,publicKey,approve}={}){
   // A linked BTC address is necessary but never sufficient for signing.
@@ -52,11 +53,14 @@ export async function requestReviewedBitcoinSignature({
   preflight,intent,approve,verifySignature
 }={}){
   if(preflight?.state!==BTC_SIGNER_STATES.ready||
-     !intent||!confirmedIntents.has(intent)||intent.address!==preflight.address||
+     !intent||!confirmedIntents.has(intent)||usedIntents.has(intent)||intent.address!==preflight.address||
      typeof approve!=='function'||typeof verifySignature!=='function')
     return {ok:false,reason:'signer_not_ready'};
   // Only invoke the injected, SDK-version-verified adapter after the caller
   // completed an explicit confirmation. The adapter cannot broadcast here.
+  // Consume before the asynchronous call, preventing duplicate signatures
+  // from double taps or simultaneous callbacks.
+  usedIntents.add(intent);
   const result=await approve(intent);
   const signature=parseBitcoinRawSignature(result);
   if(!signature)return {ok:false,reason:'invalid_signature_format'};
