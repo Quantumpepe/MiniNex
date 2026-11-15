@@ -207,5 +207,7 @@ def test_comparison_http_requires_owner_token_and_does_not_shadow_asset_route(si
     assert response.headers["cache-control"]=="private, no-store"
     assert calls==["did:privy:alice"]
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    assert client.get("/api/extra-paper/comparison",headers=signed()).status_code==200
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","false")
     assert client.get("/api/extra-paper/comparison",headers=signed()).status_code==404
-    assert calls==["did:privy:alice"]
+    assert calls==["did:privy:alice","did:privy:alice"]
