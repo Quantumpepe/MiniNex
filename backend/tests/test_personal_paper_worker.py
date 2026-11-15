@@ -14,13 +14,15 @@ def test_worker_default_off_without_database(monkeypatch):
     assert worker.auto_worker_allowed() is False
 
 
-def test_live_cutover_disables_simulation_worker(monkeypatch):
+def test_simulation_worker_independent_from_live_flag(monkeypatch):
     monkeypatch.setenv("DATABASE_URL","postgresql://fake")
     monkeypatch.setenv("MININEX_PAPER_AUTO_ENABLED","true")
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","true")
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
-    assert worker.auto_worker_allowed() is False
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     assert worker.auto_worker_allowed() is True
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","false")
+    assert worker.auto_worker_allowed() is False
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","true")
     monkeypatch.setenv("MININEX_PAPER_AUTO_ENABLED","false")
     assert worker.auto_worker_allowed() is False
 
@@ -77,14 +79,15 @@ def test_paper_last_evaluation_persists_but_not_real_funds():
     assert recovered.coin_quantity==0.0
 
 
-def test_live_cutover_blocks_public_and_private_paper_endpoints(monkeypatch):
+def test_explicit_paper_cutover_blocks_public_and_private_paper_endpoints(monkeypatch):
     from fastapi.testclient import TestClient
     from backend import app as api
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.setenv("MININEX_PAPER_ENABLED","false")
     client=TestClient(api.app)
     availability=client.get("/api/user-paper/availability")
     assert availability.status_code==200
-    assert availability.json()=={"paper_available":False,"live_trading_enabled":False}
+    assert availability.json()=={"paper_available":False,"live_trading_enabled":True}
     assert client.get("/api/paper/status").status_code==404
     assert client.get("/api/paper/status/BTC").status_code==404
     assert client.get("/api/paper/trades/ETH").status_code==404
