@@ -80,6 +80,15 @@ jobs:
             sleep 15
             adb shell pidof com.mininex.preview
             adb shell dumpsys activity activities | grep -F com.mininex.preview
+            # App process alone is not enough: a black WebView may stay alive.
+            # Require visible MiniNex text in Android's accessibility hierarchy.
+            adb shell uiautomator dump /sdcard/mininex-window.xml
+            adb shell cat /sdcard/mininex-window.xml > /tmp/mininex-window.xml
+            if ! grep -qi 'mininex' /tmp/mininex-window.xml; then
+              echo 'MiniNex UI title missing; possible blank WebView'
+              head -c 1600 /tmp/mininex-window.xml
+              exit 1
+            fi
             if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|Process: com.mininex.preview' | grep -F com.mininex.preview; then
               echo 'Android application crash detected'
               exit 1
