@@ -997,3 +997,35 @@
   .mininex-stablecoin-details strong{font-size:12px}
   .mininex-stablecoin-value{font-size:11px}
 }
+
+
+/* All coin panels: single verified wallet balance in the title row.
+   Remove redundant chain-title line and keep labels, states and alerts legible. */
+.mininex-selected-asset .mininex-selected-header{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:7px 12px;flex-wrap:wrap;min-width:0;
+}
+.mininex-selected-asset .mininex-selected-header>strong{
+  font-size:16px;line-height:1.2;min-width:0;
+}
+.mininex-selected-asset .mininex-coin-header-balance{
+  font-size:15px;font-weight:800;color:#bdf7d8;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+  line-height:1.25;text-align:right;
+}
+.mininex-selected-asset .mininex-coin-wallet-address{
+  padding:10px;gap:6px;
+}
+.mininex-selected-asset .mininex-coin-wallet-address .privy-wallet-network{
+  display:none;
+}
+.mininex-selected-asset .mininex-coin-wallet-address .privy-copy-address{
+  display:grid;gap:6px;
+}
+.mininex-selected-asset .mininex-coin-wallet-address .privy-wallet-description:empty{
+  display:none;
+}
+@media(max-width:390px){
+  .mininex-selected-asset .mininex-selected-header>strong{font-size:15px}
+  .mininex-selected-asset .mininex-coin-header-balance{font-size:14px}
+}
