@@ -79,6 +79,22 @@ test('BTC signer calls approved adapter exactly once, verifies signature, never 
     verifySignature:async()=>false
   }),{ok:false,reason:'invalid_signature'});
 });
+test('current MiniNex 423 BTC wallet hook exposes address only; unsupported signer fails closed',()=>{
+  // The original crashing integration incorrectly used btcWallet.wallet even
+  // though useNativeBtcWallet() exposes {address,state,retry} only.
+  const stable=readFileSync(new URL('../src/PrivyWalletPanel.jsx',import.meta.url),'utf8');
+  assert.match(stable,/return \{address,state,retry:\(\)=>setRetry\(n=>n\+1\)\}/);
+  const legacyWalletView={address:wallet.address,state:'created',retry:()=>{}};
+  assert.equal(bitcoinSignerPreflight({
+    wallet:legacyWalletView,address:wallet.address,
+    publicKey:undefined,approve:async()=>signature
+  }).state,BTC_SIGNER_STATES.mismatch);
+  assert.equal(bitcoinSignerPreflight({
+    wallet:{address:wallet.address,chainType:'bitcoin-segwit'},
+    address:wallet.address,publicKey:undefined,
+    approve:async()=>signature
+  }).state,BTC_SIGNER_STATES.unsupported);
+});
 test('BTC signer module stays out of the stable wallet, app, and Privy hooks',()=>{
   const src=readFileSync(new URL('../src/btcSignerAdapter.js',import.meta.url),'utf8');
   for(const path of ['../src/PrivyWalletPanel.jsx','../src/main.jsx',
