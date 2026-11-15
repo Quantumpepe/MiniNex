@@ -1,0 +1,75 @@
+name: BTC send isolated Android compatibility (PR only)
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/btc-android-compatibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  btc-unit-and-android:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 140
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install frontend
+        run: npm install --no-audit --no-fund
+      - name: Run full suite, including isolated BTC signer tests
+        run: npm test
+      - name: Validate last-good startup modules remain free of BTC signer imports
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          for(const file of ['src/main.jsx','src/App.jsx','src/PrivyWalletPanel.jsx']){
+            const code=readFileSync(file,'utf8');
+            if(/btcTransferLoader|btcPrivyRawHash|btcSignerAdapter|BtcWalletSend|btcSendRules/.test(code))
+              throw Error('Unexpected BTC signer module imported by '+file);
+          }
+          console.log('Stable MiniNex startup remains isolated from BTC cryptography');
+          JS
+      - name: Prepare native build fingerprint
+        run: |
+          echo "MININEX_NATIVE_ABI=$(node scripts/native-abi.mjs)" >> "$GITHUB_ENV"
+          echo "MININEX_BUILD_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+      - name: Build Android production JavaScript
+        env:
+          VITE_API_BASE_URL: https://mininex-backend.onrender.com
+          VITE_PRIVY_APP_ID: cmw7sb7ty013o0gl55aqyzi3y
+          VITE_MININEX_NATIVE_ABI: ${{ env.MININEX_NATIVE_ABI }}
+          VITE_MININEX_BUILD_SHA: ${{ github.sha }}
+          VITE_MININEX_BUILD_AT: ${{ env.MININEX_BUILD_AT }}
+        run: npm run build
+      - name: Generate and sync Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+      - name: Compile isolated unsigned Android test APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew --no-daemon assembleDebug
+      - name: Save test APK only on this PR (not an OTA or installable release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-android-compatibility-pr140
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 3
