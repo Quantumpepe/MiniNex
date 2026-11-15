@@ -66,6 +66,27 @@ test('explicit confirmation + signer preflight gate prevents unsolicited Privy c
   assert.deepEqual(second,{ok:false,reason:'signer_not_ready'});
   assert.equal(calls,2);
 });
+test('two simultaneous confirmations for one intent never create a second signature',async()=>{
+  let calls=0;
+  const signer=createPrivyBtcHashSigner(async()=>{
+    calls++;
+    await Promise.resolve();
+    return {signature:'0x'+signature};
+  });
+  const preflight=bitcoinSignerPreflight({wallet,address,publicKey:pubkey,approve:signer});
+  const approved=review();
+  const results=await Promise.all([
+    requestReviewedBitcoinSignature({
+      preflight,intent:approved,approve:signer,verifySignature:async()=>true
+    }),
+    requestReviewedBitcoinSignature({
+      preflight,intent:approved,approve:signer,verifySignature:async()=>true
+    })
+  ]);
+  assert.equal(calls,1);
+  assert.equal(results.filter(result=>result.ok).length,1);
+  assert.equal(results.filter(result=>!result.ok).length,1);
+});
 test('Privy adapter is never loaded by production App entry',()=>{
   const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8');
   const wallet=readFileSync(new URL('../src/PrivyWalletPanel.jsx',import.meta.url),'utf8');
