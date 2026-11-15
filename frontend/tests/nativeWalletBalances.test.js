@@ -48,15 +48,23 @@ test('native wallet response cannot mix networks, paper balances or fake zeros',
   }
 });
 
-test('native balance UI is inside existing wallet and does not replace BTC or EVM',()=>{
+test('native balances remain independently verified and appear in their coin windows',()=>{
   const ui=readFileSync(new URL('../src/WalletBalances.jsx',import.meta.url),'utf8');
   assert.match(ui,/\/api\/wallet\/balances/);
   assert.match(ui,/\/api\/wallet\/multicoin-balances/);
   assert.match(ui,/\/api\/wallet\/native-balances/);
   assert.match(ui,/validNativeBalanceResponse\(data\)/);
-  assert.match(ui,/NATIVE_COINS\.map\(asset=>/);
+  assert.match(ui,/SOL:nativeBalances\?\.SOL\|\|null/);
+  assert.match(ui,/XRP:nativeBalances\?\.XRP\|\|null/);
+  assert.match(ui,/TRX:nativeBalances\?\.TRX\|\|null/);
+  assert.match(ui,/DOGE:nativeBalances\?\.DOGE\|\|null/);
+  const panel=readFileSync(new URL('../src/PrivyWalletPanel.jsx',import.meta.url),'utf8');
+  const setup=readFileSync(new URL('../src/TradingSetupPreview.jsx',import.meta.url),'utf8');
+  assert.match(panel,/onSnapshot=\{setVerifiedCoinHoldings\}/);
+  assert.match(panel,/renderCoinBalance=\{renderCoinBalance\}/);
+  assert.match(setup,/renderCoinBalance\?\.\(opened\)/);
   assert.match(ui,/wallet_missing/);
-  assert.match(ui,/nativeStatus==='failed'/);
+  assert.match(ui,/setNativeStatus\('failed'\)/);
   assert.match(ui,/getAccessToken,userId,request/);
   assert.doesNotMatch(ui,/mininex-real-trading-activate/);
 });
