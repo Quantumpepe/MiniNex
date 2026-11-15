@@ -44,6 +44,9 @@ test('BTC signing intent cannot exist without affirmative user confirmation',()=
 test('BTC signature decoding rejects unknown Privy envelopes and invalid hex',()=>{
   assert.equal(parseBitcoinRawSignature('0x'+signature),signature);
   assert.equal(parseBitcoinRawSignature(signature),signature);
+  assert.equal(parseBitcoinRawSignature('0x'+signature+'00'),signature);
+  assert.equal(parseBitcoinRawSignature('0x'+signature+'1c'),signature);
+  assert.equal(parseBitcoinRawSignature('0x'+signature+'ff'),null);
   assert.equal(parseBitcoinRawSignature({signature}),null);
   assert.equal(parseBitcoinRawSignature('00'),null);
   assert.equal(parseBitcoinRawSignature(signature+'ff'),null);
