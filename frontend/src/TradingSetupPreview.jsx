@@ -30,7 +30,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,renderLiveControls,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,renderLiveControls,renderCoinActions,renderCoinBalance,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -207,6 +207,8 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
         <span>{selectedCoin.inProgress?t.coinInProgress:!paperAvailable?t.wallet:selectedCoin.paperSettingsReady?t.coinExistingSettings:t.extraReplayTitle}</span>
       </div>
       {renderCoinAddress?.(opened)}
+      {renderCoinBalance?.(opened)}
+      {renderCoinActions?.(opened)}
       {selectedSettings ? <>
         <div className="privy-asset-settings-fields">
           <label>

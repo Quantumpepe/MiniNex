@@ -6,7 +6,7 @@ import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
   from './multicoinBalanceValidation.js';
 import {NATIVE_COINS,validNativeBalanceResponse} from './nativeBalanceValidation.js';
 
-export default function WalletBalances({t,getAccessToken,userId}) {
+export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   const [request,setRequest]=useState(0);
   const [status,setStatus]=useState('loading');
   const [balances,setBalances]=useState(null);
@@ -107,12 +107,26 @@ export default function WalletBalances({t,getAccessToken,userId}) {
     return()=>{active=false;};
   },[getAccessToken,userId,request]);
 
+  // Keep the coin holdings inside their selected coin window. All values
+  // remain independently verified, read-only and isolated from PAPER.
+  useEffect(()=>{
+    if(!onSnapshot)return;
+    onSnapshot({
+      BTC:balances?.BTC||null,ETH:balances?.ETH||null,
+      BNB:evmBalances?.BNB||null,POL:evmBalances?.POL||null,
+      AVAX:evmBalances?.AVAX||null,LINK:evmBalances?.LINK||null,
+      UNI:evmBalances?.UNI||null,
+      SOL:nativeBalances?.SOL||null,XRP:nativeBalances?.XRP||null,
+      TRX:nativeBalances?.TRX||null,DOGE:nativeBalances?.DOGE||null,
+    });
+  },[onSnapshot,balances,evmBalances,nativeBalances]);
+
   const loading=status==='loading'||evmStatus==='loading'||nativeStatus==='loading';
   return <details className="privy-hwm-box privy-balances-card mininex-real-balances"
     aria-label={t.privyBalancesTitle}>
     <summary className="mininex-balance-summary">
       <span><ShieldCheck size={17} aria-hidden="true"/> <strong>{t.privyBalancesTitle}</strong></span>
-      <small>{t.coinBalanceSummaryHint}</small>
+
     </summary>
     <div className="mininex-balance-expanded">
       <p className="privy-wallet-description">{t.privyBalancesCompactNote}</p>
@@ -121,64 +135,14 @@ export default function WalletBalances({t,getAccessToken,userId}) {
       {status==='privy-setup'&&<p className="privy-wallet-description" role="alert">{t.privyBalancesPrivySetup}</p>}
       {status==='privy-failed'&&<p className="privy-wallet-description" role="alert">{t.privyBalancesPrivyFailed}</p>}
       {status==='ready'&&<div className="privy-hwm-ledger privy-balances-grid">
-        {ASSETS.map(asset=><div className="privy-hwm-row privy-balance-item" key={asset}>
-          <span className="privy-balance-asset"><strong>{asset}</strong>
-            <small className="privy-balance-network">{asset==='BTC'?'Bitcoin':'Ethereum'}</small>
-          </span>
+        {['USDC','USDT'].map(asset=><div className="privy-hwm-row privy-balance-item" key={asset}>
+          <strong>{asset}</strong>
           <strong className="privy-balance-value">{balances[asset].status==='verified'
             ? balances[asset].balance+' '+asset
             : balances[asset].status==='wallet_missing'
-              ? t.privyBalancesMissing
-              : t.privyBalancesUnavailable}</strong>
+              ? t.privyBalancesMissing:t.privyBalancesUnavailable}</strong>
         </div>)}
       </div>}
-      {evmStatus==='ready'&&<div className="privy-hwm-ledger privy-balances-grid"
-        aria-label="Additional mainnet holdings">
-        {EVM_BALANCE_ASSETS.map(asset=><div className="privy-hwm-row privy-balance-item"
-          key={asset}>
-          <span className="privy-balance-asset"><strong>{asset}</strong>
-            <small className="privy-balance-network">{
-              {BNB:'BNB Smart Chain',POL:'Polygon PoS',AVAX:'Avalanche C-Chain',
-               LINK:'Ethereum ERC-20',UNI:'Ethereum ERC-20'}[asset]
-            }</small>
-          </span>
-          <strong className="privy-balance-value">{
-            evmBalances[asset].status==='verified'
-              ? evmBalances[asset].balance+' '+asset
-              : t.privyBalancesUnavailable
-          }</strong>
-        </div>)}
-      </div>}
-      {evmStatus==='loading'&&<p className="privy-wallet-description" role="status">
-        {t.privyBalancesLoading}
-      </p>}
-      {evmStatus==='failed'&&<p className="privy-wallet-description" role="status">
-        BNB / POL / AVAX / LINK / UNI: {t.privyBalancesUnavailable}
-      </p>}
-      {nativeStatus==='ready'&&<div className="privy-hwm-ledger privy-balances-grid"
-        aria-label="Native SOL XRP TRX DOGE holdings">
-        {NATIVE_COINS.map(asset=><div className="privy-hwm-row privy-balance-item" key={asset}>
-          <span className="privy-balance-asset"><strong>{asset}</strong>
-            <small className="privy-balance-network">{
-              {SOL:'Solana',XRP:'XRP Ledger',TRX:'TRON',DOGE:'Dogecoin'}[asset]
-            }</small>
-          </span>
-          <strong className="privy-balance-value">{
-            nativeBalances[asset].status==='verified'
-              ? nativeBalances[asset].balance+' '+asset
-              : nativeBalances[asset].status==='wallet_missing'
-                ? t.privyBalancesMissing
-                : t.privyBalancesUnavailable
-          }</strong>
-        </div>)}
-      </div>}
-      {nativeStatus==='loading'&&<p className="privy-wallet-description" role="status">
-        {t.privyBalancesLoading}
-      </p>}
-      {nativeStatus==='failed'&&<p className="privy-wallet-description" role="status">
-        SOL / XRP / TRX / DOGE: {t.privyBalancesUnavailable}
-      </p>}
-      <p className="privy-wallet-description">{t.coinOtherBalancesPending}</p>
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary privy-balance-refresh"
         onClick={()=>setRequest(n=>n+1)} disabled={loading}>
         <RefreshCcw size={16} aria-hidden="true"/> {t.privyBalancesRefresh}

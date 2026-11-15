@@ -76,12 +76,12 @@ test('wallet balances are requested only with bearer auth and never sent to trad
   assert.match(wallet,/validateWalletBalanceResponse\(data\)/);
   assert.match(wallet,/current=false/);
   assert.match(panel,/identityStatus==='verified' && databaseStatus==='stored'/);
-  assert.match(panel,/<WalletBalances t=\{t\} getAccessToken=\{getAccessToken\} userId=\{user\?\.id\}\/>/);
+  assert.match(panel,/<WalletBalances t=\{t\} getAccessToken=\{getAccessToken\} userId=\{user\?\.id\}/);
   assert.match(backend,/@app\.get\("\/api\/wallet\/balances"\)/);
   assert.match(backend,/get_wallet_balances\(did\)/);
   assert.doesNotMatch(wallet,/sendTransaction|signMessage|delegateWallet|privateKey|method:'POST'/);
-  assert.match(i18n,/Echte Wallet-Guthaben · nur lesen/);
-  assert.match(i18n,/Real wallet balances · read-only/);
+  assert.match(i18n,/privyBalancesTitle: 'Wallet-Guthaben'/);
+  assert.match(i18n,/privyBalancesTitle: 'Wallet balances'/);
   assert.match(i18n,/NICHT dein PAPER-Budget/);
 });
 

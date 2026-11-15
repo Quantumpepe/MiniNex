@@ -12,10 +12,11 @@ const labels=source('../src/i18n.js');
 test('wallet puts native BTC and ETH addresses in each coin instead of an extra field',()=>{
   const balance=wallet.indexOf('<WalletBalances t={t}');
   const trading=wallet.indexOf('<TradingSetupPreview t={t}');
-  const technical=wallet.indexOf('<details className="privy-disclosure privy-technical-section">');
+  const technical=source('../src/WalletTechnicalInfo.jsx');
   const logout=wallet.indexOf('privy-wallet-logout');
   assert.ok(balance>0&&balance<trading);
-  assert.ok(trading<technical&&technical<logout);
+  assert.ok(trading>balance&&logout>trading);
+  assert.match(technical,/privy-technical-section/);
   assert.doesNotMatch(wallet,/privy-addresses-section/);
   assert.doesNotMatch(wallet,/t\.privyAddressesTitle|t\.privyAddressesHint/);
   assert.match(wallet,/renderCoinAddress=\{renderCoinAddress\}/);
@@ -26,7 +27,7 @@ test('wallet puts native BTC and ETH addresses in each coin instead of an extra 
   assert.match(wallet,/btcWallet\.address &&/);
   assert.match(wallet,/<CopyWalletAddress address=\{btcWallet.address\} network="BTC" t=\{t\}\/>/);
   assert.match(wallet,/<CopyWalletAddress address=\{address\} network="ETH" t=\{t\}\/>/);
-  assert.match(wallet,/t\.privyTechnicalTitle/);
+  assert.match(technical,/t\.privyTechnicalTitle/);
 });
 
 
@@ -50,7 +51,7 @@ test('BTC and ETH retain separate budget sliders within the selected eight-coin 
 test('read-only wallet data, PAPER settings and HWM stay separate',()=>{
   assert.match(wallet,/identityStatus==='verified' && databaseStatus==='stored'/);
   assert.match(wallet,/getAccessToken=\{getAccessToken\} userId=\{user\?\.id\}/);
-  assert.match(wallet,/assetLedger\[asset\]\?\.high_water_mark_usd/);
+  assert.match(source('../src/WalletTechnicalInfo.jsx'),/ledger\[asset\]\?\.high_water_mark_usd/);
   assert.match(wallet,/capabilities\.real_trading_enabled===false/);
   assert.match(wallet,/capabilities\.automated_signing_enabled===false/);
   assert.match(balances,/validateWalletBalanceResponse\(data\)/);

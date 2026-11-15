@@ -170,6 +170,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   const [identityStatus,setIdentityStatus]=useState('idle');
   const [databaseStatus,setDatabaseStatus]=useState('idle');
   const [assetLedger,setAssetLedger]=useState(null);
+  const [verifiedCoinHoldings,setVerifiedCoinHoldings]=useState(null);
   const [routeCapabilities,setRouteCapabilities]=useState(null);
   const [previewBudgets,setPreviewBudgets]=useState({BTC:0,ETH:0});
   const [savedBudgets,setSavedBudgets]=useState(null);
@@ -459,6 +460,29 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   };
 
   // ETH LIVE shares the existing per-coin settings window; no global technical panel.
+  // Existing wallet actions appear with the selected coin, not globally.
+  // EVM sends use the verified wallet signer. Swap is still preview-only.
+  const renderCoinBalance = asset => {
+    const record=verifiedCoinHoldings?.[asset];
+    return <div className="mininex-coin-real-balance" role="status">
+      <strong>{t.privyBalancesTitle} · {asset}</strong>
+      <span>{record?.status==='verified'
+        ? record.balance+' '+asset
+        : record?.status==='wallet_missing'
+          ? t.privyBalancesMissing:t.privyBalancesUnavailable}</span>
+    </div>;
+  };
+
+  const renderCoinActions = asset => <div className="mininex-coin-wallet-actions">
+    {['ETH','BNB','POL','AVAX','LINK','UNI'].includes(asset)&&
+      <WalletSend key={'send-'+asset} initialCoin={asset} lockedCoin
+        t={t} enabled={verifiedAccount} userId={user?.id}/>}
+    {!['ADA'].includes(asset)&&
+      <ManualSwapPreview key={'swap-'+asset} initialCoin={asset} lockedCoin
+        t={t} lang={lang} getAccessToken={getAccessToken}
+        enabled={verifiedAccount} userId={user?.id}/>}
+  </div>;
+
   const renderLiveControls = (asset,stable) => asset==='ETH' ?
     <LiveEthControls compact t={t} user={user} address={address}
       stable={stable} getAccessToken={getAccessToken}
@@ -474,14 +498,8 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
         !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
           {identityStatus==='verified' && databaseStatus==='stored' &&
-            <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}/>}
-
-          {identityStatus==='verified' && databaseStatus==='stored' &&
-            <WalletSend t={t} enabled={verifiedAccount} userId={user?.id}/>}
-
-          {identityStatus==='verified' && databaseStatus==='stored' &&
-            <ManualSwapPreview t={t} lang={lang} getAccessToken={getAccessToken}
-              enabled={verifiedAccount} userId={user?.id}/>}
+            <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}
+              onSnapshot={setVerifiedCoinHoldings}/>}
 
           {(identityStatus==='failed' || identityStatus==='setup' || databaseStatus==='failed' || databaseStatus==='setup') &&
             <div className="privy-wallet-description" role="alert">{t.privyConnectionIssue}</div>}
@@ -496,28 +514,9 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             renderCoinAddress={renderCoinAddress} renderLiveControls={renderLiveControls}
+            renderCoinActions={renderCoinActions} renderCoinBalance={renderCoinBalance}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
-          <details className="privy-disclosure privy-technical-section">
-            <summary>
-              <span>{t.privyTechnicalTitle}</span>
-              <small>{t.privyTechnicalHint}</small>
-            </summary>
-            <div className="privy-disclosure-body">
-              <div className="privy-hwm-box" aria-label={t.privyTradingTitle}>
-                <div className="privy-hwm-title"><strong>{t.privyTradingTitle}</strong></div>
-                <p className="privy-wallet-description">{t.privyTradingNote}</p>
-              </div>
-              <div className="privy-hwm-box" aria-label={t.privyHwmTitle}>
-                <div className="privy-hwm-title"><strong>{t.privyHwmTitle} · 5 %</strong></div>
-                {databaseStatus==='stored' && assetLedger && <div className="privy-hwm-ledger">
-                  {['BTC','ETH'].map(asset=><div className="privy-hwm-row" key={asset}>
-                    <b>{asset}</b><span>{t.privyHwmValue}: {formatHwmUsd(assetLedger[asset]?.high_water_mark_usd)} USD</span>
-                  </div>)}
-                </div>}
-              </div>
-            </div>
-          </details>
           <button className="privy-wallet-action privy-wallet-action--secondary privy-wallet-logout"
             type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
