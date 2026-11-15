@@ -13,7 +13,7 @@ test('BTC and ETH settings each include authenticated stop-to-selected-stable PA
   assert.match(wallet,/const renderSessionControls = asset =>/);
   assert.match(wallet,/<AssetPaperControl asset=\{asset\} t=\{t\} getAccessToken=\{getAccessToken\}/);
   assert.match(wallet,/renderSessionControls=\{renderSessionControls\}/);
-  assert.match(setup,/\{renderSessionControls\?\.\(opened\)\}/);
+  assert.match(setup,/\{paperAvailable&&renderSessionControls\?\.\(opened\)\}/);
   assert.match(setup,/const selectedSettings=opened==='BTC'\|\|opened==='ETH'\?settings\[opened\]:null/);
   assert.match(control,/API_BASE\+'\/api\/user-paper\/'\+asset/);
   assert.match(control,/headers:\{Authorization:'Bearer '\+token,Accept:'application\/json'\}/);
