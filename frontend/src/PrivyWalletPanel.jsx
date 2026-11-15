@@ -466,11 +466,11 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   const renderCoinBalance = asset => {
     const record=verifiedCoinHoldings?.[asset];
     return <div className="mininex-coin-real-balance" role="status">
-      <strong>{t.privyBalancesTitle} · {asset}</strong>
-      <span>{record?.status==='verified'
+      <span className="mininex-coin-real-balance-label">{t.privyBalancesTitle} · {asset}</span>
+      <strong className="mininex-coin-real-balance-amount">{record?.status==='verified'
         ? record.balance+' '+asset
         : record?.status==='wallet_missing'
-          ? t.privyBalancesMissing:t.privyBalancesUnavailable}</span>
+          ? t.privyBalancesMissing:t.privyBalancesUnavailable}</strong>
     </div>;
   };
 
