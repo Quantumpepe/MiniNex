@@ -88,11 +88,24 @@ test('wallet balances are requested only with bearer auth and never sent to trad
 test('verified zero is rendered as zero; only failed source as unavailable',()=>{
   const wallet=readFileSync(new URL('../src/WalletBalances.jsx',import.meta.url),'utf8');
   const i18n=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
-  assert.match(wallet,/balances\[asset\]\.status==='verified'/);
-  assert.match(wallet,/balances\[asset\]\.balance\+' '\+asset/);
+  assert.match(wallet,/record\?\.status==='verified'/);
+  assert.match(wallet,/record\.balance\+' '\+asset/);
   assert.match(wallet,/t\.privyBalancesUnavailable/);
   assert.match(wallet,/t\.privyBalancesPrivySetup/);
   assert.match(wallet,/t\.privyBalancesPrivyFailed/);
   assert.match(i18n,/Der private Privy-Zugang fehlt im Backend/);
   assert.match(i18n,/Vorübergehend nicht verfügbar/);
+});
+
+test('USDC and USDT holdings appear as separate non-collapsible tiles',()=>{
+  const wallet=readFileSync(new URL('../src/WalletBalances.jsx',import.meta.url),'utf8');
+  const css=readFileSync(new URL('../src/styles.css',import.meta.url),'utf8');
+  assert.match(wallet,/\['USDC','USDT'\]\.map\(asset=>/);
+  assert.match(wallet,/className="mininex-stablecoin-tiles"/);
+  assert.match(wallet,/className="mininex-stablecoin-tile"/);
+  assert.match(wallet,/stableBalance\(asset\)/);
+  assert.match(wallet,/record\?\.status==='verified'/);
+  assert.match(wallet,/record\?\.status==='wallet_missing'/);
+  assert.doesNotMatch(wallet,/<summary|<details/);
+  assert.match(css,/\.mininex-stablecoin-tiles\{/);
 });
