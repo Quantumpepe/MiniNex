@@ -27,7 +27,10 @@
     "@solana-program/token": "^0.6.0",
     "@solana-program/memo": "^0.8.0",
     "@solana/kit": "^3.0.3",
-    "@capgo/capacitor-updater": "8.54.2"
+    "@capgo/capacitor-updater": "8.54.2",
+    "bitcoinjs-lib": "^6.1.7",
+    "tiny-secp256k1": "^2.2.4",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "vite": "^6.1.0",
