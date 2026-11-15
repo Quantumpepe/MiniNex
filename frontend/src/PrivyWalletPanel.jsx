@@ -10,6 +10,7 @@ import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
+import BtcWalletSend from './BtcWalletSend.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
@@ -157,7 +158,7 @@ function useNativeBtcWallet(user, enabled) {
     return ()=>{active=false;};
   },[enabled,user?.id,address,createWallet,retry]);
 
-  return {address,state,retry:()=>setRetry(n=>n+1)};
+  return {address,wallet:existing||createdForUser,state,retry:()=>setRetry(n=>n+1)};
 }
 
 // Deliberately no sendTransaction, withdrawal or delegation path here.
@@ -474,6 +475,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   };
 
   const renderCoinActions = asset => <div className="mininex-coin-wallet-actions">
+    {asset==='BTC'&&
+      <BtcWalletSend key={'send-btc-'+user?.id} t={t} lang={lang}
+        userId={user?.id} wallet={btcWallet.wallet} enabled={verifiedAccount}/>}
+
     {['ETH','BNB','POL','AVAX','LINK','UNI'].includes(asset)&&
       <WalletSend key={'send-'+asset} initialCoin={asset} lockedCoin
         t={t} enabled={verifiedAccount} userId={user?.id}/>}
