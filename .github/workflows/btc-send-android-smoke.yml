@@ -73,9 +73,9 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_2
           script: |
             adb install -r frontend/android/app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
@@ -87,7 +87,7 @@ jobs:
             # Require visible MiniNex text in Android's accessibility hierarchy.
             adb shell uiautomator dump /sdcard/mininex-window.xml
             adb shell cat /sdcard/mininex-window.xml > /tmp/mininex-window.xml
-            for retry in 1 2 3 4; do grep -qi 'mininex' /tmp/mininex-window.xml && break; if grep -qi "Pixel Launcher isn.t responding" /tmp/mininex-window.xml; then echo "Emulator launcher ANR; dismissing"; adb shell input tap 540 1360; adb shell am start -n com.mininex.preview/.MainActivity; fi; echo "App not accessible on pass $retry; retrying"; sleep 10; adb shell uiautomator dump /sdcard/mininex-window.xml; adb shell cat /sdcard/mininex-window.xml > /tmp/mininex-window.xml; done
+            for retry in 1 2 3 4; do grep -qi 'mininex' /tmp/mininex-window.xml && break; if grep -qi "Pixel Launcher isn.t responding" /tmp/mininex-window.xml; then echo "Emulator launcher ANR; dismissing"; adb shell input tap 540 1230; adb shell am start -n com.mininex.preview/.MainActivity; fi; echo "App not accessible on pass $retry; retrying"; sleep 10; adb shell uiautomator dump /sdcard/mininex-window.xml; adb shell cat /sdcard/mininex-window.xml > /tmp/mininex-window.xml; done
             grep -qi 'mininex' /tmp/mininex-window.xml || { echo 'MiniNex UI not rendered; complete hierarchy follows'; cat /tmp/mininex-window.xml; echo 'Android WebView and Runtime logs:'; adb logcat -d -v brief | grep -Ei 'chromium|webview|capacitor|AndroidRuntime|FATAL EXCEPTION|Permission|denied' | tail -n 160; exit 1; }
             ! adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|Process: com.mininex.preview' | grep -F com.mininex.preview || { echo 'Android application crash detected'; exit 1; }
             adb shell input keyevent 3
