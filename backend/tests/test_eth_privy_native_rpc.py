@@ -40,6 +40,10 @@ def test_privy_weth9_sign_and_send(monkeypatch):
         serialization.PrivateFormat.PKCS8,serialization.NoEncryption())
     monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
                        base64.b64encode(der).decode())
+    public=key.public_key().public_bytes(
+        serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                       base64.b64encode(public).decode())
     requests=[]
     def handler(request):
         import json
@@ -64,6 +68,10 @@ def test_privy_weth9_timeout_is_not_retried(monkeypatch):
         serialization.PrivateFormat.PKCS8,serialization.NoEncryption())
     monkeypatch.setenv("MININEX_PRIVY_ETH_AUTH_P256_PKCS8",
                        base64.b64encode(der).decode())
+    public=key.public_key().public_bytes(
+        serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
+    monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_PUBLIC_KEY_SPKI",
+                       base64.b64encode(public).decode())
     requests=[]
     def handler(request):
         requests.append(request)
