@@ -202,7 +202,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       markets={marketSnapshot} syncedAt={syncedAt} kind="wallet"/>
     {selectedCoin&&<section className="privy-asset-settings mininex-selected-asset"
       aria-label={selectedCoin.symbol+' '+t.privyAssetSettings}>
-      <div className="mininex-selected-header">
+      <div className="mininex-selected-header" aria-label={selectedCoin.inProgress?t.coinInProgress:selectedCoin.symbol}>
         <strong>{selectedCoin.glyph} {selectedCoin.name} · {selectedCoin.symbol}</strong>
         {renderCoinBalance?.(opened)}
       </div>
