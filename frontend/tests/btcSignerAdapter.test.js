@@ -62,6 +62,12 @@ test('BTC signer calls approved adapter exactly once, verifies signature, never 
   });
   assert.deepEqual(verified,{ok:true,signature});
   assert.equal(calls,1);
+  const forged=await requestReviewedBitcoinSignature({
+    preflight:preflight(approve),intent:{...intent()},approve,
+    verifySignature:async()=>true
+  });
+  assert.deepEqual(forged,{ok:false,reason:'signer_not_ready'});
+  assert.equal(calls,1);
   const absent=await requestReviewedBitcoinSignature({
     preflight:{state:'unsupported_signer'},intent:intent(),approve,
     verifySignature:async()=>true
