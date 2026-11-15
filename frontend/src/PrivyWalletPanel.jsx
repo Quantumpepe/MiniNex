@@ -7,6 +7,7 @@ import {API_BASE} from './data.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
+import LiveEthControls from './LiveEthControls.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
@@ -457,6 +458,12 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     </div>;
   };
 
+  // ETH LIVE shares the existing per-coin settings window; no global technical panel.
+  const renderLiveControls = (asset,stable) => asset==='ETH' ?
+    <LiveEthControls compact t={t} user={user} address={address}
+      stable={stable} getAccessToken={getAccessToken}
+      enabled={verifiedAccount}/> : null;
+
   const renderSessionControls = asset =>
     <AssetPaperControl asset={asset} t={t} getAccessToken={getAccessToken}
       enabled={identityStatus==='verified' && databaseStatus==='stored'}/>;
@@ -488,7 +495,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
              userId={user?.id}
             enabled={identityStatus==='verified' && databaseStatus==='stored'}
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
-            renderCoinAddress={renderCoinAddress}
+            renderCoinAddress={renderCoinAddress} renderLiveControls={renderLiveControls}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
           <details className="privy-disclosure privy-technical-section">
