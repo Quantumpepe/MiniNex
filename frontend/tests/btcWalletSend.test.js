@@ -5,7 +5,7 @@ import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import {Buffer} from 'buffer';
 import {btcSatoshis,btcOwnedPublicKey,btcOwnerScript,btcRecipientScript,
-  btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,BTC_REVIEW_MAX_AGE_MS}
+  btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,btcSignAndBroadcast,BTC_REVIEW_MAX_AGE_MS}
   from '../src/btcSendRules.js';
 
 const source=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -73,4 +73,42 @@ test('BTC plan checks spend, fee, change and no unapproved signing',()=>{
   assert.match(app,/<BtcWalletSend/);
   assert.match(app,/asset==='BTC'/);
   assert.doesNotMatch(ui,/autoSend|setInterval\(/);
+});
+
+test('real P2WPKH PSBT signs all inputs with Privy-style raw hashes and verifies BTC TXID',async()=>{
+  const funding=new bitcoin.Transaction();
+  funding.version=2;
+  funding.addInput(Buffer.alloc(32),0xffffffff);
+  funding.addOutput(script,100000);
+  const txid=funding.getId();
+  const plan=btcPlan({destination:recipient,amount:'0.0005',utxos:[
+    {txid,vout:0,value:100000n}
+  ],feeRate:5,sourceScript:script});
+  assert.ok(plan);
+  const previous=globalThis.fetch;
+  let broadcast=null;
+  globalThis.fetch=async(url,opts={})=>{
+    if(String(url).endsWith('/tx/'+txid+'/hex')&&opts.method!=='POST')
+      return new Response(funding.toHex(),{status:200});
+    if(String(url).endsWith('/tx')&&opts.method==='POST'){
+      broadcast=bitcoin.Transaction.fromHex(opts.body);
+      return new Response(broadcast.getId(),{status:200});
+    }
+    throw Error('Unexpected provider route');
+  };
+  try{
+    const result=await btcSignAndBroadcast(plan,{address,pubkey:publicKey,
+      signRawHash:async({hash,chainType, address:signerAddress})=>{
+        assert.equal(signerAddress,address);
+        assert.equal(chainType,'bitcoin-segwit');
+        return {signature:'0x'+Buffer.from(
+          ecc.sign(Buffer.from(hash.slice(2),'hex'),priv)).toString('hex')};
+      }});
+    assert.equal(result,broadcast.getId());
+    assert.equal(broadcast.ins.length,1);
+    assert.equal(broadcast.outs.length,2);
+    assert.deepEqual(Buffer.from(broadcast.outs[0].script),btcRecipientScript(recipient));
+    assert.equal(broadcast.outs[0].value,50000);
+    assert.equal(broadcast.outs[1].value,Number(plan.change));
+  }finally{globalThis.fetch=previous;}
 });
