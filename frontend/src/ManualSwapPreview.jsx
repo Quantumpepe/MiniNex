@@ -6,9 +6,9 @@ import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwa
 
 // Standalone MANUAL wallet swap preview. It never signs, approves, delegates,
 // broadcasts, auto-swaps or changes the independent BTC/ETH trading budgets.
-export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,userId}) {
+export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,userId,initialCoin='ETH',lockedCoin=false}) {
   const [open,setOpen]=useState(false);
-  const [from,setFrom]=useState('ETH');
+  const [from,setFrom]=useState(initialCoin);
   const [to,setTo]=useState('USDC');
   const [amount,setAmount]=useState('');
   const [busy,setBusy]=useState(false);
