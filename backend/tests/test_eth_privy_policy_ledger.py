@@ -156,6 +156,11 @@ def test_signed_intent_prepares_only_one_immutable_policy_under_locks():
     cursor = Cursor()
     first = stage(cursor)
     second = stage(cursor)
+    # A read-only remaining-seconds countdown may tick between two calls.
+    # All immutable policy identity and authorization fields must stay fixed.
+    first_remaining = first.pop("policy_seconds_remaining")
+    second_remaining = second.pop("policy_seconds_remaining")
+    assert abs(first_remaining - second_remaining) <= 2
     assert first == second
     assert cursor.insert_count == 1
     assert [q[0].split(" ")[0] for q in cursor.queries] == [
