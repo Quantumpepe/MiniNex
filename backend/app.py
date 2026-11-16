@@ -46,6 +46,7 @@ from .extended_paper_replay import compact_replay_observations
 from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
+from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .eth_router02_allowance import inspect_router02_approval
 from .eth_live_wallet_equity import read_owner_eth_live_wallet_value
 from .eth_owner_auto_approval import make_eth_owner_approval_plan
@@ -588,6 +589,33 @@ async def eth_owner_live_auto_allowance(
     return JSONResponse(
         result,headers={"Cache-Control":"private, no-store",
                         "X-Content-Type-Options":"nosniff"})
+
+
+@app.post("/api/live/evm/erc20-user-transaction/{asset}")
+async def owner_link_uni_router02_user_transaction(
+    asset: Literal["LINK","UNI"],
+    request: EthLiveQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Wallet-owner-signable, chain-bound ERC-20 calldata, no server broadcast.
+
+    Caller signs separately using its Privy wallet and checks approvals plus
+    finality; these data are never a claimed LIVE AUTO fill or HWM event.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await quote_owner_erc20_trade(
+        did,asset=asset,side=request.side,stable=request.stable,
+        amount=request.amount,include_user_transaction=True,
+    )
+    if (result.get("wallet_identity_verified") is not True
+            or result.get("onchain_quote_verified") is not True
+            or result.get("transaction",{}).get("chainId")!=1
+            or result.get("execution_enabled") is not False):
+        raise HTTPException(502,"Owner ERC-20 quote identity mismatch")
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.post("/api/live/eth/router02-user-transaction")
