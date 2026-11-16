@@ -1,5 +1,6 @@
 """Combined EVM wallet, allowance and exact-amount swap preparation tests."""
 import asyncio
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -24,7 +25,8 @@ def sample(asset,side,stable,amount,*,balance_ok=True,allowance_ok=True,gas_ok=T
         "asset":asset,"side":side,"stable":stable,"input_amount":amount,
         "network":pair["network"],"wallet_identity_verified":True,
         "execution_enabled":False,"can_submit":False,
-        "transaction_expires_at":1_800_000_000,
+        "transaction_expires_at":int(time.time())+15,
+        "onchain_quote_verified":True,
         "transaction":tx,
     }, {
         "mode":"SHARED_EVM_SOURCE_ALLOWANCE_READ_ONLY",
@@ -81,6 +83,9 @@ def test_no_owner_swap_exposed_before_all_current_source_proofs(
 
 
 @pytest.mark.parametrize("change",[
+    lambda q,a:q.update(transaction_expires_at=1),
+    lambda q,a:q.update(onchain_quote_verified=False),
+    lambda q,a:q["transaction"].update(value="1"),
     lambda q,a:q["transaction"].update(chainId=1),
     lambda q,a:q["transaction"].update(to="0x"+"cd"*20),
     lambda q,a:a.update(wallet_address="0x"+"cd"*20),
