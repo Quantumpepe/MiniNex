@@ -58,8 +58,9 @@ def inspect_remote_privy_backend_quorum(
             or _QUORUM_ID.fullmatch(expected_id) is None
             or type(payload) is not dict
             or payload.get("id") != expected_id
-            or type(payload.get("authorization_threshold")) is not int
+            or type(payload.get("authorization_threshold")) not in (int, float)
             or payload["authorization_threshold"] != 1):
+        # Privy's API uses a JSON number (1 or 1.0); reject strings/bools.
         return False
     # A quorum can contain authorization keys, users *and nested quorums*.
     # A threshold of 1 does not mean our pinned key is the only authority
