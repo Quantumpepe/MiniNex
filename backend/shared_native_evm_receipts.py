@@ -139,6 +139,7 @@ def inspect_finalized_native_evm_conversion(
     if status not in (0,1) or not 0<gas<=30_000_000 or not 0<price<=10**12:
         raise ValueError("Invalid conversion status or gas")
     result["network_fee_native"]=format(Decimal(gas*price)/Decimal(10**18),"f")
+    result["block_number"]=block
     result["confirmations"]=min(head-block+1,1_000_000)
     result["state"]="INCLUDED_SUCCESS" if status else "INCLUDED_REVERTED"
     if finalized is None:
