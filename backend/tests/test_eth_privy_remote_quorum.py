@@ -142,3 +142,16 @@ def test_1_of_1_accepts_explicit_empty_member_classes(monkeypatch):
     public = configured(monkeypatch)
     candidate = {**payload(public), "user_ids": [], "key_quorum_ids": []}
     assert inspect_remote_privy_backend_quorum(candidate, expected_id=QUORUM)
+
+
+def test_1_of_1_accepts_exact_numeric_float_threshold(monkeypatch):
+    public = configured(monkeypatch)
+    candidate = {**payload(public), "authorization_threshold": 1.0}
+    assert inspect_remote_privy_backend_quorum(candidate, expected_id=QUORUM)
+
+
+@pytest.mark.parametrize("value", [True, False, "1", "1.0", 1.00001, 0.0, 2.0])
+def test_1_of_1_does_not_accept_other_threshold_types_or_values(monkeypatch, value):
+    public = configured(monkeypatch)
+    candidate = {**payload(public), "authorization_threshold": value}
+    assert not inspect_remote_privy_backend_quorum(candidate, expected_id=QUORUM)
