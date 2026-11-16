@@ -10,6 +10,7 @@ This module does NOT sign, broadcast, grant AUTO policies or book profits.
 from __future__ import annotations
 
 import asyncio
+import time
 from fastapi import HTTPException
 
 from .shared_evm_swap_receipts import _pair
@@ -37,6 +38,7 @@ def _approved_quote_pair(quote: object, allowance: object, *,
             or type(tx.get("from")) is not str
             or type(tx.get("to")) is not str
             or tx["to"].lower()!=pair["router"].lower()
+            or tx.get("value") not in ("0x0","0")
             or type(allowance.get("wallet_address")) is not str
             or tx["from"].lower()!=allowance["wallet_address"].lower()
             or allowance.get("asset")!=asset
@@ -71,8 +73,13 @@ def _approved_quote_pair(quote: object, allowance: object, *,
             or not 0<amount_in<10**45 or not 0<min_out<10**45
             or price_limit!=0):
         raise ValueError("Quoted EVM ABI differs from verified source balance")
-    if type(quote.get("transaction_expires_at")) is not int:
-        raise ValueError("Fresh quote expiry missing")
+    expires=quote.get("transaction_expires_at")
+    if (type(expires) is not int or
+            not int(time.time()) < expires <= int(time.time())+45):
+        raise ValueError("Current exact-amount swap quote expired")
+    if (quote.get("onchain_swap_quote") is not True
+            and quote.get("onchain_quote_verified") is not True):
+        raise ValueError("Real on-chain DEX quote not independently established")
     source_ok=allowance.get("source_funds_sufficient") is True
     allowed=allowance.get("router_allowance_sufficient") is True
     gas=allowance.get("native_gas_available") is True
