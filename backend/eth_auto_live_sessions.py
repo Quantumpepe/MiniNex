@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .eth_privy_user_grant import get_eth_user_grant_review
+from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .eth_live_strategy_tick import execute_live_eth_strategy_tick
 from .eth_live_auto_dispatch import expire_abandoned_eth_orders
 from .eth_router02_receipts import check_user_router02_receipt
@@ -112,6 +113,12 @@ async def start_eth_auto(did:str,stable:str)->dict:
         raise HTTPException(503,"ETH AUTO worker not deployed and enabled")
     # Re-verify actual wallet owner, attached signers and full remote Privy
     # policy BEFORE releasing trade controls.
+    # A user grant alone does not prove the current registered backend key.
+    # Refuse to activate the session unless Privy's 1-of-1 signer is still
+    # the exact pinned P-256 key. Do this before unpausing any trade controls.
+    quorum = await check_privy_backend_quorum()
+    if quorum.get("remote_quorum_public_key_verified") is not True:
+        raise HTTPException(503, "ETH AUTO backend signer quorum not verified")
     grant=await get_eth_user_grant_review(did)
     try:
         url=_db_url();_ensure_schema(url)
