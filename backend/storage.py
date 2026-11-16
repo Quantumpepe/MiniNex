@@ -204,6 +204,39 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 8 AND 96),
+        wallet_address TEXT NOT NULL CHECK (
+            wallet_address ~ '^0x[0-9a-f]{40}$'),
+        wallet_id TEXT NOT NULL CHECK (length(wallet_id) BETWEEN 6 AND 160),
+        request_digest TEXT NOT NULL CHECK (
+            request_digest ~ '^[0-9a-f]{64}$'),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        status TEXT NOT NULL CHECK(status IN (
+            'SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+            'FINALIZED_SUCCESS','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK (tx_hash IS NULL OR
+            tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        UNIQUE(privy_did,chain_id,intent_key),
+        CHECK (
+            (asset='BNB' AND chain_id=56 AND stable='USDT') OR
+            (asset='POL' AND chain_id=137 AND stable='USDC') OR
+            (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
+            (asset IN ('LINK','UNI') AND chain_id=1)),
+        CHECK (status NOT IN (
+            'SUBMITTED','FINALIZED_SUCCESS','FINALIZED_REVERTED')
+            OR tx_hash IS NOT NULL)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_live_evm_pending_by_wallet
+       ON mininex_live_evm_auto_broadcasts(
+          privy_did,chain_id,status)""",
     """CREATE TABLE IF NOT EXISTS mininex_live_eth_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         intent_key TEXT NOT NULL,
