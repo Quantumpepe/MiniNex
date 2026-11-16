@@ -63,7 +63,7 @@ def test_all_five_assets_share_exact_privy_chain_bound_rules(
 ])
 @pytest.mark.parametrize("tamper",[
     lambda p:p["rules"][0]["conditions"].pop(),
-    lambda p:p["rules"][1]["conditions"][0].update(value="1"),
+    lambda p:p["rules"][1]["conditions"][0].update(value="999"),
     lambda p:p["rules"][0]["conditions"][1].update(value="0x"+"cd"*20),
     lambda p:p["rules"].append({"action":"ALLOW","method":"eth_sendTransaction","conditions":[]}),
 ])
