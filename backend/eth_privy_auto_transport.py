@@ -12,6 +12,7 @@ import httpx
 
 from fastapi import HTTPException
 from .shared_evm_execution import bound_evm_wallet_rpc
+from .shared_evm_auto_preflight import inspect_evm_exact_swap
 from .privy_wallet_verification import APP_ID
 from .eth_swaprouter02_preflight import (
     inspect_swaprouter02_exact_input, SWAPROUTER02_MAINNET,
@@ -41,6 +42,13 @@ def bound_privy_rpc_request(*, wallet_id: str, wallet: str, tx: dict,
         raise ValueError("Immutable Ethereum transaction required")
     inspect_swaprouter02_exact_input(
         tx,wallet=wallet,side=side,stable=stable,
+        input_atomic=input_atomic,
+        minimum_output_atomic=minimum_output_atomic,
+    )
+    # The active real ETH Privy AUTO broadcaster uses the same exact swap
+    # validator as every other EVM asset. No extra broadcaster is enabled.
+    inspect_evm_exact_swap(
+        tx,asset="ETH",wallet=wallet,side=side,stable=stable,
         input_atomic=input_atomic,
         minimum_output_atomic=minimum_output_atomic,
     )
