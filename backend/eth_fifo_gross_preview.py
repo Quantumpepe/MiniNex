@@ -86,7 +86,27 @@ def eth_fifo_gross_preview(history: dict) -> dict:
                 if (row.get("spent_asset") != stable
                         or row.get("received_asset") != "WETH"):
                     raise ValueError("Invalid BUY source or destination")
-                inventories[stable].append([received, source])
+                # Keep exact BUY gas with its inventory lot so partial
+                # sells do not repeatedly charge the whole BUY transaction.
+                # Unknown conversion gas cannot be silently billed as zero.
+                fee = row.get("network_fee_eth")
+                buy_gas = _nonnegative_fee(fee) if fee is not None else None
+                conversion = row.get("native_conversion_status")
+                if conversion == "CONFIRMED_VERIFIED":
+                    extra = row.get("native_conversion_network_fee_eth")
+                    if extra is None:
+                        buy_gas = None
+                    elif buy_gas is not None:
+                        buy_gas += _nonnegative_fee(extra)
+                elif conversion not in (None, "NOT_STARTED", "SENDING",
+                                        "SUBMITTED", "RECONCILIATION_REQUIRED",
+                                        "REVERTED"):
+                    raise ValueError("Untrusted ETH native conversion status")
+                else:
+                    # A pending native conversion may still consume gas later.
+                    # Per-lot total costs cannot yet be finalized.
+                    buy_gas = None
+                inventories[stable].append([received, source, buy_gas])
                 continue
             if (row.get("spent_asset") != "WETH"
                     or row.get("received_asset") != stable):
@@ -94,6 +114,8 @@ def eth_fifo_gross_preview(history: dict) -> dict:
             quantity = source
             pending = quantity
             matched_cost = Decimal(0)
+            matched_buy_gas = Decimal(0)
+            gas_known = True
             lots = inventories[stable]
             # Do not emit a partially costed trade as a realized profit.
             if sum((lot[0] for lot in lots), Decimal(0)) < quantity:
@@ -110,7 +132,10 @@ def eth_fifo_gross_preview(history: dict) -> dict:
                     lot = lots[0]
                     consumed = min(pending, lot[0])
                     old_qty = lot[0]
-                    lot[1] -= lot[1] * consumed / old_qty
+                    fraction = consumed / old_qty
+                    lot[1] -= lot[1] * fraction
+                    if lot[2] is not None:
+                        lot[2] -= lot[2] * fraction
                     lot[0] -= consumed
                     pending -= consumed
                     if lot[0] == 0:
@@ -121,12 +146,24 @@ def eth_fifo_gross_preview(history: dict) -> dict:
                 consumed = min(pending, lot[0])
                 allocated = lot[1] * consumed / lot[0]
                 matched_cost += allocated
+                if lot[2] is None:
+                    gas_known = False
+                else:
+                    allocated_gas = lot[2] * consumed / lot[0]
+                    matched_buy_gas += allocated_gas
+                    lot[2] -= allocated_gas
                 lot[0] -= consumed
                 lot[1] -= allocated
                 pending -= consumed
                 if lot[0] == 0:
                     lots.popleft()
             spread = received - matched_cost
+            sell_fee = row.get("network_fee_eth")
+            sell_gas = _nonnegative_fee(sell_fee) if sell_fee is not None else None
+            allocated_gas = (
+                matched_buy_gas + sell_gas
+                if gas_known and sell_gas is not None else None
+            )
             gross[stable] += spread
             close_events.append({
                 "intent_key": key, "stable": stable,
@@ -134,6 +171,10 @@ def eth_fifo_gross_preview(history: dict) -> dict:
                 "gross_spread_stable": format(spread, "f"),
                 "allocated_buy_cost_stable": format(matched_cost, "f"),
                 "gross_sell_proceeds_stable": format(received, "f"),
+                "allocated_confirmed_network_fee_eth": (
+                    format(allocated_gas, "f") if allocated_gas is not None else None
+                ),
+                "historical_network_fee_usd": None,
             })
     complete = unmatched == 0 and history["history_truncated"] is False
 
@@ -184,6 +225,17 @@ def eth_fifo_gross_preview(history: dict) -> dict:
         "recorded_gas_is_exhaustive": False,
         "native_buy_conversion_unresolved_count": conversion_pending,
         "historical_network_fee_usd": None,
+        # Separate blockers explain why no wallet funds or HWM ledger
+        # are mutated by a gross preview.
+        "fee_assessment_blockers": (
+            (["HISTORY_TRUNCATED"] if history["history_truncated"] else [])
+            + (["UNMATCHED_COST_BASIS"] if unmatched else [])
+            + (["NATIVE_CONVERSION_UNRESOLVED"] if conversion_pending else [])
+            + (["NETWORK_GAS_EVIDENCE_MISSING"] if recorded_gas_eth is None else [])
+            + ["HISTORICAL_GAS_USD_VALUATION_MISSING",
+               "STABLECOIN_USD_FX_MISSING",
+               "EXTERNAL_INVENTORY_RECONCILIATION_MISSING"]
+        ),
         "stablecoin_fx_and_eth_gas_costs_reconciled": False,
         "external_inventory_reconciled": False,
         "verified_net_pnl_usd": None,
