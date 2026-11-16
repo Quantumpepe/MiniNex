@@ -165,8 +165,9 @@ def test_partial_fifo_exit_allocates_buy_gas_pro_risk_lot():
     sell2["network_fee_eth"]="0.003"
     value=eth_fifo_gross_preview(history(sell2,sell1,buy))
     rows=value["closed_trades"]
-    assert rows[0]["allocated_confirmed_network_fee_eth"]=="0.00250"
-    assert rows[1]["allocated_confirmed_network_fee_eth"]=="0.00750"
+    # The preview reports newest close first.
+    assert rows[0]["allocated_confirmed_network_fee_eth"]=="0.00750"
+    assert rows[1]["allocated_confirmed_network_fee_eth"]=="0.00250"
     assert value["historical_network_fee_usd"] is None
     assert "HISTORICAL_GAS_USD_VALUATION_MISSING" in value["fee_assessment_blockers"]
 
