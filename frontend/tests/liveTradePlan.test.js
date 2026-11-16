@@ -13,17 +13,27 @@ const labels=read('../src/i18n.js');
 
 function response(request){
   const eth=request.asset==='ETH',btc=request.asset==='BTC';
+  const erc20=['LINK','UNI'].includes(request.asset);
+  const nativeEvm=['BNB','POL','AVAX'].includes(request.asset);
+  const chainIds={ETH:1,BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1};
   return {
     mode:'UNIFIED_ELEVEN_COIN_TRADE_PLAN',
     asset:request.asset,side:request.side,stable:request.stable,
     source_asset:request.inputAsset,destination_asset:request.outputAsset,
     input_amount:request.amount,network:LIVE_NETWORKS[request.asset],
+    chain_id:chainIds[request.asset]??null,
     quote_level:eth?'WALLET_VERIFIED_UNSIGNED_SWAP':
       btc?'WALLET_VERIFIED_CROSSCHAIN_INDICATIVE':
+      erc20?'WALLET_VERIFIED_UNSIGNED_ERC20_SWAP':
+      nativeEvm?'WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP':
       'VENUE_INDICATIVE_WALLET_NOT_VERIFIED',
-    wallet_funds_verified:eth||btc,
-    quote_provider:eth?'UNISWAP_ETHEREUM':'THORCHAIN_PUBLIC_MCP',
-    estimated_output_amount:'10.1',minimum_output_amount:eth?'10':null,
+    wallet_funds_verified:eth||btc||erc20||nativeEvm,
+    quote_provider:eth?'UNISWAP_ETHEREUM':
+      erc20?'UNISWAP_ETHEREUM_ERC20':
+      nativeEvm?'UNISWAP_V3_CHAIN_SPECIFIC':'THORCHAIN_PUBLIC_MCP',
+    native_wrap_unwrap_not_yet_settled:nativeEvm,
+    estimated_output_amount:'10.1',
+    minimum_output_amount:eth||erc20||nativeEvm?'10':null,
     route_plan_only:true,real_order_created:false,wallet_signed:false,
     funds_transferred:false,can_submit:false,execution_enabled:false,
   };
@@ -47,6 +57,25 @@ test('each of eleven coins uses one quote form but independent settlement',()=>{
       assert.equal(validLiveTradePlan(response(req),req),true);
     }
   }
+});
+
+test('new EVM quotes use verified owner wallets and their exact network identity',()=>{
+  for(const asset of ['ETH','BNB','POL','AVAX','LINK','UNI']){
+    const request=createLivePlanRequest(
+      asset,'BUY',LIVE_SETTLEMENTS[asset][0],'1');
+    const real=response(request);
+    assert.equal(validLiveTradePlan(real,request),true);
+    real.chain_id=999;
+    assert.equal(validLiveTradePlan(real,request),false);
+  }
+  assert.deepEqual(LIVE_SETTLEMENTS.AVAX,['USDC']);
+  assert.equal(createLivePlanRequest('AVAX','BUY','USDT','10'),null);
+  assert.equal(createLivePlanRequest('BNB','BUY','USDT','0.000000000000000001')?.amount,
+    '0.000000000000000001');
+  assert.equal(createLivePlanRequest('POL','SELL','USDC','0.000000000000000001')?.amount,
+    '0.000000000000000001');
+  assert.equal(createLivePlanRequest('UNI','SELL','USDC','0.000000000000000001')?.amount,
+    '0.000000000000000001');
 });
 
 test('each coin preserves its own allowed settlement, not a global override',()=>{
