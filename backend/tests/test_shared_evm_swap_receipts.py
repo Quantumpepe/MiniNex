@@ -142,7 +142,7 @@ def test_reverted_transaction_never_credited_to_user():
 def test_unverified_settlement_is_rejected_before_network_access():
     with pytest.raises(ValueError):
         _pair("BNB","USDC","BUY")
-    with pytest.raises(HTTPException):
+    with pytest.raises(ValueError):
         _pair("DOGE","USDC","BUY")
 
 
