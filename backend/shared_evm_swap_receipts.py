@@ -148,6 +148,7 @@ def inspect_finalized_evm_swap(
     price=_num(receipt.get("effectiveGasPrice"))
     if success not in (0,1) or not 0<gas<=30_000_000 or not 0<price<=10**12:
         raise ValueError("Invalid EVM success or network gas")
+    result["block_number"]=block
     result["confirmations"]=min(head-block+1,1_000_000)
     result["network_fee_native"]=format(Decimal(gas*price)/Decimal(10**18),"f")
     result["state"]="INCLUDED_SUCCESS" if success else "INCLUDED_REVERTED"
