@@ -87,3 +87,41 @@ def unsigned_exact_input_single(*, pair: EvmPair, wallet: str,
         "from": wallet, "to": pair.router, "chainId": chain,
         "value": "0", "data": data,
     }
+
+
+WALLET_ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
+CALLDATA = re.compile(r"^0x(?:[0-9a-fA-F]{2})*$")
+
+
+def bound_evm_wallet_rpc(*, asset: str, wallet_id: str, wallet: str,
+                         tx: dict) -> tuple[str, dict]:
+    """Construct the same Privy RPC envelope for all six EVM assets.
+
+    This is only a TRANSPORT serializer, not authorization to execute any
+    transaction. The verified, non-user-controlled chain-specific adapter
+    must validate spender, token, exact amounts, slippage, user grant and
+    claim its durable once-only order before calling any broadcaster.
+    """
+    chain_id, _ = chain_for_asset(asset)
+    if (type(wallet_id) is not str or not WALLET_ID.fullmatch(wallet_id)
+            or type(wallet) is not str or not ADDRESS.fullmatch(wallet)
+            or type(tx) is not dict
+            or type(tx.get("chainId")) is not int
+            or tx["chainId"] != chain_id
+            or type(tx.get("from")) is not str
+            or tx["from"].lower() != wallet.lower()
+            or type(tx.get("to")) is not str or not ADDRESS.fullmatch(tx["to"])
+            or type(tx.get("data")) is not str
+            or not CALLDATA.fullmatch(tx["data"])
+            or type(tx.get("value")) is not str
+            or not tx["value"].isdigit()
+            or len(tx["value"]) > 79):
+        raise ValueError("EVM Privy wallet transaction identity mismatch")
+    # The server-validated transaction is the only source for the RPC body.
+    return "https://api.privy.io/v1/wallets/" + wallet_id + "/rpc", {
+        "method": "eth_sendTransaction",
+        "caip2": f"eip155:{chain_id}",
+        "params": {"transaction": {
+            "to": tx["to"], "data": tx["data"], "value": tx["value"],
+        }},
+    }
