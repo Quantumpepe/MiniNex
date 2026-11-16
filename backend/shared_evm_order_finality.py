@@ -33,6 +33,9 @@ def _finalize_locked(
             or proof.get("state") not in ("FINALIZED_ERC20_SWAP_LEG","FINALIZED_REVERTED")
             or type(proof.get("tx_hash")) is not str
             or len(proof["tx_hash"])!=66
+            or type(proof.get("wallet_address")) is not str
+            or not proof["wallet_address"].startswith("0x")
+            or len(proof["wallet_address"])!=42
             or proof.get("real_order_recorded") is not False
             or proof.get("performance_fee_assessed") is not False):
         raise ValueError("On-chain EVM swap finality not verified")
@@ -53,6 +56,8 @@ def _finalize_locked(
             or row.get("side")!=side
             or row.get("stable")!=stable
             or row.get("chain_id")!=pair["chain_id"]
+            or type(row.get("wallet_address")) is not str
+            or row["wallet_address"].lower()!=proof["wallet_address"].lower()
             or row.get("tx_hash")!=proof["tx_hash"]):
         raise HTTPException(409,"EVM order and receipt do not match")
     state="FINALIZED_SUCCESS" if success else "FINALIZED_REVERTED"

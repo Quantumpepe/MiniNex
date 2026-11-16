@@ -89,6 +89,7 @@ def inspect_finalized_evm_swap(
         "mode":"SHARED_EVM_FINALIZED_SWAP_VERIFICATION",
         "asset":asset,"network":pair["network"],"chain_id":pair["chain_id"],
         "tx_hash":tx_hash.lower(),"side":side,"stable":stable,
+        "wallet_address":wallet.lower(),
         "transaction_seen":False,"transaction_finalized":False,
         "swap_erc20_leg_verified":False,
         "native_coin_cycle_complete":False,

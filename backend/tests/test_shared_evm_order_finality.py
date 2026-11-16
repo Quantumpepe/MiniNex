@@ -12,6 +12,7 @@ from backend.shared_evm_swap_receipts import _pair
 DID="did:privy:test"
 KEY="sig_abcdef01234567890123456789"
 TX="0x"+"ab"*32
+WALLET="0x"+"ab"*20
 
 
 class Cursor:
@@ -27,6 +28,7 @@ def receipt(asset,side="BUY",stable=None,success=True):
         "mode":"SHARED_EVM_FINALIZED_SWAP_VERIFICATION",
         "asset":asset,"network":p["network"],"chain_id":p["chain_id"],
         "side":side,"stable":stable,"tx_hash":TX,
+        "wallet_address":WALLET.lower(),
         "transaction_finalized":True,
         "state":"FINALIZED_ERC20_SWAP_LEG" if success else "FINALIZED_REVERTED",
         "swap_erc20_leg_verified":success,
@@ -42,7 +44,7 @@ def receipt(asset,side="BUY",stable=None,success=True):
 def test_all_evm_assets_bind_onchain_receipt_to_durable_intent(asset,success):
     proof=receipt(asset,success=success)
     row={"status":"SUBMITTED","tx_hash":TX,
-         "chain_id":proof["chain_id"],
+         "chain_id":proof["chain_id"],"wallet_address":WALLET,
          "side":proof["side"],"stable":proof["stable"]}
     cur=Cursor(row)
     state=_finalize_locked(
@@ -68,7 +70,8 @@ def test_unverified_chain_or_token_proof_cannot_finalize(alter):
     proof=receipt("AVAX")
     alter(proof)
     cur=Cursor({"status":"SUBMITTED","tx_hash":TX,
-                "chain_id":43114,"side":"BUY","stable":"USDC"})
+                "chain_id":43114,"side":"BUY","stable":"USDC",
+                "wallet_address":WALLET})
     with pytest.raises(ValueError):
         _finalize_locked(cur,did=DID,key=KEY,asset="AVAX",proof=proof)
     assert cur.sql==[]
@@ -76,6 +79,7 @@ def test_unverified_chain_or_token_proof_cannot_finalize(alter):
 
 @pytest.mark.parametrize("alter",[
     lambda r:r.update(status="SENDING"),
+    lambda r:r.update(wallet_address="0x"+"cd"*20),
     lambda r:r.update(status="FINALIZED_SUCCESS"),
     lambda r:r.update(tx_hash="0x"+"cd"*32),
     lambda r:r.update(chain_id=56),
@@ -84,7 +88,8 @@ def test_unverified_chain_or_token_proof_cannot_finalize(alter):
 ])
 def test_only_matching_submitted_durable_order_can_finalize(alter):
     row={"status":"SUBMITTED","tx_hash":TX,
-         "chain_id":137,"side":"BUY","stable":"USDC"}
+         "chain_id":137,"side":"BUY","stable":"USDC",
+         "wallet_address":WALLET}
     alter(row)
     cur=Cursor(row)
     with pytest.raises(HTTPException):
