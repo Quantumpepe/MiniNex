@@ -6,7 +6,7 @@ export const LIVE_PLAN_COINS=Object.freeze([
 export const LIVE_SETTLEMENTS=Object.freeze({
   BTC:['USDC','USDT'],ETH:['USDC','USDT'],BNB:['USDT'],
   SOL:['USDC','USDT'],XRP:['USDC'],TRX:['USDT'],POL:['USDC'],
-  AVAX:['USDC','USDT'],LINK:['USDC','USDT'],
+  AVAX:['USDC'],LINK:['USDC','USDT'],
   DOGE:['USDC','USDT'],UNI:['USDC','USDT'],
 });
 export const LIVE_NETWORKS=Object.freeze({
@@ -16,8 +16,11 @@ export const LIVE_NETWORKS=Object.freeze({
   LINK:'ethereum-mainnet',DOGE:'dogecoin-mainnet',UNI:'ethereum-mainnet',
 });
 const COIN_PRECISION=Object.freeze({
-  BTC:8,ETH:18,BNB:8,SOL:8,XRP:6,TRX:6,POL:8,
-  AVAX:8,LINK:8,DOGE:8,UNI:8,
+  BTC:8,ETH:18,BNB:18,SOL:8,XRP:6,TRX:6,POL:18,
+  AVAX:18,LINK:18,DOGE:8,UNI:18,
+});
+const LIVE_EVM_CHAINS=Object.freeze({
+  ETH:1,BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,
 });
 const AMOUNT=/^(?:0|[1-9][0-9]*)(?:\.([0-9]+))?$/;
 const POSITIVE=value=>typeof value==='string'&&value.length<=85&&
@@ -25,6 +28,8 @@ const POSITIVE=value=>typeof value==='string'&&value.length<=85&&
 const PROVIDER_LEVELS=Object.freeze({
   ETH:'WALLET_VERIFIED_UNSIGNED_SWAP',
   BTC:'WALLET_VERIFIED_CROSSCHAIN_INDICATIVE',
+  ERC20:'WALLET_VERIFIED_UNSIGNED_ERC20_SWAP',
+  NATIVE_EVM:'WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP',
 });
 
 export function normalizedLiveStable(asset,stored){
@@ -36,7 +41,8 @@ export function createLivePlanRequest(asset,side,stable,amount){
   if(!LIVE_PLAN_COINS.includes(asset)||!['BUY','SELL'].includes(side)||
      !LIVE_SETTLEMENTS[asset].includes(stable)||!POSITIVE(amount)||
      amount.length>45)return null;
-  const precision=side==='BUY'?6:COIN_PRECISION[asset];
+  // BNB-chain USDT has 18 decimals, unlike 6-decimal Ethereum USDT.
+  const precision=side==='BUY'?(asset==='BNB'?18:6):COIN_PRECISION[asset];
   const fractions=amount.split('.')[1]||'';
   if(fractions.length>precision)return null;
   return {
@@ -56,6 +62,8 @@ export function validLiveTradePlan(value,request){
      value.source_asset!==request.inputAsset||
      value.destination_asset!==request.outputAsset||
      value.network!==LIVE_NETWORKS[request.asset]||
+     (LIVE_EVM_CHAINS[request.asset]!==undefined &&
+       value.chain_id!==LIVE_EVM_CHAINS[request.asset])||
      value.route_plan_only!==true||
      value.real_order_created!==false||
      value.wallet_signed!==false||value.funds_transferred!==false||
@@ -69,6 +77,15 @@ export function validLiveTradePlan(value,request){
     if(value.quote_level!==PROVIDER_LEVELS.BTC||
        value.wallet_funds_verified!==true||
        value.quote_provider!=='THORCHAIN_PUBLIC_MCP')return false;
+  }else if(['LINK','UNI'].includes(request.asset)){
+    if(value.quote_level!==PROVIDER_LEVELS.ERC20||
+       value.wallet_funds_verified!==true||
+       value.quote_provider!=='UNISWAP_ETHEREUM_ERC20')return false;
+  }else if(['BNB','POL','AVAX'].includes(request.asset)){
+    if(value.quote_level!==PROVIDER_LEVELS.NATIVE_EVM||
+       value.wallet_funds_verified!==true||
+       value.quote_provider!=='UNISWAP_V3_CHAIN_SPECIFIC'||
+       value.native_wrap_unwrap_not_yet_settled!==true)return false;
   }else if(value.quote_level!=='VENUE_INDICATIVE_WALLET_NOT_VERIFIED'||
            value.wallet_funds_verified!==false||
            value.quote_provider!=='THORCHAIN_PUBLIC_MCP')return false;
