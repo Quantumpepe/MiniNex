@@ -102,6 +102,18 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
     pending_native=cur.fetchone()
     if type(pending_native) is not dict or pending_native.get("pending")!=0:
         raise HTTPException(409,"Native ETH conversion still in progress")
+    # LINK and UNI use the same Ethereum wallet account nonce as ETH.
+    # One unfinalized ERC-20 order blocks a new ETH AUTO send too.
+    cur.execute(
+        """SELECT COUNT(*) AS pending FROM mininex_live_evm_auto_broadcasts
+           WHERE privy_did=%s AND chain_id=1
+             AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+        (did,))
+    pending_other=cur.fetchone()
+    if (type(pending_other) is not dict
+            or type(pending_other.get("pending")) is not int
+            or pending_other["pending"]!=0):
+        raise HTTPException(409,"Existing Ethereum-network token order unresolved")
     cur.execute(
         """SELECT state,side,stable,chain_network
            FROM mininex_live_order_intents
