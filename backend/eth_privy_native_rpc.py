@@ -10,7 +10,7 @@ import logging
 from fastapi import HTTPException
 import httpx
 
-from .shared_evm_execution import bound_evm_wallet_rpc
+from .shared_native_evm_conversion import bound_native_evm_conversion
 from .privy_wallet_verification import APP_ID
 from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .eth_swaprouter02_preflight import WETH_MAINNET
@@ -30,16 +30,11 @@ def bound_weth9_rpc(*,wallet_id:str,wallet:str,operation:str,
             or type(amount_wei) is not int
             or not 0<amount_wei<10**45):
         raise ValueError("Invalid ETH owner WETH9 conversion")
-    if operation=="DEPOSIT":
-        calldata="0xd0e30db0"
-        value=str(amount_wei)
-    else:
-        calldata="0x2e1a7d4d"+f"{amount_wei:064x}"
-        value="0"
-    return bound_evm_wallet_rpc(
+    # The active ETH LIVE AUTO executor now uses the same native coin
+    # conversion encoder prepared for BNB, Polygon and Avalanche.
+    return bound_native_evm_conversion(
         asset="ETH",wallet_id=wallet_id,wallet=wallet,
-        tx={"from":wallet,"chainId":1,"to":WETH_MAINNET,
-            "data":calldata,"value":value},
+        operation=operation,amount_wei=amount_wei,
     )
 
 
