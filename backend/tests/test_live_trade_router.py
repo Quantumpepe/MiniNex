@@ -46,7 +46,20 @@ def venues(monkeypatch):
             "input_amount":amount,"estimated_output_amount":"0.2",
             "execution_enabled":False,"can_submit":False,
         }
+    async def erc20(did,*,asset,side,stable,amount):
+        seen.append(("ERC20",did,asset,side,stable,amount))
+        return {
+            "mode":"SHARED_EVM_ERC20_ROUTER02_QUOTE",
+            "asset":asset,"network":"ethereum-mainnet",
+            "side":side,"stable":stable,"input_amount":amount,
+            "expected_output_amount":"0.2",
+            "minimum_output_amount":"0.19",
+            "wallet_identity_verified":True,
+            "wallet_funds_verified":True,
+            "execution_enabled":False,"can_submit":False,
+        }
     monkeypatch.setattr(router,"make_eth_swap_plan",eth)
+    monkeypatch.setattr(router,"quote_owner_erc20_trade",erc20)
     monkeypatch.setattr(router,"quote_native_btc",btc)
     monkeypatch.setattr(router,"get_native_swap_quote",other)
     return seen
@@ -82,6 +95,11 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
         assert venues==[("BTC",DID,side,stable,amount)]
         assert plan["wallet_funds_verified"] is True
         assert plan["quote_level"]=="WALLET_VERIFIED_CROSSCHAIN_INDICATIVE"
+    elif asset in ("LINK","UNI"):
+        assert venues==[("ERC20",DID,asset,side,stable,amount)]
+        assert plan["wallet_funds_verified"] is True
+        assert plan["quote_level"]=="WALLET_VERIFIED_UNSIGNED_ERC20_SWAP"
+        assert plan["transaction_preview_created"] is True
     else:
         assert venues==[("OTHER",plan["source_asset"],plan["destination_asset"],amount)]
         assert plan["wallet_funds_verified"] is False
