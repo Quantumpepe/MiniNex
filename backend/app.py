@@ -59,6 +59,7 @@ from .eth_owner_auto_approval import make_eth_owner_approval_plan
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .shared_native_evm_receipts import check_user_native_evm_conversion
+from .shared_evm_trade_cycle_proof import verify_evm_trade_cycle
 from .eth_native_cycle_comparison import compare_eth_native_cycle
 from .real_eth_trade_legs import record_real_eth_leg, get_real_eth_legs, get_confirmed_eth_swaps
 from .eth_fifo_gross_preview import read_eth_fifo_gross_preview
@@ -803,6 +804,39 @@ async def eth_live_chain_receipt(tx_hash: str,
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/evm/completed-cycle/{asset}/{swap_tx_hash}")
+async def owner_verified_evm_trade_cycle(
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI"],
+    swap_tx_hash: str,
+    side: Literal["BUY","SELL"],
+    stable: Literal["USDC","USDT"],
+    native_tx_hash: str | None = None,
+    authorization: str | None = Header(default=None),
+):
+    """Independent owner-verified read-only swap/native receipt pairing."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    native=asset in ("ETH","BNB","POL","AVAX")
+    if (native and not native_tx_hash) or (not native and native_tx_hash):
+        raise HTTPException(422,"Expected exactly the native conversion for this asset")
+    swap=await check_user_evm_swap(
+        did,swap_tx_hash,asset=asset,side=side,stable=stable)
+    conversion=(await check_user_native_evm_conversion(
+        did,native_tx_hash,asset=asset,
+        operation="WITHDRAW" if side=="BUY" else "DEPOSIT")
+        if native else None)
+    try:
+        evidence=verify_evm_trade_cycle(
+            asset=asset,side=side,stable=stable,
+            wallet=swap.get("wallet_address"),
+            swap_proof=swap,native_proof=conversion)
+    except (ValueError,TypeError,KeyError):
+        raise HTTPException(409,"Finalized EVM trade cycle not independently verified") from None
+    return JSONResponse(evidence,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
