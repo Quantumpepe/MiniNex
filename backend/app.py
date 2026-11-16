@@ -53,6 +53,7 @@ from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .eth_native_cycle_comparison import compare_eth_native_cycle
 from .real_eth_trade_legs import record_real_eth_leg, get_real_eth_legs, get_confirmed_eth_swaps
+from .eth_fifo_gross_preview import read_eth_fifo_gross_preview
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -791,6 +792,16 @@ async def eth_wallet_real_network_equity(
     return JSONResponse(
         await read_owner_eth_live_wallet_value(did),
         headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/eth/gross-spread-preview")
+def eth_fifo_realized_gross_spread_preview(
+    authorization: str | None = Header(default=None),
+):
+    """Read-only FIFO gross spread; no net USD PnL or performance fee."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(read_eth_fifo_gross_preview(did),
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/eth/confirmed-swaps")
