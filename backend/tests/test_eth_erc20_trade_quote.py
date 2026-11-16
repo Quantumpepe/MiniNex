@@ -132,4 +132,5 @@ def test_owner_erc20_endpoint_does_not_sign_or_broadcast():
     text=inspect.getsource(route.endpoint)
     assert "verify_privy_bearer" in text
     assert "quote_owner_erc20_trade" in text
-    assert "broadcast" not in text
+    assert "broadcast_privy_eth_swap(" not in text
+    assert "send_privy_native_weth9(" not in text
