@@ -52,14 +52,15 @@ def test_five_evm_assets_have_independent_bound_durable_send_identity(
     assert i["wallet_address"]==WALLET
     assert len(i["request_digest"])==64
     assert i["signed_or_sent"] is False
-    cur=Cursor([{"privy_did":DID},{"pending":0}])
+    cur=Cursor([{"privy_did":DID},{"pending":0}] +
+               ([{"pending":0},{"pending":0}] if chain==1 else []))
     _claim_locked(cur,did=DID,key=KEY,identity=i)
-    assert len(cur.sql)==3
+    assert len(cur.sql)==(5 if chain==1 else 3)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "chain_id=%s" in cur.sql[1][0]
     assert cur.sql[1][1]==(DID,chain)
-    assert "'SENDING'" in cur.sql[2][0]
-    assert i["request_digest"] in cur.sql[2][1]
+    assert "'SENDING'" in cur.sql[-1][0]
+    assert i["request_digest"] in cur.sql[-1][1]
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
@@ -69,6 +70,21 @@ def test_unresolved_network_order_prevents_duplicate_wallet_send(asset):
         _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
     assert error.value.status_code==409
     assert len(cur.sql)==2
+
+
+@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("busy_step",["eth_swap","eth_wrap"])
+def test_shared_ethereum_nonce_blocks_erc20_when_eth_operation_pending(asset,busy_step):
+    rows=[{"privy_did":DID},{"pending":0}]
+    if busy_step=="eth_swap":
+        rows.append({"pending":1})
+    else:
+        rows.extend(({"pending":0},{"pending":1}))
+    cur=Cursor(rows)
+    with pytest.raises(HTTPException) as err:
+        _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+    assert err.value.status_code==409
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in q for q,a in cur.sql)
 
 
 @pytest.mark.parametrize("digest,tx_hash,expected",[
