@@ -47,6 +47,7 @@ from .live_eth_quotes import quote_eth_mainnet, quote_readiness
 from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
+from .native_evm_v3_quote import quote_native_evm_trade
 from .eth_router02_allowance import inspect_router02_approval
 from .eth_live_wallet_equity import read_owner_eth_live_wallet_value
 from .eth_owner_auto_approval import make_eth_owner_approval_plan
@@ -589,6 +590,32 @@ async def eth_owner_live_auto_allowance(
     return JSONResponse(
         result,headers={"Cache-Control":"private, no-store",
                         "X-Content-Type-Options":"nosniff"})
+
+
+@app.post("/api/live/evm/native-user-transaction/{asset}")
+async def owner_native_evm_router02_user_transaction(
+    asset: Literal["BNB","POL","AVAX"],
+    request: EthLiveQuoteRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Owner-signed only after approved ERC20 allowance and native wrap/unwrap.
+
+    Does not send, execute AUTO, or claim complete native coin settlement.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await quote_native_evm_trade(
+        did,asset=asset,side=request.side,stable=request.stable,
+        amount=request.amount,include_user_transaction=True,
+    )
+    if (result.get("wallet_identity_verified") is not True
+            or result.get("onchain_quote_verified") is not True
+            or result.get("transaction",{}).get("chainId")!=result.get("chain_id")
+            or result.get("execution_enabled") is not False):
+        raise HTTPException(502,"Native EVM quote identity mismatch")
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.post("/api/live/evm/erc20-user-transaction/{asset}")
