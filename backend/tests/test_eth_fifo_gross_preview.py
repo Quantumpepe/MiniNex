@@ -188,3 +188,29 @@ def test_unmatched_sales_preserve_unknown_cost_blocker():
     value=eth_fifo_gross_preview(history(row("SELL","USDC","1","100","sell")))
     assert "UNMATCHED_COST_BASIS" in value["fee_assessment_blockers"]
     assert value["verified_net_pnl_usd"] is None
+
+
+def test_missing_gas_in_older_row_does_not_hide_pending_native_conversion():
+    older=row("BUY","USDC","100","1","older")
+    older["network_fee_eth"]=None
+    newer=row("BUY","USDT","200","1","newer")
+    newer.update({"network_fee_eth":"0.001",
+                  "native_conversion_status":"SUBMITTED"})
+    result=eth_fifo_gross_preview(history(newer,older))
+    assert result["verified_recorded_network_fee_eth"] is None
+    assert result["native_buy_conversion_unresolved_count"]==2
+    assert "NETWORK_GAS_EVIDENCE_MISSING" in result["fee_assessment_blockers"]
+    assert "NATIVE_CONVERSION_UNRESOLVED" in result["fee_assessment_blockers"]
+
+
+def test_native_sell_wrap_gas_remains_unattributed_even_with_swap_receipt():
+    buy=row("BUY","USDC","100","1","buy")
+    buy.update({"network_fee_eth":"0.001",
+                "native_conversion_status":"CONFIRMED_VERIFIED",
+                "native_conversion_network_fee_eth":"0.0005"})
+    sell=row("SELL","USDC","1","125","sell")
+    sell["network_fee_eth"]="0.002"
+    result=eth_fifo_gross_preview(history(sell,buy))
+    assert result["native_sell_wrap_cost_unattributed_count"]==1
+    assert "NATIVE_SELL_WRAP_COST_UNATTRIBUTED" in result["fee_assessment_blockers"]
+    assert result["fee_collection_enabled"] is False
