@@ -125,13 +125,14 @@ def sign_privy_eth_request(*,wallet_id:str,wallet:str,tx:dict,
     the owner's current delegated signer. The same signing input is used
     by broadcast_privy_eth_swap; no user-supplied signature is accepted.
     """
-    url,body=bound_privy_rpc_request(
-        wallet_id=wallet_id,wallet=wallet,tx=tx,
-        side=side,stable=stable,
-        input_atomic=input_atomic,
-        minimum_output_atomic=minimum_output_atomic)
-    return sign_privy_rpc_payload(url=url,body=body,
-                                  idempotency_key=idempotency_key)
+    # Active ETH AUTO now signs through the same exact CAIP2-bound signer
+    # that BNB, POL, AVAX, LINK and UNI can reuse after independent grants.
+    from .shared_evm_privy_signer import sign_privy_evm_swap_request
+    return sign_privy_evm_swap_request(
+        asset="ETH",wallet_id=wallet_id,wallet=wallet,tx=tx,
+        side=side,stable=stable,input_atomic=input_atomic,
+        minimum_output_atomic=minimum_output_atomic,
+        idempotency_key=idempotency_key)
 
 
 def sign_privy_rpc_payload(*,url:str,body:dict,idempotency_key:str)->str:
