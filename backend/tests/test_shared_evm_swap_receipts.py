@@ -68,6 +68,7 @@ def test_six_assets_two_sides_verify_real_finalized_owner_erc20_flows(
         latest="0x70",finalized={"number":"0x68"},
     )
     assert result["asset"]==asset
+    assert result["wallet_address"]==WALLET.lower()
     assert result["state"]=="FINALIZED_ERC20_SWAP_LEG"
     assert result["swap_erc20_leg_verified"] is True
     assert result["transaction_finalized"] is True
