@@ -52,7 +52,7 @@ from .eth_owner_auto_approval import make_eth_owner_approval_plan
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .eth_native_cycle_comparison import compare_eth_native_cycle
-from .real_eth_trade_legs import record_real_eth_leg, get_real_eth_legs
+from .real_eth_trade_legs import record_real_eth_leg, get_real_eth_legs, get_confirmed_eth_swaps
 from .eth_cost_preview import get_eth_readonly_cost_preview
 from .live_eth_receipts import check_eth_swap_receipt
 from .live_btc_quotes import quote_native_btc
@@ -791,6 +791,16 @@ async def eth_wallet_real_network_equity(
     return JSONResponse(
         await read_owner_eth_live_wallet_value(did),
         headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/eth/confirmed-swaps")
+def eth_confirmed_buy_sell_history(
+    authorization: str | None = Header(default=None),
+):
+    """Actual confirmed ETH BUY/SELL fills, kept separate from native stages."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_confirmed_eth_swaps(did),
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/eth/recorded-legs")
