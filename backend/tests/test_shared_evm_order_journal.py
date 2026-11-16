@@ -59,8 +59,8 @@ def test_five_evm_assets_have_independent_bound_durable_send_identity(
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "chain_id=%s" in cur.sql[1][0]
     assert cur.sql[1][1]==(DID,chain)
-    assert "'SENDING'" in cur.sql[2][0]
-    assert i["request_digest"] in cur.sql[2][1]
+    assert "'SENDING'" in cur.sql[-1][0]
+    assert i["request_digest"] in cur.sql[-1][1]
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
