@@ -91,6 +91,34 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
         raise HTTPException(503,"Cannot verify pending EVM submissions")
     if row["pending"]!=0:
         raise HTTPException(409,"Existing wallet network send unresolved")
+    # ETH, LINK and UNI use the same owner-wallet nonce on Ethereum.
+    # Existing ETH AUTO may already have an unconfirmed submitted swap
+    # or WETH9 conversion, even when the extra-asset journal is empty.
+    if pair["chain_id"]==1:
+        cur.execute(
+            """SELECT COUNT(*) AS pending
+               FROM mininex_live_eth_auto_broadcasts
+               WHERE privy_did=%s
+                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+            (did,))
+        eth=cur.fetchone()
+        if (type(eth) is not dict or type(eth.get("pending")) is not int
+                or eth["pending"]<0):
+            raise HTTPException(503,"Cannot verify existing ETH network sends")
+        if eth["pending"]!=0:
+            raise HTTPException(409,"An ETH swap on this wallet is unresolved")
+        cur.execute(
+            """SELECT COUNT(*) AS pending
+               FROM mininex_live_eth_auto_native_steps
+               WHERE privy_did=%s AND status IN
+                   ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+            (did,))
+        native=cur.fetchone()
+        if (type(native) is not dict or type(native.get("pending")) is not int
+                or native["pending"]<0):
+            raise HTTPException(503,"Cannot verify ETH native conversion status")
+        if native["pending"]!=0:
+            raise HTTPException(409,"An ETH native conversion is unresolved")
     # No upsert: a repeated key conflicts even after a confirmed transaction.
     cur.execute(
         """INSERT INTO mininex_live_evm_auto_broadcasts
