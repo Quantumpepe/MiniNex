@@ -79,7 +79,7 @@ def evm_fifo_gross_preview(history: object) -> dict:
                 raise ValueError("Invalid EVM output asset")
             source=_units(row.get("spent_amount"))
             dest=_units(row.get("received_amount"))
-            gas=_units(row.get("network_fee_native"))
+            gas=_units(row.get("network_fee_native"),allow_zero=True)
             gas_total+=gas
             if side=="BUY":
                 # Native transaction fees are recorded but cannot be valued
