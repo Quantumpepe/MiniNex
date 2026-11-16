@@ -61,6 +61,12 @@ def inspect_remote_privy_backend_quorum(
             or type(payload.get("authorization_threshold")) is not int
             or payload["authorization_threshold"] != 1):
         return False
+    # A quorum can contain authorization keys, users *and nested quorums*.
+    # A threshold of 1 does not mean our pinned key is the only authority
+    # unless other member classes are explicitly absent as well.
+    if (payload.get("user_ids") not in (None, [])
+            or payload.get("key_quorum_ids") not in (None, [])):
+        return False
     keys = payload.get("authorization_keys")
     if type(keys) is not list or len(keys) != 1 or type(keys[0]) is not dict:
         return False
