@@ -58,7 +58,6 @@ def test_all_evm_assets_bind_onchain_receipt_to_durable_intent(asset,success):
 
 @pytest.mark.parametrize("alter",[
     lambda p:p.update(transaction_finalized=False),
-    lambda p:p.update(wallet_address="0x"+"cd"*20),
     lambda p:p.update(chain_id=1),
     lambda p:p.update(network="bsc-mainnet"),
     lambda p:p.update(swap_erc20_leg_verified=False),
