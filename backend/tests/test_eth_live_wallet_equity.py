@@ -6,14 +6,16 @@ from fastapi import HTTPException
 from backend import eth_live_wallet_equity as p
 
 NOW=int(time.time())
+OWNER="0x"+"ab"*20
+OTHER="0x"+"cd"*20
 def holdings():
-    return {"wallet_ownership_verified":True,
+    return {"wallet_ownership_verified":True,"wallets":{"ETH":OWNER},
       "balances":{
         "ETH":{"status":"verified","balance":"0.1"},
         "USDC":{"status":"verified","balance":"25"},
         "USDT":{"status":"verified","balance":"15"}}}
 def weth():
-    return {"wallet_identity_verified":True,"source_token":"WETH",
+    return {"wallet_identity_verified":True,"wallet_address":OWNER,"source_token":"WETH",
             "side":"SELL","verified_source_balance":"0.02"}
 def prices():
     return {"ethereum":{"usd":2000,"last_updated_at":NOW},
@@ -60,3 +62,17 @@ def test_real_eth_equity_reads_actual_wallet_and_weth(monkeypatch):
     result=asyncio.run(p.read_owner_eth_live_wallet_value("did:privy:owner"))
     assert result["real_wallet_balances_verified"] is True
     assert calls==["wallet","weth","market"]
+
+@pytest.mark.parametrize("bad_owner",[OTHER,None,"not-an-address"])
+def test_eth_wallet_equity_rejects_mismatched_weth_owner(bad_owner):
+    other=weth()
+    other["wallet_address"]=bad_owner
+    with pytest.raises(ValueError,match="wallet identity mismatch"):
+        p.calculate_eth_wallet_equity(holdings(),other,prices(),now=NOW)
+
+
+def test_eth_wallet_identity_accepts_checksum_case_difference():
+    b=holdings()
+    b["wallets"]["ETH"]=OWNER.upper().replace("0X","0x")
+    assert p.calculate_eth_wallet_equity(b,weth(),prices(),now=NOW)[
+        "total_reference_value_usd"]=="280.000000"
