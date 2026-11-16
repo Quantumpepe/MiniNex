@@ -58,6 +58,21 @@ def venues(monkeypatch):
             "wallet_funds_verified":True,
             "execution_enabled":False,"can_submit":False,
         }
+    async def native_evm(did,*,asset,side,stable,amount):
+        seen.append(("NATIVE_EVM",did,asset,side,stable,amount))
+        return {
+            "mode":"SHARED_NATIVE_EVM_V3_QUOTE",
+            "asset":asset,"network":get_asset(asset).blockchain,
+            "chain_id":get_asset(asset).chain_id,
+            "side":side,"stable":stable,"input_amount":amount,
+            "expected_output_amount":"0.2",
+            "minimum_output_amount":"0.19",
+            "onchain_quote_verified":True,
+            "wallet_identity_verified":True,
+            "wallet_funds_verified":True,
+            "execution_enabled":False,"can_submit":False,
+        }
+    monkeypatch.setattr(router,"quote_native_evm_trade",native_evm)
     monkeypatch.setattr(router,"make_eth_swap_plan",eth)
     monkeypatch.setattr(router,"quote_owner_erc20_trade",erc20)
     monkeypatch.setattr(router,"quote_native_btc",btc)
@@ -100,6 +115,11 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
         assert plan["wallet_funds_verified"] is True
         assert plan["quote_level"]=="WALLET_VERIFIED_UNSIGNED_ERC20_SWAP"
         assert plan["transaction_preview_created"] is True
+    elif asset in ("BNB","POL","AVAX"):
+        assert venues==[("NATIVE_EVM",DID,asset,side,stable,amount)]
+        assert plan["wallet_funds_verified"] is True
+        assert plan["quote_level"]=="WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP"
+        assert plan["native_wrap_unwrap_not_yet_settled"] is True
     else:
         assert venues==[("OTHER",plan["source_asset"],plan["destination_asset"],amount)]
         assert plan["wallet_funds_verified"] is False
