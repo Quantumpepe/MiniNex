@@ -64,7 +64,7 @@ def test_chain_confusion_cannot_build_real_privy_transaction(asset,incorrect_cha
 
 @pytest.mark.parametrize("bad", [
     ("wallet",WALLET,TOKEN_A,TOKEN_B,ROUTER,3000),
-    (WALLET,"wallet",TOKEN_A,TOKEN_B,ROUTER,3000),
+    (WALLET,WALLET,"not_an_address",TOKEN_B,ROUTER,3000),
     (WALLET,WALLET,TOKEN_A,TOKEN_A,ROUTER,3000),
     (WALLET,WALLET,TOKEN_A,TOKEN_B,"not_an_address",3000),
     (WALLET,WALLET,TOKEN_A,TOKEN_B,ROUTER,777),
