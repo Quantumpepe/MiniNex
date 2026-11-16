@@ -184,7 +184,12 @@ def get_confirmed_eth_swaps(did: str) -> dict:
                 cur.execute(
                     """SELECT o.intent_key,o.side,o.stable,o.tx_hash,
                               l.source_amount,l.destination_amount,
-                              l.network_fee_eth,o.finalized_at
+                              l.network_fee_eth,o.finalized_at,
+                              n.status AS native_unwrap_status,
+                              n.tx_hash AS native_unwrap_hash,
+                              n.amount_wei AS native_unwrap_wei,
+                              u.source_amount AS verified_unwrap_eth,
+                              u.network_fee_eth AS unwrap_network_fee_eth
                        FROM mininex_live_order_intents o
                        JOIN mininex_live_eth_verified_legs l
                          ON l.privy_did=o.privy_did
@@ -192,21 +197,62 @@ def get_confirmed_eth_swaps(did: str) -> dict:
                         AND l.side=o.side
                         AND l.stable=o.stable
                         AND l.kind='SWAP'
+                       LEFT JOIN mininex_live_eth_auto_native_steps n
+                         ON n.privy_did=o.privy_did
+                        AND n.source_key=o.intent_key
+                        AND n.operation='WITHDRAW'
+                        AND o.side='BUY'
+                       LEFT JOIN mininex_live_eth_verified_legs u
+                         ON u.privy_did=n.privy_did
+                        AND u.tx_hash=n.tx_hash
+                        AND u.kind='UNWRAP'
+                        AND u.side='BUY'
+                        AND u.stable=o.stable
                        WHERE o.privy_did=%s AND o.asset='ETH'
                          AND o.chain_network='ethereum-mainnet'
                          AND o.state='CONFIRMED'
                          AND o.finalized_at IS NOT NULL
                        ORDER BY o.finalized_at DESC,o.intent_key DESC
-                       LIMIT 100""", (did,),
+                       LIMIT 101""", (did,),
                 )
                 rows = cur.fetchall()
+        # Retain a sentinel so a long history is never represented as complete.
+        history_truncated = len(rows) > 100
         swaps = []
-        for row in rows:
+        for row in rows[:100]:
             side = row["side"]
             stable = row["stable"]
             if side not in SIDES or stable not in STABLES:
                 raise ValueError("Invalid confirmed ETH swap identity")
+            conversion = "NOT_APPLICABLE"
+            conversion_fee = None
+            if side == "BUY":
+                status = row.get("native_unwrap_status")
+                if status is None:
+                    conversion = "NOT_STARTED"
+                elif status == "CONFIRMED":
+                    # A successful DB state alone never proves that purchased
+                    # WETH was converted to native ETH in this precise amount.
+                    from decimal import Decimal
+                    original = Decimal(str(row["destination_amount"]))
+                    verified = row.get("verified_unwrap_eth")
+                    atomic = row.get("native_unwrap_wei")
+                    if (verified is not None and atomic is not None
+                            and Decimal(str(verified)) == original
+                            and Decimal(str(atomic)) == original * (10 ** 18)
+                            and row.get("native_unwrap_hash")):
+                        conversion = "CONFIRMED_VERIFIED"
+                        conversion_fee = str(row["unwrap_network_fee_eth"])
+                    else:
+                        conversion = "RECONCILIATION_REQUIRED"
+                elif status in ("SENDING", "SUBMITTED", "RECONCILIATION_REQUIRED",
+                                "REVERTED"):
+                    conversion = status
+                else:
+                    raise ValueError("Invalid WETH to native conversion state")
             swaps.append({
+                "native_conversion_status": conversion,
+                "native_conversion_network_fee_eth": conversion_fee,
                 "intent_key": row["intent_key"],
                 "side": side,
                 "stable": stable,
@@ -222,7 +268,8 @@ def get_confirmed_eth_swaps(did: str) -> dict:
         return {
             "asset": "ETH", "network": "ethereum-mainnet",
             "source": "CONFIRMED_AUTO_ROUTER02_SWAPS",
-            "swaps": swaps, "includes_paper": False,
+            "swaps": swaps, "history_truncated": history_truncated,
+            "includes_paper": False,
             "native_conversion_stages_included": False,
             "realized_pnl_reconciled": False,
             "performance_fee_assessed": False,
