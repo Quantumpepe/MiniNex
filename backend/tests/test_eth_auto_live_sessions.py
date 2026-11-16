@@ -115,3 +115,44 @@ def test_reverted_chain_order_releases_pending_status_without_fake_trade(monkeyp
                         lambda did,key,hash,state:states.append(state))
     assert asyncio.run(mod.reconcile_one_live_eth_order(entry))=="REVERTED"
     assert states==["REVERTED"]
+
+
+@pytest.mark.parametrize("quorum", [
+    {},
+    {"remote_quorum_public_key_verified": False},
+    {"remote_quorum_get_succeeded": True},
+])
+def test_auto_start_does_not_unpause_without_current_privy_quorum(monkeypatch, quorum):
+    import asyncio
+    monkeypatch.setattr(mod, "_worker_approved", lambda: True)
+    async def lookup():
+        return quorum
+    monkeypatch.setattr(mod, "check_privy_backend_quorum", lookup)
+    async def grant(_did):
+        pytest.fail("User grant must not be evaluated with unverified signer")
+    monkeypatch.setattr(mod, "get_eth_user_grant_review", grant)
+    monkeypatch.setattr(mod, "_db_url",
+                        lambda: pytest.fail("No DB mutation without remote quorum"))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(mod.start_eth_auto(DID, "USDC"))
+    assert exc.value.status_code == 503
+
+
+def test_auto_start_remote_verified_signer_reaches_owner_grant(monkeypatch):
+    import asyncio
+    monkeypatch.setattr(mod, "_worker_approved", lambda: True)
+    calls = []
+    async def lookup():
+        calls.append("quorum")
+        return {"remote_quorum_public_key_verified": True}
+    async def grant(_did):
+        calls.append("grant")
+        raise HTTPException(409, "No user wallet signer grant")
+    monkeypatch.setattr(mod, "check_privy_backend_quorum", lookup)
+    monkeypatch.setattr(mod, "get_eth_user_grant_review", grant)
+    monkeypatch.setattr(mod, "_db_url",
+                        lambda: pytest.fail("No DB mutation without user grant"))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(mod.start_eth_auto(DID, "USDC"))
+    assert exc.value.status_code == 409
+    assert calls == ["quorum", "grant"]
