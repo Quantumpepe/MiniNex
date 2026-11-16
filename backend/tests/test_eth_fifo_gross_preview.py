@@ -214,3 +214,31 @@ def test_native_sell_wrap_gas_remains_unattributed_even_with_swap_receipt():
     assert result["native_sell_wrap_cost_unattributed_count"]==1
     assert "NATIVE_SELL_WRAP_COST_UNATTRIBUTED" in result["fee_assessment_blockers"]
     assert result["fee_collection_enabled"] is False
+
+
+def test_fifo_remaining_buy_inventory_after_partial_exit():
+    buy=row("BUY","USDC","100","1","buy")
+    sell=row("SELL","USDC","0.4","45","sell")
+    result=eth_fifo_gross_preview(history(sell,buy))
+    assert result["remaining_verified_buy_weth_by_stable"]["USDC"]=="0.6"
+    assert result["unmatched_sell_weth_by_stable"]["USDC"]=="0"
+    assert result["fifo_lot_inventory_is_wallet_balance"] is False
+
+
+def test_unmatched_sell_quantity_is_not_mislabeled_as_wallet_inventory():
+    buy=row("BUY","USDC","100","1","buy")
+    sell=row("SELL","USDC","1.5","180","sell")
+    result=eth_fifo_gross_preview(history(sell,buy))
+    assert result["unmatched_sell_weth_by_stable"]["USDC"]=="0.5"
+    assert result["remaining_verified_buy_weth_by_stable"]["USDC"]=="0"
+    assert result["gross_spread_by_stable"]["USDC"] is None
+    assert result["five_percent_fee_assessed"] is False
+
+
+def test_assets_isolated_for_remaining_fifo_inventory():
+    buy_usdc=row("BUY","USDC","100","1","buy_usdc")
+    buy_usdt=row("BUY","USDT","90","0.5","buy_usdt")
+    result=eth_fifo_gross_preview(history(buy_usdt,buy_usdc))
+    assert result["remaining_verified_buy_weth_by_stable"]=={
+        "USDC":"1", "USDT":"0.5"
+    }
