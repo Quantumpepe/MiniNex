@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import verified_addresses, _rpc_quantity, _units, WEI
+from .shared_evm_execution import chain_for_asset
 from .storage import _safe_did
 
 _ADDR = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -61,6 +62,11 @@ def _entry(asset: str, status: str, balance: str | None = None) -> dict:
 
 async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict:
     chain_id, _, fallback, env_name = _RPC[name]
+    # The wallet reader and the real transaction encoder MUST agree on
+    # chain IDs. Fail closed rather than showing a misleading spendable coin.
+    assets = ("LINK", "UNI") if name == "ETH_TOKENS" else (name,)
+    if any(chain_for_asset(asset)[0] != chain_id for asset in assets):
+        raise ValueError("EVM balance and execution chain registry disagree")
     url = os.getenv(env_name, "").strip() or fallback
     # RPC URL is controlled exclusively by the operator, never by a user.
     if not url.startswith("https://") or any(c in url for c in " \t\n#@"):
