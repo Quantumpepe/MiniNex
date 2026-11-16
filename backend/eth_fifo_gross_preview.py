@@ -183,30 +183,38 @@ def eth_fifo_gross_preview(history: dict) -> dict:
     # contributes zero recorded gas but is explicitly flagged incomplete.
     # Do not use this number as an exhaustive cost or HWM settlement input.
     recorded_gas_eth = Decimal(0)
+    gas_evidence_missing = False
     conversion_pending = 0
+    native_sell_wrap_unattributed = 0
     with localcontext() as context:
         context.prec = 60
         for row in rows:
             swap_fee = row.get("network_fee_eth")
             if swap_fee is None:
-                recorded_gas_eth = None
-                break
-            value = _nonnegative_fee(swap_fee)
-            recorded_gas_eth += value
-            if row["side"] != "BUY":
+                gas_evidence_missing = True
+            else:
+                value = _nonnegative_fee(swap_fee)
+                recorded_gas_eth += value
+            if row["side"] == "SELL":
+                # Native ETH may have been wrapped into WETH before this swap.
+                # Its transaction is not yet tied to the SELL intent, so we
+                # cannot state that all execution gas has been accounted for.
+                native_sell_wrap_unattributed += 1
                 continue
             conversion = row.get("native_conversion_status")
             if conversion == "CONFIRMED_VERIFIED":
                 native_fee = row.get("native_conversion_network_fee_eth")
                 if native_fee is None:
-                    recorded_gas_eth = None
-                    break
-                recorded_gas_eth += _nonnegative_fee(native_fee)
+                    gas_evidence_missing = True
+                else:
+                    recorded_gas_eth += _nonnegative_fee(native_fee)
             elif conversion in ("NOT_STARTED", "SENDING", "SUBMITTED",
                                 "RECONCILIATION_REQUIRED", "REVERTED", None):
                 conversion_pending += 1
             else:
                 raise ValueError("Untrusted ETH native conversion status")
+    if gas_evidence_missing:
+        recorded_gas_eth = None
     return {
         "asset": "ETH",
         "mode": "READ_ONLY_GROSS_SWAP_SPREAD",
@@ -224,6 +232,7 @@ def eth_fifo_gross_preview(history: dict) -> dict:
         ),
         "recorded_gas_is_exhaustive": False,
         "native_buy_conversion_unresolved_count": conversion_pending,
+        "native_sell_wrap_cost_unattributed_count": native_sell_wrap_unattributed,
         "historical_network_fee_usd": None,
         # Separate blockers explain why no wallet funds or HWM ledger
         # are mutated by a gross preview.
@@ -231,7 +240,9 @@ def eth_fifo_gross_preview(history: dict) -> dict:
             (["HISTORY_TRUNCATED"] if history["history_truncated"] else [])
             + (["UNMATCHED_COST_BASIS"] if unmatched else [])
             + (["NATIVE_CONVERSION_UNRESOLVED"] if conversion_pending else [])
-            + (["NETWORK_GAS_EVIDENCE_MISSING"] if recorded_gas_eth is None else [])
+            + (["NATIVE_SELL_WRAP_COST_UNATTRIBUTED"]
+               if native_sell_wrap_unattributed else [])
+            + (["NETWORK_GAS_EVIDENCE_MISSING"] if gas_evidence_missing else [])
             + ["HISTORICAL_GAS_USD_VALUATION_MISSING",
                "STABLECOIN_USD_FX_MISSING",
                "EXTERNAL_INVENTORY_RECONCILIATION_MISSING"]
