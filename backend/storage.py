@@ -438,6 +438,46 @@ SCHEMA = (
         FOREIGN KEY (privy_did,asset)
             REFERENCES mininex_asset_hwm(privy_did,asset)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_asset_hwm (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL DEFAULT 0,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK(high_water_mark_usd >= 0),
+        total_fees_assessed_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK(total_fees_assessed_usd >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_events (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL CHECK(length(execution_id) BETWEEN 1 AND 180),
+        realized_net_delta_usd NUMERIC(36,12) NOT NULL,
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL,
+        fee_rate NUMERIC(6,5) NOT NULL CHECK(fee_rate=0.05),
+        fee_assessed_usd NUMERIC(36,12) NOT NULL CHECK(fee_assessed_usd >= 0),
+        source_tx_hash TEXT NOT NULL CHECK(source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        FOREIGN KEY(privy_did,asset)
+            REFERENCES mininex_evm_asset_hwm(privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_obligations (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        execution_id TEXT NOT NULL,
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER'
+            CHECK(settlement_status='AWAITING_VERIFIED_TRANSFER'),
+        settlement_tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_events(privy_did,asset,execution_id),
+        CHECK(settlement_tx_hash IS NULL)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
