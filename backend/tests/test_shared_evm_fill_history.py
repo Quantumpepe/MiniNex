@@ -37,7 +37,7 @@ def test_each_real_evm_coin_has_separate_finalized_buy_sell_history(asset,side):
     assert v["asset"]==asset
     assert v["side"]==side
     assert v["onchain_finalized"] is True
-    assert v["spent_asset"]==("USDT" if asset=="BNB" else "USDC") if side=="BUY" else asset
+    assert v["spent_asset"]==(("USDT" if asset=="BNB" else "USDC") if side=="BUY" else asset)
     assert v["realized_net_usd"] is None
     assert v["performance_fee_paid"] is False
     assert v["native_coin_cycle_complete"] is False
