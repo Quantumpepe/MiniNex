@@ -25,7 +25,7 @@ from .eth_swaprouter02_preflight import (
 from .live_eth_quotes import STABLES
 from .live_eth_receipts import _num
 from .multicoin_evm_balances import _ETH_TOKENS, _RPC
-from .native_evm_v3_quote import CHAINS, _rpc
+from .native_evm_v3_quote import CHAINS
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import verified_addresses
 from .shared_evm_execution import chain_for_asset
@@ -181,6 +181,28 @@ def inspect_finalized_evm_swap(
     return result
 
 
+async def _receipt_rpc(
+    client: httpx.AsyncClient, url: str, method: str,
+    params: list, req_id: int,
+) -> object:
+    """Strict read-only JSON-RPC that accepts transaction/receipt objects."""
+    response=await client.post(
+        url, json={"jsonrpc":"2.0","id":req_id,
+                   "method":method,"params":params},
+        headers={"Content-Type":"application/json",
+                 "Accept":"application/json"},
+    )
+    response.raise_for_status()
+    if len(response.content)>96_000:
+        raise ValueError("Oversized EVM transaction receipt response")
+    data=response.json()
+    if (type(data) is not dict or data.get("jsonrpc")!="2.0"
+            or data.get("id")!=req_id or "error" in data
+            or "result" not in data):
+        raise ValueError("Untrusted EVM receipt RPC response")
+    return data["result"]
+
+
 async def check_user_evm_swap(
     did: str, tx_hash: str, *, asset: str, side: str, stable: str,
 ) -> dict:
@@ -211,14 +233,14 @@ async def check_user_evm_swap(
             timeout=httpx.Timeout(9),follow_redirects=False,
         ) as client:
             rpc=(
-                _rpc(client,url,"eth_chainId",[],1),
-                _rpc(client,url,"eth_getTransactionByHash",[tx_hash],2),
-                _rpc(client,url,"eth_getTransactionReceipt",[tx_hash],3),
-                _rpc(client,url,"eth_blockNumber",[],4),
+                _receipt_rpc(client,url,"eth_chainId",[],1),
+                _receipt_rpc(client,url,"eth_getTransactionByHash",[tx_hash],2),
+                _receipt_rpc(client,url,"eth_getTransactionReceipt",[tx_hash],3),
+                _receipt_rpc(client,url,"eth_blockNumber",[],4),
             )
             chain_id,tx,receipt,head=await asyncio.gather(*rpc)
             finalized=(
-                await _rpc(client,url,"eth_getBlockByNumber",["finalized",False],5)
+                await _receipt_rpc(client,url,"eth_getBlockByNumber",["finalized",False],5)
                 if receipt is not None else None)
         return inspect_finalized_evm_swap(
             tx_hash,asset=asset,stable=stable,side=side,wallet=wallet,
