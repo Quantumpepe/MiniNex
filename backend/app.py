@@ -58,6 +58,7 @@ from .eth_live_wallet_equity import read_owner_eth_live_wallet_value
 from .eth_owner_auto_approval import make_eth_owner_approval_plan
 from .eth_router02_receipts import check_user_router02_receipt
 from .eth_weth9_receipts import check_user_weth9_receipt
+from .shared_native_evm_receipts import check_user_native_evm_conversion
 from .eth_native_cycle_comparison import compare_eth_native_cycle
 from .real_eth_trade_legs import record_real_eth_leg, get_real_eth_legs, get_confirmed_eth_swaps
 from .eth_fifo_gross_preview import read_eth_fifo_gross_preview
@@ -802,6 +803,23 @@ async def eth_live_chain_receipt(tx_hash: str,
     return JSONResponse(result, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.get("/api/live/evm/native-conversion-receipt/{asset}/{tx_hash}")
+async def owner_native_evm_conversion_receipt(
+    asset: Literal["ETH","BNB","POL","AVAX"],
+    tx_hash: str,
+    operation: Literal["DEPOSIT","WITHDRAW"],
+    authorization: str | None = Header(default=None),
+):
+    """Confirm independently finalized owner-only native conversion; no send."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await check_user_native_evm_conversion(
+        did,tx_hash,asset=asset,operation=operation)
+    return JSONResponse(report,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
