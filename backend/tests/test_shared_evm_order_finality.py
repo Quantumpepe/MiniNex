@@ -16,9 +16,13 @@ WALLET="0x"+"ab"*20
 
 
 class Cursor:
-    def __init__(self,row):self.row=row;self.sql=[]
+    def __init__(self,row,update_status=None):
+        self.row=row;self.update_status=update_status;self.sql=[]
     def execute(self,query,args):self.sql.append((query,args))
-    def fetchone(self):return self.row
+    def fetchone(self):
+        if self.sql[-1][0].lstrip().startswith("UPDATE"):
+            return {"status":self.update_status or self.sql[-1][1][0]}
+        return self.row
 
 
 def receipt(asset,side="BUY",stable=None,success=True):
@@ -34,6 +38,7 @@ def receipt(asset,side="BUY",stable=None,success=True):
         "swap_erc20_leg_verified":success,
         "source_spent_amount":"1" if success else None,
         "destination_received_amount":"2" if success else None,
+        "network_fee_native":"0.0002" if success else None,
         "performance_fee_assessed":False,
         "real_order_recorded":False,
     }
@@ -50,10 +55,13 @@ def test_all_evm_assets_bind_onchain_receipt_to_durable_intent(asset,success):
     state=_finalize_locked(
         cur,did=DID,key=KEY,asset=asset,proof=proof)
     assert state==("FINALIZED_SUCCESS" if success else "FINALIZED_REVERTED")
-    assert len(cur.sql)==2
+    assert len(cur.sql)==(3 if success else 2)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "AND status='SUBMITTED'" in cur.sql[1][0]
     assert cur.sql[1][1][-1]==TX
+    if success:
+        assert "INSERT INTO mininex_live_evm_verified_fills" in cur.sql[2][0]
+        assert cur.sql[2][1][4]==TX
 
 
 @pytest.mark.parametrize("alter",[
@@ -62,6 +70,9 @@ def test_all_evm_assets_bind_onchain_receipt_to_durable_intent(asset,success):
     lambda p:p.update(network="bsc-mainnet"),
     lambda p:p.update(swap_erc20_leg_verified=False),
     lambda p:p.update(source_spent_amount=None),
+    lambda p:p.update(network_fee_native=None),
+    lambda p:p.update(network_fee_native="-1"),
+    lambda p:p.update(destination_received_amount="nan"),
     lambda p:p.update(performance_fee_assessed=True),
     lambda p:p.update(real_order_recorded=True),
     lambda p:p.update(state="INCLUDED_SUCCESS"),
@@ -96,6 +107,18 @@ def test_only_matching_submitted_durable_order_can_finalize(alter):
         _finalize_locked(cur,did=DID,key=KEY,
                          asset="POL",proof=receipt("POL"))
     assert len(cur.sql)==1
+
+
+def test_failed_finalization_status_never_inserts_fill():
+    proof=receipt("LINK")
+    cur=Cursor({
+        "status":"SUBMITTED","tx_hash":TX,"chain_id":1,
+        "side":"BUY","stable":"USDC","wallet_address":WALLET,
+    },update_status="SUBMITTED")
+    with pytest.raises(HTTPException) as err:
+        _finalize_locked(cur,did=DID,key=KEY,asset="LINK",proof=proof)
+    assert err.value.status_code==409
+    assert len(cur.sql)==2
 
 
 def test_unfinalized_automated_reconciliation_does_not_write_database(monkeypatch):

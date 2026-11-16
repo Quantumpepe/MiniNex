@@ -7,6 +7,7 @@ the 5% realized profit fee. Reorgs / missing receipt can never be final.
 from __future__ import annotations
 
 import psycopg
+from decimal import Decimal, InvalidOperation
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
@@ -45,6 +46,28 @@ def _finalize_locked(
                 proof.get("source_spent_amount") is None
                 or proof.get("destination_received_amount") is None))):
         raise ValueError("EVM swap token transfers not verified")
+    # Persist only positive independently observed token deltas and the
+    # actual finalized native network cost; never use a quoted estimate.
+    amounts={}
+    if success:
+        for field,allow_zero in (
+            ("source_spent_amount",False),
+            ("destination_received_amount",False),
+            ("network_fee_native",True),
+        ):
+            raw=proof.get(field)
+            if type(raw) is not str or len(raw)>75:
+                raise ValueError("Verified EVM fill amount missing")
+            try:
+                value=Decimal(raw)
+            except InvalidOperation:
+                raise ValueError("Invalid EVM fill amount") from None
+            if (not value.is_finite() or value<0
+                    or not allow_zero and value==0
+                    or value>=Decimal("1e27")
+                    or value.as_tuple().exponent < -18):
+                raise ValueError("Untrusted EVM fill quantity")
+            amounts[field]=value
     cur.execute(
         """SELECT status,tx_hash,side,stable,chain_id,wallet_address
            FROM mininex_live_evm_auto_broadcasts
@@ -65,8 +88,25 @@ def _finalize_locked(
         """UPDATE mininex_live_evm_auto_broadcasts
            SET status=%s,updated_at=now()
            WHERE privy_did=%s AND asset=%s AND intent_key=%s
-             AND status='SUBMITTED' AND tx_hash=%s""",
+             AND status='SUBMITTED' AND tx_hash=%s
+           RETURNING status""",
         (state,did,asset,key,proof["tx_hash"]))
+    changed=cur.fetchone()
+    if type(changed) is not dict or changed.get("status")!=state:
+        raise HTTPException(409,"Concurrent EVM finalization conflict")
+    if success:
+        # Same SQL transaction as FINALIZED_SUCCESS. A single hash across
+        # two owners or assets cannot create duplicate verified inventory.
+        cur.execute(
+            """INSERT INTO mininex_live_evm_verified_fills
+               (privy_did,asset,chain_id,intent_key,tx_hash,wallet_address,
+                side,stable,source_amount,destination_amount,network_fee_native)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (did,asset,pair["chain_id"],key,proof["tx_hash"],
+             proof["wallet_address"].lower(),side,stable,
+             amounts["source_spent_amount"],
+             amounts["destination_received_amount"],
+             amounts["network_fee_native"]))
     return state
 
 
