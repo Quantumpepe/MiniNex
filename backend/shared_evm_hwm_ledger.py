@@ -49,6 +49,27 @@ def _assess_locked(
             or order.get("chain_id")!=_pair(
                 asset,order.get("stable"),"SELL")["chain_id"]):
         raise HTTPException(409,"Only finalized owner SELL swap may enter HWM")
+    # A journal FINALIZED_SUCCESS row alone is not sufficient. Only a
+    # separately stored, receipt-verified SELL fill belonging to this exact
+    # owner, asset, intent, chain and hash can enter the accounting path.
+    cur.execute(
+        """SELECT chain_id,tx_hash,side,stable,source_amount,
+                  destination_amount,network_fee_native
+           FROM mininex_live_evm_verified_fills
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s FOR UPDATE""",
+        (did,asset,execution_id))
+    fill=cur.fetchone()
+    if (type(fill) is not dict
+            or fill.get("chain_id")!=order["chain_id"]
+            or fill.get("tx_hash")!=source_tx_hash
+            or fill.get("side")!="SELL"
+            or fill.get("stable")!=order["stable"]
+            or any(fill.get(field) is None for field in (
+                "source_amount","destination_amount","network_fee_native"))
+            or any(Decimal(str(fill[field]))<=0 for field in (
+                "source_amount","destination_amount"))
+            or Decimal(str(fill["network_fee_native"]))<0):
+        raise HTTPException(409,"Finalized EVM SELL token fill not verified")
     cur.execute(
         """INSERT INTO mininex_evm_asset_hwm(privy_did,asset)
            VALUES (%s,%s) ON CONFLICT(privy_did,asset) DO NOTHING""",
