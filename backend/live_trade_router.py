@@ -17,6 +17,7 @@ import re
 from fastapi import HTTPException
 
 from .live_asset_registry import get_asset
+from .shared_evm_execution import chain_for_asset
 from .live_eth_swap_plan import make_eth_swap_plan
 from .live_btc_quotes import quote_native_btc
 from .manual_swap_live_quotes import get_native_swap_quote
@@ -56,8 +57,14 @@ def trade_plan_request(asset: object, side: object, stable: object,
         raise HTTPException(422, "Invalid exact input amount") from None
     if not value.is_finite() or value <= 0:
         raise HTTPException(422, "Input amount must be positive")
+    evm_chain_id = None
+    if info.execution_family in ("evm", "evm-erc20"):
+        evm_chain_id, network = chain_for_asset(asset)
+        if network != info.blockchain:
+            raise HTTPException(503, "EVM asset routing mismatch")
     return {
         "asset": asset, "side": side, "stable": stable,
+        "chain_id": evm_chain_id,
         "source_asset": stable if side=="BUY" else asset,
         "destination_asset": asset if side=="BUY" else stable,
         "input_amount": amount, "network": info.blockchain,

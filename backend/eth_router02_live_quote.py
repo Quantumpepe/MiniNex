@@ -21,6 +21,7 @@ import httpx
 from eth_utils import keccak
 from fastapi import HTTPException
 
+from .shared_evm_execution import EvmPair, unsigned_exact_input_single
 from .eth_native_weth9_review import native_eth_swap_stages
 from .eth_swaprouter02_preflight import (
     EXACT_INPUT_SINGLE_SELECTOR, SWAPROUTER02_MAINNET, WETH_MAINNET,
@@ -111,13 +112,16 @@ def build_unsigned_router02_swap(*, wallet: str, side: str,
         raise ValueError("Invalid user-owned ETH swap draft")
     token_in=STABLES[stable] if side=="BUY" else WETH_MAINNET
     token_out=WETH_MAINNET if side=="BUY" else STABLES[stable]
-    data=EXACT_INPUT_SINGLE_SELECTOR+''.join([
-        _word(int(token_in,16)),_word(int(token_out,16)),
-        _word(fee),_word(int(wallet,16)),_word(amount_in),
-        _word(min_out),_word(0),
-    ])
-    tx={"from":wallet,"to":SWAPROUTER02_MAINNET,
-        "chainId":1,"value":"0","data":data}
+    # Shared builder is used by the active ETH LIVE flow and can be
+    # reused by other chain-specific, independently verified EVM adapters.
+    tx=unsigned_exact_input_single(
+        pair=EvmPair(
+            asset="ETH",chain_id=1,network="ethereum-mainnet",
+            token_in=token_in,token_out=token_out,
+            router=SWAPROUTER02_MAINNET,fee=fee,
+        ),
+        wallet=wallet,amount_in=amount_in,min_out=min_out,
+    )
     review=inspect_swaprouter02_exact_input(
         tx,wallet=wallet,stable=stable,side=side,
         input_atomic=str(amount_in),minimum_output_atomic=str(min_out))

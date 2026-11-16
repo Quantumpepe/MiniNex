@@ -11,6 +11,7 @@ import logging
 import httpx
 
 from fastapi import HTTPException
+from .shared_evm_execution import bound_evm_wallet_rpc
 from .privy_wallet_verification import APP_ID
 from .eth_swaprouter02_preflight import (
     inspect_swaprouter02_exact_input, SWAPROUTER02_MAINNET,
@@ -45,17 +46,13 @@ def bound_privy_rpc_request(*, wallet_id: str, wallet: str, tx: dict,
     )
     # Privy expects the chain in caip2, and the exact ERC20 transaction
     # in params.transaction. No caller-provided destination or arbitrary RPC.
-    url=_PATH+wallet_id+"/rpc"
-    payload={
-        "method":"eth_sendTransaction",
-        "caip2":"eip155:1",
-        "params":{"transaction":{
+    return bound_evm_wallet_rpc(
+        asset="ETH",wallet_id=wallet_id,wallet=wallet,tx={
+            "from":wallet,"chainId":1,
             "to":SWAPROUTER02_MAINNET,
-            "data":tx["data"],
-            "value":"0",
-        }},
-    }
-    return url,payload
+            "data":tx["data"],"value":"0",
+        },
+    )
 
 
 async def broadcast_privy_eth_swap(

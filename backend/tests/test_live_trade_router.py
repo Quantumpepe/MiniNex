@@ -65,6 +65,7 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
     assert plan["source_asset"]==(stable if side=="BUY" else asset)
     assert plan["destination_asset"]==(asset if side=="BUY" else stable)
     assert plan["network"]==get_asset(asset).blockchain
+    assert plan["chain_id"]==get_asset(asset).chain_id
     assert plan["input_amount"]==amount
     assert plan["estimated_output_amount"]=="0.2"
     assert plan["wallet_signed"] is False
