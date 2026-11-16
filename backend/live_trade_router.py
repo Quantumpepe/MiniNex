@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from .live_asset_registry import get_asset
 from .shared_evm_execution import chain_for_asset
 from .live_eth_swap_plan import make_eth_swap_plan
+from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .live_btc_quotes import quote_native_btc
 from .manual_swap_live_quotes import get_native_swap_quote
 from .storage import _safe_did
@@ -102,6 +103,30 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
             "minimum_output_amount":upstream.get("minimum_output_amount"),
             "approval_or_permit_required":upstream.get("state")=="APPROVAL_OR_PERMIT_REQUIRED",
             "transaction_preview_created":upstream.get("transaction_built") is True,
+        }
+    elif asset in ("LINK","UNI"):
+        upstream=await quote_owner_erc20_trade(
+            did,asset=asset,side=side,stable=stable,amount=amount)
+        if (type(upstream) is not dict
+                or upstream.get("mode")!="SHARED_EVM_ERC20_ROUTER02_QUOTE"
+                or upstream.get("asset")!=asset
+                or upstream.get("network")!="ethereum-mainnet"
+                or upstream.get("side")!=side
+                or upstream.get("stable")!=stable
+                or upstream.get("input_amount")!=amount
+                or upstream.get("wallet_identity_verified") is not True
+                or upstream.get("wallet_funds_verified") is not True
+                or upstream.get("execution_enabled") is not False
+                or upstream.get("can_submit") is not False):
+            raise HTTPException(502,"ERC-20 EVM trade quote mismatch")
+        result={
+            "quote_level":"WALLET_VERIFIED_UNSIGNED_ERC20_SWAP",
+            "wallet_funds_verified":True,
+            "quote_provider":"UNISWAP_ETHEREUM_ERC20",
+            "estimated_output_amount":upstream.get("expected_output_amount"),
+            "minimum_output_amount":upstream.get("minimum_output_amount"),
+            "approval_or_permit_required":True,
+            "transaction_preview_created":True,
         }
     elif asset=="BTC":
         upstream=await quote_native_btc(
