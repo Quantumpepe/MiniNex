@@ -165,3 +165,68 @@ def get_real_eth_legs(did: str) -> dict:
                 "full_order_settled":False,"simulation_included":False}
     except psycopg.Error:
         raise HTTPException(503,"ETH trade history unavailable") from None
+
+
+def get_confirmed_eth_swaps(did: str) -> dict:
+    """Authenticated, order-bound BUY/SELL fills only; no PAPER or fee claims.
+
+    The ledger includes a swap only when the durable AUTO order and the
+    independently finalized ERC-20 transfer leg agree on owner, hash, side
+    and settlement stablecoin. Native WRAP/UNWRAP stages remain separate.
+    """
+    did = _safe_did(did)
+    try:
+        url = _db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT o.intent_key,o.side,o.stable,o.tx_hash,
+                              l.source_amount,l.destination_amount,
+                              l.network_fee_eth,o.finalized_at
+                       FROM mininex_live_order_intents o
+                       JOIN mininex_live_eth_verified_legs l
+                         ON l.privy_did=o.privy_did
+                        AND l.tx_hash=o.tx_hash
+                        AND l.side=o.side
+                        AND l.stable=o.stable
+                        AND l.kind='SWAP'
+                       WHERE o.privy_did=%s AND o.asset='ETH'
+                         AND o.chain_network='ethereum-mainnet'
+                         AND o.state='CONFIRMED'
+                         AND o.finalized_at IS NOT NULL
+                       ORDER BY o.finalized_at DESC,o.intent_key DESC
+                       LIMIT 100""", (did,),
+                )
+                rows = cur.fetchall()
+        swaps = []
+        for row in rows:
+            side = row["side"]
+            stable = row["stable"]
+            if side not in SIDES or stable not in STABLES:
+                raise ValueError("Invalid confirmed ETH swap identity")
+            swaps.append({
+                "intent_key": row["intent_key"],
+                "side": side,
+                "stable": stable,
+                "tx_hash": row["tx_hash"],
+                "spent_asset": stable if side == "BUY" else "WETH",
+                "spent_amount": str(row["source_amount"]),
+                "received_asset": "WETH" if side == "BUY" else stable,
+                "received_amount": str(row["destination_amount"]),
+                "network_fee_eth": str(row["network_fee_eth"]),
+                "finalized_at": row["finalized_at"].isoformat(),
+                "onchain_finalized": True,
+            })
+        return {
+            "asset": "ETH", "network": "ethereum-mainnet",
+            "source": "CONFIRMED_AUTO_ROUTER02_SWAPS",
+            "swaps": swaps, "includes_paper": False,
+            "native_conversion_stages_included": False,
+            "realized_pnl_reconciled": False,
+            "performance_fee_assessed": False,
+        }
+    except (psycopg.Error, ValueError, TypeError, KeyError, AttributeError):
+        LOG.warning("ETH confirmed BUY/SELL ledger unavailable")
+        raise HTTPException(503, "ETH confirmed swap history unavailable") from None
