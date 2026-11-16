@@ -152,3 +152,38 @@ def test_invalid_recorded_gas_is_rejected(bad):
     buy["network_fee_eth"]=bad
     with pytest.raises(ValueError):
         eth_fifo_gross_preview(history(buy))
+
+
+def test_partial_fifo_exit_allocates_buy_gas_pro_risk_lot():
+    buy=row("BUY","USDC","100","1","buy")
+    buy.update({"network_fee_eth":"0.004",
+                "native_conversion_status":"CONFIRMED_VERIFIED",
+                "native_conversion_network_fee_eth":"0.002"})
+    sell1=row("SELL","USDC","0.25","30","sell1")
+    sell1["network_fee_eth"]="0.001"
+    sell2=row("SELL","USDC","0.75","90","sell2")
+    sell2["network_fee_eth"]="0.003"
+    value=eth_fifo_gross_preview(history(sell2,sell1,buy))
+    rows=value["closed_trades"]
+    assert rows[0]["allocated_confirmed_network_fee_eth"]=="0.00250"
+    assert rows[1]["allocated_confirmed_network_fee_eth"]=="0.00750"
+    assert value["historical_network_fee_usd"] is None
+    assert "HISTORICAL_GAS_USD_VALUATION_MISSING" in value["fee_assessment_blockers"]
+
+
+def test_no_unknown_buy_gas_is_assumed_zero_on_matched_sale():
+    buy=row("BUY","USDC","100","1","buy")
+    buy.update({"network_fee_eth":"0.004",
+                "native_conversion_status":"SUBMITTED"})
+    sell=row("SELL","USDC","1","120","sell")
+    sell["network_fee_eth"]="0.002"
+    value=eth_fifo_gross_preview(history(sell,buy))
+    assert value["closed_trades"][0]["allocated_confirmed_network_fee_eth"] is None
+    assert "NATIVE_CONVERSION_UNRESOLVED" in value["fee_assessment_blockers"]
+    assert value["five_percent_fee_assessed"] is False
+
+
+def test_unmatched_sales_preserve_unknown_cost_blocker():
+    value=eth_fifo_gross_preview(history(row("SELL","USDC","1","100","sell")))
+    assert "UNMATCHED_COST_BASIS" in value["fee_assessment_blockers"]
+    assert value["verified_net_pnl_usd"] is None
