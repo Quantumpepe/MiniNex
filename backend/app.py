@@ -48,6 +48,7 @@ from .live_eth_swap_plan import make_eth_swap_plan
 from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
+from .shared_evm_swap_receipts import check_user_evm_swap
 from .eth_router02_allowance import inspect_router02_approval
 from .eth_live_wallet_equity import read_owner_eth_live_wallet_value
 from .eth_owner_auto_approval import make_eth_owner_approval_plan
@@ -590,6 +591,24 @@ async def eth_owner_live_auto_allowance(
     return JSONResponse(
         result,headers={"Cache-Control":"private, no-store",
                         "X-Content-Type-Options":"nosniff"})
+
+
+@app.get("/api/live/evm/finalized-swap/{asset}/{tx_hash}")
+async def finalized_owner_evm_swap(
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI"],
+    tx_hash: str,
+    side: Literal["BUY","SELL"],
+    stable: Literal["USDC","USDT"],
+    authorization: str | None = Header(default=None),
+):
+    """Read verified owner wallet swap transfers; no order or fee credit."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await check_user_evm_swap(
+        did,tx_hash,asset=asset,side=side,stable=stable)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.post("/api/live/evm/native-user-transaction/{asset}")
