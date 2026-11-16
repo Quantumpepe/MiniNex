@@ -13,6 +13,7 @@ import httpx
 from fastapi import HTTPException
 from .shared_evm_execution import bound_evm_wallet_rpc
 from .shared_evm_auto_preflight import inspect_evm_exact_swap
+from .shared_evm_privy_transport import bound_privy_evm_swap_request,post_claimed_privy_evm_rpc
 from .privy_wallet_verification import APP_ID
 from .eth_swaprouter02_preflight import (
     inspect_swaprouter02_exact_input, SWAPROUTER02_MAINNET,
@@ -54,12 +55,10 @@ def bound_privy_rpc_request(*, wallet_id: str, wallet: str, tx: dict,
     )
     # Privy expects the chain in caip2, and the exact ERC20 transaction
     # in params.transaction. No caller-provided destination or arbitrary RPC.
-    return bound_evm_wallet_rpc(
-        asset="ETH",wallet_id=wallet_id,wallet=wallet,tx={
-            "from":wallet,"chainId":1,
-            "to":SWAPROUTER02_MAINNET,
-            "data":tx["data"],"value":"0",
-        },
+    return bound_privy_evm_swap_request(
+        asset="ETH",wallet_id=wallet_id,wallet=wallet,tx=tx,
+        side=side,stable=stable,input_atomic=input_atomic,
+        minimum_output_atomic=minimum_output_atomic,
     )
 
 
@@ -79,36 +78,11 @@ async def broadcast_privy_eth_swap(
         wallet_id=wallet_id,wallet=wallet,tx=tx,side=side,stable=stable,
         input_atomic=input_atomic,
         minimum_output_atomic=minimum_output_atomic)
-    if (type(app_secret) is not str or len(app_secret)<12
-            or type(authorization_signature) is not str
-            or not _SIGNATURE.fullmatch(authorization_signature)
-            or type(idempotency_key) is not str
-            or not re.fullmatch(r"[A-Za-z0-9_-]{16,96}",idempotency_key)):
-        raise ValueError("Privy signing authority or intent key unavailable")
-    try:
-        response=await client.post(
-            url,auth=(APP_ID,app_secret),
-            headers={"privy-app-id":APP_ID,
-                     "privy-authorization-signature":authorization_signature,
-                     "privy-idempotency-key":idempotency_key,
-                     "Content-Type":"application/json"},
-            json=body)
-        response.raise_for_status()
-        if len(response.content)>65536:
-            raise ValueError("Unexpected large Privy RPC result")
-        data=response.json()
-        if type(data) is not dict:
-            raise ValueError("Unexpected Privy RPC result")
-        nested=data.get("data")
-        tx_hash=(nested.get("hash") if type(nested) is dict
-                 else data.get("hash"))
-        if type(tx_hash) is not str or not _HASH.fullmatch(tx_hash):
-            raise ValueError("Privy RPC did not return a transaction hash")
-        return tx_hash.lower()
-    except (httpx.HTTPError,ValueError,TypeError):
-        # Even on timeout the wallet may have signed/broadcast. A caller
-        # MUST keep its durable SENDING/UNCERTAIN marker and reconcile.
-        LOG.warning("Privy ETH AUTO broadcast outcome unknown; do not resend")
-        raise HTTPException(
-            503,"Privy ETH submission uncertain; reconcile original transaction"
-        ) from None
+    # This ETH-only entry point preserves the existing committed order,
+    # user consent, per-wallet policy and quorum checks in its caller.
+    # All EVM networks now share the exact same one-shot Privy transport.
+    return await post_claimed_privy_evm_rpc(
+        url=url,body=body,app_secret=app_secret,
+        authorization_signature=authorization_signature,
+        idempotency_key=idempotency_key,client=client,
+    )
