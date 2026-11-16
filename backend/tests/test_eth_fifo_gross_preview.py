@@ -29,7 +29,7 @@ def test_fifo_partial_sell_and_recovery_are_matched_separately():
     h=history(
         row("SELL","USDC","0.5","60","sell2"),
         row("SELL","USDC","0.5","55","sell1"),
-        row("BUY","USDC","1","100","buy1"),
+        row("BUY","USDC","100","1","buy1"),
     )
     result=eth_fifo_gross_preview(h)
     assert result["all_sell_cost_basis_matched_within_sample"] is True
@@ -43,8 +43,8 @@ def test_fifo_partial_sell_and_recovery_are_matched_separately():
 def test_multi_buy_fifo_cost_basis_with_partial_lot():
     h=history(
         row("SELL","USDT","1.5","220","sell"),
-        row("BUY","USDT","1","140","buy2"),
-        row("BUY","USDT","1","100","buy1"),
+        row("BUY","USDT","140","1","buy2"),
+        row("BUY","USDT","100","1","buy1"),
     )
     result=eth_fifo_gross_preview(h)
     assert Decimal(result["gross_spread_by_stable"]["USDT"])==50
@@ -53,7 +53,7 @@ def test_multi_buy_fifo_cost_basis_with_partial_lot():
 def test_different_stable_never_treated_as_same_cost_basis():
     h=history(
         row("SELL","USDT","1","120","sell"),
-        row("BUY","USDC","1","100","buy"),
+        row("BUY","USDC","100","1","buy"),
     )
     result=eth_fifo_gross_preview(h)
     assert result["unmatched_sell_count"]==1
@@ -63,7 +63,7 @@ def test_different_stable_never_treated_as_same_cost_basis():
 
 def test_external_inventory_cannot_be_assigned_a_fake_cost_basis():
     h=history(row("SELL","USDC","2","200","sell"),
-              row("BUY","USDC","1","100","buy"))
+              row("BUY","USDC","100","1","buy"))
     result=eth_fifo_gross_preview(h)
     assert result["unmatched_sell_count"]==1
     assert result["closed_trades"][0]["gross_spread_stable"] is None
@@ -72,7 +72,7 @@ def test_external_inventory_cannot_be_assigned_a_fake_cost_basis():
 
 def test_truncated_history_never_advertises_complete_spread():
     h=history(row("SELL","USDC","1","110","sell"),
-              row("BUY","USDC","1","100","buy"),truncated=True)
+              row("BUY","USDC","100","1","buy"),truncated=True)
     result=eth_fifo_gross_preview(h)
     assert result["historical_sample_truncated"] is True
     assert result["gross_spread_by_stable"]["USDC"] is None
