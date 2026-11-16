@@ -635,13 +635,19 @@ def record_trusted_realized_close(
             )
             row = cur.fetchone()
             cur.execute(
-                """SELECT fee_assessed_usd,cumulative_realized_net_usd,high_water_mark_usd
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
                    FROM mininex_fee_events
                    WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
                 (did,asset,execution_id),
             )
             existing=cur.fetchone()
             if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
                 return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
                         "high_water_mark_usd":str(existing["high_water_mark_usd"]),
                         "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}

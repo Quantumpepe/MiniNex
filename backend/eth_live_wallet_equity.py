@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal,InvalidOperation,ROUND_HALF_UP
+import re
 import time
 
 from fastapi import HTTPException
@@ -19,6 +20,7 @@ from .storage import _safe_did
 
 _ASSETS=("ETH","WETH","USDC","USDT")
 _USD=Decimal("0.000001")
+_ETH_ADDRESS=re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
 def _exact_quantity(value:object)->Decimal:
@@ -44,6 +46,17 @@ def calculate_eth_wallet_equity(
             or weth.get("side")!="SELL"
             or type(now) is not int):
         raise ValueError("Only user-owned real ETH wallets are valued")
+    # Both independent balance readers must identify the SAME Privy owner
+    # address. A wallet change between queries cannot produce a combined
+    # equity value from two different wallets.
+    wallets=balances.get("wallets")
+    owner=wallets.get("ETH") if type(wallets) is dict else None
+    allowance_owner=weth.get("wallet_address")
+    if (type(owner) is not str or not _ETH_ADDRESS.fullmatch(owner)
+            or type(allowance_owner) is not str
+            or not _ETH_ADDRESS.fullmatch(allowance_owner)
+            or owner.lower()!=allowance_owner.lower()):
+        raise ValueError("ETH and WETH wallet identity mismatch")
     holdings=balances.get("balances")
     if not isinstance(holdings,dict):
         raise ValueError("Wallet holdings unavailable")

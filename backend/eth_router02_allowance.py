@@ -100,6 +100,7 @@ async def inspect_router02_approval(
     return {
         "mode":"ETH_ROUTER02_REAL_ALLOWANCE_READ_ONLY",
         "asset":"ETH","network":"ethereum-mainnet",
+        "wallet_address":wallet.lower(),
         "side":side,"stable":stable,"source_token":stable if side=="BUY" else "WETH",
         "source_token_network":"ethereum-mainnet",
         "spending_router":SWAPROUTER02_MAINNET,
