@@ -10,6 +10,7 @@ import logging
 from fastapi import HTTPException
 import httpx
 
+from .shared_evm_execution import bound_evm_wallet_rpc
 from .privy_wallet_verification import APP_ID
 from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .eth_swaprouter02_preflight import WETH_MAINNET
@@ -35,13 +36,11 @@ def bound_weth9_rpc(*,wallet_id:str,wallet:str,operation:str,
     else:
         calldata="0x2e1a7d4d"+f"{amount_wei:064x}"
         value="0"
-    return "https://api.privy.io/v1/wallets/"+wallet_id+"/rpc",{
-        "method":"eth_sendTransaction",
-        "caip2":"eip155:1",
-        "params":{"transaction":{
-            "to":WETH_MAINNET,"data":calldata,"value":value,
-        }},
-    }
+    return bound_evm_wallet_rpc(
+        asset="ETH",wallet_id=wallet_id,wallet=wallet,
+        tx={"from":wallet,"chainId":1,"to":WETH_MAINNET,
+            "data":calldata,"value":value},
+    )
 
 
 async def send_privy_native_weth9(*,wallet_id:str,wallet:str,
