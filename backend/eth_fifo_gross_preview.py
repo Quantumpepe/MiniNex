@@ -64,6 +64,7 @@ def eth_fifo_gross_preview(history: dict) -> dict:
     gross = {stable: Decimal(0) for stable in _STABLES}
     close_events = []
     unmatched = 0
+    unmatched_units = {stable: Decimal(0) for stable in _STABLES}
     # The API returns newest first; reverse chronologically for FIFO.
     # Distinct intent IDs are mandatory, not merely matching raw amounts.
     seen = set()
@@ -120,6 +121,8 @@ def eth_fifo_gross_preview(history: dict) -> dict:
             # Do not emit a partially costed trade as a realized profit.
             if sum((lot[0] for lot in lots), Decimal(0)) < quantity:
                 unmatched += 1
+                known_before = sum((lot[0] for lot in lots), Decimal(0))
+                unmatched_units[stable] += quantity - known_before
                 close_events.append({
                     "intent_key": key, "stable": stable,
                     "status": "UNMATCHED_COST_BASIS",
@@ -221,6 +224,17 @@ def eth_fifo_gross_preview(history: dict) -> dict:
         "source": "CONFIRMED_AUTO_ROUTER02_SWAPS",
         "historical_sample_truncated": history["history_truncated"],
         "unmatched_sell_count": unmatched,
+        "unmatched_sell_weth_by_stable": {
+            stable: format(unmatched_units[stable], "f") for stable in _STABLES
+        },
+        # Known FIFO lots do not prove current wallet inventory; native
+        # positions, transfers and any omitted historical trades are excluded.
+        "remaining_verified_buy_weth_by_stable": {
+            stable: format(
+                sum((lot[0] for lot in inventories[stable]), Decimal(0)), "f"
+            ) for stable in _STABLES
+        },
+        "fifo_lot_inventory_is_wallet_balance": False,
         "all_sell_cost_basis_matched_within_sample": complete,
         "closed_trades": list(reversed(close_events)),
         "gross_spread_by_stable": {
