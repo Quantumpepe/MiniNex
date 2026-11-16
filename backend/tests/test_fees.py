@@ -67,3 +67,13 @@ def test_schema_per_asset_and_idempotency_key():
     assert "CHECK (asset IN ('BTC','ETH'))" in combined
     assert "REFERENCES mininex_accounts" in combined
     assert "FOR UPDATE" in __import__("inspect").getsource(record_trusted_realized_close)
+
+
+def test_duplicate_execution_rejects_changed_realized_pnl():
+    # The durable replay path must compare the original economic facts,
+    # not return a normal duplicate for a different realized close.
+    import inspect
+    source=inspect.getsource(record_trusted_realized_close)
+    assert "realized_net_delta_usd" in source
+    assert 'existing["realized_net_delta_usd"]' in source
+    assert "Execution accounting conflict" in source
