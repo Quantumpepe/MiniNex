@@ -28,6 +28,21 @@ def _amount(value: object) -> Decimal:
     return amount
 
 
+def _nonnegative_fee(value: object) -> Decimal:
+    # Blockchain gas can be exactly zero on some networks; no negative,
+    # non-finite, float or high-precision fabricated values are accepted.
+    if type(value) is not str or len(value) > 78:
+        raise ValueError("Missing exact recorded transaction network fee")
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        raise ValueError("Invalid transaction network fee") from None
+    if (not amount.is_finite() or amount < 0 or amount >= Decimal("1e25")
+            or amount.as_tuple().exponent < -18):
+        raise ValueError("Untrusted transaction network fee")
+    return amount
+
+
 def eth_fifo_gross_preview(history: dict) -> dict:
     """Match eligible confirmed WETH quantities FIFO within each stablecoin.
 
@@ -121,6 +136,36 @@ def eth_fifo_gross_preview(history: dict) -> dict:
                 "gross_sell_proceeds_stable": format(received, "f"),
             })
     complete = unmatched == 0 and history["history_truncated"] is False
+
+    # Report verified *recorded* gas in ETH units without inventing its USD
+    # price at historical execution time. An unconfirmed native BUY conversion
+    # contributes zero recorded gas but is explicitly flagged incomplete.
+    # Do not use this number as an exhaustive cost or HWM settlement input.
+    recorded_gas_eth = Decimal(0)
+    conversion_pending = 0
+    with localcontext() as context:
+        context.prec = 60
+        for row in rows:
+            swap_fee = row.get("network_fee_eth")
+            if swap_fee is None:
+                recorded_gas_eth = None
+                break
+            value = _nonnegative_fee(swap_fee)
+            recorded_gas_eth += value
+            if row["side"] != "BUY":
+                continue
+            conversion = row.get("native_conversion_status")
+            if conversion == "CONFIRMED_VERIFIED":
+                native_fee = row.get("native_conversion_network_fee_eth")
+                if native_fee is None:
+                    recorded_gas_eth = None
+                    break
+                recorded_gas_eth += _nonnegative_fee(native_fee)
+            elif conversion in ("NOT_STARTED", "SENDING", "SUBMITTED",
+                                "RECONCILIATION_REQUIRED", "REVERTED", None):
+                conversion_pending += 1
+            else:
+                raise ValueError("Untrusted ETH native conversion status")
     return {
         "asset": "ETH",
         "mode": "READ_ONLY_GROSS_SWAP_SPREAD",
@@ -133,6 +178,12 @@ def eth_fifo_gross_preview(history: dict) -> dict:
             stable: format(gross[stable], "f") if complete else None
             for stable in _STABLES
         },
+        "verified_recorded_network_fee_eth": (
+            format(recorded_gas_eth, "f") if recorded_gas_eth is not None else None
+        ),
+        "recorded_gas_is_exhaustive": False,
+        "native_buy_conversion_unresolved_count": conversion_pending,
+        "historical_network_fee_usd": None,
         "stablecoin_fx_and_eth_gas_costs_reconciled": False,
         "external_inventory_reconciled": False,
         "verified_net_pnl_usd": None,

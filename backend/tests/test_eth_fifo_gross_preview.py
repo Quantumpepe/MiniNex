@@ -108,3 +108,47 @@ def test_reader_rejects_untrusted_history(monkeypatch):
     with pytest.raises(HTTPException) as error:
         mod.read_eth_fifo_gross_preview("did:privy:verified")
     assert error.value.status_code==503
+
+
+def test_recorded_swap_and_verified_native_conversion_gas_are_exact():
+    buy=row("BUY","USDC","100","1","buy")
+    buy.update({
+        "network_fee_eth":"0.00015",
+        "native_conversion_status":"CONFIRMED_VERIFIED",
+        "native_conversion_network_fee_eth":"0.00005",
+    })
+    sell=row("SELL","USDC","1","125","sell")
+    sell["network_fee_eth"]="0.00020"
+    result=eth_fifo_gross_preview(history(sell,buy))
+    assert result["verified_recorded_network_fee_eth"]=="0.00040"
+    assert result["native_buy_conversion_unresolved_count"]==0
+    assert result["historical_network_fee_usd"] is None
+    assert result["recorded_gas_is_exhaustive"] is False
+    assert result["five_percent_fee_assessed"] is False
+
+
+def test_unfinished_native_conversion_not_invented_as_completed_gas():
+    buy=row("BUY","USDC","100","1","buy")
+    buy.update({
+        "network_fee_eth":"0.00015",
+        "native_conversion_status":"SUBMITTED",
+        "native_conversion_network_fee_eth":None,
+    })
+    result=eth_fifo_gross_preview(history(buy))
+    assert result["verified_recorded_network_fee_eth"]=="0.00015"
+    assert result["native_buy_conversion_unresolved_count"]==1
+    assert result["recorded_gas_is_exhaustive"] is False
+
+
+def test_missing_verified_gas_never_becomes_zero():
+    buy=row("BUY","USDC","100","1","buy")
+    assert eth_fifo_gross_preview(history(buy))[
+        "verified_recorded_network_fee_eth"] is None
+
+
+@pytest.mark.parametrize("bad",["NaN","-0.00001","Infinity","1e30","0.0000000000000000001"])
+def test_invalid_recorded_gas_is_rejected(bad):
+    buy=row("BUY","USDC","100","1","buy")
+    buy["network_fee_eth"]=bad
+    with pytest.raises(ValueError):
+        eth_fifo_gross_preview(history(buy))
