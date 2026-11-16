@@ -27,6 +27,10 @@ def rows(asset,net_cumulative="0",hwm="0",stable=None):
     return [
         {"status":"FINALIZED_SUCCESS","side":"SELL","tx_hash":TX,
          "chain_id":chains[asset],"stable":stable},
+        {"chain_id":chains[asset],"tx_hash":TX,"side":"SELL",
+         "stable":stable,"source_amount":Decimal("1"),
+         "destination_amount":Decimal("200"),
+         "network_fee_native":Decimal("0.001")},
         {"cumulative_realized_net_usd":Decimal(net_cumulative),
          "high_water_mark_usd":Decimal(hwm)},
         None,
@@ -42,9 +46,10 @@ def test_five_independent_verified_coin_hwm_ledgers(asset):
     assert Decimal(r["fee_assessed_usd"])==Decimal("10.000000")
     assert Decimal(r["high_water_mark_usd"])==Decimal("200")
     assert r["fee_token_transferred"] is False
-    assert len(cur.sql)==7
+    assert len(cur.sql)==8
     assert "FOR UPDATE" in cur.sql[0][0]
-    assert "FOR UPDATE" in cur.sql[2][0]
+    assert "FOR UPDATE" in cur.sql[1][0]
+    assert "FOR UPDATE" in cur.sql[3][0]
     assert "mininex_evm_fee_obligations" in cur.sql[-1][0]
 
 
@@ -97,7 +102,7 @@ def test_duplicate_execution_with_changed_economic_facts_fails(
         _assess_locked(cur,did=DID,asset="AVAX",execution_id=KEY,
                        source_tx_hash=TX,realized_net_usd="100")
     assert err.value.status_code==409
-    assert len(cur.sql)==4
+    assert len(cur.sql)==5
 
 
 def test_identical_execution_is_idempotent_and_does_not_add_second_fee():
@@ -112,8 +117,28 @@ def test_identical_execution_is_idempotent_and_does_not_add_second_fee():
                           source_tx_hash=TX,realized_net_usd="100")
     assert result["duplicate"] is True
     assert result["fee_assessed_usd"]=="5"
-    assert len(cur.sql)==4
+    assert len(cur.sql)==5
     assert not any("UPDATE mininex_evm_asset_hwm" in sql for sql,args in cur.sql)
+
+
+@pytest.mark.parametrize("mutation",[
+    lambda f:f.update(chain_id=56),
+    lambda f:f.update(tx_hash="0x"+"cd"*32),
+    lambda f:f.update(side="BUY"),
+    lambda f:f.update(stable="USDT"),
+    lambda f:f.update(source_amount=Decimal("0")),
+    lambda f:f.update(destination_amount=Decimal("-1")),
+    lambda f:f.update(network_fee_native=None),
+])
+def test_hwm_refuses_nonfinal_or_wrong_ledger_fill(mutation):
+    evidence=rows("POL")
+    mutation(evidence[1])
+    cur=Cur(evidence)
+    with pytest.raises(HTTPException) as err:
+        _assess_locked(cur,did=DID,asset="POL",execution_id=KEY,
+                       source_tx_hash=TX,realized_net_usd="100")
+    assert err.value.status_code==409
+    assert len(cur.sql)==2
 
 
 def test_evm_hwm_does_not_modify_original_btc_eth_ledger():
