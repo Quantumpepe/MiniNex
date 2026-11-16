@@ -122,3 +122,23 @@ def test_absent_private_key_never_queries_privy(monkeypatch):
         ) as client:
             return await check_privy_backend_quorum(client)
     assert asyncio.run(run())["remote_quorum_public_key_verified"] is False
+
+
+@pytest.mark.parametrize("extraneous_members", [
+    {"user_ids": ["did:privy:unapproved-user"]},
+    {"key_quorum_ids": ["other_quorum_123"]},
+    {"user_ids": ["did:privy:unapproved-user"], "key_quorum_ids": []},
+    {"user_ids": [], "key_quorum_ids": ["other_quorum_123"]},
+    {"user_ids": "not-a-list"},
+    {"key_quorum_ids": "not-a-list"},
+])
+def test_1_of_1_rejects_other_member_classes(monkeypatch, extraneous_members):
+    public = configured(monkeypatch)
+    candidate = {**payload(public), **extraneous_members}
+    assert not inspect_remote_privy_backend_quorum(candidate, expected_id=QUORUM)
+
+
+def test_1_of_1_accepts_explicit_empty_member_classes(monkeypatch):
+    public = configured(monkeypatch)
+    candidate = {**payload(public), "user_ids": [], "key_quorum_ids": []}
+    assert inspect_remote_privy_backend_quorum(candidate, expected_id=QUORUM)
