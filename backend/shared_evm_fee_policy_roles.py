@@ -32,6 +32,9 @@ def require_fee_policy_roles(asset:str)->tuple[str,str]:
     fee_signer=os.getenv(_fee_env_name(asset),"").strip()
     configured=[os.getenv(_fee_env_name(coin),"").strip()
                 for coin in _ASSETS]
+    configured.extend(os.getenv(
+        f"MININEX_PRIVY_EVM_{coin}_TRADE_SIGNER_ID","").strip()
+        for coin in _ASSETS)
     configured=[name for name in configured if name]
     if (not _ID.fullmatch(fee_signer)
             or fee_signer==trading_signer or fee_signer==owner
