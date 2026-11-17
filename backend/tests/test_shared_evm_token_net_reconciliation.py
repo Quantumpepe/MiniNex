@@ -123,3 +123,86 @@ def test_postgres_fill_must_match_finalized_original_broadcast():
     row["broadcast_status"]="SUBMITTED"
     with pytest.raises(ValueError):
         token_net._verified_account_fill(row,"UNI")
+
+
+def test_verified_token_closures_enter_existing_hwm_once_without_wallet_transfer(monkeypatch):
+    from backend import shared_evm_hwm_ledger as hwm
+    events = []
+    def fake_record(**kw):
+        events.append(kw)
+        return {"asset":kw["asset"],"fee_assessed_usd":"1.23",
+                "source_tx_hash":kw["source_tx_hash"],
+                "fee_token_transferred":False}
+    monkeypatch.setattr(hwm,"record_internal_evm_realized_close",fake_record)
+    async def reconciled(**kw):
+        return {
+            "mode":"RECONCILED_EVM_FIFO_NET_READ_ONLY",
+            "asset":"LINK","wallet_address":WALLET,
+            "fee_assessed":False,"hwm_updated":False,
+            "asset_transfer_audit":{
+                "wallet_address":WALLET,
+                "external_inventory_reconciled":True,
+                "no_other_execution_costs_verified":True},
+            "closed_trades":[{
+                "mode":"RECONCILED_EVM_NET_USD_MATH_ONLY",
+                "asset":"LINK","wallet_address":WALLET,
+                "tx_hash":TX_SELL,"intent_key":"sig_0123456789",
+                "realized_net_usd":"24.7",
+                "hwm_updated":False,"fee_assessed":False,
+            }],
+        }
+    monkeypatch.setattr(token_net,"read_owner_erc20_verified_realized_net",reconciled)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await token_net.reconcile_owner_erc20_hwm_after_verified_sell(
+                did="did:privy:account_12345",asset="LINK",client=client)
+    result=asyncio.run(run())
+    assert result["verified_closes"]==1
+    assert events[0]["realized_net_usd"]=="24.7"
+    assert events[0]["source_tx_hash"]==TX_SELL
+    assert result["privy_treasury_signer_used"] is False
+    assert result["fee_transferred"] is False
+
+
+@pytest.mark.parametrize("tamper",[
+    lambda x:x.update(fee_assessed=True),
+    lambda x:x.update(hwm_updated=True),
+    lambda x:x["asset_transfer_audit"].update(
+        external_inventory_reconciled=False),
+    lambda x:x["asset_transfer_audit"].update(
+        no_other_execution_costs_verified=False),
+    lambda x:x["closed_trades"][0].update(wallet_address="0x"+"cd"*20),
+    lambda x:x["closed_trades"][0].update(mode="PAPER_NET"),
+])
+def test_hwm_cannot_be_written_from_incomplete_token_report(monkeypatch,tamper):
+    from backend import shared_evm_hwm_ledger as hwm
+    events=[]
+    monkeypatch.setattr(hwm,"record_internal_evm_realized_close",
+                        lambda **kw:events.append(kw))
+    report={
+        "mode":"RECONCILED_EVM_FIFO_NET_READ_ONLY",
+        "asset":"LINK","wallet_address":WALLET,
+        "fee_assessed":False,"hwm_updated":False,
+        "asset_transfer_audit":{
+            "wallet_address":WALLET,
+            "external_inventory_reconciled":True,
+            "no_other_execution_costs_verified":True},
+        "closed_trades":[{
+            "mode":"RECONCILED_EVM_NET_USD_MATH_ONLY",
+            "asset":"LINK","wallet_address":WALLET,
+            "tx_hash":TX_SELL,"intent_key":"sig_0123456789",
+            "realized_net_usd":"24.7","hwm_updated":False,
+            "fee_assessed":False,
+        }],
+    }
+    tamper(report)
+    async def fake(**kw):
+        return report
+    monkeypatch.setattr(token_net,"read_owner_erc20_verified_realized_net",fake)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await token_net.reconcile_owner_erc20_hwm_after_verified_sell(
+                did="did:privy:account_12345",asset="LINK",client=client)
+    with pytest.raises(ValueError):
+        asyncio.run(run())
+    assert events==[]
