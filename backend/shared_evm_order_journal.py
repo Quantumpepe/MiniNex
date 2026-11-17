@@ -117,6 +117,24 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
                 or type(native_sell.get("pending")) is not int
                 or native_sell["pending"]!=0):
             raise HTTPException(409,"Native EVM SELL deposit unresolved")
+        # Once a native SELL deposit is mined, the exact original event
+        # has priority to swap those tokens. An unrelated BUY/SELL must
+        # not consume the shared wallet nonce before that event settles.
+        cur.execute(
+            """SELECT COUNT(*) AS pending
+               FROM mininex_live_evm_native_sell_intents n
+               LEFT JOIN mininex_live_evm_auto_broadcasts b
+                 ON b.privy_did=n.privy_did AND b.asset=n.asset
+                AND b.intent_key=n.intent_key
+               WHERE n.privy_did=%s AND n.chain_id=%s
+                 AND n.status='FINALIZED_SUCCESS'
+                 AND n.intent_key<>%s AND b.intent_key IS NULL""",
+            (did,pair["chain_id"],key))
+        unfinished=cur.fetchone()
+        if (type(unfinished) is not dict
+                or type(unfinished.get("pending")) is not int
+                or unfinished["pending"]!=0):
+            raise HTTPException(409,"Original native SELL must complete first")
     # ETH, LINK and UNI use the same owner-wallet nonce on Ethereum.
     # Existing ETH AUTO may already have an unconfirmed submitted swap
     # or WETH9 conversion, even when the extra-asset journal is empty.
