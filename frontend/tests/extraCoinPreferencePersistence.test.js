@@ -20,10 +20,10 @@ const data=()=>({
   ])),
 });
 
-test('nine saved settings remain separate; ADA is not tradable',()=>{
+test('nine saved settings remain separate; ARB is not tradable',()=>{
   const snapshot=data();
   assert.equal(EXTRA_REPLAY_COINS.length,9);
-  assert.equal(EXTRA_REPLAY_COINS.includes('ADA'),false);
+  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),false);
   assert.equal(validSavedExtraCoinPreferences(snapshot),true);
   const result=savedExtraOptions(snapshot);
   for(const coin of EXTRA_REPLAY_COINS){
