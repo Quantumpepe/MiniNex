@@ -39,7 +39,7 @@ def test_one_signed_send_and_user_budget_transition_same_sql_transaction(
 
 
 @pytest.mark.parametrize("budget",[
-    None,{"state":"RESERVED"},{"state":"SUBMITTED"},
+    None,{"state":"RESERVED"},{"state":"RECONCILIATION_REQUIRED"},
 ])
 def test_inconsistent_budget_transition_aborts_authorized_outcome(budget):
     cur=Cursor([
