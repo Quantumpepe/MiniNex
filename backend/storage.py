@@ -639,6 +639,768 @@ SCHEMA = (
         FOREIGN KEY(privy_did,asset,intent_key)
             REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_immutable_fill_usd_prices (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        tx_hash TEXT NOT NULL CHECK(tx_hash ~ '^0x[0-9a-f]{64}
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL DEFAULT 0,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK(high_water_mark_usd >= 0),
+        total_fees_assessed_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK(total_fees_assessed_usd >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_events (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL CHECK(length(execution_id) BETWEEN 1 AND 180),
+        realized_net_delta_usd NUMERIC(36,12) NOT NULL,
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL,
+        fee_rate NUMERIC(6,5) NOT NULL CHECK(fee_rate=0.05),
+        fee_assessed_usd NUMERIC(36,12) NOT NULL CHECK(fee_assessed_usd >= 0),
+        source_tx_hash TEXT NOT NULL CHECK(source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        FOREIGN KEY(privy_did,asset)
+            REFERENCES mininex_evm_asset_hwm(privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_obligations (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        execution_id TEXT NOT NULL,
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER',
+        settlement_tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_events(privy_did,asset,execution_id),
+        CONSTRAINT mininex_evm_fee_obligations_payment_state_check CHECK (
+            (settlement_status='AWAITING_VERIFIED_TRANSFER'
+             AND settlement_tx_hash IS NULL)
+            OR (settlement_status='PAID_VERIFIED'
+                AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'))
+    )""",
+    """DO $$
+       BEGIN
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_status_check;
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_tx_hash_check;
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname='mininex_evm_fee_obligations_payment_state_check'
+             AND conrelid='mininex_evm_fee_obligations'::regclass
+         ) THEN
+           ALTER TABLE mininex_evm_fee_obligations
+             ADD CONSTRAINT mininex_evm_fee_obligations_payment_state_check
+             CHECK (
+               (settlement_status='AWAITING_VERIFIED_TRANSFER'
+                AND settlement_tx_hash IS NULL)
+               OR (settlement_status='PAID_VERIFIED'
+                   AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'));
+         END IF;
+       END
+       $$""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_verified_fee_payments (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        stable_token_address TEXT NOT NULL CHECK(
+            stable_token_address ~ '^0x[0-9a-f]{40}$'),
+        owner_wallet TEXT NOT NULL CHECK(owner_wallet ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        stable_usd NUMERIC(36,12) NOT NULL CHECK(
+            stable_usd >= 0.95 AND stable_usd <= 1.05),
+        token_amount_atomic NUMERIC(48,0) NOT NULL CHECK(token_amount_atomic > 0),
+        state TEXT NOT NULL DEFAULT 'PREPARED' CHECK(
+            state IN ('PREPARED','PAID_VERIFIED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        prepared_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        paid_at TIMESTAMPTZ,
+        PRIMARY KEY(privy_did,asset,execution_id),
+        UNIQUE(chain_id,tx_hash),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_obligations(privy_did,asset,execution_id),
+        CHECK (
+            (state='PREPARED' AND tx_hash IS NULL AND paid_at IS NULL)
+            OR (state='PAID_VERIFIED' AND tx_hash IS NOT NULL AND paid_at IS NOT NULL))
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        execution_id TEXT NOT NULL,
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK (fee_due_usd > 0),
+        quote_currency TEXT NOT NULL DEFAULT 'USD' CHECK (quote_currency='USD'),
+        destination_network TEXT NOT NULL DEFAULT 'ethereum'
+            CHECK (destination_network='ethereum'),
+        settlement_token TEXT
+            CHECK (settlement_token IN ('USDC','USDT')),
+        status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_LIVE_SETTLEMENT'
+            CHECK (status='AWAITING_VERIFIED_LIVE_SETTLEMENT'),
+        settled_token_amount NUMERIC(36,18),
+        settlement_tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset,execution_id),
+        FOREIGN KEY (privy_did,asset,execution_id)
+            REFERENCES mininex_fee_events(privy_did,asset,execution_id),
+        CHECK (settled_token_amount IS NULL AND settlement_tx_hash IS NULL)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_treasury_obligations_pending
+       ON mininex_treasury_obligations(status,created_at)""",
+    # Existing installations also need an upgrade: CREATE TABLE IF NOT EXISTS
+    # cannot change a previous LONG/SPOT_SHORT check. Each ALTER is atomic.
+    # Keeps all previous sessions/positions/fills/budgets intact.
+    """ALTER TABLE mininex_unified_strategy_profiles
+       DROP CONSTRAINT IF EXISTS mininex_unified_strategy_profiles_mode_check,
+       ADD CONSTRAINT mininex_unified_strategy_profiles_mode_check
+       CHECK (mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_trade_preferences
+       DROP CONSTRAINT IF EXISTS mininex_trade_preferences_mode_check,
+       ADD CONSTRAINT mininex_trade_preferences_mode_check
+       CHECK (mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_user_paper_sessions
+       DROP CONSTRAINT IF EXISTS mininex_user_paper_sessions_strategy_mode_check,
+       ADD CONSTRAINT mininex_user_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS mininex_extra_paper_sessions_strategy_mode_check,
+       ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+
+    """DO $paper_budget_migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+              'mininex_extra_coin_preferences'::regclass,
+              'mininex_extra_paper_sessions'::regclass)
+          AND pg_get_constraintdef(c.oid) LIKE '%5000%'
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $paper_budget_migration$""",
+    """ALTER TABLE mininex_extra_coin_preferences
+       ALTER COLUMN budget_usd TYPE BIGINT""",
+    """DO $migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+            'mininex_live_eth_limits'::regclass,
+            'mininex_live_btc_limits'::regclass,
+            'mininex_live_order_intents'::regclass)
+          AND (
+            pg_get_constraintdef(c.oid) LIKE '%10000000%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_order_usd <=%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_daily_turnover_usd%'
+          )
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $migration$""",
+)
+
+
+def _db_url() -> str:
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        quoted_asset TEXT NOT NULL CHECK(quoted_asset IN
+            ('ETH','BNB','POL','AVAX','USDC','USDT')),
+        block_number BIGINT NOT NULL CHECK(block_number > 0),
+        block_hash TEXT NOT NULL CHECK(block_hash ~ '^0x[0-9a-f]{64}
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL DEFAULT 0,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK(high_water_mark_usd >= 0),
+        total_fees_assessed_usd NUMERIC(36,12) NOT NULL DEFAULT 0
+            CHECK(total_fees_assessed_usd >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_events (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL CHECK(length(execution_id) BETWEEN 1 AND 180),
+        realized_net_delta_usd NUMERIC(36,12) NOT NULL,
+        cumulative_realized_net_usd NUMERIC(36,12) NOT NULL,
+        high_water_mark_usd NUMERIC(36,12) NOT NULL,
+        fee_rate NUMERIC(6,5) NOT NULL CHECK(fee_rate=0.05),
+        fee_assessed_usd NUMERIC(36,12) NOT NULL CHECK(fee_assessed_usd >= 0),
+        source_tx_hash TEXT NOT NULL CHECK(source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        FOREIGN KEY(privy_did,asset)
+            REFERENCES mininex_evm_asset_hwm(privy_did,asset)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_obligations (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        execution_id TEXT NOT NULL,
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER',
+        settlement_tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_events(privy_did,asset,execution_id),
+        CONSTRAINT mininex_evm_fee_obligations_payment_state_check CHECK (
+            (settlement_status='AWAITING_VERIFIED_TRANSFER'
+             AND settlement_tx_hash IS NULL)
+            OR (settlement_status='PAID_VERIFIED'
+                AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'))
+    )""",
+    """DO $$
+       BEGIN
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_status_check;
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_tx_hash_check;
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname='mininex_evm_fee_obligations_payment_state_check'
+             AND conrelid='mininex_evm_fee_obligations'::regclass
+         ) THEN
+           ALTER TABLE mininex_evm_fee_obligations
+             ADD CONSTRAINT mininex_evm_fee_obligations_payment_state_check
+             CHECK (
+               (settlement_status='AWAITING_VERIFIED_TRANSFER'
+                AND settlement_tx_hash IS NULL)
+               OR (settlement_status='PAID_VERIFIED'
+                   AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'));
+         END IF;
+       END
+       $$""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_verified_fee_payments (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        stable_token_address TEXT NOT NULL CHECK(
+            stable_token_address ~ '^0x[0-9a-f]{40}$'),
+        owner_wallet TEXT NOT NULL CHECK(owner_wallet ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        stable_usd NUMERIC(36,12) NOT NULL CHECK(
+            stable_usd >= 0.95 AND stable_usd <= 1.05),
+        token_amount_atomic NUMERIC(48,0) NOT NULL CHECK(token_amount_atomic > 0),
+        state TEXT NOT NULL DEFAULT 'PREPARED' CHECK(
+            state IN ('PREPARED','PAID_VERIFIED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        prepared_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        paid_at TIMESTAMPTZ,
+        PRIMARY KEY(privy_did,asset,execution_id),
+        UNIQUE(chain_id,tx_hash),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_obligations(privy_did,asset,execution_id),
+        CHECK (
+            (state='PREPARED' AND tx_hash IS NULL AND paid_at IS NULL)
+            OR (state='PAID_VERIFIED' AND tx_hash IS NOT NULL AND paid_at IS NOT NULL))
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
+        execution_id TEXT NOT NULL,
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK (fee_due_usd > 0),
+        quote_currency TEXT NOT NULL DEFAULT 'USD' CHECK (quote_currency='USD'),
+        destination_network TEXT NOT NULL DEFAULT 'ethereum'
+            CHECK (destination_network='ethereum'),
+        settlement_token TEXT
+            CHECK (settlement_token IN ('USDC','USDT')),
+        status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_LIVE_SETTLEMENT'
+            CHECK (status='AWAITING_VERIFIED_LIVE_SETTLEMENT'),
+        settled_token_amount NUMERIC(36,18),
+        settlement_tx_hash TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (privy_did,asset,execution_id),
+        FOREIGN KEY (privy_did,asset,execution_id)
+            REFERENCES mininex_fee_events(privy_did,asset,execution_id),
+        CHECK (settled_token_amount IS NULL AND settlement_tx_hash IS NULL)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_treasury_obligations_pending
+       ON mininex_treasury_obligations(status,created_at)""",
+    # Existing installations also need an upgrade: CREATE TABLE IF NOT EXISTS
+    # cannot change a previous LONG/SPOT_SHORT check. Each ALTER is atomic.
+    # Keeps all previous sessions/positions/fills/budgets intact.
+    """ALTER TABLE mininex_unified_strategy_profiles
+       DROP CONSTRAINT IF EXISTS mininex_unified_strategy_profiles_mode_check,
+       ADD CONSTRAINT mininex_unified_strategy_profiles_mode_check
+       CHECK (mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_trade_preferences
+       DROP CONSTRAINT IF EXISTS mininex_trade_preferences_mode_check,
+       ADD CONSTRAINT mininex_trade_preferences_mode_check
+       CHECK (mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_user_paper_sessions
+       DROP CONSTRAINT IF EXISTS mininex_user_paper_sessions_strategy_mode_check,
+       ADD CONSTRAINT mininex_user_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS mininex_extra_paper_sessions_strategy_mode_check,
+       ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+
+    """DO $paper_budget_migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+              'mininex_extra_coin_preferences'::regclass,
+              'mininex_extra_paper_sessions'::regclass)
+          AND pg_get_constraintdef(c.oid) LIKE '%5000%'
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $paper_budget_migration$""",
+    """ALTER TABLE mininex_extra_coin_preferences
+       ALTER COLUMN budget_usd TYPE BIGINT""",
+    """DO $migration$
+    DECLARE item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT c.conname, c.conrelid::regclass AS table_name
+        FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN (
+            'mininex_live_eth_limits'::regclass,
+            'mininex_live_btc_limits'::regclass,
+            'mininex_live_order_intents'::regclass)
+          AND (
+            pg_get_constraintdef(c.oid) LIKE '%10000000%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_order_usd <=%'
+            OR pg_get_constraintdef(c.oid) LIKE '%max_daily_turnover_usd%'
+          )
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I',
+                       item.table_name,item.conname);
+      END LOOP;
+    END $migration$""",
+)
+
+
+def _db_url() -> str:
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        block_unix BIGINT NOT NULL CHECK(block_unix > 0),
+        observed_unix BIGINT NOT NULL CHECK(observed_unix > 0),
+        usd_price NUMERIC(36,18) NOT NULL CHECK(usd_price > 0),
+        provider TEXT NOT NULL CHECK(provider='COINGECKO_MARKET_CHART_RANGE'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,tx_hash,quoted_asset),
+        FOREIGN KEY(chain_id,tx_hash)
+            REFERENCES mininex_live_evm_verified_fills(chain_id,tx_hash)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_asset_hwm (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
