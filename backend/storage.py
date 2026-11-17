@@ -670,15 +670,41 @@ SCHEMA = (
         asset TEXT NOT NULL,
         execution_id TEXT NOT NULL,
         fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
-        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER'
-            CHECK(settlement_status='AWAITING_VERIFIED_TRANSFER'),
+        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER',
         settlement_tx_hash TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY(privy_did,asset,execution_id),
         FOREIGN KEY(privy_did,asset,execution_id)
             REFERENCES mininex_evm_fee_events(privy_did,asset,execution_id),
-        CHECK(settlement_tx_hash IS NULL)
+        CONSTRAINT mininex_evm_fee_obligations_payment_state_check CHECK (
+            (settlement_status='AWAITING_VERIFIED_TRANSFER'
+             AND settlement_tx_hash IS NULL)
+            OR (settlement_status='PAID_VERIFIED'
+                AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'))
     )""",
+    """DO $$
+       BEGIN
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_status_check;
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_tx_hash_check;
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname='mininex_evm_fee_obligations_payment_state_check'
+             AND conrelid='mininex_evm_fee_obligations'::regclass
+         ) THEN
+           ALTER TABLE mininex_evm_fee_obligations
+             ADD CONSTRAINT mininex_evm_fee_obligations_payment_state_check
+             CHECK (
+               (settlement_status='AWAITING_VERIFIED_TRANSFER'
+                AND settlement_tx_hash IS NULL)
+               OR (settlement_status='PAID_VERIFIED'
+                   AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'));
+         END IF;
+       END
+       $$""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_verified_fee_payments (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
