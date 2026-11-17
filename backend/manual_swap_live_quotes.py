@@ -21,8 +21,7 @@ from .live_eth_quotes import STABLES
 from .manual_swap_routes import ALL_SWAP_ASSETS, _asset_network, build_manual_swap_route
 
 # Addresses, chains and decimals are fixed server-side, never user-supplied.
-# Token pool availability is verified at quote time: ADA and UNI MAY be
-# missing from protocol liquidity even though they are listed in its code.
+# Token pool availability is verified at quote time.
 THOR_ASSETS = {
     "BTC": ("BTC.BTC", 8),
     "ETH": ("ETH.ETH", 18),
@@ -35,7 +34,7 @@ THOR_ASSETS = {
     "LINK": ("ETH.LINK-0X514910771AF9CA656AF840DFF83E8264ECF986CA", 18),
     "DOGE": ("DOGE.DOGE", 8),
     "UNI": ("ETH.UNI-0X1F9840A85D5AF5BF1D1762F925BDADDC4201F984", 18),
-    "ADA": ("ADA.ADA", 6),
+    "ARB": ("ARB.ARB", 18),  # Arbitrum – pool availability checked at quote time
     "USDC": ("ETH.USDC-" + STABLES["USDC"].upper(), 6),
     "USDT": ("ETH.USDT-" + STABLES["USDT"].upper(), 6),
 }
