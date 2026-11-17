@@ -578,6 +578,28 @@ SCHEMA = (
         FOREIGN KEY(privy_did,asset,intent_key)
             REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_native_auto_steps (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
+        intent_key TEXT NOT NULL CHECK(intent_key ~ '^[A-Za-z0-9_-]{8,96}$'),
+        operation TEXT NOT NULL CHECK(operation IN ('DEPOSIT','WITHDRAW')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        amount_wei NUMERIC(48,0) NOT NULL CHECK(amount_wei > 0),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL DEFAULT 'SENDING' CHECK(status IN
+           ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+            'FINALIZED_SUCCESS','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key,operation),
+        UNIQUE(chain_id,tx_hash),
+        FOREIGN KEY(privy_did,asset,intent_key)
+            REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_completed_native_cycles (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
