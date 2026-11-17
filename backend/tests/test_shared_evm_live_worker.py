@@ -34,6 +34,7 @@ def evidence(asset,side,source="2500",allowance="3000",destination="0"):
         "source_token_address":pair["source_token"],
         "destination_token_address":pair["output_token"],
         "destination_balance":destination if side=="BUY" else None,
+        "native_gas_balance_atomic":"0",
         "source_balance":source,"router_allowance":allowance,
         "wallet_address":"0x"+"ab"*20,
         "wallet_identity_verified":True,
@@ -147,15 +148,15 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
-def test_native_evm_never_leaves_wrapped_asset_without_conversion(monkeypatch,asset):
-    actions=use_tick_mocks(monkeypatch,asset=asset)
+def test_native_evm_sell_never_uses_unwrapped_native_without_deposit(monkeypatch,asset):
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def tick():
         async with httpx.AsyncClient() as client:
             return await worker.execute_owner_evm_live_tick(
                 session(asset),market=object(),client=client,now=10000)
     result=asyncio.run(tick())
     assert result["state"]=="WAIT"
-    assert result["reason"]=="NATIVE_CONVERSION_EXECUTION_NOT_CONNECTED"
+    assert result["reason"]=="NATIVE_SELL_DEPOSIT_NOT_CONNECTED"
     assert actions==["verified_market"]
 
 
