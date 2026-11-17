@@ -226,6 +226,33 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_evm_budget_reserved_by_owner
        ON mininex_live_evm_budget_reservations(privy_did,asset,state)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_consent_challenges (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        session_sha256 TEXT NOT NULL CHECK(session_sha256 ~ '^[0-9a-f]{64}$'),
+        wallet_id TEXT NOT NULL CHECK(wallet_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        budget_usd NUMERIC(36,6) NOT NULL CHECK(budget_usd > 0),
+        permission_revision BIGINT NOT NULL CHECK(permission_revision >= 0),
+        message_text TEXT NOT NULL CHECK(length(message_text) BETWEEN 120 AND 3500),
+        message_sha256 TEXT NOT NULL CHECK(message_sha256 ~ '^[0-9a-f]{64}$'),
+        issued_at TIMESTAMPTZ NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING'
+            CHECK(status IN ('PENDING','SIGNED_INTENT','REVOKED')),
+        confirmed_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        PRIMARY KEY(privy_did,asset),
+        CHECK(expires_at>issued_at AND expires_at<=issued_at+interval '5 minutes'),
+        CHECK(
+            (asset='BNB' AND chain_id=56 AND stable='USDT') OR
+            (asset='POL' AND chain_id=137 AND stable='USDC') OR
+            (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
+            (asset IN ('LINK','UNI') AND chain_id=1))
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_owner_permissions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
