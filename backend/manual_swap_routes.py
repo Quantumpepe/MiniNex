@@ -55,8 +55,7 @@ def build_manual_swap_route(source: str, target: str) -> dict:
         and len({source, target}) == 2
     )
     # Every pair can request a real live market quote through the public
-    # provider. A quote exists ONLY when actual liquidity is available;
-    # in particular ADA and UNI may have no active THORChain pool.
+    # provider. A quote exists ONLY when actual liquidity is available.
     # This NEVER means an executable route or wallet signer is present.
     quote_asset = "ETH" if eth_stable_pair else (
         "BTC" if btc_stable_pair else "MULTICHAIN")
@@ -68,8 +67,8 @@ def build_manual_swap_route(source: str, target: str) -> dict:
     required = list(_NO_EXECUTION)
     if not same_network:
         required.append("cross_chain_finality_and_refund_path")
-    if incoming["kind"] in {"xrpl", "tron", "cardano-eutxo"} or outgoing["kind"] in {
-            "xrpl", "tron", "cardano-eutxo"}:
+    if incoming["kind"] in {"xrpl", "tron"} or outgoing["kind"] in {
+            "xrpl", "tron"}:
         required.append("native_wallet_signer_and_token_issuer_validation")
     return {
         "mode": "MANUAL_SWAP_ROUTE_DISCOVERY_ONLY",
