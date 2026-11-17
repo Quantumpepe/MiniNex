@@ -196,11 +196,25 @@ def _claim_native_sell_locked(
     for table in ("mininex_live_evm_auto_broadcasts",
                   "mininex_live_evm_native_auto_steps",
                   "mininex_live_evm_native_sell_intents"):
-        cur.execute(
-            f"""SELECT COUNT(*) AS pending FROM {table}
-                WHERE privy_did=%s AND chain_id=%s AND status IN
-                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-            (did,pair["chain_id"]))
+        if table=="mininex_live_evm_auto_broadcasts":
+            # Shared nonce across native trading and Treasury fee transfers.
+            cur.execute(
+                """SELECT COUNT(*) AS pending FROM (
+                     SELECT 1 FROM mininex_live_evm_auto_broadcasts
+                      WHERE privy_did=%s AND chain_id=%s AND status IN
+                       ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     UNION ALL
+                     SELECT 1 FROM mininex_evm_auto_fee_sends
+                      WHERE privy_did=%s AND chain_id=%s AND status IN
+                       ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                   ) AS shared_wallet_nonce""",
+                (did,pair["chain_id"],did,pair["chain_id"]))
+        else:
+            cur.execute(
+                f"""SELECT COUNT(*) AS pending FROM {table}
+                    WHERE privy_did=%s AND chain_id=%s AND status IN
+                      ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+                (did,pair["chain_id"]))
         row=cur.fetchone()
         if type(row) is not dict or row.get("pending")!=0:
             raise HTTPException(409,"Another wallet network transaction unresolved")
