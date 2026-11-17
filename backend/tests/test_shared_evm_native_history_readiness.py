@@ -147,7 +147,7 @@ def test_original_native_unverified_history_fails_before_wallet_audit(
 
 
 @pytest.mark.parametrize("tamper",[
-    lambda a:a.update(verified_native_conversion_count=1),
+    lambda a:a.update(verified_native_conversion_count=3),
     lambda a:a.update(complete_wallet_lifetime_and_cost_basis_proven=True),
     lambda a:a.update(eligible_to_assess_five_percent_fee=True),
     lambda a:a.update(wallet_address="0x"+"cc"*20),
@@ -171,10 +171,9 @@ def test_native_readiness_never_accepts_fee_eligible_or_fake_interval(
         async with httpx.AsyncClient() as client:
             return await reader.read_owner_native_value_history_readiness(
                 did="did:privy:owner_123",asset="POL",client=client)
-    if tamper.__code__.co_consts and True:
-        # Every deliberately forged key/claim must be rejected.
-        with pytest.raises(ValueError):
-            asyncio.run(run())
+    # Every deliberately forged key/claim must be rejected.
+    with pytest.raises(ValueError):
+        asyncio.run(run())
 
 
 def test_no_native_orders_never_proves_empty_wallet_hwm(monkeypatch):
