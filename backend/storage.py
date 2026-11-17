@@ -578,6 +578,28 @@ SCHEMA = (
         FOREIGN KEY(privy_did,asset,intent_key)
             REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_native_sell_intents (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
+        intent_key TEXT NOT NULL CHECK(intent_key ~ '^[A-Za-z0-9_-]{8,96}$'),
+        strategy_run_id TEXT NOT NULL CHECK(length(strategy_run_id) BETWEEN 8 AND 128),
+        signal_event_id TEXT NOT NULL CHECK(length(signal_event_id) BETWEEN 8 AND 128),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        amount_wei NUMERIC(48,0) NOT NULL CHECK(amount_wei > 0),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL DEFAULT 'SENDING' CHECK(status IN
+          ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+           'FINALIZED_SUCCESS','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        UNIQUE(chain_id,tx_hash)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_native_auto_steps (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
