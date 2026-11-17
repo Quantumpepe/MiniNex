@@ -27,18 +27,22 @@ _ZERO = _D("0")
 _RESERVE = _D("0.000000000000000001")
 
 
-def verified_live_eth_momentum(market, *, now: float) -> dict:
+def verified_live_evm_momentum(market, *, asset: str, now: float) -> dict:
     """Momentum/trailing signal from actual fresh external prices, never PAPER."""
     if type(now) not in (int,float) or not math.isfinite(now) or now<=0:
         raise ValueError("Invalid market timestamp")
-    feed=market.snapshot(now=now)["markets"]["ETH"]
+    if type(asset) is not str or asset not in (
+            "ETH","BNB","POL","AVAX","LINK","UNI"):
+        raise ValueError("Unsupported verified EVM live market")
+    snapshot=market.snapshot(now=now)
+    feed=(snapshot["markets"] if "markets" in snapshot else snapshot)[asset]
     price=feed.get("price_usdt")
     if (feed.get("market_data_valid") is not True
             or type(price) not in (int,float)
             or not math.isfinite(price) or price<=0):
         return {"action":"WAIT","reason":"LIVE_MARKET_DATA_UNVERIFIED"}
     points=[]
-    for entry in market.history("ETH",limit=3600):
+    for entry in market.history(asset,limit=3600):
         try:
             t=float(entry["timestamp"]);v=float(entry["price_usdt"])
         except (ValueError,TypeError,KeyError,OverflowError):
@@ -68,6 +72,11 @@ def verified_live_eth_momentum(market, *, now: float) -> dict:
                 "market_price":str(price),
                 "m60":m60,"m180":m180}
     return {"action":"WAIT","reason":"LIVE_NO_TRADE_SIGNAL"}
+
+
+def verified_live_eth_momentum(market, *, now: float) -> dict:
+    """Preserve the ETH API and use the identical EVM strategy signal logic."""
+    return verified_live_evm_momentum(market,asset="ETH",now=now)
 
 
 def _positive_decimal(value,what):
