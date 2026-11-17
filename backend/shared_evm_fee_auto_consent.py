@@ -203,7 +203,7 @@ async def begin_owner_fee_auto_consent(
     asset=_asset(asset)
     user=await fetch_privy_user(did)
     owned=_owned_eth_wallet(user,did)
-    owner,signer=_require_policy_roles()
+    owner,signer=_require_policy_roles(asset)
     db=_db_url();_ensure_schema(db)
     stable=None
     with psycopg.connect(db,connect_timeout=6) as conn:
