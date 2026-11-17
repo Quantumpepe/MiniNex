@@ -51,6 +51,7 @@ from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 from .shared_evm_swap_receipts import check_user_evm_swap
 from .shared_evm_fill_history import get_owner_evm_fill_history
+from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_allowance import check_evm_source_allowance
 from .shared_evm_swap_preparation import prepare_owner_evm_swap
@@ -631,6 +632,20 @@ def owner_evm_fifo_preview(
     """Read-only verified FIFO gross cost basis; never net USD or a fee charge."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(read_evm_fifo_gross_preview(did,asset),
+        headers={"Cache-Control":"private, no-store",
+                 "X-Content-Type-Options":"nosniff"})
+
+
+@app.get("/api/live/evm/order-status/{asset}")
+def owner_evm_order_status(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    limit: int = 20,
+    authorization: str | None = Header(default=None),
+):
+    """Only the authenticated Privy owner's durable per-coin order states."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        get_owner_live_evm_order_status(did,asset=asset,limit=limit),
         headers={"Cache-Control":"private, no-store",
                  "X-Content-Type-Options":"nosniff"})
 
