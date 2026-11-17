@@ -107,7 +107,10 @@ def use_tick_mocks(monkeypatch,asset="LINK",action="BUY"):
         return evidence(asset,kw["side"],source="5000",allowance="5000")
     async def price(asset,stable):
         actions.append("usd_prices")
-        return rates(asset,stable)
+        snapshot=rates(asset,stable)
+        for record in snapshot.values():
+            record["last_updated_at"]=10000
+        return snapshot
     async def execute(**kw):
         actions.append(("original_single_execution",kw["amount"]))
         assert kw["asset"]==asset
