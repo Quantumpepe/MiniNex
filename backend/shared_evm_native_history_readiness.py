@@ -124,7 +124,17 @@ async def read_owner_native_value_history_readiness(
             or audit.get("verified_native_conversion_count")!=len(mined)
             or type(audit.get("unexpected_native_value_movements")) is not list
             or audit.get("complete_wallet_lifetime_and_cost_basis_proven") is not False
-            or audit.get("eligible_to_assess_five_percent_fee") is not False):
+            or audit.get("eligible_to_assess_five_percent_fee") is not False
+            or audit.get("observed_interval_native_balance_conserved") is not True
+            or type(audit.get("original_gas_balance_conservation")) is not dict
+            or audit["original_gas_balance_conservation"].get(
+                "mode")!="ARCHIVED_NATIVE_WALLET_BALANCE_GAS_CONSERVATION_ONLY"
+            or audit["original_gas_balance_conservation"].get(
+                "wallet_address")!=wallet
+            or audit["original_gas_balance_conservation"].get(
+                "observed_interval_native_balance_conserved") is not True
+            or audit["original_gas_balance_conservation"].get(
+                "five_percent_hwm_writable") is not False):
         raise ValueError("Original complete interval native audit missing")
     return {
         "mode":"OWNER_NATIVE_VALUE_HISTORY_READ_ONLY",
@@ -136,6 +146,9 @@ async def read_owner_native_value_history_readiness(
         "observed_interval_end_block":audit["end_block"],
         "external_value_free_within_observed_interval":
             audit["external_native_value_free_interval"],
+        "observed_interval_native_balance_conserved":True,
+        "observed_interval_wallet_sender_gas_wei":
+            audit["original_gas_balance_conservation"]["total_verified_sender_gas_wei"],
         "unaccounted_native_transfers":
             audit["unexpected_native_value_movements"],
         "full_owner_wallet_cost_basis_proven":False,
