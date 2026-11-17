@@ -14,7 +14,7 @@ WHEN=datetime(2026,11,17,12,0,tzinfo=timezone.utc)
 CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
 
 
-def row(asset,stage="SUBMITTED",stable=None,side="BUY",native=False,fee=False):
+def row(asset,stage="SUBMITTED",stable=None,side="BUY",native=False,fee=False,paid=False):
     return {
         "asset":asset,"chain_id":CHAIN[asset],
         "intent_key":"sig_abcdef01234567890123456789",
@@ -24,6 +24,7 @@ def row(asset,stage="SUBMITTED",stable=None,side="BUY",native=False,fee=False):
         "tx_hash":TX if stage not in ("SENDING","RECONCILIATION_REQUIRED") else None,
         "created_at":WHEN,"updated_at":WHEN,
         "native_cycle_verified":native,"hwm_fee_recorded":fee,
+        "fee_payment_verified":paid,
     }
 
 
@@ -136,3 +137,20 @@ def test_unproved_or_invalid_completion_flags_are_rejected(alter):
     alter(actual)
     with pytest.raises(ValueError):
         status._verified_order_row(actual,"AVAX")
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+def test_only_verified_owner_payment_recognized_in_real_order_history(asset):
+    result=status._verified_order_row(row(
+        asset,stage="FINALIZED_SUCCESS",side="SELL",
+        fee=True,paid=True,native=asset in ("BNB","POL","AVAX")),asset)
+    assert result["five_percent_hwm_accounting_recorded"] is True
+    assert result["fee_transferred"] is True
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+def test_unassessed_or_fake_fee_payment_rejected(asset):
+    with pytest.raises(ValueError):
+        status._verified_order_row(row(
+            asset,stage="FINALIZED_SUCCESS",side="SELL",
+            fee=False,paid=True),asset)
