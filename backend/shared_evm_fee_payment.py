@@ -37,7 +37,8 @@ _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 def _valid_fee_source_locked(cur,*,did:str,asset:str,key:str,wallet:str)->dict:
     """Source is an actual assessed SELL, not a client price or PAPER fill."""
     cur.execute(
-        """SELECT o.fee_due_usd,e.fee_assessed_usd,e.source_tx_hash,
+        """SELECT o.fee_due_usd,o.settlement_status,o.settlement_tx_hash,
+                  e.fee_assessed_usd,e.source_tx_hash,
                   b.status,b.side,b.stable,b.chain_id,b.wallet_address,
                   b.tx_hash
            FROM mininex_evm_fee_obligations o
@@ -106,6 +107,8 @@ def _prepare_locked(
         result["tx_hash"]=old["tx_hash"]
         result["paid_onchain"]=old["state"]=="PAID_VERIFIED"
         return result
+    if source.get("settlement_status")!="AWAITING_VERIFIED_TRANSFER":
+        raise HTTPException(409,"This performance fee is already settled")
     draft=owner_fee_transfer_draft(
         asset=asset,stable=source["stable"],wallet=wallet,
         treasury=treasury,fee_due_usd=source["fee_due_usd"],stable_usd=rate)
@@ -195,11 +198,15 @@ def _paid_locked(cur,*,did:str,asset:str,key:str,
             or proof.get("amount_atomic")!=draft["amount_atomic"]):
         raise HTTPException(409,"Fee payment must match original owner transaction")
     if row["state"]=="PAID_VERIFIED":
-        if row["tx_hash"]!=tx_hash:
+        if (row["tx_hash"]!=tx_hash
+                or source.get("settlement_status")!="PAID_VERIFIED"
+                or source.get("settlement_tx_hash")!=tx_hash):
             raise HTTPException(409,"Fee has already been paid by another transaction")
         return {"state":"PAID_VERIFIED","duplicate":True,
                 "asset":asset,"execution_id":key,"tx_hash":tx_hash}
-    if row["state"]!="PREPARED":
+    if (row["state"]!="PREPARED"
+            or source.get("settlement_status")!="AWAITING_VERIFIED_TRANSFER"
+            or source.get("settlement_tx_hash") is not None):
         raise HTTPException(409,"Fee payment is not awaiting proof")
     cur.execute(
         """UPDATE mininex_evm_verified_fee_payments
@@ -210,6 +217,19 @@ def _paid_locked(cur,*,did:str,asset:str,key:str,
     changed=cur.fetchone()
     if type(changed) is not dict or changed.get("state")!="PAID_VERIFIED":
         raise HTTPException(409,"Concurrent fee payment state conflict")
+    # Same SQL transaction as the immutable receipt insert: an obligation
+    # cannot remain 'unpaid' after verified payment or vice versa.
+    cur.execute(
+        """UPDATE mininex_evm_fee_obligations
+           SET settlement_status='PAID_VERIFIED',settlement_tx_hash=%s
+           WHERE privy_did=%s AND asset=%s AND execution_id=%s
+             AND settlement_status='AWAITING_VERIFIED_TRANSFER'
+             AND settlement_tx_hash IS NULL RETURNING settlement_status""",
+        (tx_hash,did,asset,key))
+    obligation=cur.fetchone()
+    if (type(obligation) is not dict
+            or obligation.get("settlement_status")!="PAID_VERIFIED"):
+        raise HTTPException(409,"Real payment and HWM debt not atomic")
     return {"state":"PAID_VERIFIED","duplicate":False,
             "asset":asset,"execution_id":key,"tx_hash":tx_hash,
             "fee_paid_onchain":True}
@@ -275,8 +295,9 @@ def get_owner_verified_evm_fee(
         with psycopg.connect(db,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
-                    """SELECT o.fee_due_usd,p.state,p.tx_hash,
-                              p.stable,p.token_amount_atomic
+                    """SELECT o.fee_due_usd,o.settlement_status,
+                              o.settlement_tx_hash,
+                              p.state,p.tx_hash,p.stable,p.token_amount_atomic
                        FROM mininex_evm_fee_obligations o
                        LEFT JOIN mininex_evm_verified_fee_payments p
                          ON p.privy_did=o.privy_did AND p.asset=o.asset
@@ -289,6 +310,11 @@ def get_owner_verified_evm_fee(
     if row is None:
         return {"asset":asset,"execution_id":key,"fee_exists":False,
                 "paid_onchain":False}
+    if ((row["settlement_status"]=="PAID_VERIFIED")
+            !=(row["state"]=="PAID_VERIFIED")
+            or (row["settlement_status"]=="PAID_VERIFIED"
+                and row["settlement_tx_hash"]!=row["tx_hash"])):
+        raise HTTPException(503,"Fee payment and obligation disagree")
     return {
         "asset":asset,"execution_id":key,"fee_exists":True,
         "fee_due_usd":str(row["fee_due_usd"]),
