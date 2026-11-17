@@ -10,7 +10,11 @@ from backend import shared_evm_strategy_execution as run
 from backend.shared_evm_coin_budget_reserve import _cancel_unsubmitted_locked
 
 DID="did:privy:owner"
-KEY="sig_abcdef01234567890123456789"
+RUN="owner_session_20261117_01"
+EVENT="market_event_00000001"
+KEY=run.derive_evm_strategy_signal_key(
+    did=DID,asset="LINK",side="BUY",stable="USDC",
+    strategy_run_id=RUN,signal_event_id=EVENT)
 SHA="a"*64
 ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
         "LINK":"USDC","UNI":"USDC"}
@@ -30,7 +34,9 @@ def use_mocks(monkeypatch,*,asset="LINK",fail=False):
         actions.append("reserve")
         assert kw["quote_sha256"]==SHA
         assert kw["asset"]==asset
-        assert kw["intent_key"]==KEY
+        assert kw["intent_key"]==run.derive_evm_strategy_signal_key(
+            did=DID,asset=asset,side="BUY",stable=ASSETS[asset],
+            strategy_run_id=RUN,signal_event_id=EVENT)
         return {"state":"RESERVED"}
     async def send(**kw):
         actions.append("privy_send")
@@ -53,8 +59,8 @@ def use_mocks(monkeypatch,*,asset="LINK",fail=False):
 async def execute(asset):
     async with httpx.AsyncClient() as client:
         return await run.execute_internal_evm_strategy_signal(
-            did=DID,asset=asset,intent_key=KEY,
-            side="BUY",stable=ASSETS[asset],
+            did=DID,asset=asset,strategy_run_id=RUN,
+            signal_event_id=EVENT,side="BUY",stable=ASSETS[asset],
             amount="10",amount_usd="100",
             budget_revision=3,client=client)
 
@@ -147,3 +153,37 @@ def test_coordinator_is_not_exposed_as_user_api_or_automatic_scheduler():
     assert "onchain_quote" not in src  # no mocked price shortcut
     assert "submit_internal_privy_evm_order" in src
     assert "reserve_internal_evm_coin_budget" in src
+
+
+def test_original_signal_identity_stable_across_trade_terms():
+    args=dict(did=DID,asset="LINK",strategy_run_id=RUN,signal_event_id=EVENT)
+    buy=run.derive_evm_strategy_signal_key(**args,side="BUY",stable="USDC")
+    sell=run.derive_evm_strategy_signal_key(**args,side="SELL",stable="USDT")
+    assert buy==sell
+    assert buy.startswith("sig_")
+    assert run.derive_evm_strategy_signal_key(
+        **{**args,"signal_event_id":"market_event_00000002"},
+        side="BUY",stable="USDC")!=buy
+    assert run.derive_evm_strategy_signal_key(
+        **{**args,"asset":"UNI"},
+        side="BUY",stable="USDC")!=buy
+
+
+@pytest.mark.parametrize("run_id,event_id",[
+    ("short","market_event_00000001"),
+    ("owner_session_20261117_01","short"),
+    ("bad event containing spaces","market_event_00000001"),
+    ("owner_session_20261117_01","!invalid!"),
+])
+def test_invalid_strategy_provenance_refused_before_quote(monkeypatch,run_id,event_id):
+    actions=use_mocks(monkeypatch)
+    async def attempt():
+        async with httpx.AsyncClient() as client:
+            return await run.execute_internal_evm_strategy_signal(
+                did=DID,asset="LINK",strategy_run_id=run_id,
+                signal_event_id=event_id,side="BUY",stable="USDC",
+                amount="10",amount_usd="100",budget_revision=3,
+                client=client)
+    with pytest.raises(ValueError):
+        asyncio.run(attempt())
+    assert actions==[]
