@@ -18,7 +18,7 @@ from .shared_evm_owner_consent import _asset
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet
 from .eth_privy_user_grant import _fetch_policy
-from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .shared_evm_fee_policy_roles import check_privy_fee_backend_quorum as check_privy_backend_quorum
 from .storage import _safe_did
 
 
