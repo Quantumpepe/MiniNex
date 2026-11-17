@@ -43,6 +43,7 @@ def verified_evm_swap_block_evidence(
             or proof.get("network") != route["network"]
             or type(proof.get("wallet_address")) is not str
             or not _ADDR.fullmatch(proof["wallet_address"])
+            or receipt.get("from", "").lower() != proof["wallet_address"]
             or receipt.get("transactionHash", "").lower() != tx_hash
             or receipt.get("blockHash", "").lower() != block.get("hash", "").lower()):
         raise ValueError("Original user-owned finalized receipt differs")
