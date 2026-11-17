@@ -76,7 +76,8 @@ def _parse_wallet_transfer(log: object, *,token: str, wallet: str,
             or (direction == "IN" and receiver != wallet)
             or (direction == "OUT" and sender != wallet)):
         raise ValueError("External or self token event cannot be ignored")
-    return log["transactionHash"].lower(), index, direction, units
+    return (log["transactionHash"].lower(), index, direction, units,
+            height, log["blockHash"].lower(), tx_index)
 
 
 def validate_owner_token_transfer_audit(
@@ -116,9 +117,14 @@ def validate_owner_token_transfer_audit(
             fill.get("destination_amount") if side == "BUY"
             else fill.get("source_amount"))
         ident = (fill["tx_hash"], direction, amount)
+        block_hash = fill.get("block_hash")
+        tx_index = fill.get("transaction_index")
+        if (type(block_hash) is not str or not _HASH.fullmatch(block_hash)
+                or type(tx_index) is not int or tx_index<0):
+            raise ValueError("Original finalized block identity missing")
         if ident in expected:
             raise ValueError("Duplicate original trade transfer identity")
-        expected[ident] = True
+        expected[ident] = (fill["block_number"],block_hash,tx_index)
         running += amount if direction == "IN" else -amount
         if running < 0:
             raise ValueError("Nonexistent owner inventory cannot be sold")
@@ -128,7 +134,7 @@ def validate_owner_token_transfer_audit(
     log_positions = set()
     for direction, logs in (("IN", incoming), ("OUT", outgoing)):
         for log in logs:
-            tx, idx, actual_dir, amount = _parse_wallet_transfer(
+            tx, idx, actual_dir, amount, block, hash_, tx_index = _parse_wallet_transfer(
                 log, token=token, wallet=wallet,
                 direction=direction, first=start_block, last=end_block)
             position = (tx, idx)
@@ -136,7 +142,8 @@ def validate_owner_token_transfer_audit(
                 raise ValueError("Repeated or self-directed ERC20 event")
             log_positions.add(position)
             ident = (tx,actual_dir,amount)
-            if ident not in expected or ident in found:
+            if (ident not in expected or ident in found
+                    or expected[ident] != (block,hash_,tx_index)):
                 raise ValueError("Unaccounted external token transfer")
             found.add(ident)
     if set(expected) != found:
