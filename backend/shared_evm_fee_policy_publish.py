@@ -22,7 +22,7 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .eth_privy_policy_transport import _auth
-from .eth_user_consent import _require_policy_roles
+from .shared_evm_fee_policy_roles import require_fee_policy_roles as _require_policy_roles
 from .privy_wallet_verification import APP_ID,fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet
 from .shared_evm_owner_consent import _asset
