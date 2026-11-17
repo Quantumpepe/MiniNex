@@ -208,6 +208,22 @@ def _claim_authorized_evm_order_locked(
             or reserved.get("budget_revision")!=budget_revision
             or reserved.get("quote_sha256")!=quote_sha256):
         raise HTTPException(409,"No matching durable per-coin strategy reservation")
+    # No actual send without an independently owner-initiated ACTIVE session.
+    # A paused session can have pending settlements, but never a fresh send.
+    cur.execute(
+        """SELECT status,chain_id,stable,wallet_address,budget_revision,
+                  started_by_owner_at
+           FROM mininex_live_evm_auto_sessions
+           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+    session=cur.fetchone()
+    if (type(session) is not dict
+            or session.get("status")!="ACTIVE"
+            or session.get("chain_id")!=pair["chain_id"]
+            or session.get("stable")!=identity["stable"]
+            or session.get("wallet_address")!=identity["wallet_address"]
+            or session.get("budget_revision")!=budget_revision
+            or session.get("started_by_owner_at") is None):
+        raise HTTPException(409,"Owner has not started this coin's LIVE session")
     # This helper also atomically guards all unresolved same-wallet network
     # transactions, including ETH native conversions for LINK and UNI.
     _claim_locked(cur,did=did,key=key,identity=identity)
