@@ -165,3 +165,79 @@ def test_an_unfinished_previous_native_sell_blocks_another_wrap(monkeypatch,asse
     assert "LEFT JOIN mininex_live_evm_auto_broadcasts" in cur.sql[-1][0]
     assert not any("INSERT INTO mininex_live_evm_native_sell_intents" in q
                    for q,args in cur.sql)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_native_fee_reserve_uses_live_network_gas_quotes(monkeypatch,asset):
+    import asyncio
+    import httpx
+    pair=_pair(asset,ASSETS[asset],"SELL")
+    async def rpc(client,url,method,params,rid):
+        assert url.startswith("https://")
+        if method=="eth_chainId":
+            return hex(pair["chain_id"])
+        if method=="eth_gasPrice":
+            return hex(3000000000)
+        assert method=="eth_estimateGas"
+        assert params[0]["to"].lower()==pair["source_token"].lower()
+        return hex(55000)
+    monkeypatch.setattr(dep,"_rpc",rpc)
+    source={"wallet_identity_verified":True,"asset":asset,
+            "network":pair["network"],"chain_id":pair["chain_id"],
+            "wallet_address":WALLET}
+    async def measure():
+        async with httpx.AsyncClient() as client:
+            return await dep.estimate_native_sell_fee_reserve(
+                asset=asset,stable=ASSETS[asset],
+                source_evidence=source,client=client)
+    assert asyncio.run(measure())==3000000000*(55000*2+350000)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_native_fee_quote_rejects_rpc_wrong_chain(monkeypatch,asset):
+    import asyncio
+    import httpx
+    pair=_pair(asset,ASSETS[asset],"SELL")
+    async def rpc(client,url,method,params,rid):
+        return "0x1"
+    monkeypatch.setattr(dep,"_rpc",rpc)
+    source={"wallet_identity_verified":True,"asset":asset,
+            "network":pair["network"],"chain_id":pair["chain_id"],
+            "wallet_address":WALLET}
+    async def measure():
+        async with httpx.AsyncClient() as client:
+            return await dep.estimate_native_sell_fee_reserve(
+                asset=asset,stable=ASSETS[asset],
+                source_evidence=source,client=client)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(measure())
+    assert err.value.status_code==502
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_prepared_native_deposit_uses_user_policy_cap_not_system_amount(
+    monkeypatch,asset
+):
+    import asyncio
+    import httpx
+    pair=_pair(asset,ASSETS[asset],"SELL")
+    p=record(asset)
+    monkeypatch.setattr(dep,"_read_grant_record",lambda did,asset:p)
+    monkeypatch.setattr(dep,"validate_pinned_evm_policy",
+                        lambda *a,**kw:{"rules":[{}, {}, {"conditions":[]}, {}]})
+    monkeypatch.setattr(dep,"_lte",lambda *a:str(2*10**18))
+    async def gas(**kw):
+        return 10**15
+    monkeypatch.setattr(dep,"estimate_native_sell_fee_reserve",gas)
+    source={"mode":"SHARED_EVM_SOURCE_ALLOWANCE_READ_ONLY",
+            "asset":asset,"side":"SELL","stable":ASSETS[asset],
+            "chain_id":pair["chain_id"],
+            "source_token_address":pair["source_token"],
+            "wallet_identity_verified":True,"wallet_address":WALLET,
+            "native_gas_balance_atomic":str(3*10**18)}
+    async def prepare():
+        async with httpx.AsyncClient() as client:
+            return await dep.prepare_original_native_sell_amount(
+                did=DID,asset=asset,stable=ASSETS[asset],
+                source_evidence=source,client=client)
+    assert asyncio.run(prepare())==2*10**18
