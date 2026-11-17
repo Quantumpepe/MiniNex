@@ -96,6 +96,12 @@ def _trusted_live_session(row:dict)->dict:
         raise ValueError("Untrusted coin LIVE session")
     pair=_pair(row["asset"],row.get("stable"),"BUY")
     started=row.get("started_by_owner_at")
+    try:
+        pending=Decimal(str(row.get("pending_buy_usd")))
+        if not pending.is_finite() or pending<0:
+            raise ValueError("Invalid pending coin allocation")
+    except (ArithmeticError,ValueError,TypeError):
+        raise ValueError("Unverified outstanding coin buy capital") from None
     if (type(started) is not datetime or started.tzinfo is None
             or type(row.get("budget_usd")) is not int
             or row["budget_usd"]<=0
@@ -103,9 +109,7 @@ def _trusted_live_session(row:dict)->dict:
             or row["budget_revision"]<=0
             or row.get("chain_id")!=pair["chain_id"]
             or row.get("mode") not in ("LONG","SPOT_SHORT","AUTO")
-            or row.get("horizon") not in ("5m","15m","1h","24h")
-            or Decimal(str(row.get("pending_buy_usd"))).is_nan()
-            or Decimal(str(row["pending_buy_usd"]))<0):
+            or row.get("horizon") not in ("5m","15m","1h","24h")):
         raise ValueError("Coin LIVE session settings are not verified")
     return row
 
