@@ -18,6 +18,7 @@ from fastapi import HTTPException
 
 from .shared_evm_historical_fill_proof import read_owner_finalized_evm_swap_block
 from .shared_evm_historical_usd import fetch_recent_historical_usd_observation
+from .shared_evm_durable_usd_reference import historical_usd_for_verified_fill
 from .shared_evm_native_cost_provenance import read_original_native_execution_cost
 from .shared_evm_swap_receipts import _pair
 
@@ -77,7 +78,7 @@ def join_owner_persisted_evm_fill(row: object, proof: object) -> dict:
 
 async def independently_price_stored_evm_fill(
     *,did: str, row: dict, client: httpx.AsyncClient,
-    now: int | None = None,
+    now: int | None = None, durable_rates: bool = False,
 ) -> dict:
     """One original DB fill -> mined receipt -> two historical rates.
 
@@ -95,10 +96,18 @@ async def independently_price_stored_evm_fill(
     joined = join_owner_persisted_evm_fill(row, proof)
     block = joined["block_unix"]
     native_asset = row["asset"] if row["asset"] in _NATIVE else "ETH"
-    stable_rate = await fetch_recent_historical_usd_observation(
-        asset=row["stable"],block_unix=block,client=client,now=now)
-    native_rate = await fetch_recent_historical_usd_observation(
-        asset=native_asset,block_unix=block,client=client,now=now)
+    if durable_rates:
+        stable_rate = await historical_usd_for_verified_fill(
+            did=did,proof=joined,quoted_asset=row["stable"],
+            client=client,now=now)
+        native_rate = await historical_usd_for_verified_fill(
+            did=did,proof=joined,quoted_asset=native_asset,
+            client=client,now=now)
+    else:
+        stable_rate = await fetch_recent_historical_usd_observation(
+            asset=row["stable"],block_unix=block,client=client,now=now)
+        native_rate = await fetch_recent_historical_usd_observation(
+            asset=native_asset,block_unix=block,client=client,now=now)
     if (stable_rate.get("execution_block_unix") != block
             or native_rate.get("execution_block_unix") != block
             or stable_rate.get("asset") != row["stable"]
