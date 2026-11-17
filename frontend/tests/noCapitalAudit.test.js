@@ -10,7 +10,7 @@ const all=COINS.map(coin=>coin.symbol);
 
 test('all 12 displayed coins have explicit send capability classification',()=>{
   assert.deepEqual(all,['BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX',
-                        'LINK','DOGE','UNI','ADA']);
+                        'LINK','DOGE','UNI','ARB']);
   assert.deepEqual(SEND_ASSETS.slice(0,12),all);
   for(const asset of all){
     const spec=sendAssetSpec(asset);
