@@ -122,6 +122,7 @@ def verify_original_native_conversion_trace(
     if conversion.get("operation")!=wanted:
         raise ValueError("Wrong conversion direction")
     paths=set()
+    branches={}
     matches=[]
     root=None
     for line in traces:
@@ -146,6 +147,10 @@ def verify_original_native_conversion_trace(
         if position in paths:
             raise ValueError("Repeated trace branch")
         paths.add(position)
+        count=line.get("subtraces")
+        if type(count) is not int or not 0<=count<=512:
+            raise ValueError("Missing original subtrace count")
+        branches[position]=count
         action=line["action"]
         sender=action.get("from")
         receiver=action.get("to")
@@ -154,10 +159,22 @@ def verify_original_native_conversion_trace(
             raise ValueError("Untrusted native trace transfer address")
         sender,receiver=sender.lower(),receiver.lower()
         value=_inthex(action.get("value"))
+        if value and action.get("callType")!="call":
+            raise ValueError("Non-CALL value trace cannot prove ETH movement")
         if position==():
             root=(sender,receiver,value)
         if value and (sender==wallet or receiver==wallet):
             matches.append((position,sender,receiver,value))
+    # Parity trace_transaction reports the expected direct child count in
+    # each trace. Check the complete rooted tree so a truncated RPC response
+    # cannot silently omit a second payment or native change.
+    if () not in paths:
+        raise ValueError("Original root trace is missing")
+    for path,count in branches.items():
+        actual={other[-1] for other in paths
+                if len(other)==len(path)+1 and other[:-1]==path}
+        if actual!=set(range(count)):
+            raise ValueError("Original native RPC trace tree is incomplete")
     if root is None or root[:2]!=(wallet,wrapped):
         raise ValueError("Missing owned original conversion root call")
     expected=((),wallet,wrapped,units) if side=="SELL" else (
