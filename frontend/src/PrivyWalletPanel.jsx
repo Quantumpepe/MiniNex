@@ -8,6 +8,7 @@ import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
+import EvmFeeAutoOwnerConsent from './EvmFeeAutoOwnerConsent.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
 import BtcSendEntry from './BtcSendEntry.jsx';
@@ -481,7 +482,12 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   const renderLiveControls = (asset,stable) => asset==='ETH' ?
     <LiveEthControls compact t={t} user={user} address={address}
       stable={stable} getAccessToken={getAccessToken}
-      enabled={verifiedAccount}/> : null;
+      enabled={verifiedAccount}/> :
+    ['BNB','POL','AVAX','LINK','UNI'].includes(asset) ?
+      <EvmFeeAutoOwnerConsent key={'fee-auto-'+user?.id+'-'+asset}
+        asset={asset} stable={stable} lang={lang}
+        address={address} userId={user?.id}
+        getAccessToken={getAccessToken} enabled={verifiedAccount}/> : null;
 
   const renderSessionControls = asset =>
     <AssetPaperControl asset={asset} t={t} getAccessToken={getAccessToken}
