@@ -25,10 +25,11 @@ _ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI"))
 
 def verified_evm_swap_block_evidence(
     *, proof: object, tx_hash: str, asset: str, stable: str,
-    side: str, receipt: object, block: object,
+    side: str, receipt: object, block: object, finalized: object,
 ) -> dict:
     if (type(proof) is not dict or asset not in _ASSETS
             or type(receipt) is not dict or type(block) is not dict
+            or type(finalized) is not dict
             or type(tx_hash) is not str or not _HASH.fullmatch(tx_hash)):
         raise ValueError("Missing original canonical finalized EVM swap")
     route = _pair(asset, stable, side)
@@ -51,8 +52,10 @@ def verified_evm_swap_block_evidence(
         n = int(receipt["blockNumber"], 16)
         index = int(receipt["transactionIndex"], 16)
         mined = int(block["number"], 16)
+        final_height = int(finalized["number"], 16)
         timestamp = int(block["timestamp"], 16)
-        if (n <= 0 or n != mined or n != proof.get("block_number")
+        if (n <= 0 or n != mined or n > final_height
+                or n != proof.get("block_number")
                 or index < 0 or index > 100000
                 or timestamp <= 0
                 or not _HASH.fullmatch(block["hash"].lower())
@@ -122,8 +125,10 @@ async def read_owner_finalized_evm_swap_block(
             block = await _receipt_rpc(
                 client, url, "eth_getBlockByNumber",
                 [receipt["blockNumber"], False], 53)
+            finalized = await _receipt_rpc(
+                client, url, "eth_getBlockByNumber", ["finalized", False], 54)
         return verified_evm_swap_block_evidence(
             proof=proof, tx_hash=tx_hash, asset=asset, stable=stable,
-            side=side, receipt=receipt, block=block)
+            side=side, receipt=receipt, block=block, finalized=finalized)
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         raise HTTPException(502, "Canonical historical EVM fill not verified") from None
