@@ -31,6 +31,7 @@ def assess_evm_auto_readiness(
     did=user.get("id")
     checks={
         "owner_privy_wallet_verified":False,
+        "permission_record_matches_privy_owner_wallet":False,
         "owner_wallet_delegated":False,
         "owner_wallet_metadata_current":False,
         "per_asset_user_consent_recorded":False,
@@ -44,6 +45,10 @@ def assess_evm_auto_readiness(
     try:
         owned=_owned_eth_wallet(user,did)
         checks["owner_privy_wallet_verified"]=True
+        checks["permission_record_matches_privy_owner_wallet"]=(
+            permission.get("stored_wallet_id")==owned["wallet_id"]
+            and str(permission.get("stored_wallet_address","")).lower()
+                ==owned["address"])
         checks["owner_wallet_delegated"]=owned["delegated"] is True
         checks["owner_wallet_metadata_current"]=(
             wallet.get("id")==owned["wallet_id"]
