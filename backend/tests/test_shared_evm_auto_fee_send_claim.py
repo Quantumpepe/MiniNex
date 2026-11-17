@@ -103,7 +103,7 @@ def test_fee_rpc_never_allows_alternate_token_recipient_or_amount(tamper):
 def test_atomic_owner_fee_claim_uses_original_debt_and_permission(
     monkeypatch,asset,
 ):
-    def prepare(**kw):
+    def prepare(cur,**kw):
         assert kw["did"]==DID and kw["asset"]==asset
         return draft(asset)
     monkeypatch.setattr(claim,"_prepare_locked",prepare)
@@ -129,7 +129,7 @@ def test_atomic_owner_fee_claim_uses_original_debt_and_permission(
 def test_fee_auto_claim_requires_actual_privy_grant_and_user_amount(
     monkeypatch,change,
 ):
-    monkeypatch.setattr(claim,"_prepare_locked",lambda **kw:draft("LINK"))
+    monkeypatch.setattr(claim,"_prepare_locked",lambda cur,**kw:draft("LINK"))
     _,remote=meta("LINK")
     cur=cur_for("LINK",grant=change)
     with pytest.raises((ValueError,HTTPException)):
