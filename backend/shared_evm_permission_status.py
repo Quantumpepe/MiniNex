@@ -36,6 +36,8 @@ def assess_evm_permission_record(record:object, *,
         "mode":"OWNER_EVM_PRIVY_PERMISSION_STATUS_ONLY",
         "asset":asset,"chain_id":pair["chain_id"],"network":pair["network"],
         "status":"NOT_PREPARED",
+        "stored_wallet_address":None,
+        "stored_wallet_id":None,
         "owner_wallet_bound":False,
         "user_consent_recorded":False,
         "server_policy_digest_matched":False,
@@ -71,6 +73,8 @@ def assess_evm_permission_record(record:object, *,
             or expires.tzinfo is None):
         raise ValueError("Incorrect wallet/chain/permission record")
     result["status"]=state
+    result["stored_wallet_address"]=record["wallet_address"]
+    result["stored_wallet_id"]=record["wallet_id"]
     result["owner_wallet_bound"]=True  # Ledger field match; live GET still needed
     result["policy_current"]=expires>now and state!="REVOKED"
     consent=(record.get("consent_verified_at") is not None
