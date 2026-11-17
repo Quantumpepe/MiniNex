@@ -679,6 +679,33 @@ SCHEMA = (
             REFERENCES mininex_evm_fee_events(privy_did,asset,execution_id),
         CHECK(settlement_tx_hash IS NULL)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_verified_fee_payments (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        stable_token_address TEXT NOT NULL CHECK(
+            stable_token_address ~ '^0x[0-9a-f]{40}$'),
+        owner_wallet TEXT NOT NULL CHECK(owner_wallet ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        stable_usd NUMERIC(36,12) NOT NULL CHECK(
+            stable_usd >= 0.95 AND stable_usd <= 1.05),
+        token_amount_atomic NUMERIC(48,0) NOT NULL CHECK(token_amount_atomic > 0),
+        state TEXT NOT NULL DEFAULT 'PREPARED' CHECK(
+            state IN ('PREPARED','PAID_VERIFIED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        prepared_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        paid_at TIMESTAMPTZ,
+        PRIMARY KEY(privy_did,asset,execution_id),
+        UNIQUE(chain_id,tx_hash),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_obligations(privy_did,asset,execution_id),
+        CHECK (
+            (state='PREPARED' AND tx_hash IS NULL AND paid_at IS NULL)
+            OR (state='PAID_VERIFIED' AND tx_hash IS NOT NULL AND paid_at IS NOT NULL))
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
         privy_did TEXT NOT NULL,
         asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH')),
