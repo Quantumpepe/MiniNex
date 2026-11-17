@@ -55,7 +55,8 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             or settings.get("stable")!=stable):
         raise HTTPException(409,"Independent coin budget changed or unavailable")
     cur.execute(
-        """SELECT status,expires_at,revoked_at,stable
+        """SELECT status,expires_at,revoked_at,stable,
+                  wallet_id,wallet_address,consent_sha256
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",
         (did,asset))
@@ -69,6 +70,27 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             or permission["expires_at"].tzinfo is None
             or permission["expires_at"]<=datetime.now(timezone.utc)):
         raise HTTPException(409,"This coin lacks verified, active user permission")
+    # The remote signer grant is not proof of the owner's EIP-191 intent.
+    # Bind both to the exact original wallet, budget revision, settlement
+    # and immutable signed text. A changed preference needs new consent.
+    cur.execute(
+        """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                  budget_revision,budget_usd,message_sha256,confirmed_at
+           FROM mininex_live_evm_consent_challenges
+           WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+        (did,asset))
+    consent=cur.fetchone()
+    if (type(consent) is not dict
+            or consent.get("status")!="SIGNED_INTENT"
+            or consent.get("chain_id")!=_pair(asset,stable,side)["chain_id"]
+            or consent.get("stable")!=stable
+            or consent.get("budget_revision")!=expected_revision
+            or Decimal(str(consent.get("budget_usd")))!=Decimal(settings["budget_usd"])
+            or consent.get("confirmed_at") is None
+            or consent.get("wallet_id")!=permission.get("wallet_id")
+            or consent.get("wallet_address")!=permission.get("wallet_address")
+            or consent.get("message_sha256")!=permission.get("consent_sha256")):
+        raise HTTPException(409,"Current wallet-signed coin budget consent required")
     # Include all unresolved reservations, even if the on-chain send status
     # is uncertain. A timeout is never permission to spend that money again.
     cur.execute(
