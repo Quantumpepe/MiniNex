@@ -50,7 +50,7 @@ def record(status="CONSENT_SIGNED"):
 
 
 def setup(monkeypatch):
-    monkeypatch.setattr(pub,"_require_policy_roles",lambda:(OWNER,SIGNER))
+    monkeypatch.setattr(pub,"_require_policy_roles",lambda asset:(OWNER,SIGNER))
     monkeypatch.setattr(pub,"owner_fee_treasury",lambda **kw:TREASURY)
 
 
