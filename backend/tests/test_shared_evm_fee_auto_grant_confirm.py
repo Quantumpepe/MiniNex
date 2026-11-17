@@ -81,6 +81,6 @@ def test_missing_remote_backend_signer_quorum_denies_fee_grant(monkeypatch):
 def test_fee_auto_grant_does_not_attach_signer_or_send_funds():
     import inspect
     src=inspect.getsource(grant)
-    assert "addSigners" not in src or "user must" in src
+    assert "addSigners(" not in src
     assert "post_claimed_privy_evm_rpc" not in src
     assert "sign_privy_rpc_payload" not in src
