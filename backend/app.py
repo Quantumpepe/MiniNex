@@ -54,6 +54,7 @@ from .shared_evm_fill_history import get_owner_evm_fill_history
 from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
+from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_allowance import check_evm_source_allowance
 from .shared_evm_swap_preparation import prepare_owner_evm_swap
@@ -640,6 +641,21 @@ def owner_evm_fifo_preview(
     return JSONResponse(read_evm_fifo_gross_preview(did,asset),
         headers={"Cache-Control":"private, no-store",
                  "X-Content-Type-Options":"nosniff"})
+
+
+@app.get("/api/live/evm/remote-grant-audit/{asset}")
+async def owner_evm_remote_grant_audit(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Re-read Privy policy and scope; never creates a wallet grant."""
+    identity=verify_privy_bearer(authorization)
+    result=await get_owner_evm_remote_grant_audit(
+        identity["user_id"],asset)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.get("/api/live/evm/auto-readiness/{asset}")
