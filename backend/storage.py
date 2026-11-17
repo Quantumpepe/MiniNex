@@ -204,6 +204,20 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_sessions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        status TEXT NOT NULL DEFAULT 'PAUSED'
+            CHECK(status IN ('ACTIVE','PAUSED','STOPPED')),
+        started_by_owner_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        CHECK (status <> 'ACTIVE' OR started_by_owner_at IS NOT NULL)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_budget_reservations (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
