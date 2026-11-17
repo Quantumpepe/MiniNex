@@ -41,7 +41,15 @@ def _verified_order_row(row:object,asset:str)->dict:
             or not isinstance(row.get("created_at"),datetime)
             or not isinstance(row.get("updated_at"),datetime)
             or row["created_at"].tzinfo is None
-            or row["updated_at"].tzinfo is None):
+            or row["updated_at"].tzinfo is None
+            or type(row.get("native_cycle_verified")) is not bool
+            or type(row.get("hwm_fee_recorded")) is not bool
+            or (row["native_cycle_verified"] and (
+                asset not in ("BNB","POL","AVAX")
+                or row["status"]!="FINALIZED_SUCCESS"))
+            or (row["hwm_fee_recorded"] and (
+                row.get("side")!="SELL"
+                or row["status"]!="FINALIZED_SUCCESS"))):
         raise ValueError("Invalid durable EVM order state")
     state=row["status"]
     return {
@@ -54,7 +62,8 @@ def _verified_order_row(row:object,asset:str)->dict:
         "pending_or_ambiguous":state in (
             "SENDING","SUBMITTED","RECONCILIATION_REQUIRED"),
         "automatic_retry_allowed":False,
-        "native_trade_cycle_settled":False,
+        "native_trade_cycle_settled":row["native_cycle_verified"],
+        "five_percent_hwm_accounting_recorded":row["hwm_fee_recorded"],
         "realized_net_pnl_usd":None,
         "fee_transferred":False,
         "created_at":row["created_at"].astimezone(timezone.utc).isoformat(),
@@ -76,11 +85,28 @@ def get_owner_live_evm_order_status(
         with psycopg.connect(url,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
-                    """SELECT asset,chain_id,intent_key,side,stable,
-                              status,tx_hash,created_at,updated_at
-                       FROM mininex_live_evm_auto_broadcasts
-                       WHERE privy_did=%s AND asset=%s
-                       ORDER BY created_at DESC,intent_key DESC
+                    """SELECT b.asset,b.chain_id,b.intent_key,b.side,b.stable,
+                              b.status,b.tx_hash,b.created_at,b.updated_at,
+                              EXISTS(
+                                  SELECT 1
+                                  FROM mininex_live_evm_completed_native_cycles c
+                                  WHERE c.privy_did=b.privy_did
+                                    AND c.asset=b.asset
+                                    AND c.intent_key=b.intent_key
+                                    AND c.chain_id=b.chain_id
+                                    AND c.swap_tx_hash=b.tx_hash
+                                    AND c.side=b.side AND c.stable=b.stable
+                              ) AS native_cycle_verified,
+                              EXISTS(
+                                  SELECT 1 FROM mininex_evm_fee_events f
+                                  WHERE f.privy_did=b.privy_did
+                                    AND f.asset=b.asset
+                                    AND f.execution_id=b.intent_key
+                                    AND f.source_tx_hash=b.tx_hash
+                              ) AS hwm_fee_recorded
+                       FROM mininex_live_evm_auto_broadcasts b
+                       WHERE b.privy_did=%s AND b.asset=%s
+                       ORDER BY b.created_at DESC,b.intent_key DESC
                        LIMIT %s""",
                     (did,asset,limit+1))
                 rows=list(cur.fetchall())
