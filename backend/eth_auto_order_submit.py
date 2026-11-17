@@ -114,10 +114,14 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
     # LINK and UNI use the same Ethereum wallet account nonce as ETH.
     # One unfinalized ERC-20 order blocks a new ETH AUTO send too.
     cur.execute(
-        """SELECT COUNT(*) AS pending FROM mininex_live_evm_auto_broadcasts
-           WHERE privy_did=%s AND chain_id=1
-             AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-        (did,))
+        """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
+               WHERE privy_did=%s AND chain_id=1
+                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+               WHERE privy_did=%s AND chain_id=1
+                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             AS pending""",
+        (did,did))
     pending_other=cur.fetchone()
     if (type(pending_other) is not dict
             or type(pending_other.get("pending")) is not int
