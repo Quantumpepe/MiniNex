@@ -204,6 +204,20 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_policy_publications (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL CHECK(idempotency_key ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL CHECK(status IN (
+            'SUBMITTING','UNCERTAIN','REMOTE_VERIFIED_UNATTACHED')),
+        policy_id TEXT CHECK(policy_id IS NULL OR
+            policy_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        UNIQUE(idempotency_key)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_sessions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
