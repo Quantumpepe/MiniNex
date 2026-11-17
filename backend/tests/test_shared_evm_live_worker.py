@@ -33,6 +33,7 @@ def evidence(asset,side,source="2500",allowance="3000"):
         "stable":ASSETS[asset],
         "source_token_address":pair["source_token"],
         "source_balance":source,"router_allowance":allowance,
+        "wallet_address":"0x"+"ab"*20,
         "wallet_identity_verified":True,
         "native_gas_available":True,
         "router_allowance_sufficient":True,
@@ -66,6 +67,7 @@ def test_buy_can_use_full_user_budget_without_system_trade_caps(asset):
     got=worker.exact_user_coin_live_amount(
         asset=asset,side="BUY",stable=ASSETS[asset],
         budget_usd=2000,source_evidence=proof,
+        position_evidence=evidence(asset,"SELL",source="0"),
         prices=rates(asset,ASSETS[asset]),now=__import__("time").time().__int__())
     assert Decimal(got)==2000
 
@@ -94,6 +96,7 @@ def test_missing_wallet_source_or_allowance_never_forms_live_order(change):
     assert worker.exact_user_coin_live_amount(
         asset="LINK",side="BUY",stable="USDC",
         budget_usd=100,source_evidence=proof,
+        position_evidence=evidence("LINK","SELL",source="0"),
         prices=rates("LINK","USDC"),now=int(__import__("time").time())) is None
 
 
@@ -104,6 +107,8 @@ def use_tick_mocks(monkeypatch,asset="LINK",action="BUY"):
         return {"action":action,"market_price":"8"}
     async def allowance(did,**kw):
         actions.append(("onchain_source",kw["amount"]))
+        if action=="BUY" and kw["side"]=="SELL":
+            return evidence(asset,"SELL",source="0",allowance="0")
         return evidence(asset,kw["side"],source="5000",allowance="5000")
     async def price(asset,stable):
         actions.append("usd_prices")
@@ -140,7 +145,7 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
     assert len([a for a in actions if isinstance(a,tuple) and
                 a[0]=="original_single_execution"])==1
     assert len([a for a in actions if isinstance(a,tuple) and
-                a[0]=="onchain_source"])==2
+                a[0]=="onchain_source"])==(3 if action=="BUY" else 2)
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
@@ -199,3 +204,43 @@ def test_worker_is_wired_to_lifespan_and_disabled_by_default(monkeypatch):
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
     assert worker.evm_auto_worker_enabled() is False
     assert evm_auto_live._task is None
+
+
+@pytest.mark.parametrize("asset",["LINK","UNI"])
+def test_existing_verified_coin_position_is_deducted_from_buying_budget(asset):
+    proof=evidence(asset,"BUY",source="10000",allowance="10000")
+    holdings=evidence(asset,"SELL",source="150")
+    result=worker.exact_user_coin_live_amount(
+        asset=asset,side="BUY",stable=ASSETS[asset],
+        budget_usd=2000,source_evidence=proof,
+        position_evidence=holdings,
+        prices=rates(asset,ASSETS[asset]),
+        now=int(__import__("time").time()))
+    assert Decimal(result)==800
+
+
+@pytest.mark.parametrize("mutate",[
+    lambda p:p.update(wallet_address="0x"+"cd"*20),
+    lambda p:p.update(chain_id=56),
+    lambda p:p.update(wallet_identity_verified=False),
+    lambda p:p.update(source_balance="-5"),
+])
+def test_untrusted_target_coin_inventory_cannot_authorize_extra_buy(mutate):
+    proof=evidence("LINK","BUY",source="5000",allowance="5000")
+    holdings=evidence("LINK","SELL",source="2")
+    mutate(holdings)
+    assert worker.exact_user_coin_live_amount(
+        asset="LINK",side="BUY",stable="USDC",budget_usd=2000,
+        source_evidence=proof,position_evidence=holdings,
+        prices=rates("LINK","USDC"),
+        now=int(__import__("time").time())) is None
+
+
+def test_fully_allocated_coin_budget_does_not_buy_again_from_other_coin_cash():
+    proof=evidence("LINK","BUY",source="5000",allowance="5000")
+    holdings=evidence("LINK","SELL",source="250")
+    assert worker.exact_user_coin_live_amount(
+        asset="LINK",side="BUY",stable="USDC",budget_usd=2000,
+        source_evidence=proof,position_evidence=holdings,
+        prices=rates("LINK","USDC"),
+        now=int(__import__("time").time())) is None
