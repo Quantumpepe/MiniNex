@@ -91,12 +91,16 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             or consent.get("wallet_address")!=permission.get("wallet_address")
             or consent.get("message_sha256")!=permission.get("consent_sha256")):
         raise HTTPException(409,"Current wallet-signed coin budget consent required")
-    # Include all unresolved reservations, even if the on-chain send status
-    # is uncertain. A timeout is never permission to spend that money again.
+    # BUY consumes the owner's selected per-coin buying budget.
+    # SELL reduces an existing spot position: its appreciated USD value
+    # must not become an artificial trading cap. Every SELL still requires
+    # exact owner consent, source-token balance, Privy policy and a durable
+    # once-only claim, but it does not spend fresh stablecoin capital.
+    # An uncertain BUY still consumes its reservation until reconciled.
     cur.execute(
         """SELECT COALESCE(SUM(amount_usd),0) AS reserved_usd
            FROM mininex_live_evm_budget_reservations
-           WHERE privy_did=%s AND asset=%s
+           WHERE privy_did=%s AND asset=%s AND side='BUY'
              AND state IN ('RESERVED','SENDING','SUBMITTED',
                            'RECONCILIATION_REQUIRED')""",
         (did,asset))
@@ -104,7 +108,8 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
     if type(reserved_row) is not dict or reserved_row.get("reserved_usd") is None:
         raise HTTPException(503,"Cannot verify this coin's reserved capital")
     reserved=Decimal(str(reserved_row["reserved_usd"]))
-    if reserved<0 or reserved+amount>Decimal(settings["budget_usd"]):
+    if reserved<0 or (side=="BUY" and
+                      reserved+amount>Decimal(settings["budget_usd"])):
         raise HTTPException(409,"User-selected coin budget already reserved")
     # A previous key is never reused, even after it becomes finalized.
     cur.execute(
