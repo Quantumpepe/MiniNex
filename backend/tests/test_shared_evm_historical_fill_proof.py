@@ -44,7 +44,8 @@ def test_original_mined_transaction_time_and_index_are_proven(asset):
     stable, proof, receipt, block = setup(asset)
     result = verified_evm_swap_block_evidence(
         proof=proof, tx_hash=TX, asset=asset, stable=stable,
-        side="SELL", receipt=receipt, block=block)
+        side="SELL", receipt=receipt, block=block,
+        finalized={"number": "0x65"})
     assert result["block_number"] == 100
     assert result["transaction_index"] == 3
     assert result["block_unix"] == int(block["timestamp"], 16)
@@ -72,4 +73,5 @@ def test_any_inconsistent_historical_swap_source_fails_closed(change):
     with pytest.raises(ValueError):
         verified_evm_swap_block_evidence(
             proof=proof, tx_hash=TX, asset="LINK", stable=stable,
-            side="SELL", receipt=receipt, block=block)
+            side="SELL", receipt=receipt, block=block,
+            finalized={"number": "0x65"})
