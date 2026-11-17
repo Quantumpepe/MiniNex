@@ -122,6 +122,23 @@ def _claim_native_sell_locked(
         row=cur.fetchone()
         if type(row) is not dict or row.get("pending")!=0:
             raise HTTPException(409,"Another wallet network transaction unresolved")
+    # A finalized deposit is not yet a finished SELL. Repeated market
+    # ticks must not deposit a second native amount while the first
+    # original event has no durable downstream Router02 order.
+    cur.execute(
+        """SELECT COUNT(*) AS pending
+           FROM mininex_live_evm_native_sell_intents n
+           LEFT JOIN mininex_live_evm_auto_broadcasts b
+             ON b.privy_did=n.privy_did AND b.asset=n.asset
+            AND b.intent_key=n.intent_key
+           WHERE n.privy_did=%s AND n.asset=%s
+             AND n.status='FINALIZED_SUCCESS'
+             AND b.intent_key IS NULL""",(did,asset))
+    unfinished=cur.fetchone()
+    if (type(unfinished) is not dict
+            or type(unfinished.get("pending")) is not int
+            or unfinished["pending"]!=0):
+        raise HTTPException(409,"Prior native SELL awaits its original swap")
     cur.execute(
         """INSERT INTO mininex_live_evm_native_sell_intents
            (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
