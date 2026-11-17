@@ -84,12 +84,6 @@ def _post_buy_claim_locked(
         raise ValueError("Invalid native EVM conversion claim")
     stable=record.get("stable")
     pair=_pair(asset,stable,"BUY")
-    cur.execute(
-        """SELECT privy_did FROM mininex_accounts
-           WHERE privy_did=%s FOR UPDATE""",(did,))
-    owner=cur.fetchone()
-    if type(owner) is not dict or owner.get("privy_did")!=did:
-        raise HTTPException(409,"Owner EVM account lock unavailable")
     grant=_read_grant_evidence_locked(cur,did=did,asset=asset)
     policy=validate_pinned_evm_policy(grant,asset=asset,now=int(time.time()))
     native_rule=policy["rules"][3]
@@ -111,6 +105,16 @@ def _post_buy_claim_locked(
             or session.get("wallet_address")!=record["wallet_address"]
             or session.get("budget_revision")!=grant["budget_revision"]):
         raise HTTPException(409,"Native conversion requires user's active coin session")
+    # Keep lock order consistent with the Router02 send and native SELL:
+    # permission/consent -> owner session -> owner wallet nonce account.
+    # Acquiring the account first while a swap locks grant/session first
+    # could deadlock at the moment a real conversion and swap overlap.
+    cur.execute(
+        """SELECT privy_did FROM mininex_accounts
+           WHERE privy_did=%s FOR UPDATE""",(did,))
+    owner=cur.fetchone()
+    if type(owner) is not dict or owner.get("privy_did")!=did:
+        raise HTTPException(409,"Owner EVM account lock unavailable")
     cur.execute(
         """SELECT status,tx_hash,side,stable,chain_id,wallet_address
            FROM mininex_live_evm_auto_broadcasts
