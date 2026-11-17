@@ -70,6 +70,26 @@ def _assess_locked(
                 "source_amount","destination_amount"))
             or Decimal(str(fill["network_fee_native"]))<0):
         raise HTTPException(409,"Finalized EVM SELL token fill not verified")
+    # Native EVM SELL is not economically settled by its Router02 swap
+    # alone. Require the separately verified preceding WETH9-style DEPOSIT
+    # and completed native cycle under the same owner, chain and signal.
+    if asset in ("BNB","POL","AVAX"):
+        cur.execute(
+            """SELECT swap_tx_hash,conversion_tx_hash,chain_id,side,stable
+               FROM mininex_live_evm_completed_native_cycles
+               WHERE privy_did=%s AND asset=%s AND intent_key=%s
+               FOR UPDATE""",(did,asset,execution_id))
+        cycle=cur.fetchone()
+        if (type(cycle) is not dict
+                or cycle.get("swap_tx_hash")!=source_tx_hash
+                or cycle.get("chain_id")!=order["chain_id"]
+                or cycle.get("side")!="SELL"
+                or cycle.get("stable")!=order["stable"]
+                or type(cycle.get("conversion_tx_hash")) is not str
+                or not _HASH.fullmatch(cycle["conversion_tx_hash"])
+                or cycle["conversion_tx_hash"]==source_tx_hash):
+            raise HTTPException(
+                409,"Complete finalized native EVM SELL cycle required")
     cur.execute(
         """INSERT INTO mininex_evm_asset_hwm(privy_did,asset)
            VALUES (%s,%s) ON CONFLICT(privy_did,asset) DO NOTHING""",
