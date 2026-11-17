@@ -47,6 +47,7 @@ def _verified_fill_row(row: object,asset:str) -> dict:
     return {
         "asset":asset,"chain_id":expected["chain_id"],
         "network":expected["network"],"intent_key":row["intent_key"],
+        "wallet_address":row["wallet_address"].lower(),
         "tx_hash":row["tx_hash"],"side":side,"stable":stable,
         "spent_asset":stable if side=="BUY" else asset,
         "received_asset":asset if side=="BUY" else stable,
