@@ -49,6 +49,10 @@ def rows(asset="AVAX"):
         {"stable":"USDC","revision":7},
         {"state":"RESERVED","side":"BUY","stable":"USDC",
          "budget_revision":7,"quote_sha256":SHA},
+        {"status":"ACTIVE","chain_id":_pair(asset,"USDC","BUY")["chain_id"],
+         "stable":"USDC","wallet_address":WALLET,
+         "budget_revision":7,
+         "started_by_owner_at":datetime.now(timezone.utc)},
         {"privy_did":DID},
         {"pending":0},
         {"state":"SENDING"},
@@ -64,7 +68,7 @@ def claim(cur,asset="AVAX"):
 def test_single_atomic_owner_wallet_signed_reservation_claim():
     cur=Cursor(rows())
     claim(cur)
-    assert len(cur.calls)==8
+    assert len(cur.calls)==9
     assert all("FOR UPDATE" in q for q,args in cur.calls[:4])
     assert "mininex_live_evm_auto_broadcasts" in cur.calls[-2][0]
     assert "state='SENDING'" in cur.calls[-1][0]
@@ -89,6 +93,25 @@ def test_no_live_send_claim_after_wallet_revoke_or_budget_change(tamper):
         claim(cur)
     assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in q
                    for q,args in cur.calls)
+
+
+@pytest.mark.parametrize("change",[
+    lambda r:r[4].update(status="PAUSED"),
+    lambda r:r[4].update(wallet_address="0x"+"cd"*20),
+    lambda r:r[4].update(budget_revision=8),
+    lambda r:r[4].update(started_by_owner_at=None),
+    lambda r:r[4].update(chain_id=1),
+])
+def test_owner_not_started_or_paused_session_blocks_real_send(change):
+    data=rows()
+    change(data)
+    cur=Cursor(data)
+    with pytest.raises(HTTPException) as err:
+        claim(cur)
+    assert err.value.status_code==409
+    assert len(cur.calls)==5
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
+                   for sql,args in cur.calls)
 
 
 def test_other_network_coin_cannot_reuse_avalanche_approval():
