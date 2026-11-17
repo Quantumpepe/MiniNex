@@ -58,6 +58,7 @@ def rows(asset="AVAX"):
         {"pending":0},
         {"pending":0},
         {"pending":0},
+        {"pending":0},
         {"state":"SENDING"},
     ]
 
@@ -71,7 +72,7 @@ def claim(cur,asset="AVAX"):
 def test_single_atomic_owner_wallet_signed_reservation_claim():
     cur=Cursor(rows())
     claim(cur)
-    assert len(cur.calls)==12
+    assert len(cur.calls)==13
     assert all("FOR UPDATE" in q for q,args in cur.calls[:4])
     assert "mininex_live_evm_auto_broadcasts" in cur.calls[-2][0]
     assert "state='SENDING'" in cur.calls[-1][0]
