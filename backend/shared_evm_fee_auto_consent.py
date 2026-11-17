@@ -22,12 +22,13 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .eth_user_consent import (
-    _require_identity,_require_policy_roles,verify_eoa_eip191_signature,
+    _require_identity,verify_eoa_eip191_signature,
 )
 from .privy_wallet_verification import APP_ID,fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet
 from .shared_evm_owner_consent import _asset,_locked_coin_settings
 from .shared_evm_fee_privy_policy_draft import build_owner_evm_fee_policy_draft
+from .shared_evm_fee_policy_roles import require_fee_policy_roles as _require_policy_roles
 from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_prepare_rows
