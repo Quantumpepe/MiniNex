@@ -15,10 +15,10 @@ const labels=read('../src/i18n.js');
 
 test('12 listed coins plus Ethereum USDC/USDT; only proven EVM routes claim a signer',()=>{
   assert.deepEqual(SEND_ASSETS,['BTC','ETH','BNB','SOL','XRP','TRX','POL',
-    'AVAX','LINK','DOGE','UNI','ADA','USDC','USDT']);
+    'AVAX','LINK','DOGE','UNI','ARB','USDC','USDT']);
   assert.deepEqual(Object.keys(SEND_EVM).sort(),
     ['ETH','BNB','POL','AVAX','LINK','UNI','USDC','USDT'].sort());
-  for(const symbol of ['BTC','SOL','XRP','TRX','DOGE','ADA'])assert.equal(sendAssetSpec(symbol),null);
+  for(const symbol of ['BTC','SOL','XRP','TRX','DOGE','ARB'])assert.equal(sendAssetSpec(symbol),null);
   assert.equal(sendAssetSpec('ETH').chainId,1);
   assert.equal(sendAssetSpec('BNB').chainId,56);
   assert.equal(sendAssetSpec('POL').chainId,137);
@@ -26,7 +26,7 @@ test('12 listed coins plus Ethereum USDC/USDT; only proven EVM routes claim a si
   assert.equal(sendAssetSpec('LINK').chainId,1);
   assert.equal(sendAssetSpec('USDT').decimals,6);
   assert.equal(sendAssetSpec('USDC').decimals,6);
-  assert.match(sender,/coin==='ADA'\?t\.walletSwapAdaPending/);
+  assert.match(sender,/coin==='ARB'\?t\.walletSwapArbPending/);
   assert.match(sender,/walletSendChainPending/);
 });
 
@@ -255,7 +255,7 @@ test('gas fee overflow and absurd gas limits cannot be quoted',()=>{
 test('send recipient hints follow native address families, never mislabel all as EVM',()=>{
   for(const [coin,hint] of Object.entries({
     BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
-    DOGE:'D…',ADA:'addr1…',ETH:'0x…',BNB:'0x…',
+    DOGE:'D…',ARB:'addr1…',ETH:'0x…',BNB:'0x…',
     POL:'0x…',AVAX:'0x…',LINK:'0x…',UNI:'0x…',
     USDC:'0x…',USDT:'0x…',
   }))assert.equal(sendAddressPlaceholder(coin),hint);
