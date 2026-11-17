@@ -88,7 +88,7 @@ async def get_owner_auto_fee_grant_offer(*,did:str,asset:str)->dict:
     user=await fetch_privy_user(did)
     owned=_owned_eth_wallet(user,did)
     remote=await _fetch_policy(record["policy_id"])
-    quorum=await check_privy_backend_quorum()
+    quorum=await check_privy_backend_quorum(asset)
     return verify_owner_auto_fee_grant_offer(
         record=record,asset=asset,expected=expected,
         owned=owned,remote=remote,quorum=quorum,now=int(time.time()))
