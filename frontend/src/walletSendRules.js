@@ -1,16 +1,17 @@
 // Exact, chain-specific wallet send rules. No remote calls or signing here.
 // A listed asset is NOT automatically an enabled sender: native UTXO,
-// Solana, TRON, XRPL and Cardano still need independently supported signers.
+// Solana, TRON, XRPL and Arbitrum still need independently supported signers.
 const EVM_ADDRESS=/^0x[0-9a-fA-F]{40}$/;
 const MAX_UINT256=(1n<<256n)-1n;
 const ALL=Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ADA','USDC','USDT',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB','USDC','USDT',
 ]);
 const EVM=Object.freeze({
   ETH: Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'native'}),
   BNB: Object.freeze({chainId:56,decimals:18,feeSymbol:'BNB',kind:'native'}),
   POL: Object.freeze({chainId:137,decimals:18,feeSymbol:'POL',kind:'native'}),
   AVAX:Object.freeze({chainId:43114,decimals:18,feeSymbol:'AVAX',kind:'native'}),
+  ARB: Object.freeze({chainId:42161,decimals:18,feeSymbol:'ETH',kind:'native'}),
   LINK:Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'erc20',
     contract:'0x514910771af9ca656af840dff83e8264ecf986ca'}),
   UNI:Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'erc20',
@@ -23,7 +24,7 @@ const EVM=Object.freeze({
 // Show the right address family without pretending every chain can send yet.
 export function sendAddressPlaceholder(symbol) {
   const hints={BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
-    DOGE:'D…',ADA:'addr1…'};
+    DOGE:'D…',ARB:'addr1…'};
   return hints[symbol]||'0x…';
 }
 export const SEND_ASSETS=ALL;
