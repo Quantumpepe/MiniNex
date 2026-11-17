@@ -44,6 +44,8 @@ def _verified_order_row(row:object,asset:str)->dict:
             or row["updated_at"].tzinfo is None
             or type(row.get("native_cycle_verified")) is not bool
             or type(row.get("hwm_fee_recorded")) is not bool
+            or type(row.get("fee_payment_verified")) is not bool
+            or (row["fee_payment_verified"] and not row["hwm_fee_recorded"])
             or (row["native_cycle_verified"] and (
                 asset not in ("BNB","POL","AVAX")
                 or row["status"]!="FINALIZED_SUCCESS"))
@@ -65,7 +67,7 @@ def _verified_order_row(row:object,asset:str)->dict:
         "native_trade_cycle_settled":row["native_cycle_verified"],
         "five_percent_hwm_accounting_recorded":row["hwm_fee_recorded"],
         "realized_net_pnl_usd":None,
-        "fee_transferred":False,
+        "fee_transferred":row["fee_payment_verified"],
         "created_at":row["created_at"].astimezone(timezone.utc).isoformat(),
         "updated_at":row["updated_at"].astimezone(timezone.utc).isoformat(),
     }
@@ -103,7 +105,16 @@ def get_owner_live_evm_order_status(
                                     AND f.asset=b.asset
                                     AND f.execution_id=b.intent_key
                                     AND f.source_tx_hash=b.tx_hash
-                              ) AS hwm_fee_recorded
+                              ) AS hwm_fee_recorded,
+                              EXISTS(
+                                  SELECT 1
+                                  FROM mininex_evm_verified_fee_payments p
+                                  WHERE p.privy_did=b.privy_did
+                                    AND p.asset=b.asset
+                                    AND p.execution_id=b.intent_key
+                                    AND p.state='PAID_VERIFIED'
+                                    AND p.tx_hash IS NOT NULL
+                              ) AS fee_payment_verified
                        FROM mininex_live_evm_auto_broadcasts b
                        WHERE b.privy_did=%s AND b.asset=%s
                        ORDER BY b.created_at DESC,b.intent_key DESC
@@ -120,5 +131,5 @@ def get_owner_live_evm_order_status(
         "includes_simulation":False,
         "wallet_signing_enabled_by_this_api":False,
         "automatic_trade_execution_enabled_by_this_api":False,
-        "profit_fee_settled":False,
+        "profit_fee_settled":any(r["fee_transferred"] for r in verified),
     }
