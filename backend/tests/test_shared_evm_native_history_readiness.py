@@ -46,6 +46,14 @@ def audit(asset):
         "external_native_value_free_interval":True,
         "complete_wallet_lifetime_and_cost_basis_proven":False,
         "eligible_to_assess_five_percent_fee":False,
+        "observed_interval_native_balance_conserved":True,
+        "original_gas_balance_conservation":{
+            "mode":"ARCHIVED_NATIVE_WALLET_BALANCE_GAS_CONSERVATION_ONLY",
+            "wallet_address":OWNER,
+            "observed_interval_native_balance_conserved":True,
+            "total_verified_sender_gas_wei":"200000000000000",
+            "five_percent_hwm_writable":False,
+        },
     }
 
 
@@ -152,6 +160,11 @@ def test_original_native_unverified_history_fails_before_wallet_audit(
     lambda a:a.update(eligible_to_assess_five_percent_fee=True),
     lambda a:a.update(wallet_address="0x"+"cc"*20),
     lambda a:a.update(mode="CLIENT_SUPPLIED_CUSTODY"),
+    lambda a:a.update(observed_interval_native_balance_conserved=False),
+    lambda a:a["original_gas_balance_conservation"].update(
+        observed_interval_native_balance_conserved=False),
+    lambda a:a["original_gas_balance_conservation"].update(
+        five_percent_hwm_writable=True),
 ])
 def test_native_readiness_never_accepts_fee_eligible_or_fake_interval(
     monkeypatch,tamper,
