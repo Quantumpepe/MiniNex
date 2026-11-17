@@ -294,6 +294,10 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_evm_owner_permissions_chain
        ON mininex_live_evm_owner_permissions(privy_did,chain_id,status)""",
+    """ALTER TABLE mininex_live_evm_owner_permissions
+       ADD COLUMN IF NOT EXISTS budget_revision BIGINT""",
+    """ALTER TABLE mininex_live_evm_owner_permissions
+       ADD COLUMN IF NOT EXISTS candidate_json JSONB""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
