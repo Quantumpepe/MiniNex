@@ -153,6 +153,12 @@ def exact_user_coin_live_amount(
             current_holdings=Decimal(source_evidence["destination_balance"])
             if not current_holdings.is_finite() or current_holdings<0:
                 return None
+            if asset in _NATIVE:
+                atomic=source_evidence.get("native_gas_balance_atomic")
+                if (type(atomic) is not str or not atomic.isascii()
+                        or not atomic.isdecimal()):
+                    return None
+                current_holdings+=Decimal(atomic)/Decimal(10**18)
             existing_exposure=current_holdings*_price(prices,asset,now)
             pending=Decimal(str(pending_buy_usd))
             if not pending.is_finite() or pending<0:
@@ -186,11 +192,17 @@ async def execute_owner_evm_live_tick(
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
     if asset in _NATIVE:
-        # A WBNB/WPOL/WAVAX swap is not itself a native-asset trade.
-        # Until the unique native-leg sender is joined to the journal,
-        # automated submission is intentionally unavailable on these chains.
-        return {"asset":asset,"state":"WAIT",
-                "reason":"NATIVE_CONVERSION_EXECUTION_NOT_CONNECTED"}
+        if side=="SELL":
+            # Native spot SELL needs a separately confirmed DEPOSIT before
+            # attempting the Router02 swap. Never claim WBNB/WMATIC/WAVAX
+            # balance exists simply because the owner holds native coins.
+            return {"asset":asset,"state":"WAIT",
+                    "reason":"NATIVE_SELL_DEPOSIT_NOT_CONNECTED"}
+        if os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")!="explicit-readonly":
+            # A native BUY must have its post-swap WITHDRAW reconciler active
+            # before any Router02 buy can leave a wrapped-native position.
+            return {"asset":asset,"state":"WAIT",
+                    "reason":"NATIVE_BUY_SETTLEMENT_NOT_ACTIVE"}
     stable=row["stable"]
     _pair(asset,stable,side)
     probe="0.000001" if side=="BUY" else "0.000000000000000001"
