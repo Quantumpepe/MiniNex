@@ -107,6 +107,7 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
             or audit.get("zero_initial_asset_balance_verified") is not True
             or audit.get("all_asset_movements_match_verified_orders") is not True
             or audit.get("external_inventory_reconciled") is not True
+            or audit.get("no_other_execution_costs_verified") is not True
             or type(audit.get("start_block")) is not int
             or type(audit.get("end_block")) is not int
             or not 0 < audit["start_block"] <= audit["end_block"]):
@@ -115,6 +116,7 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
         ctx.prec = 65
         lots = deque()
         seen = set()
+        seen_intents = set()
         position = (-1, -1)
         closes = []
         for item in evidence["fills"]:
@@ -135,6 +137,7 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
                     or not 8 <= len(item["intent_key"]) <= 96
                     or type(tx_hash) is not str or not _HASH.fullmatch(tx_hash)
                     or tx_hash in seen
+                    or item["intent_key"] in seen_intents
                     or type(block) is not int or block <= 0
                     or type(tx_index) is not int or tx_index < 0
                     or type(block_unix) is not int or block_unix <= 0
@@ -142,6 +145,7 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
                     or not audit["start_block"] <= block <= audit["end_block"]):
                 raise ValueError("Duplicate/out-of-order/unverified trade")
             seen.add(tx_hash)
+            seen_intents.add(item["intent_key"])
             position = (block, tx_index)
             source = _decimal(item.get("source_amount"))
             destination = _decimal(item.get("destination_amount"))
