@@ -63,6 +63,10 @@ from .shared_evm_auto_sessions import (
     start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
 )
 from .shared_evm_fifo import read_evm_fifo_gross_preview
+from .shared_evm_fee_payment import (
+    prepare_owner_verified_evm_fee,confirm_owner_verified_evm_fee,
+    get_owner_verified_evm_fee,
+)
 from .shared_evm_allowance import check_evm_source_allowance
 from .shared_evm_swap_preparation import prepare_owner_evm_swap
 from .eth_router02_allowance import inspect_router02_approval
@@ -651,6 +655,51 @@ def owner_evm_fifo_preview(
     return JSONResponse(read_evm_fifo_gross_preview(did,asset),
         headers={"Cache-Control":"private, no-store",
                  "X-Content-Type-Options":"nosniff"})
+
+
+class EvmFeePaymentConfirmRequest(BaseModel):
+    tx_hash: str = Field(min_length=66,max_length=66)
+
+
+@app.get("/api/live/evm/fee-payment/{asset}/{execution_id}")
+def owner_real_evm_fee_payment_status(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    execution_id: str,
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only: display real HWM fee obligation and paid blockchain state."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_owner_verified_evm_fee(
+        did=did,asset=asset,execution_id=execution_id),
+        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/fee-payment/{asset}/{execution_id}/prepare")
+async def owner_prepare_signed_evm_fee_payment(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    execution_id: str,
+    authorization: str | None = Header(default=None),
+):
+    """Prepare exact unsigned stablecoin transfer; user must sign in Privy."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    draft=await prepare_owner_verified_evm_fee(
+        did=did,asset=asset,execution_id=execution_id)
+    return JSONResponse(draft,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/fee-payment/{asset}/{execution_id}/confirm")
+async def owner_confirm_signed_evm_fee_payment(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    execution_id: str,
+    request: EvmFeePaymentConfirmRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Credit only canonical final ERC-20 transfer, never a user-supplied claim."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await confirm_owner_verified_evm_fee(
+        did=did,asset=asset,execution_id=execution_id,
+        tx_hash=request.tx_hash)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/evm/auto-session/{asset}")
