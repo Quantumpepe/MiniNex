@@ -57,6 +57,7 @@ from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
 from .shared_evm_privy_policy_publish import publish_user_evm_privy_policy
+from .shared_evm_privy_grant_confirm import confirm_owner_evm_privy_grant
 from .shared_evm_auto_sessions import (
     start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
 )
@@ -682,6 +683,20 @@ def owner_pause_evm_auto_session(
     """Stops future per-coin sends without retrying an in-flight tx."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(pause_owner_evm_auto(did,asset),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/policy/{asset}/confirm-grant")
+async def owner_confirm_evm_privy_signer_grant(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Read back the owner's *existing* Privy signer approval; never grant it."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await confirm_owner_evm_privy_grant(did,asset)
+    return JSONResponse(result,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
