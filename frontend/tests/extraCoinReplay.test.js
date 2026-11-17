@@ -30,10 +30,10 @@ const sample={
                            at:'2026-11-12T10:00:00Z',total_spent:100}],
 };
 
-test('the nine extra coins share the strategy; BTC ETH and ADA stay untouched',()=>{
+test('the nine extra coins share the strategy; BTC ETH and ARB stay untouched',()=>{
   assert.deepEqual(EXTRA_REPLAY_COINS,
     ['BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
-  assert.equal(EXTRA_REPLAY_COINS.includes('ADA'),false);
+  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),true);
   assert.equal(EXTRA_REPLAY_COINS.includes('ETH'),false);
   assert.equal(EXTRA_REPLAY_COINS.includes('BTC'),false);
   assert.equal(defaultReplayOption().budget,'500');
@@ -43,7 +43,7 @@ test('the nine extra coins share the strategy; BTC ETH and ADA stay untouched',(
   assert.match(setup,/EXTRA_REPLAY_COINS\.map\(coin=>\[coin,defaultReplayOption\(\)\]\)/);
   assert.match(setup,/setReplayOptions\(old=>/);
   assert.match(coinGrid,/COINS\.map\(coin=>/);
-  assert.match(list,/symbol:'ADA'.*inProgress:true/);
+  assert.match(list,/symbol:'ARB'/);
   assert.match(list,/symbol:'ETH'.*paperSettingsReady:true/);
   assert.match(list,/symbol:'BTC'.*paperSettingsReady:true/);
 });
@@ -71,7 +71,7 @@ test('historical response must show no live executions or wallet funds',()=>{
     {initial_usd:600},{estimated_net_return_pct:Infinity},
     {estimated_max_drawdown_pct:NaN},{estimated_buy_and_hold_return_pct:null},
     {trades:[{...sample.trades[0],real_trade:true}]},
-    {trades:[{...sample.trades[0],asset:'ADA'}]},
+    {trades:[{...sample.trades[0],asset:'ARB'}]},
     {trades:[{...sample.trades[0],kind:'SWAP'}]},
   ]){
     assert.equal(validExtraReplayResult({...sample,...patch},'SOL',option),false,
@@ -79,7 +79,7 @@ test('historical response must show no live executions or wallet funds',()=>{
   }
   assert.equal(validExtraReplayResult(sample,'SOL',null),false);
   assert.equal(validExtraReplayResult(null,'SOL',option),false);
-  assert.equal(validExtraReplayResult(sample,'ADA',option),false);
+  assert.equal(validExtraReplayResult(sample,'ARB',option),false);
 });
 
 test('not enough recent candles never masquerades as successful simulation',()=>{
