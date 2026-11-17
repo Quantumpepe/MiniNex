@@ -42,7 +42,7 @@ function response(request){
 test('each of eleven coins uses one quote form but independent settlement',()=>{
   assert.deepEqual(LIVE_PLAN_COINS,[
     'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
-  assert.equal(LIVE_PLAN_COINS.includes('ADA'),false);
+  assert.equal(LIVE_PLAN_COINS.includes('ARB'),false);
   assert.deepEqual(LIVE_SETTLEMENTS.BNB,['USDT']);
   assert.deepEqual(LIVE_SETTLEMENTS.TRX,['USDT']);
   assert.deepEqual(LIVE_SETTLEMENTS.XRP,['USDC']);
@@ -83,9 +83,9 @@ test('each coin preserves its own allowed settlement, not a global override',()=
   assert.equal(normalizedLiveStable('TRX','USDC'),'USDT');
   assert.equal(normalizedLiveStable('XRP','USDT'),'USDC');
   assert.equal(normalizedLiveStable('SOL','USDT'),'USDT');
-  assert.equal(normalizedLiveStable('ADA','USDC'),null);
+  assert.equal(normalizedLiveStable('ARB','USDC'),null);
   assert.equal(createLivePlanRequest('TRX','BUY','USDC','12'),null);
-  assert.equal(createLivePlanRequest('ADA','SELL','USDC','1'),null);
+  assert.equal(createLivePlanRequest('ARB','SELL','USDC','1'),null);
 });
 
 test('amounts are exact input units, not simulated USD budget',()=>{
