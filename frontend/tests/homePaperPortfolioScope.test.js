@@ -49,7 +49,7 @@ test('selecting BTC, ETH, SOL or XRP shows only that coin capital by default',()
   assert.equal(sol.assetCount,1);
   assert.equal(xrp.equity,545);
   assert.equal(xrp.assetCount,1);
-  assert.equal(summarizeHomePaperPortfolio(c,e,'ADA'),null);
+  assert.equal(summarizeHomePaperPortfolio(c,e,'ARB'),null);
 });
 
 test('ALL sums independent started sessions but only after an explicit toggle',()=>{
