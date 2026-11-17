@@ -112,6 +112,7 @@ def _check_exact_live_order(
 async def submit_internal_privy_evm_order(
     *,did:str,asset:str,intent_key:str,side:str,stable:str,
     amount:str,budget_revision:int,client:httpx.AsyncClient,
+    prepared_quote:dict|None=None,
 )->dict:
     """Send exactly once after independent real quote, consent and grant.
 
@@ -139,8 +140,13 @@ async def submit_internal_privy_evm_order(
         _read_grant_record,did,asset)
     # This function alone does NOT activate a user session; the trusted
     # caller additionally requires a user-started live trading session.
-    prepared=await prepare_owner_evm_swap(
-        did,asset=asset,side=side,stable=stable,amount=amount)
+    # A trusted strategy may pass the exact server-generated quote that it
+    # has already durably reserved. Requoting would change its expiry and
+    # break the immutable quote digest even though the signal is unchanged.
+    # This is an INTERNAL function, not a client-supplied HTTP parameter.
+    prepared=(prepared_quote if prepared_quote is not None
+              else await prepare_owner_evm_swap(
+                  did,asset=asset,side=side,stable=stable,amount=amount))
     tx,input_atomic,minimum_out=_check_exact_live_order(
         asset=asset,side=side,stable=stable,amount=amount,
         owned_record=owned_record,prepared=prepared)
