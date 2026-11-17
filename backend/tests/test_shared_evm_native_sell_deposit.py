@@ -41,7 +41,7 @@ def rows(asset):
         {"status":"ACTIVE","stable":p["stable"],"chain_id":p["chain_id"],
          "wallet_address":WALLET,"budget_revision":5},
         {"privy_did":DID},
-        {"pending":0},{"pending":0},{"pending":0},
+        {"pending":0},{"pending":0},{"pending":0},{"pending":0},
     ]
 
 
@@ -60,7 +60,7 @@ def test_native_sell_claim_serializes_owner_and_three_network_journals(
         cur,did=DID,asset=asset,key=key(asset),record=p,
         run_id=RUN,event_id=EVENT,amount_wei=10**18,
         digest=DIGEST,budget_revision=5)
-    assert len(cur.sql)==6
+    assert len(cur.sql)==7
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "mininex_accounts" in cur.sql[1][0]
     assert all("COUNT(*) AS pending" in q for q,a in cur.sql[2:5])
@@ -143,3 +143,25 @@ def test_original_sell_deposit_table_and_no_user_send_route():
     assert "UNIQUE(chain_id,tx_hash)" in ddl
     from backend.app import app
     assert all("native-sell-deposit" not in route.path for route in app.routes)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_an_unfinished_previous_native_sell_blocks_another_wrap(monkeypatch,asset):
+    p=record(asset)
+    monkeypatch.setattr(dep,"_read_grant_evidence_locked",
+                        lambda cur,**kw:p)
+    monkeypatch.setattr(dep,"validate_pinned_evm_policy",
+                        lambda *args,**kwargs:{"rules":[{}, {}, {"conditions":[]}, {}]})
+    monkeypatch.setattr(dep,"_lte",lambda *args:str(10**20))
+    r=rows(asset)
+    r[-1]={"pending":1}
+    cur=Cursor(r)
+    with pytest.raises(HTTPException) as err:
+        dep._claim_native_sell_locked(
+            cur,did=DID,asset=asset,key=key(asset),record=p,
+            run_id=RUN,event_id=EVENT,amount_wei=10**18,
+            digest=DIGEST,budget_revision=5)
+    assert err.value.status_code==409
+    assert "LEFT JOIN mininex_live_evm_auto_broadcasts" in cur.sql[-1][0]
+    assert not any("INSERT INTO mininex_live_evm_native_sell_intents" in q
+                   for q,args in cur.sql)
