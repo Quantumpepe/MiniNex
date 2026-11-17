@@ -28,7 +28,7 @@ from .shared_evm_policy_reference_rates import (
 from .extra_coin_preferences import get_coin_preferences
 from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import fetch_privy_user
-from .eth_user_consent import _require_policy_roles
+from .shared_evm_trade_policy_roles import require_coin_trade_policy_roles as _require_policy_roles
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.evm_policy_candidate")
@@ -120,7 +120,7 @@ async def stage_internal_evm_policy_candidate(
     """
     did=_safe_did(did)
     asset=_asset(asset)
-    owner_id,signer_id=_require_policy_roles()
+    owner_id,signer_id=_require_policy_roles(asset)
     user=await fetch_privy_user(did)
     owned=_owned_eth_wallet(user,did)
     now=int(time.time())
@@ -177,7 +177,7 @@ async def stage_owner_evm_policy_from_budget(did:str,asset:str)->dict:
         raise HTTPException(409,"Save your coin settings before LIVE enrollment")
     snapshot=await fetch_evm_policy_reference_rates(
         asset,settings["stable"])
-    owner_id,signer_id=_require_policy_roles()
+    owner_id,signer_id=_require_policy_roles(asset)
     user=await fetch_privy_user(did)
     owned=_owned_eth_wallet(user,did)
     now=int(time.time())
