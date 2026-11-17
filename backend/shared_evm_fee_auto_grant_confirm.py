@@ -25,7 +25,7 @@ from .privy_live_signer import (
     _owned_eth_wallet,_scoped_signer,fetch_privy_wallet_metadata,
 )
 from .eth_privy_user_grant import _fetch_policy
-from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .shared_evm_fee_policy_roles import check_privy_fee_backend_quorum as check_privy_backend_quorum
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.owner_fee_privy_grant")
