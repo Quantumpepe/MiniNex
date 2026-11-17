@@ -102,7 +102,6 @@ def _trusted_live_session(row:dict)->dict:
 def exact_user_coin_live_amount(
     *,asset:str,side:str,stable:str,budget_usd:int,
     source_evidence:dict,prices:dict,now:int,
-    position_evidence:dict|None=None,
 )->str|None:
     """Exact user-budget BUY or owner-held SELL from real onchain evidence.
 
@@ -130,20 +129,11 @@ def exact_user_coin_live_amount(
                 or source<=0 or allowance<=0):
             return None
         if side=="BUY":
-            coin_pair=_pair(asset,stable,"SELL")
-            position=position_evidence
-            if (type(position) is not dict
-                    or position.get("mode")!="SHARED_EVM_SOURCE_ALLOWANCE_READ_ONLY"
-                    or position.get("asset")!=asset
-                    or position.get("side")!="SELL"
-                    or position.get("stable")!=stable
-                    or position.get("network")!=coin_pair["network"]
-                    or position.get("chain_id")!=coin_pair["chain_id"]
-                    or position.get("source_token_address")!=coin_pair["source_token"]
-                    or position.get("wallet_identity_verified") is not True
-                    or position.get("wallet_address")!=source_evidence.get("wallet_address")):
+            if (source_evidence.get("destination_token_address")
+                    !=pair["output_token"]
+                    or source_evidence.get("destination_balance") is None):
                 return None
-            current_holdings=Decimal(position["source_balance"])
+            current_holdings=Decimal(source_evidence["destination_balance"])
             if not current_holdings.is_finite() or current_holdings<0:
                 return None
             existing_exposure=current_holdings*_price(prices,asset,now)
@@ -185,17 +175,14 @@ async def execute_owner_evm_live_tick(
     probe="0.000001" if side=="BUY" else "0.000000000000000001"
     evidence=await check_evm_source_allowance(
         did,asset=asset,side=side,stable=stable,amount=probe)
-    # Owner's real existing coin holdings count toward their chosen
-    # asset allocation. Otherwise repeated finalized BUYs could exceed the
-    # budget while the wallet still has unrelated stablecoin balances.
-    position=(await check_evm_source_allowance(
-        did,asset=asset,side="SELL",stable=stable,
-        amount="0.000000000000000001") if side=="BUY" else None)
+    # The BUY allowance inspection already includes the current target
+    # token inventory from the same onchain RPC batch. No extra wallet
+    # roundtrip is needed to enforce owner-selected coin allocation.
     prices=await fetch_evm_policy_reference_rates(asset,stable)
     amount=exact_user_coin_live_amount(
         asset=asset,side=side,stable=stable,
         budget_usd=row["budget_usd"],source_evidence=evidence,
-        position_evidence=position,prices=prices,now=int(current))
+        prices=prices,now=int(current))
     if amount is None:
         return {"asset":asset,"state":"WAIT",
                 "reason":"NO_APPROVED_VERIFIED_SOURCE_BALANCE"}
