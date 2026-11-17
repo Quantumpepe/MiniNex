@@ -24,7 +24,15 @@ def rows(asset,stable,budget=5000,reserved=0):
     return [
         {"budget_usd":budget,"stable":stable,"revision":5},
         {"status":"GRANT_VERIFIED","stable":stable,"revoked_at":None,
+         "wallet_id":"wallet_12345678",
+         "wallet_address":"0x"+"ab"*20,
+         "consent_sha256":SHA,
          "expires_at":datetime.now(timezone.utc)+timedelta(days=1)},
+        {"status":"SIGNED_INTENT",
+         "wallet_id":"wallet_12345678","wallet_address":"0x"+"ab"*20,
+         "chain_id":{"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}[asset],
+         "stable":stable,"budget_revision":5,"budget_usd":budget,
+         "message_sha256":SHA,"confirmed_at":datetime.now(timezone.utc)},
         {"reserved_usd":Decimal(reserved)},
         {"state":"RESERVED"},
     ]
@@ -46,10 +54,10 @@ def test_five_assets_reserve_only_owner_configured_budget(asset,stable):
     assert r["state"]=="RESERVED"
     assert r["real_trade_sent"] is False
     assert r["privy_send_authorized"] is False
-    assert len(cur.sql)==4
+    assert len(cur.sql)==5
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "WHERE privy_did=%s AND asset=%s" in cur.sql[2][0]
-    assert "ON CONFLICT" in cur.sql[3][0]
+    assert "ON CONFLICT" in cur.sql[4][0]
 
 
 def test_exact_remaining_user_budget_can_be_used_100_percent():
@@ -77,6 +85,26 @@ def test_no_budget_reservation_without_current_consent(mutation):
     assert error.value.status_code==409
     assert not any("INSERT INTO mininex_live_evm_budget_reservations" in sql
                    for sql,args in cur.sql)
+
+
+@pytest.mark.parametrize("alter",[
+    lambda rows:rows[2].update(status="PENDING"),
+    lambda rows:rows[2].update(wallet_address="0x"+"cd"*20),
+    lambda rows:rows[2].update(budget_revision=4),
+    lambda rows:rows[2].update(message_sha256="b"*64),
+    lambda rows:rows[2].update(budget_usd=100),
+    lambda rows:rows[2].update(confirmed_at=None),
+])
+def test_reserve_never_uses_unsigned_stale_or_other_wallet_consent(alter):
+    data=rows("POL","USDC")
+    alter(data)
+    cur=Cur(data)
+    with pytest.raises(HTTPException) as err:
+        run(cur,"POL","USDC")
+    assert err.value.status_code==409
+    assert len(cur.sql)==3
+    assert not any("INSERT INTO mininex_live_evm_budget_reservations" in q
+                   for q,args in cur.sql)
 
 
 def test_duplicate_signal_key_cannot_replay_even_after_confirmed():
