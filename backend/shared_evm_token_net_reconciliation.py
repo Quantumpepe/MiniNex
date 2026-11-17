@@ -130,3 +130,57 @@ async def read_owner_erc20_verified_realized_net(
     result["fee_assessed"] = False
     result["auto_fee_transfer_enabled"] = False
     return result
+
+
+async def reconcile_owner_erc20_hwm_after_verified_sell(
+    *,did: str,asset: str,client: httpx.AsyncClient,
+    now: int | None = None,
+) -> dict:
+    """Internal accounting only: provenance -> FIFO net -> idempotent HWM.
+
+    The same immutable closing SELL hash is checked again under database
+    locks by the existing five-coin HWM engine. No Privy fee signer or
+    treasury transfer is authorized by updating the HWM.
+    """
+    if asset not in _ASSETS:
+        raise ValueError("Native chain custody still requires separate audit")
+    report = await read_owner_erc20_verified_realized_net(
+        did=did,asset=asset,client=client,now=now)
+    if (report.get("mode")!="RECONCILED_EVM_FIFO_NET_READ_ONLY"
+            or report.get("asset")!=asset or report.get("fee_assessed") is not False
+            or report.get("hwm_updated") is not False):
+        raise ValueError("Unverified original FIFO net report")
+    closes = report.get("closed_trades")
+    if type(closes) is not list:
+        raise ValueError("No actual closed trade evidence")
+    if closes:
+        audit = report.get("asset_transfer_audit")
+        if (type(audit) is not dict
+                or audit.get("external_inventory_reconciled") is not True
+                or audit.get("no_other_execution_costs_verified") is not True
+                or report.get("wallet_address") != audit.get("wallet_address")):
+            raise ValueError("No complete on-chain token custody proof")
+    from .shared_evm_hwm_ledger import record_internal_evm_realized_close
+    results=[]
+    for close in closes:
+        if (type(close) is not dict
+                or close.get("mode") != "RECONCILED_EVM_NET_USD_MATH_ONLY"
+                or close.get("asset") != asset
+                or close.get("wallet_address") != report.get("wallet_address")
+                or close.get("hwm_updated") is not False
+                or close.get("fee_assessed") is not False
+                or type(close.get("realized_net_usd")) is not str):
+            raise ValueError("Original verified closing event changed")
+        # One transaction per SELL in mined chronological order. The
+        # accounting ledger is idempotent; no historical close is skipped.
+        results.append(await asyncio.to_thread(
+            record_internal_evm_realized_close,
+            did=did,asset=asset,intent_key=close["intent_key"],
+            source_tx_hash=close["tx_hash"],
+            realized_net_usd=close["realized_net_usd"]))
+    return {
+        "mode":"HWM_ACCOUNTED_VERIFIED_ERC20_SELLS",
+        "asset":asset,"verified_closes":len(closes),
+        "recorded_events":results,"fee_transferred":False,
+        "privy_treasury_signer_used":False,
+    }
