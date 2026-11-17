@@ -135,6 +135,24 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
                 or type(unfinished.get("pending")) is not int
                 or unfinished["pending"]!=0):
             raise HTTPException(409,"Original native SELL must complete first")
+        # A native BUY is not settled by its finalized Router02 leg alone.
+        # Do not allow a fresh swap to consume the wrapped source between
+        # the confirmed BUY and its original native WITHDRAW.
+        cur.execute(
+            """SELECT COUNT(*) AS pending
+               FROM mininex_live_evm_auto_broadcasts b
+               LEFT JOIN mininex_live_evm_completed_native_cycles c
+                 ON c.privy_did=b.privy_did AND c.asset=b.asset
+                AND c.intent_key=b.intent_key
+               WHERE b.privy_did=%s AND b.chain_id=%s
+                 AND b.side='BUY' AND b.status='FINALIZED_SUCCESS'
+                 AND c.intent_key IS NULL AND b.intent_key<>%s""",
+            (did,pair["chain_id"],key))
+        unsettled_buy=cur.fetchone()
+        if (type(unsettled_buy) is not dict
+                or type(unsettled_buy.get("pending")) is not int
+                or unsettled_buy["pending"]!=0):
+            raise HTTPException(409,"Original native BUY conversion unsettled")
     # ETH, LINK and UNI use the same owner-wallet nonce on Ethereum.
     # Existing ETH AUTO may already have an unconfirmed submitted swap
     # or WETH9 conversion, even when the extra-asset journal is empty.
