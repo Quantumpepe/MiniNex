@@ -22,6 +22,10 @@ from psycopg.types.json import Jsonb
 from .shared_evm_privy_user_policy import build_user_evm_policy_blueprint
 from .shared_evm_owner_consent import _asset,_locked_coin_settings
 from .shared_evm_swap_receipts import _pair
+from .shared_evm_policy_reference_rates import (
+    derive_user_budget_evm_atomic_caps,fetch_evm_policy_reference_rates,
+)
+from .extra_coin_preferences import get_coin_preferences
 from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import fetch_privy_user
 from .eth_user_consent import _require_policy_roles
@@ -135,3 +139,57 @@ async def stage_internal_evm_policy_candidate(
     except psycopg.Error:
         LOG.warning("Coin policy candidate persistence unavailable")
         raise HTTPException(503,"Could not stage EVM policy draft") from None
+
+
+def _stage_from_prices_locked(
+    cur,*,did:str,asset:str,owned:dict,
+    owner_id:str,signer_id:str,
+    snapshot:dict,now:int,
+)->dict:
+    """Recompute caps INSIDE locked budget transaction; no stale settings."""
+    settings=_locked_coin_settings(cur,did=did,asset=asset)
+    caps=derive_user_budget_evm_atomic_caps(
+        asset=asset,stable=settings["stable"],
+        budget_usd=settings["budget_usd"],
+        snapshot=snapshot,now=now)
+    return _stage_locked(
+        cur,did=did,asset=asset,owned=owned,
+        owner_id=owner_id,signer_id=signer_id,
+        buy_source_atomic_cap=caps["buy_source_atomic_cap"],
+        sell_source_atomic_cap=caps["sell_source_atomic_cap"],
+        native_wrap_atomic_cap=caps["native_wrap_atomic_cap"],
+        expires_at=now+24*3600,now=now)
+
+
+async def stage_owner_evm_policy_from_budget(did:str,asset:str)->dict:
+    """Explicit owner-triggered local policy PREPARE; no Privy policy POST.
+
+    Reads only authenticated coin settings and fresh fixed-provider market
+    references, never UI-provided USD prices, limits, caps or token targets.
+    """
+    did=_safe_did(did)
+    asset=_asset(asset)
+    settings=get_coin_preferences(did)["settings"][asset]
+    if (type(settings) is not dict
+            or type(settings.get("revision")) is not int
+            or settings["revision"]<1
+            or type(settings.get("stable")) is not str):
+        raise HTTPException(409,"Save your coin settings before LIVE enrollment")
+    snapshot=await fetch_evm_policy_reference_rates(
+        asset,settings["stable"])
+    owner_id,signer_id=_require_policy_roles()
+    user=await fetch_privy_user(did)
+    owned=_owned_eth_wallet(user,did)
+    now=int(time.time())
+    try:
+        url=_db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                return _stage_from_prices_locked(
+                    cur,did=did,asset=asset,owned=owned,
+                    owner_id=owner_id,signer_id=signer_id,
+                    snapshot=snapshot,now=now)
+    except psycopg.Error:
+        LOG.warning("Signed owner EVM policy preparation unavailable")
+        raise HTTPException(503,"Cannot prepare coin Privy policy") from None
