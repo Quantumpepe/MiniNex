@@ -204,6 +204,28 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_budget_reservations (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        intent_key TEXT NOT NULL CHECK(intent_key ~ '^[A-Za-z0-9_-]{8,96}$'),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        amount_usd NUMERIC(36,6) NOT NULL CHECK(amount_usd > 0),
+        quote_sha256 TEXT NOT NULL CHECK(quote_sha256 ~ '^[0-9a-f]{64}$'),
+        state TEXT NOT NULL DEFAULT 'RESERVED'
+            CHECK(state IN ('RESERVED','SENDING','SUBMITTED',
+                'RECONCILIATION_REQUIRED','FINALIZED','CANCELLED')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        CHECK(
+            (asset='BNB' AND stable='USDT') OR
+            (asset IN ('POL','AVAX') AND stable='USDC') OR
+            asset IN ('LINK','UNI'))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_evm_budget_reserved_by_owner
+       ON mininex_live_evm_budget_reservations(privy_did,asset,state)""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_owner_permissions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
