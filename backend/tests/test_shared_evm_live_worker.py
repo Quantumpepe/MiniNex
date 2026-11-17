@@ -148,7 +148,8 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
-def test_native_evm_sell_never_uses_unwrapped_native_without_deposit(monkeypatch,asset):
+def test_native_evm_sell_never_runs_without_native_receipt_worker(monkeypatch,asset):
+    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -156,7 +157,7 @@ def test_native_evm_sell_never_uses_unwrapped_native_without_deposit(monkeypatch
                 session(asset),market=object(),client=client,now=10000)
     result=asyncio.run(tick())
     assert result["state"]=="WAIT"
-    assert result["reason"]=="NATIVE_SELL_DEPOSIT_NOT_CONNECTED"
+    assert result["reason"]=="NATIVE_CHAIN_SETTLEMENT_NOT_ACTIVE"
     assert actions==["verified_market"]
 
 
@@ -276,7 +277,7 @@ def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset)
             return await worker.execute_owner_evm_live_tick(
                 session(asset),market=object(),client=client,now=10000)
     result=asyncio.run(tick())
-    assert result["reason"]=="NATIVE_BUY_SETTLEMENT_NOT_ACTIVE"
+    assert result["reason"]=="NATIVE_CHAIN_SETTLEMENT_NOT_ACTIVE"
     assert actions==["verified_market"]
 
 
@@ -292,3 +293,55 @@ def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(monkeypatc
     assert result["state"]=="SUBMITTED"
     assert len([x for x in actions if isinstance(x,tuple)
                 and x[0]=="original_single_execution"])==1
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
+    monkeypatch,asset
+):
+    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
+    async def zero_wrapped(did,**kw):
+        actions.append("native_wallet_probe")
+        return evidence(asset,"SELL",source="0",allowance="0")
+    async def amount(**kw):
+        actions.append("native_gas_and_policy")
+        assert kw["asset"]==asset
+        return 10**18
+    async def deposit(**kw):
+        actions.append("single_native_deposit")
+        assert kw["strategy_run_id"].startswith("owner_20261117")
+        assert kw["signal_event_id"]=="market_166"
+        assert kw["native_amount_wei"]==10**18
+        assert kw["budget_revision"]==7
+        return {"state":"SUBMITTED","operation":"DEPOSIT"}
+    monkeypatch.setattr(worker,"check_evm_source_allowance",zero_wrapped)
+    monkeypatch.setattr(worker,"prepare_original_native_sell_amount",amount)
+    monkeypatch.setattr(worker,"submit_internal_native_evm_sell_deposit",deposit)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session(asset),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    assert result["state"]=="SUBMITTED"
+    assert actions==["verified_market","native_wallet_probe",
+                     "native_gas_and_policy","single_native_deposit"]
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_native_sell_existing_wrapped_balance_uses_direct_original_swap(
+    monkeypatch,asset
+):
+    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
+    async def should_not_wrap(**kwargs):
+        pytest.fail("Existing wrapped source balance must not be deposited again")
+    monkeypatch.setattr(worker,"prepare_original_native_sell_amount",should_not_wrap)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session(asset),market=object(),client=client,now=10000)
+    assert asyncio.run(tick())["state"]=="SUBMITTED"
+    assert len([action for action in actions if
+                isinstance(action,tuple) and
+                action[0]=="original_single_execution"])==1
