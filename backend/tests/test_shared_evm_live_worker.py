@@ -330,7 +330,7 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
-def test_native_sell_existing_wrapped_balance_uses_direct_original_swap(
+def test_native_sell_existing_wrapped_balance_requires_original_deposit_proof(
     monkeypatch,asset
 ):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
@@ -342,7 +342,8 @@ def test_native_sell_existing_wrapped_balance_uses_direct_original_swap(
         async with httpx.AsyncClient() as client:
             return await worker.execute_owner_evm_live_tick(
                 session(asset),market=object(),client=client,now=10000)
-    assert asyncio.run(tick())["state"]=="SUBMITTED"
-    assert len([action for action in actions if
-                isinstance(action,tuple) and
-                action[0]=="original_single_execution"])==1
+    result=asyncio.run(tick())
+    assert result["state"]=="WAIT"
+    assert result["reason"]=="ORIGINAL_NATIVE_SELL_CYCLE_REQUIRED"
+    assert not any(isinstance(action,tuple) and
+                   action[0]=="original_single_execution" for action in actions)
