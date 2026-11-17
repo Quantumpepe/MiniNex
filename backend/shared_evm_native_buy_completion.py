@@ -141,10 +141,14 @@ def _post_buy_claim_locked(
             or actual_buy_fill_wei(fill,asset=asset,stable=stable)!=amount_wei):
         raise HTTPException(409,"Native conversion differs from confirmed BUY fill")
     cur.execute(
-        """SELECT COUNT(*) AS pending FROM mininex_live_evm_auto_broadcasts
-           WHERE privy_did=%s AND chain_id=%s AND status IN
-             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-        (did,pair["chain_id"]))
+        """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
+               WHERE privy_did=%s AND chain_id=%s AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+               WHERE privy_did=%s AND chain_id=%s AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             AS pending""",
+        (did,pair["chain_id"],did,pair["chain_id"]))
     other=cur.fetchone()
     if type(other) is not dict or other.get("pending")!=0:
         raise HTTPException(409,"Same-network wallet transaction unresolved")
