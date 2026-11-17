@@ -639,6 +639,49 @@ SCHEMA = (
         FOREIGN KEY(privy_did,asset,intent_key)
             REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_auto_permissions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        owner_id TEXT NOT NULL,
+        signer_id TEXT NOT NULL,
+        owner_max_fee_atomic NUMERIC(48,0) NOT NULL CHECK(owner_max_fee_atomic > 0),
+        expires_at TIMESTAMPTZ NOT NULL,
+        challenge_text TEXT NOT NULL,
+        challenge_sha256 TEXT NOT NULL CHECK(challenge_sha256 ~ '^[0-9a-f]{64}$'),
+        challenge_expires_at TIMESTAMPTZ NOT NULL,
+        owner_signed_at TIMESTAMPTZ,
+        policy_json JSONB NOT NULL,
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        policy_id TEXT,
+        remote_policy_sha256 TEXT,
+        grant_verified_at TIMESTAMPTZ,
+        status TEXT NOT NULL CHECK(status IN
+            ('PENDING_INTENT','CONSENT_SIGNED','REMOTE_UNATTACHED',
+             'GRANT_VERIFIED','REVOKED','REMOTE_UNCERTAIN')),
+        idempotency_key TEXT,
+        policy_attempted_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        CHECK(wallet_address <> treasury_wallet),
+        CHECK(owner_id <> signer_id),
+        CHECK((asset='BNB' AND chain_id=56 AND stable='USDT') OR
+              (asset='POL' AND chain_id=137 AND stable='USDC') OR
+              (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
+              (asset IN ('LINK','UNI') AND chain_id=1)),
+        CHECK(status <> 'GRANT_VERIFIED' OR
+              (owner_signed_at IS NOT NULL AND grant_verified_at IS NOT NULL
+               AND policy_id IS NOT NULL AND
+               remote_policy_sha256=policy_sha256)),
+        CHECK(status <> 'PENDING_INTENT' OR owner_signed_at IS NULL),
+        CHECK(status <> 'REVOKED' OR revoked_at IS NOT NULL)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_immutable_fill_usd_prices (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
