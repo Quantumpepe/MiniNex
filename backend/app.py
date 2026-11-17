@@ -56,6 +56,7 @@ from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
+from .shared_evm_privy_policy_publish import publish_user_evm_privy_policy
 from .shared_evm_auto_sessions import (
     start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
 )
@@ -681,6 +682,20 @@ def owner_pause_evm_auto_session(
     """Stops future per-coin sends without retrying an in-flight tx."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(pause_owner_evm_auto(did,asset),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/policy/{asset}/publish")
+async def owner_publish_evm_privy_policy(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Owner explicitly publishes signed policy; no Privy wallet delegation."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await publish_user_evm_privy_policy(did,asset)
+    return JSONResponse(result,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
