@@ -105,6 +105,18 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
         if (type(native) is not dict or type(native.get("pending")) is not int
                 or native["pending"]!=0):
             raise HTTPException(409,"Native EVM network send unresolved")
+    if asset in ("BNB","POL","AVAX"):
+        cur.execute(
+            """SELECT COUNT(*) AS pending
+               FROM mininex_live_evm_native_sell_intents
+               WHERE privy_did=%s AND chain_id=%s AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+            (did,pair["chain_id"]))
+        native_sell=cur.fetchone()
+        if (type(native_sell) is not dict
+                or type(native_sell.get("pending")) is not int
+                or native_sell["pending"]!=0):
+            raise HTTPException(409,"Native EVM SELL deposit unresolved")
     # ETH, LINK and UNI use the same owner-wallet nonce on Ethereum.
     # Existing ETH AUTO may already have an unconfirmed submitted swap
     # or WETH9 conversion, even when the extra-asset journal is empty.
