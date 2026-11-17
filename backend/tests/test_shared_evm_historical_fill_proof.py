@@ -29,7 +29,7 @@ def setup(asset):
         "network_fee_native": "0.00021",
     }
     receipt = {
-        "transactionHash": TX, "blockHash": BLOCK_HASH,
+        "transactionHash": TX, "blockHash": BLOCK_HASH, "from": WALLET,
         "blockNumber": "0x64", "transactionIndex": "0x3",
     }
     block = {
