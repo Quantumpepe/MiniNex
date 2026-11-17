@@ -65,6 +65,7 @@ from .shared_evm_auto_sessions import (
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_fee_policy_publish import publish_owner_signed_fee_policy
 from .shared_evm_fee_auto_grant_confirm import confirm_owner_privy_fee_auto_grant
+from .shared_evm_fee_grant_offer import get_owner_auto_fee_grant_offer
 from .shared_evm_fee_auto_status import (
     owner_fee_auto_permission_status,revoke_owner_fee_auto_permission,
 )
@@ -721,6 +722,17 @@ async def owner_evm_fee_auto_policy_publish(
     """Owner-initiated once-only Privy fee policy; signer not attached."""
     did=verify_privy_bearer(authorization)["user_id"]
     result=await publish_owner_signed_fee_policy(did=did,asset=asset)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/evm/fee-auto-consent/{asset}/grant-review")
+async def owner_evm_fee_auto_grant_review(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only exact Privy fee signer offer; no wallet delegation."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await get_owner_auto_fee_grant_offer(did=did,asset=asset)
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
