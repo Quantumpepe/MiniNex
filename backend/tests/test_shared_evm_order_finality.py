@@ -22,7 +22,7 @@ class Cursor:
     def fetchone(self):
         if self.sql[-1][0].lstrip().startswith("UPDATE"):
             if "mininex_live_evm_budget_reservations" in self.sql[-1][0]:
-                return {"state":"FINALIZED"}
+                return {"state":self.sql[-1][1][0]}
             return {"status":self.update_status or self.sql[-1][1][0]}
         return self.row
 
@@ -66,6 +66,10 @@ def test_all_evm_assets_bind_onchain_receipt_to_durable_intent(asset,success):
         assert cur.sql[2][1][4]==TX
     assert "mininex_live_evm_budget_reservations" in cur.sql[-1][0]
     assert "AND state='SUBMITTED'" in cur.sql[-1][0]
+    expected_budget=(
+        "RECONCILIATION_REQUIRED" if asset in ("BNB","POL","AVAX")
+        else "FINALIZED")
+    assert cur.sql[-1][1][0]==expected_budget
 
 
 @pytest.mark.parametrize("alter",[
