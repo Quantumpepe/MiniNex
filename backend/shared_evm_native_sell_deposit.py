@@ -26,6 +26,8 @@ from .shared_evm_remote_grant_audit import (
     _read_grant_evidence_locked,validate_pinned_evm_policy,_lte,
 )
 from .shared_evm_allowance import check_evm_source_allowance
+from .multicoin_evm_balances import _RPC
+from .native_evm_v3_quote import _rpc,_decode_quantity
 from .shared_evm_swap_receipts import _pair
 from .shared_native_evm_conversion import bound_native_evm_conversion
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
@@ -68,6 +70,86 @@ def exact_native_sell_wei(*,native_atomic:object,gas_atomic:object,
         return int(amount)
     except (ArithmeticError,ValueError,TypeError):
         raise ValueError("Actual native EVM capital or gas not verified") from None
+
+
+async def estimate_native_sell_fee_reserve(
+    *,asset:str,stable:str,source_evidence:dict,client:httpx.AsyncClient,
+)->int:
+    """Estimate real chain fee from live gasPrice + canonical deposit gas.
+
+    Reserve enough native for the deposit and a subsequent Router02 SELL.
+    This is a network-fee provision, not a system trading capital ceiling.
+    The quoted fee remains in the user's wallet; it is not transferred.
+    """
+    pair=_pair(asset,stable,"SELL")
+    if (asset not in _NATIVE or type(source_evidence) is not dict
+            or source_evidence.get("wallet_identity_verified") is not True
+            or source_evidence.get("asset")!=asset
+            or source_evidence.get("chain_id")!=pair["chain_id"]
+            or source_evidence.get("network")!=pair["network"]
+            or type(client) is not httpx.AsyncClient):
+        raise ValueError("Native SELL owner and network not verified")
+    wallet=source_evidence.get("wallet_address")
+    if type(wallet) is not str or not re.fullmatch(r"0x[0-9a-f]{40}",wallet):
+        raise ValueError("Missing verified owner wallet")
+    chain,network,fallback,env=_RPC[asset]
+    if (chain!=pair["chain_id"] or network!=pair["network"]):
+        raise ValueError("Native gas route differs from onchain pair")
+    url=os.getenv(env,"").strip() or fallback
+    if not url.startswith("https://") or any(ch in url for ch in " \n\r\t#@"):
+        raise ValueError("Native EVM RPC must use HTTPS")
+    tx={"from":wallet,"to":pair["source_token"],
+        "data":"0xd0e30db0","value":"0x1"}
+    try:
+        responses=await asyncio.gather(
+            _rpc(client,url,"eth_chainId",[],31),
+            _rpc(client,url,"eth_gasPrice",[],32),
+            _rpc(client,url,"eth_estimateGas",[tx],33),
+        )
+        if _decode_quantity(responses[0])!=chain:
+            raise ValueError("Native EVM gas quote from another chain")
+        gas_price=_decode_quantity(responses[1])
+        deposit_gas=_decode_quantity(responses[2])
+        if not 0<gas_price<10**15 or not 21_000<=deposit_gas<10**7:
+            raise ValueError("Missing real native network gas")
+        # Leave fee provision for both transactions. Router02 exact-input
+        # cannot be estimated before the native token has been deposited.
+        # 350k is a gas-cost planning allowance, NEVER an order/day cap.
+        return gas_price*(deposit_gas*2+350_000)
+    except (httpx.HTTPError,ValueError,TypeError,OverflowError):
+        raise HTTPException(502,"Verified native SELL network fee unavailable") from None
+
+
+async def prepare_original_native_sell_amount(
+    *,did:str,asset:str,stable:str,source_evidence:dict,
+    client:httpx.AsyncClient,
+)->int:
+    """Use exact owner native balance minus real gas and owner Privy policy."""
+    did=_safe_did(did)
+    pair=_pair(asset,stable,"SELL")
+    if (asset not in _NATIVE
+            or type(source_evidence) is not dict
+            or source_evidence.get("mode")!="SHARED_EVM_SOURCE_ALLOWANCE_READ_ONLY"
+            or source_evidence.get("asset")!=asset
+            or source_evidence.get("side")!="SELL"
+            or source_evidence.get("stable")!=stable
+            or source_evidence.get("chain_id")!=pair["chain_id"]
+            or source_evidence.get("source_token_address")!=pair["source_token"]
+            or source_evidence.get("wallet_identity_verified") is not True
+            or type(source_evidence.get("native_gas_balance_atomic")) is not str):
+        raise ValueError("Unverified native wallet inventory")
+    record=await asyncio.to_thread(_read_grant_record,did,asset)
+    if (record.get("wallet_address")!=source_evidence.get("wallet_address")
+            or record.get("stable")!=stable
+            or record.get("chain_id")!=pair["chain_id"]):
+        raise HTTPException(409,"Native SELL wallet grant differs from owner")
+    expected=validate_pinned_evm_policy(record,asset=asset,now=int(time.time()))
+    cap=_lte(expected["rules"][2],"value")
+    gas=await estimate_native_sell_fee_reserve(
+        asset=asset,stable=stable,source_evidence=source_evidence,client=client)
+    return exact_native_sell_wei(
+        native_atomic=source_evidence["native_gas_balance_atomic"],
+        gas_atomic=gas,deposit_cap_atomic=cap)
 
 
 def _claim_native_sell_locked(
