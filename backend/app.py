@@ -30,6 +30,7 @@ from .native_coin_balances import get_native_balances
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
+from .shared_evm_passive_settlement import PassiveEvmSettlementWorker
 from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
     set_status as set_extra_paper_status,
@@ -102,6 +103,7 @@ extra_markets = ExtraMarketData()
 paper = PaperAutoEngine(market)
 personal_paper = PersonalPaperWorker(market,extra_markets)
 eth_auto_live = EthAutoLiveWorker(market)
+evm_passive_settlement = PassiveEvmSettlementWorker()
 
 
 @asynccontextmanager
@@ -113,9 +115,11 @@ async def lifespan(app: FastAPI):
     if _paper_visible():
         await personal_paper.start()
     await eth_auto_live.start()
+    await evm_passive_settlement.start()
     try:
         yield
     finally:
+        await evm_passive_settlement.stop()
         await eth_auto_live.stop()
         await personal_paper.stop()
         await paper.stop()

@@ -1,0 +1,136 @@
+"""Passive, chain-scoped settlement worker for five additional EVM assets.
+
+This worker NEVER sends or signs a transaction, creates a policy, activates
+AUTO, or assesses a fee. It only reconciles previously durably SUBMITTED
+wallet transactions against independently verified finalized blockchain
+receipts. Ambiguous SENDING/RECONCILIATION_REQUIRED states are untouched.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+
+import psycopg
+from psycopg.rows import dict_row
+
+from .shared_evm_order_finality import reconcile_evm_internal_order
+from .storage import _db_url, _ensure_schema
+
+LOG=logging.getLogger("mininex.evm_passive_settlement")
+_INTERVAL_SECONDS=30
+_SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+
+
+def _settlement_enabled()->bool:
+    return (os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
+            and bool(os.getenv("DATABASE_URL")))
+
+
+def _pending_submitted(limit:int=25)->list[dict]:
+    """Scan only unfinalized, known-hash submitted orders.
+
+    The owner DID and original asset/side/stable are taken from trusted
+    durable PostgreSQL records, never from an unauthenticated HTTP caller.
+    """
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid settlement scan limit")
+    if not _settlement_enabled():
+        return []
+    url=_db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
+                   FROM mininex_live_evm_auto_broadcasts
+                   WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
+                     AND asset IN ('BNB','POL','AVAX','LINK','UNI')
+                   ORDER BY created_at ASC LIMIT %s""",
+                (limit,))
+            return list(cur.fetchall())
+
+
+def _valid_pending_row(row:object)->bool:
+    if type(row) is not dict or row.get("asset") not in _SUPPORTED:
+        return False
+    from .shared_evm_swap_receipts import _pair
+    try:
+        pair=_pair(row["asset"],row["stable"],row["side"])
+    except (KeyError,TypeError,ValueError):
+        return False
+    return (
+        row.get("chain_id")==pair["chain_id"]
+        and type(row.get("tx_hash")) is str
+        and len(row["tx_hash"])==66
+        and row["tx_hash"].startswith("0x")
+        and type(row.get("intent_key")) is str
+        and len(row["intent_key"])>=8
+        and type(row.get("privy_did")) is str
+        and row["privy_did"].startswith("did:privy:")
+    )
+
+
+async def reconcile_submitted_evm_once(*,limit:int=25)->dict:
+    """Observe submitted sends; never retry or accelerate an old broadcast."""
+    if not _settlement_enabled():
+        return {"worker_enabled":False,"scanned":0,
+                "finalized":0,"pending":0,"errors":0,
+                "new_transactions_sent":0}
+    try:
+        rows=await asyncio.to_thread(_pending_submitted,limit)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        LOG.exception("Read-only EVM pending order scan failed")
+        return {"worker_enabled":True,"scanned":0,
+                "finalized":0,"pending":0,"errors":1,
+                "new_transactions_sent":0}
+    result={"worker_enabled":True,"scanned":len(rows),
+            "finalized":0,"pending":0,"errors":0,
+            "new_transactions_sent":0}
+    for row in rows:
+        if not _valid_pending_row(row):
+            result["errors"]+=1
+            LOG.error("Rejected invalid EVM journal pending row")
+            continue
+        try:
+            observed=await reconcile_evm_internal_order(
+                did=row["privy_did"],asset=row["asset"],
+                intent_key=row["intent_key"],tx_hash=row["tx_hash"],
+                side=row["side"],stable=row["stable"])
+            if observed.get("state") in ("FINALIZED_SUCCESS","FINALIZED_REVERTED"):
+                result["finalized"]+=1
+            elif observed.get("state")=="AWAITING_FINALITY":
+                result["pending"]+=1
+            else:
+                result["errors"]+=1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception("EVM submitted order unresolved; will inspect original hash")
+            result["errors"]+=1
+    return result
+
+
+class PassiveEvmSettlementWorker:
+    """Background read/settle only; external sends remain unimplemented."""
+    def __init__(self):
+        self._task=None
+
+    async def start(self)->None:
+        if _settlement_enabled() and self._task is None:
+            self._task=asyncio.create_task(
+                self._run(),name="mininex-evm-passive-settlement")
+
+    async def stop(self)->None:
+        task,self._task=self._task,None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
+
+    async def _run(self)->None:
+        while True:
+            await asyncio.sleep(_INTERVAL_SECONDS)
+            if _settlement_enabled():
+                await reconcile_submitted_evm_once()
