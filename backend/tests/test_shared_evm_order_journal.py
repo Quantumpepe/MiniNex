@@ -59,7 +59,8 @@ def test_five_evm_assets_have_independent_bound_durable_send_identity(
     assert len(cur.sql)==(5 if chain==1 else 7)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "chain_id=%s" in cur.sql[1][0]
-    assert cur.sql[1][1]==(DID,chain)
+    assert cur.sql[1][1]==(DID,chain,DID,chain)
+    assert "mininex_evm_auto_fee_sends" in cur.sql[1][0]
     assert "'SENDING'" in cur.sql[-1][0]
     assert i["request_digest"] in cur.sql[-1][1]
 
