@@ -123,7 +123,8 @@ def test_only_finalized_matching_onchain_transfer_can_credit_fee(asset):
         tx_hash=TX,proof=proof(asset))
     assert result["state"]=="PAID_VERIFIED"
     assert result["fee_paid_onchain"] is True
-    assert "AND state='PREPARED'" in cur.sql[-1][0]
+    assert "AND state='PREPARED'" in cur.sql[-2][0]
+    assert "settlement_status='AWAITING_VERIFIED_TRANSFER'" in cur.sql[-1][0]
     assert len(cur.sql)==4
     assert "UPDATE mininex_evm_fee_obligations" in cur.sql[-1][0]
 
