@@ -19,6 +19,8 @@ ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
 def source(asset):
     return {
         "fee_due_usd":Decimal("2.50"),
+        "settlement_status":"AWAITING_VERIFIED_TRANSFER",
+        "settlement_tx_hash":None,
         "fee_assessed_usd":Decimal("2.50"),
         "source_tx_hash":TX,
         "tx_hash":TX,"status":"FINALIZED_SUCCESS","side":"SELL",
@@ -114,19 +116,23 @@ def proof(asset):
 
 @pytest.mark.parametrize("asset",list(ASSETS))
 def test_only_finalized_matching_onchain_transfer_can_credit_fee(asset):
-    cur=Cursor([source(asset),prepared(asset),{"state":"PAID_VERIFIED"}])
+    cur=Cursor([source(asset),prepared(asset),{"state":"PAID_VERIFIED"},
+                {"settlement_status":"PAID_VERIFIED"}])
     result=payment._paid_locked(
         cur,did=DID,asset=asset,key=KEY,wallet=WALLET,
         tx_hash=TX,proof=proof(asset))
     assert result["state"]=="PAID_VERIFIED"
     assert result["fee_paid_onchain"] is True
     assert "AND state='PREPARED'" in cur.sql[-1][0]
-    assert len(cur.sql)==3
+    assert len(cur.sql)==4
+    assert "UPDATE mininex_evm_fee_obligations" in cur.sql[-1][0]
 
 
 @pytest.mark.parametrize("asset",list(ASSETS))
 def test_repeated_same_blockchain_hash_does_not_debit_again(asset):
-    cur=Cursor([source(asset),prepared(asset,"PAID_VERIFIED",TX)])
+    done=source(asset)
+    done.update(settlement_status="PAID_VERIFIED",settlement_tx_hash=TX)
+    cur=Cursor([done,prepared(asset,"PAID_VERIFIED",TX)])
     result=payment._paid_locked(
         cur,did=DID,asset=asset,key=KEY,wallet=WALLET,
         tx_hash=TX,proof=proof(asset))
@@ -137,7 +143,9 @@ def test_repeated_same_blockchain_hash_does_not_debit_again(asset):
 
 @pytest.mark.parametrize("asset",list(ASSETS))
 def test_another_hash_cannot_pay_original_obligation_twice(asset):
-    cur=Cursor([source(asset),prepared(asset,"PAID_VERIFIED","0x"+"ab"*32)])
+    done=source(asset)
+    done.update(settlement_status="PAID_VERIFIED",settlement_tx_hash="0x"+"ab"*32)
+    cur=Cursor([done,prepared(asset,"PAID_VERIFIED","0x"+"ab"*32)])
     with pytest.raises(HTTPException):
         payment._paid_locked(
             cur,did=DID,asset=asset,key=KEY,wallet=WALLET,
@@ -175,3 +183,23 @@ def test_fee_routes_are_user_authenticated_and_never_auto_sign():
     code=inspect.getsource(prepare_owner_verified_evm_fee)
     assert "post_claimed_privy_evm_rpc" not in code
     assert "sign_privy_rpc_payload" not in code
+
+
+@pytest.mark.parametrize("asset",list(ASSETS))
+def test_payment_ledger_refuses_paid_in_one_table_but_not_original_hwm_debt(asset):
+    cur=Cursor([source(asset),prepared(asset,"PAID_VERIFIED",TX)])
+    with pytest.raises(HTTPException):
+        payment._paid_locked(
+            cur,did=DID,asset=asset,key=KEY,wallet=WALLET,
+            tx_hash=TX,proof=proof(asset))
+
+
+def test_no_new_fee_payment_offer_after_original_obligation_paid():
+    already=source("LINK")
+    already.update(settlement_status="PAID_VERIFIED",settlement_tx_hash=TX)
+    cur=Cursor([already,None])
+    with pytest.raises(HTTPException):
+        payment._prepare_locked(
+            cur,did=DID,asset="LINK",key=KEY,wallet=WALLET,
+            treasury=TREASURY,rate=Decimal("1"))
+    assert len(cur.sql)==2
