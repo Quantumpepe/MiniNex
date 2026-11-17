@@ -83,7 +83,7 @@ def test_native_cycle_db_link_cannot_be_substituted(mutation):
 
 @pytest.mark.parametrize("mutation",[
     lambda d:d[3].update(wallet_address="0x"+"ff"*20),
-    lambda d:d[3].update(operation="DEPOSIT"),
+    lambda d:d[3].update(operation="WITHDRAW"),
     lambda d:d[3].update(amount_native="1.4"),
     lambda d:d[3].update(network_fee_native="-1"),
     lambda d:d[3].update(transaction_finalized=False),
