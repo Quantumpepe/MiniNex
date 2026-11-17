@@ -98,7 +98,7 @@ async def read_owner_erc20_verified_realized_net(
     priced = []
     for row in stored:
         proof = await independently_price_stored_evm_fill(
-            did=did,row=row,client=client,now=now)
+            did=did,row=row,client=client,now=now,durable_rates=True)
         if (proof.get("historic_usd_priced") is not True
                 or proof.get("native_cycle_complete") is not True):
             raise ValueError("Source execution costs are not proven")
