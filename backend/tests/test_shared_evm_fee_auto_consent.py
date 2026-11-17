@@ -41,7 +41,7 @@ def begin(monkeypatch):
         max_atomic="3500000",expires_at=NOW+86400*365,
         now=NOW,nonce="n"*64)
     values=pending.sql[0][1]
-    policy=json.loads(values[-3])
+    policy=json.loads(values[-2])
     record={
         "asset":"LINK","stable":"USDC","chain_id":1,
         "wallet_id":owned["wallet_id"],"wallet_address":owned["address"],
