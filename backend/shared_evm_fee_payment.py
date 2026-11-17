@@ -138,6 +138,30 @@ async def _owner_wallet(did:str)->str:
     return wallet.lower()
 
 
+def _reject_manual_payment_during_auto_send_locked(
+    cur,*,did:str,asset:str,key:str,
+)->None:
+    """Serialize with privileged auto SEND and prevent double settlement.
+
+    Both manual and automatic fee flows lock the SAME owner-account row.
+    A committed auto fee reservation must never be shown as a new manually
+    signable token transfer, even while its network hash is uncertain.
+    """
+    cur.execute(
+        """SELECT privy_did FROM mininex_accounts
+           WHERE privy_did=%s FOR UPDATE""",(did,))
+    owner=cur.fetchone()
+    if type(owner) is not dict or owner.get("privy_did")!=did:
+        raise HTTPException(409,"Original fee owner wallet unavailable")
+    cur.execute(
+        """SELECT status FROM mininex_evm_auto_fee_sends
+           WHERE privy_did=%s AND asset=%s AND execution_id=%s
+           FOR UPDATE""",(did,asset,key))
+    if cur.fetchone() is not None:
+        raise HTTPException(
+            409,"This fee is already assigned to an automatic wallet send")
+
+
 async def prepare_owner_verified_evm_fee(
     *,did:str,asset:str,execution_id:str,
 )->dict:
@@ -161,6 +185,8 @@ async def prepare_owner_verified_evm_fee(
     try:
         with psycopg.connect(db,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
+                _reject_manual_payment_during_auto_send_locked(
+                    cur,did=did,asset=asset,key=key)
                 return _prepare_locked(
                     cur,did=did,asset=asset,key=key,wallet=wallet,
                     treasury=treasury,rate=rate)
@@ -248,6 +274,8 @@ async def confirm_owner_verified_evm_fee(
     try:
         with psycopg.connect(db,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
+                _reject_manual_payment_during_auto_send_locked(
+                    cur,did=did,asset=asset,key=key)
                 source=_valid_fee_source_locked(
                     cur,did=did,asset=asset,key=key,wallet=wallet)
                 cur.execute(
