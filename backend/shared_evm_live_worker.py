@@ -218,15 +218,21 @@ async def execute_owner_evm_live_tick(
             wrapped=Decimal(str(evidence["source_balance"]))
             if not wrapped.is_finite() or wrapped<0:
                 raise ValueError("Unverifiable wrapped-native balance")
-            if wrapped==0:
-                amount_wei=await prepare_original_native_sell_amount(
-                    did=did,asset=asset,stable=stable,
-                    source_evidence=evidence,client=client)
-                return await submit_internal_native_evm_sell_deposit(
-                    did=did,asset=asset,strategy_run_id=run,
-                    signal_event_id=event,
-                    budget_revision=row["budget_revision"],
-                    native_amount_wei=amount_wei,client=client)
+            if wrapped>0:
+                # Preexisting wrapped inventory may be an unrelated wallet
+                # deposit or an earlier incomplete native cycle. Only the
+                # persisted original DEPOSIT event may sell its exact
+                # native amount; the finality worker handles that path.
+                return {"asset":asset,"state":"WAIT",
+                        "reason":"ORIGINAL_NATIVE_SELL_CYCLE_REQUIRED"}
+            amount_wei=await prepare_original_native_sell_amount(
+                did=did,asset=asset,stable=stable,
+                source_evidence=evidence,client=client)
+            return await submit_internal_native_evm_sell_deposit(
+                did=did,asset=asset,strategy_run_id=run,
+                signal_event_id=event,
+                budget_revision=row["budget_revision"],
+                native_amount_wei=amount_wei,client=client)
         except (ValueError,KeyError,ArithmeticError):
             return {"asset":asset,"state":"WAIT",
                     "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}
