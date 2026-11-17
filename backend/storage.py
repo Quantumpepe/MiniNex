@@ -578,6 +578,23 @@ SCHEMA = (
         FOREIGN KEY(privy_did,asset,intent_key)
             REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_completed_native_cycles (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
+        intent_key TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (56,137,43114)),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        swap_tx_hash TEXT NOT NULL CHECK(swap_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        conversion_tx_hash TEXT NOT NULL CHECK(
+            conversion_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        UNIQUE(chain_id,conversion_tx_hash),
+        FOREIGN KEY(privy_did,asset,intent_key)
+            REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_asset_hwm (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
