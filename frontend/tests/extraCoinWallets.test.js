@@ -21,7 +21,7 @@ test('separate verified wallet chains cannot borrow one another\'s address',()=>
   assert.equal(findPrivyNativeWallet(user,'solana').address,sol);
   assert.equal(findPrivyNativeWallet(user,'tron').address,trx);
   assert.equal(findPrivyNativeWallet(user,'xrpl'),null);
-  assert.equal(findPrivyNativeWallet(user,'cardano'),null);
+  assert.equal(findPrivyNativeWallet(user,'arbitrum'),null);
   assert.equal(findPrivyNativeWallet({linkedAccounts:user.linkedAccounts},'solana'),null);
   assert.equal(findPrivyNativeWallet({id:'other',linkedAccounts:[]},'solana'),null);
   assert.equal(findPrivyNativeWallet({id:'other',linkedAccounts:[
@@ -51,7 +51,7 @@ test('address prefixes and ranges cannot cross native chains',()=>{
   assert.equal(validNativePreviewAddress('tron',sol),false);
   assert.equal(validNativePreviewAddress('tron',evm),false);
   assert.equal(validNativePreviewAddress('xrpl','r'+'a'.repeat(33)),false);
-  assert.equal(validNativePreviewAddress('cardano','addr1'+'q'.repeat(50)),false);
+  assert.equal(validNativePreviewAddress('arbitrum','addr1'+'q'.repeat(50)),false);
 });
 
 const src=path=>readFileSync(new URL(path,import.meta.url),'utf8');
