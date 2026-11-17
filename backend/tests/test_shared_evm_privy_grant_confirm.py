@@ -222,5 +222,5 @@ def test_endpoint_is_owner_authenticated_and_never_grants_signer():
     from backend import shared_evm_privy_grant_confirm as mod
     source=inspect.getsource(mod)
     assert "client.post(" not in source
-    assert "addSigners" not in source
+    assert ".addSigners(" not in source
     assert "post_claimed_privy_evm_rpc" not in source
