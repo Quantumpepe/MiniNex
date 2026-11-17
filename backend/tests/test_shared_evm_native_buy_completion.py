@@ -48,10 +48,10 @@ class Cursor:
 def rows(asset):
     p=record(asset)
     return [
-        {"privy_did":DID},
         {"status":"ACTIVE","chain_id":p["chain_id"],
          "stable":p["stable"],"wallet_address":WALLET,
          "budget_revision":5},
+        {"privy_did":DID},
         {"status":"FINALIZED_SUCCESS","side":"BUY","stable":p["stable"],
          "chain_id":p["chain_id"],"wallet_address":WALLET,
          "tx_hash":TX},
@@ -101,7 +101,7 @@ def test_native_original_buy_claim_checks_real_swap_policy_budget_nonce(
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
 @pytest.mark.parametrize("mutation,query_count",[
-    (lambda x:x[1].update(status="PAUSED"),2),
+    (lambda x:x[0].update(status="PAUSED"),1),
     (lambda x:x[2].update(status="SUBMITTED"),3),
     (lambda x:x[2].update(side="SELL"),3),
     (lambda x:x[3].update(destination_amount=Decimal("2")),4),
