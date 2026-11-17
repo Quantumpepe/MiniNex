@@ -20,6 +20,7 @@ from fastapi import HTTPException
 
 from .multicoin_evm_balances import _RPC
 from .shared_evm_swap_receipts import _pair, _receipt_rpc
+from .shared_evm_native_gas_balance_proof import verify_owner_native_balance_and_gas
 
 _ASSETS=frozenset(("BNB","POL","AVAX"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
@@ -280,9 +281,40 @@ async def audit_original_native_value_interval(
             if type(digest) is not str or _HASH.fullmatch(digest.lower()) is None:
                 raise ValueError("Invalid canonical trace block hash")
             canonical[height]=digest.lower()
-        return verify_original_native_value_interval(
+        interval=verify_original_native_value_interval(
             asset=asset,wallet=wallet,fills=fills,traces=events,
             canonical_blocks=canonical,start_block=start,end_block=end)
+        # Read all top-level user-paid receipts, even those unrelated to
+        # MiniNex. Native balance can be silently moved without an ERC20 log.
+        # Missing archive state or sender gas proof leaves this audit unproven.
+        sender_roots={}
+        for event in events:
+            if (type(event) is dict and event.get("traceAddress")==[]
+                    and type(event.get("action")) is dict
+                    and str(event["action"].get("from","")).lower()==wallet):
+                tx=event.get("transactionHash")
+                if type(tx) is not str or tx in sender_roots:
+                    raise ValueError("Original user gas transaction repeated")
+                sender_roots[tx]=event
+        receipts={}
+        for i,tx in enumerate(sender_roots):
+            receipts[tx]=await _receipt_rpc(
+                client,url,"eth_getTransactionReceipt",[tx],700+i)
+        before=await _receipt_rpc(
+            client,url,"eth_getBalance",[wallet,hex(start-1)],900)
+        after=await _receipt_rpc(
+            client,url,"eth_getBalance",[wallet,hex(end)],901)
+        gas=verify_owner_native_balance_and_gas(
+            wallet=wallet,traces=events,canonical_blocks=canonical,
+            receipts=receipts,start_block=start,end_block=end,
+            balance_before=before,balance_after=after)
+        interval["original_gas_balance_conservation"]=gas
+        interval["observed_interval_native_balance_conserved"]=(
+            gas["observed_interval_native_balance_conserved"])
+        # True only for the observed interval. Lifetime source-of-funds,
+        # native initial inventory and fee basis remain unproven.
+        interval["eligible_to_assess_five_percent_fee"]=False
+        return interval
     except (httpx.HTTPError,ValueError,TypeError,KeyError,OverflowError):
         raise HTTPException(
             502,"Full original native wallet value trace interval unavailable") from None
