@@ -114,7 +114,7 @@ def test_unknown_native_transfer_during_trading_is_visible_not_hidden():
     lambda fills,traces:traces[1]["action"].update(
         value=hex(UNIT)),
     lambda fills,traces:traces[1]["action"].update(
-        from=OTHER),
+        **{"from":OTHER}),
     lambda fills,traces:traces[2].update(transactionHash=FOREIGN),
     lambda fills,traces:traces[2].update(blockHash=FOREIGN),
     lambda fills,traces:traces.append(deepcopy(traces[2])),
