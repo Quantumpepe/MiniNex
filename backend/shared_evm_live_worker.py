@@ -29,6 +29,7 @@ from .shared_evm_policy_reference_rates import (
 )
 from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
 from .shared_evm_swap_receipts import _pair
+from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
@@ -250,6 +251,14 @@ class SharedEvmLiveWorker:
                 continue
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                try:
+                    # Complete prior finalized native BUYs without using
+                    # a second trade signal or retrying an uncertain send.
+                    await reconcile_native_buy_cycle_once(client=client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Original native EVM BUY completion unavailable")
                 for row in sessions:
                     if not evm_auto_worker_enabled():
                         break
