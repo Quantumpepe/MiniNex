@@ -103,7 +103,8 @@ def test_missing_wallet_source_or_allowance_never_forms_live_order(change):
 
 def use_tick_mocks(monkeypatch,asset="LINK",action="BUY"):
     actions=[]
-    def market_decision(market,*,asset,now):
+    def market_decision(market,*,asset,now,horizon):
+        assert horizon=="15m"
         actions.append("verified_market")
         return {"action":action,"market_price":"8"}
     async def allowance(did,**kw):
