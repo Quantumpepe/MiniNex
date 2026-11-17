@@ -75,3 +75,12 @@ def test_any_inconsistent_historical_swap_source_fails_closed(change):
             proof=proof, tx_hash=TX, asset="LINK", stable=stable,
             side="SELL", receipt=receipt, block=block,
             finalized={"number": "0x65"})
+
+
+def test_reorg_or_nonfinalized_receipt_can_never_become_historical_cost():
+    stable, proof, receipt, block = setup("LINK")
+    with pytest.raises(ValueError):
+        verified_evm_swap_block_evidence(
+            proof=proof, tx_hash=TX, asset="LINK", stable=stable,
+            side="SELL", receipt=receipt, block=block,
+            finalized={"number": "0x63"})
