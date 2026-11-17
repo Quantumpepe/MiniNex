@@ -50,6 +50,7 @@ def _quantity(value:object)->int:
 def verify_original_native_conversion_trace(
     *,asset:str,side:str,stable:str,fill:object,
     conversion:object,receipt:object,traces:object,finalized:object,
+    canonical_block:object,
 )->dict:
     """Require exact original wrap/unwrap native-value movement and paid gas.
 
@@ -61,6 +62,7 @@ def verify_original_native_conversion_trace(
     if (asset not in _NATIVE or side not in ("BUY","SELL")
             or type(fill) is not dict or type(conversion) is not dict
             or type(receipt) is not dict or type(finalized) is not dict
+            or type(canonical_block) is not dict
             or type(traces) is not list or not 1<=len(traces)<=512):
         raise ValueError("Complete original native conversion trace required")
     route=_pair(asset,stable,side)
@@ -97,10 +99,15 @@ def verify_original_native_conversion_trace(
         transaction_index=_inthex(receipt["transactionIndex"])
         final_height=_inthex(finalized["number"])
         conv_height=conversion.get("block_number")
+        canonical_height=_inthex(canonical_block["number"])
+        canonical_hash=canonical_block["hash"]
         units=_quantity(conversion.get("quantity_native"))
         gas=_inthex(receipt["gasUsed"])
         price=_inthex(receipt["effectiveGasPrice"])
         if (type(conv_height) is not int or block!=conv_height or
+                block!=canonical_height or
+                type(canonical_hash) is not str or
+                canonical_hash.lower()!=receipt["blockHash"].lower() or
                 not 0<block<=final_height or gas<=0 or price<=0
                 or Decimal(gas*price)/_ATOMIC !=
                     Decimal(conversion["network_fee_native"])):
@@ -205,11 +212,13 @@ async def read_original_native_conversion_trace(
         receipt=await _receipt_rpc(client,url,"eth_getTransactionReceipt",[tx],91)
         finalized=await _receipt_rpc(
             client,url,"eth_getBlockByNumber",["finalized",False],92)
-        traces=await _receipt_rpc(client,url,"trace_transaction",[tx],93)
+        canonical=await _receipt_rpc(
+            client,url,"eth_getBlockByNumber",[receipt["blockNumber"],False],93)
+        traces=await _receipt_rpc(client,url,"trace_transaction",[tx],94)
         return verify_original_native_conversion_trace(
             asset=asset,side=side,stable=stable,fill=fill,
             conversion=conversion,receipt=receipt,traces=traces,
-            finalized=finalized)
+            finalized=finalized,canonical_block=canonical)
     except (httpx.HTTPError,ValueError,TypeError,KeyError,OverflowError):
         raise HTTPException(
             502,"Original native archive trace unsupported or unverified") from None
