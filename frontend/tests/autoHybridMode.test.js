@@ -15,7 +15,7 @@ const profile=()=>({
 
 test('AUTO is the third strategy setting for twelve coins including ARB',()=>{
   assert.deepEqual(REPLAY_MODES,['LONG','SPOT_SHORT','AUTO']);
-  assert.equal(SHARED_STRATEGY_COINS.length,11);
+  assert.equal(SHARED_STRATEGY_COINS.length,12);
   assert.equal(SHARED_STRATEGY_COINS.includes('ARB'),true);
   assert.equal(validSharedStrategyProfile(profile()),true);
 });
