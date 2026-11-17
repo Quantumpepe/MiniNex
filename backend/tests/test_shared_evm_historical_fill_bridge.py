@@ -59,3 +59,36 @@ def test_mismatch_between_persisted_and_reverified_receipt_refuses_pnl(mutate):
     mutate(row, proof)
     with pytest.raises(ValueError):
         join_owner_persisted_evm_fill(row, proof)
+
+
+def test_original_block_prices_are_fetched_without_trusting_current_quote(monkeypatch):
+    import asyncio
+    import httpx
+    from backend import shared_evm_historical_fill_bridge as bridge
+
+    row, proof = evidence("LINK")
+    proof["block_unix"] = 1800000
+    async def reread(**kwargs):
+        assert kwargs["tx_hash"] == TX
+        return proof
+    monkeypatch.setattr(bridge, "read_owner_finalized_evm_swap_block", reread)
+    requests = []
+    async def coingecko(req):
+        requests.append(req.url.path)
+        assert req.url.host == "api.coingecko.com"
+        rate = "1" if "usd-coin" in req.url.path else "2500"
+        return httpx.Response(200, json={
+            "prices": [[1800000*1000, rate]],
+        })
+    async def execute():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(coingecko)) as client:
+            return await bridge.independently_price_stored_evm_fill(
+                did="did:privy:test_account", row=row,client=client,
+                now=1800100)
+    result = asyncio.run(execute())
+    assert result["historic_usd_priced"] is True
+    assert result["stable_usd_proof"]["usd_price"] == "1"
+    assert result["native_usd_proof"]["usd_price"] == "2500"
+    assert result["fee_assessed"] is False
+    assert result["external_inventory_reconciled"] is False
+    assert len(requests) == 2
