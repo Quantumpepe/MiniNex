@@ -85,3 +85,51 @@ Do not copy a treasury address or policy from a different chain by default.
 Privy signer grant; an ACTIVE server session as a completed blockchain
 trade; an assessed HWM debt as paid ERC20 fees; or a finalized swap leg
 as complete native wallet settlement.
+
+
+## Native BNB/POL/AVAX historical custody: new read-only evidence
+
+New modules in this same PR (development only):
+
+- `shared_evm_native_trace_provenance.py`: the actual original
+  `trace_transaction` must show the wallet-paid native deposit or internal
+  wrapped-token withdrawal, canonical finalized block, exact native amount
+  and receipt gas. An incomplete trace tree fails closed.
+- `shared_evm_native_value_interval_audit.py`: complete paginated
+  `trace_filter` scan of outgoing/incoming native calls across the original
+  MiniNex trade interval, checked against canonical mined block hashes.
+  Unknown native deposits/withdrawals are disclosed, never silently
+  credited as MiniNex PnL.
+- `shared_evm_native_gas_balance_proof.py`: every *observed* wallet-signed
+  root transaction needs its own mined receipt. Actual gas plus every
+  observed native-value movement must explain archived `eth_getBalance`
+  before/after the interval exactly. A single mismatch invalidates the
+  audit.
+- `shared_evm_native_history_readiness.py`: reloads all original confirmed
+  BNB/POL/AVAX owner fills from PostgreSQL (not the UI history page),
+  binds historical USD prices and original native conversion traces, then
+  combines the interval transfer and gas-balance proofs. READ ONLY.
+- `shared_evm_historical_fill_bridge.py` now independently requests the
+  native conversion call-trace proof before marking a native original
+  conversion historically priced; it still never reports complete external
+  inventory or triggers HWM/fees.
+
+**Historical archive RPC requirements:** For each applicable native chain the
+operator-selected HTTPS RPC must implement `trace_transaction`,
+`trace_filter` with `after`/`count` paging, archive
+`eth_getBalance`, and historical receipts/blocks. Many ordinary public
+RPCs will reject these; this fails closed for the **optional accounting
+readers only** and is not an automatic trading suspension. RPC page/window
+sizes are transport batches, **not order/day/capital limits**.
+
+**Still not proven, and therefore not fee-eligible:** Wallet native
+initial asset inventory and cost basis before MiniNex's first observed
+trade; any historical source-of-funds that predates the scanned interval;
+a complete wallet-lifetime gas history; and every older block-time USD
+quotation outside available immutable data/provider coverage. Even when
+observed transfers and native balance changes reconcile, these proofs
+deliberately return `fee_assessment_eligible=false`.
+Never manually override this to charge 5% on native trades.
+
+This branch still requires independent Privy signer grants and a controlled
+Render/Android rollout; no release or real money movement has happened here.
