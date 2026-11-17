@@ -59,6 +59,7 @@ from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
 from .shared_evm_privy_policy_publish import publish_user_evm_privy_policy
 from .shared_evm_privy_grant_confirm import confirm_owner_evm_privy_grant
+from .shared_evm_trade_grant_offer import get_owner_trade_grant_offer
 from .shared_evm_auto_sessions import (
     start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
 )
@@ -849,6 +850,17 @@ def owner_pause_evm_auto_session(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+@app.get("/api/live/evm/policy/{asset}/grant-review")
+async def owner_evm_trading_grant_review(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Read-only owner-signed exact Privy trading policy offer."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await get_owner_trade_grant_offer(did=did,asset=asset)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/live/evm/policy/{asset}/confirm-grant")
