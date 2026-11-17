@@ -37,7 +37,7 @@ const wethData=req=>({
 test('BTC transaction hash cannot be borrowed as ETH transaction or vice versa',()=>{
   assert.equal(receiptRequest('BTC',ETH,'BTC_CHAIN','BUY','USDC'),null);
   assert.equal(receiptRequest('ETH',BTC,'ROUTER02','BUY','USDC'),null);
-  assert.equal(receiptRequest('ADA',BTC,'ROUTER02','BUY','USDC'),null);
+  assert.equal(receiptRequest('ARB',BTC,'ROUTER02','BUY','USDC'),null);
   assert.equal(receiptRequest('BTC','zzz','BTC_CHAIN','BUY','USDC'),null);
   assert.equal(receiptRequest('ETH','0x123','ROUTER02','BUY','USDC'),null);
   const request=receiptRequest('BTC',BTC,'BTC_CHAIN','SELL','USDC');
