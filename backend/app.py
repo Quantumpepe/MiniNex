@@ -55,6 +55,9 @@ from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
+from .shared_evm_auto_sessions import (
+    start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
+)
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_allowance import check_evm_source_allowance
 from .shared_evm_swap_preparation import prepare_owner_evm_swap
@@ -641,6 +644,45 @@ def owner_evm_fifo_preview(
     return JSONResponse(read_evm_fifo_gross_preview(did,asset),
         headers={"Cache-Control":"private, no-store",
                  "X-Content-Type-Options":"nosniff"})
+
+
+@app.get("/api/live/evm/auto-session/{asset}")
+def owner_evm_auto_session(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Read-only per-coin user LIVE session, never implied by login."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_owner_evm_auto(did,asset),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/auto-session/{asset}/start")
+async def owner_start_evm_auto_session(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Only this user's explicit action after fresh remote Privy approval."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(await start_owner_evm_auto(did,asset),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/auto-session/{asset}/pause")
+def owner_pause_evm_auto_session(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Stops future per-coin sends without retrying an in-flight tx."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(pause_owner_evm_auto(did,asset),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.get("/api/live/evm/remote-grant-audit/{asset}")
