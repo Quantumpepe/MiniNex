@@ -64,11 +64,11 @@ def test_only_exact_owner_signed_fee_intent_becomes_consent(monkeypatch):
     monkeypatch.setattr(fee,"owner_fee_treasury",lambda **kw:TREASURY)
     sig=Account.sign_message(
         encode_defunct(text=original["message_to_sign"]),
-        private_key=user.key).signature.hex()
+        private_key=user.key).signature
     cur=Cur([record,{"status":"CONSENT_SIGNED"}])
     outcome=fee._confirm_fee_intent_locked(
         cur,did=DID,asset="LINK",session_sha256=SESSION,
-        owned=owned,signature="0x"+sig,now=NOW+30)
+        owned=owned,signature="0x"+bytes(sig).hex(),now=NOW+30)
     assert outcome["owner_fee_intent_verified"] is True
     assert outcome["privy_owner_grant_still_required"] is True
     assert outcome["automatic_fee_transfer_enabled"] is False
@@ -91,13 +91,13 @@ def test_fee_grant_enrollment_cannot_skip_exact_current_owner_intent(
     monkeypatch.setattr(fee,"owner_fee_treasury",lambda **kw:TREASURY)
     sig=Account.sign_message(
         encode_defunct(text=original["message_to_sign"]),
-        private_key=user.key).signature.hex()
+        private_key=user.key).signature
     change(record)
     cur=Cur([record])
     with pytest.raises((HTTPException,ValueError)):
         fee._confirm_fee_intent_locked(
             cur,did=DID,asset="LINK",session_sha256=SESSION,
-            owned=owned,signature="0x"+sig,now=NOW+10)
+            owned=owned,signature="0x"+bytes(sig).hex(),now=NOW+10)
     assert not any("UPDATE mininex_evm_fee_auto_permissions" in q for q,args in cur.sql)
 
 
@@ -107,12 +107,12 @@ def test_unsupported_wallet_signature_does_not_delegate_privy(monkeypatch):
     wrong=Account.create()
     sig=Account.sign_message(
         encode_defunct(text=result["message_to_sign"]),private_key=wrong.key
-    ).signature.hex()
+    ).signature
     cur=Cur([record])
     with pytest.raises(HTTPException) as exc:
         fee._confirm_fee_intent_locked(
             cur,did=DID,asset="LINK",session_sha256=SESSION,
-            owned=owned,signature="0x"+sig,now=NOW+10)
+            owned=owned,signature="0x"+bytes(sig).hex(),now=NOW+10)
     assert exc.value.status_code==403
 
 
