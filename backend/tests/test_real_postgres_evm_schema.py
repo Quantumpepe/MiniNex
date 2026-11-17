@@ -141,3 +141,61 @@ def test_real_postgres_fee_payment_requires_one_original_fee_and_one_real_hash()
                    WHERE privy_did=%s AND asset='LINK' AND execution_id=%s""",
                 (did,second))
             assert cur.fetchone()==("PREPARED",None)
+
+
+@pytest.mark.skipif(not _ci_dsn(),reason="Only ephemeral CI PostgreSQL may run")
+def test_existing_legacy_fee_constraint_migrates_without_duplicate_charges():
+    """Old Render installs forbid non-null settlement hashes; migration must work."""
+    from backend.storage import SCHEMA
+    migration=next(sql for sql in SCHEMA
+                   if "DROP CONSTRAINT IF EXISTS" in sql
+                   and "mininex_evm_fee_obligations" in sql)
+    did="did:privy:migration_"+uuid.uuid4().hex
+    key="sig_"+uuid.uuid4().hex
+    tx="0x"+"ab"*32
+    with psycopg.connect(_ci_dsn(),connect_timeout=6) as conn:
+        with conn.cursor() as cur:
+            for sql in SCHEMA:
+                cur.execute(sql)
+            cur.execute(
+                """ALTER TABLE mininex_evm_fee_obligations
+                   DROP CONSTRAINT mininex_evm_fee_obligations_payment_state_check""")
+            cur.execute(
+                """ALTER TABLE mininex_evm_fee_obligations
+                   ADD CONSTRAINT mininex_evm_fee_obligations_settlement_status_check
+                   CHECK(settlement_status='AWAITING_VERIFIED_TRANSFER')""")
+            cur.execute(
+                """ALTER TABLE mininex_evm_fee_obligations
+                   ADD CONSTRAINT mininex_evm_fee_obligations_settlement_tx_hash_check
+                   CHECK(settlement_tx_hash IS NULL)""")
+            cur.execute(migration)
+            cur.execute(migration)
+            cur.execute(
+                """INSERT INTO mininex_accounts(privy_did) VALUES (%s)""",
+                (did,))
+            cur.execute(
+                """INSERT INTO mininex_evm_asset_hwm(privy_did,asset)
+                   VALUES (%s,'LINK')""",(did,))
+            cur.execute(
+                """INSERT INTO mininex_evm_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,
+                    fee_rate,fee_assessed_usd,source_tx_hash)
+                   VALUES (%s,'LINK',%s,20,20,20,0.05,1,%s)""",
+                (did,key,"0x"+"cd"*32))
+            cur.execute(
+                """INSERT INTO mininex_evm_fee_obligations
+                   (privy_did,asset,execution_id,fee_due_usd)
+                   VALUES (%s,'LINK',%s,1)""",(did,key))
+            cur.execute(
+                """UPDATE mininex_evm_fee_obligations
+                   SET settlement_status='PAID_VERIFIED',
+                       settlement_tx_hash=%s
+                   WHERE privy_did=%s AND asset='LINK' AND execution_id=%s""",
+                (tx,did,key))
+            cur.execute(
+                """SELECT settlement_status,settlement_tx_hash
+                   FROM mininex_evm_fee_obligations
+                   WHERE privy_did=%s AND asset='LINK' AND execution_id=%s""",
+                (did,key))
+            assert cur.fetchone()==("PAID_VERIFIED",tx)
