@@ -265,3 +265,30 @@ def test_5min_horizon_is_owner_supported_setting():
     r=session()
     r["horizon"]="5m"
     assert worker._trusted_live_session(r)["horizon"]=="5m"
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset):
+    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session(asset),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    assert result["reason"]=="NATIVE_BUY_SETTLEMENT_NOT_ACTIVE"
+    assert actions==["verified_market"]
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(monkeypatch,asset):
+    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session(asset),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    assert result["state"]=="SUBMITTED"
+    assert len([x for x in actions if isinstance(x,tuple)
+                and x[0]=="original_single_execution"])==1
