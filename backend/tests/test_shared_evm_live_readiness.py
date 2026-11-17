@@ -99,7 +99,8 @@ def test_on_demand_preflight_reads_server_evidence_only(monkeypatch):
     async def privy_wallet(wallet_id):
         called.append(("wallet",wallet_id))
         return metadata()
-    async def quorum():
+    async def quorum(asset):
+        assert asset=="POL"
         called.append(("quorum",))
         return {"remote_quorum_public_key_verified":True}
     monkeypatch.setattr(a,"read_owner_evm_permission_status",record)
