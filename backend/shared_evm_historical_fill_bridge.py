@@ -20,6 +20,7 @@ from .shared_evm_historical_fill_proof import read_owner_finalized_evm_swap_bloc
 from .shared_evm_historical_usd import fetch_recent_historical_usd_observation
 from .shared_evm_durable_usd_reference import historical_usd_for_verified_fill
 from .shared_evm_native_cost_provenance import read_original_native_execution_cost
+from .shared_evm_native_trace_provenance import read_original_native_conversion_trace
 from .shared_evm_swap_receipts import _pair
 
 _ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI"))
@@ -121,6 +122,18 @@ async def independently_price_stored_evm_fill(
     if row["asset"] in _NATIVE:
         joined["native_conversion"] = await read_original_native_execution_cost(
             did=did, fill=joined, client=client, now=now)
+        # Independently inspect the actual native value transfer calls. The
+        # original wrap/unwrap receipt alone cannot prove wallet custody.
+        # This still does not audit every external wallet movement.
+        joined["native_conversion_trace"] = (
+            await read_original_native_conversion_trace(
+                asset=row["asset"],side=row["side"],stable=row["stable"],
+                fill=joined,conversion=joined["native_conversion"],client=client))
+        if (joined["native_conversion_trace"].get(
+                "original_finalized_internal_value_proven") is not True
+                or joined["native_conversion_trace"].get(
+                    "full_historical_wallet_activity_proven") is not False):
+            raise ValueError("Original native wallet trace not independently proven")
         joined["native_cycle_complete"] = True
     else:
         joined["native_conversion"] = None
