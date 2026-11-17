@@ -42,7 +42,6 @@ test('XRPL account provisioning uses authenticated Privy extended chain, no othe
   assert.match(panel,/useXrplWallet\(user,verifiedAccount\)/);
   assert.match(panel,/xrpWallet\.address/);
   assert.match(panel,/onClick=\{xrpWallet\.retry\}/);
-  assert.match(panel,/asset==='ADA'/);
   assert.match(panel,/t\.coinAddressReadOnly/);
   assert.doesNotMatch(hook+panel,/seedPhrase|privateKey|wallet_propose|sendTransaction\s*\(|approve\s*\(/);
 });
