@@ -21,7 +21,7 @@ def session(asset="LINK"):
                 chain_id=_pair(asset,ASSETS[asset],"BUY")["chain_id"],
                 budget_revision=7,budget_usd=2000,
                 mode="AUTO",horizon="15m",
-                started_by_owner_at=START)
+                pending_buy_usd=Decimal("0"),started_by_owner_at=START)
 
 
 def evidence(asset,side,source="2500",allowance="3000",destination="0"):
@@ -240,3 +240,27 @@ def test_fully_allocated_coin_budget_does_not_buy_again_from_other_coin_cash():
         source_evidence=proof,
         prices=rates("LINK","USDC"),
         now=int(__import__("time").time())) is None
+
+
+def test_outstanding_buy_reservations_reduce_available_user_budget():
+    proof=evidence("LINK","BUY",source="5000",allowance="5000")
+    amount=worker.exact_user_coin_live_amount(
+        asset="LINK",side="BUY",stable="USDC",budget_usd=2000,
+        pending_buy_usd=Decimal("750"),
+        source_evidence=proof,prices=rates("LINK","USDC"),
+        now=int(__import__("time").time()))
+    assert Decimal(amount)==1250
+
+
+@pytest.mark.parametrize("invalid",[None,"NaN","Infinity","-1","oops"])
+def test_live_session_rejects_uncertain_reservations(invalid):
+    r=session()
+    r["pending_buy_usd"]=invalid
+    with pytest.raises(ValueError):
+        worker._trusted_live_session(r)
+
+
+def test_5min_horizon_is_owner_supported_setting():
+    r=session()
+    r["horizon"]="5m"
+    assert worker._trusted_live_session(r)["horizon"]=="5m"
