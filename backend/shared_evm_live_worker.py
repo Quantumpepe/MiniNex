@@ -31,6 +31,9 @@ from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
+from .shared_evm_native_sell_deposit import (
+    prepare_original_native_sell_amount,submit_internal_native_evm_sell_deposit,
+)
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
@@ -192,23 +195,40 @@ async def execute_owner_evm_live_tick(
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
-    if asset in _NATIVE:
-        if side=="SELL":
-            # Native spot SELL needs a separately confirmed DEPOSIT before
-            # attempting the Router02 swap. Never claim WBNB/WMATIC/WAVAX
-            # balance exists simply because the owner holds native coins.
-            return {"asset":asset,"state":"WAIT",
-                    "reason":"NATIVE_SELL_DEPOSIT_NOT_CONNECTED"}
-        if os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")!="explicit-readonly":
-            # A native BUY must have its post-swap WITHDRAW reconciler active
-            # before any Router02 buy can leave a wrapped-native position.
-            return {"asset":asset,"state":"WAIT",
-                    "reason":"NATIVE_BUY_SETTLEMENT_NOT_ACTIVE"}
+    if (asset in _NATIVE
+            and os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")!="explicit-readonly"):
+        # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
+        # a prior DEPOSIT. Both require the original receipt reconciler.
+        return {"asset":asset,"state":"WAIT",
+                "reason":"NATIVE_CHAIN_SETTLEMENT_NOT_ACTIVE"}
     stable=row["stable"]
     _pair(asset,stable,side)
     probe="0.000001" if side=="BUY" else "0.000000000000000001"
     evidence=await check_evm_source_allowance(
         did,asset=asset,side=side,stable=stable,amount=probe)
+    run="owner_"+row["started_by_owner_at"].astimezone(
+        timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    event="market_"+str(int(current//60))
+    if asset in _NATIVE and side=="SELL":
+        # Prefer an already-held wrapped coin, which needs no additional
+        # conversion. If the actual wrapped inventory is zero, a real
+        # onchain native DEPOSIT must finalize before its original swap.
+        try:
+            wrapped=Decimal(str(evidence["source_balance"]))
+            if not wrapped.is_finite() or wrapped<0:
+                raise ValueError("Unverifiable wrapped-native balance")
+            if wrapped==0:
+                amount_wei=await prepare_original_native_sell_amount(
+                    did=did,asset=asset,stable=stable,
+                    source_evidence=evidence,client=client)
+                return await submit_internal_native_evm_sell_deposit(
+                    did=did,asset=asset,strategy_run_id=run,
+                    signal_event_id=event,
+                    budget_revision=row["budget_revision"],
+                    native_amount_wei=amount_wei,client=client)
+        except (ValueError,KeyError,ArithmeticError):
+            return {"asset":asset,"state":"WAIT",
+                    "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}
     # The BUY allowance inspection already includes the current target
     # token inventory from the same onchain RPC batch. No extra wallet
     # roundtrip is needed to enforce owner-selected coin allocation.
@@ -224,9 +244,6 @@ async def execute_owner_evm_live_tick(
     # The coordinator fetches a fresh Router02 quote AND checks exact full
     # source/allowance/gas atomics once more before any budget claim/send.
     # Do not repeat the identical RPC here just to delay order execution.
-    run="owner_"+row["started_by_owner_at"].astimezone(
-        timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-    event="market_"+str(int(current//60))
     return await execute_internal_evm_strategy_signal(
         did=did,asset=asset,strategy_run_id=run,
         signal_event_id=event,side=side,stable=stable,amount=amount,
