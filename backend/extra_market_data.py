@@ -345,14 +345,22 @@ class ExtraMarketData:
         if asset not in EXTRA_ASSETS:
             raise ValueError("Unsupported read-only market")
         at = self.clock()
-        data = [point for point in self._long_historical.get(asset,())
+        long = [point for point in self._long_historical.get(asset,())
                 if 0 <= at - point["timestamp"] <= 86400]
-        data.extend(point for point in self._historical[asset]
-                    if 0 <= at - point["timestamp"] <= 7200)
-        data.extend(point for point in self._ticks[asset]
-                    if 0 <= at - point["timestamp"] <= 7200)
-        data.sort(key=lambda point: point["timestamp"])
-        return data[-max(1, min(limit, 3600)):]
+        recent = [point for point in self._historical[asset]
+                  if 0 <= at - point["timestamp"] <= 7200]
+        recent.extend(point for point in self._ticks[asset]
+                      if 0 <= at - point["timestamp"] <= 7200)
+        recent.sort(key=lambda point: point["timestamp"])
+        count=max(1,min(limit,3600))
+        if count==3600:
+            # The LIVE 24h horizon depends on genuine 15-minute candles.
+            # Never discard all 24-hour evidence merely because fast WS
+            # ticks filled up the tail of the combined 3600 samples.
+            long=long[-count:]
+            recent=recent[-max(0,count-len(long)):]
+            return sorted(long+recent,key=lambda point: point["timestamp"])
+        return sorted(long+recent,key=lambda point: point["timestamp"])[-count:]
 
     def ingest_candles(self, asset: str, rows: Any, *,
                        now: float | None = None) -> int:
