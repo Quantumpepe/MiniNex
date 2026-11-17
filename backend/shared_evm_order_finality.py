@@ -107,6 +107,19 @@ def _finalize_locked(
              amounts["source_spent_amount"],
              amounts["destination_received_amount"],
              amounts["network_fee_native"]))
+    # Trade finality and capital release MUST be the same transaction.
+    # Reverted trades release the reservation too, but their original
+    # strategy signal remains terminal and cannot be replayed.
+    cur.execute(
+        """UPDATE mininex_live_evm_budget_reservations
+           SET state='FINALIZED',updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND state='SUBMITTED'
+           RETURNING state""",(did,asset,key))
+    finalized_budget=cur.fetchone()
+    if (type(finalized_budget) is not dict
+            or finalized_budget.get("state")!="FINALIZED"):
+        raise HTTPException(409,"EVM finality/budget accounting conflict")
     return state
 
 
