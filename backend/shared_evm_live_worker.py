@@ -62,7 +62,16 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
             cur.execute(
                 """SELECT s.privy_did,s.asset,s.stable,s.chain_id,
                           s.budget_revision,s.started_by_owner_at,
-                          p.budget_usd,p.mode,p.horizon
+                          p.budget_usd,p.mode,p.horizon,
+                          COALESCE((
+                              SELECT SUM(r.amount_usd)
+                              FROM mininex_live_evm_budget_reservations r
+                              WHERE r.privy_did=s.privy_did
+                                AND r.asset=s.asset AND r.side='BUY'
+                                AND r.state IN
+                                  ('RESERVED','SENDING','SUBMITTED',
+                                   'RECONCILIATION_REQUIRED')
+                          ),0) AS pending_buy_usd
                    FROM mininex_live_evm_auto_sessions s
                    JOIN mininex_extra_coin_preferences p
                      ON p.privy_did=s.privy_did AND p.asset=s.asset
@@ -94,7 +103,9 @@ def _trusted_live_session(row:dict)->dict:
             or row["budget_revision"]<=0
             or row.get("chain_id")!=pair["chain_id"]
             or row.get("mode") not in ("LONG","SPOT_SHORT","AUTO")
-            or row.get("horizon") not in ("15m","1h","24h")):
+            or row.get("horizon") not in ("5m","15m","1h","24h")
+            or Decimal(str(row.get("pending_buy_usd"))).is_nan()
+            or Decimal(str(row["pending_buy_usd"]))<0):
         raise ValueError("Coin LIVE session settings are not verified")
     return row
 
@@ -102,6 +113,7 @@ def _trusted_live_session(row:dict)->dict:
 def exact_user_coin_live_amount(
     *,asset:str,side:str,stable:str,budget_usd:int,
     source_evidence:dict,prices:dict,now:int,
+    pending_buy_usd:object=Decimal(0),
 )->str|None:
     """Exact user-budget BUY or owner-held SELL from real onchain evidence.
 
@@ -137,7 +149,11 @@ def exact_user_coin_live_amount(
             if not current_holdings.is_finite() or current_holdings<0:
                 return None
             existing_exposure=current_holdings*_price(prices,asset,now)
-            available_budget=max(Decimal(0),Decimal(budget_usd)-existing_exposure)
+            pending=Decimal(str(pending_buy_usd))
+            if not pending.is_finite() or pending<0:
+                return None
+            available_budget=max(Decimal(0),
+                                 Decimal(budget_usd)-existing_exposure-pending)
             stable_usd=_price(prices,stable,now)
             amount=min(source,allowance,available_budget/stable_usd)
         else:
@@ -182,7 +198,8 @@ async def execute_owner_evm_live_tick(
     amount=exact_user_coin_live_amount(
         asset=asset,side=side,stable=stable,
         budget_usd=row["budget_usd"],source_evidence=evidence,
-        prices=prices,now=int(current))
+        prices=prices,now=int(current),
+        pending_buy_usd=row["pending_buy_usd"])
     if amount is None:
         return {"asset":asset,"state":"WAIT",
                 "reason":"NO_APPROVED_VERIFIED_SOURCE_BALANCE"}
