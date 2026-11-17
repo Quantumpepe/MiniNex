@@ -191,7 +191,8 @@ async def execute_owner_evm_live_tick(
     if type(client) is not httpx.AsyncClient:
         raise ValueError("Internal HTTP client required")
     current=time.time() if now is None else now
-    decision=verified_live_evm_momentum(market,asset=asset,now=current)
+    decision=verified_live_evm_momentum(
+        market,asset=asset,now=current,horizon=row["horizon"])
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
