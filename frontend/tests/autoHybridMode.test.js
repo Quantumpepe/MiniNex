@@ -9,14 +9,14 @@ import {validExtraPaperState,extraPaperCanStart} from '../src/extraPaperRules.js
 const profile=()=>({
   mode:'SHARED_STRATEGY_PREFERENCES',strategy_mode:'AUTO',
   horizon:'15m',revision:5,assets:[...SHARED_STRATEGY_COINS],
-  ada_in_progress:true,independent_budgets_preserved:true,
+  independent_budgets_preserved:true,
   existing_sessions_unchanged:true,wallet_authorized:false,real_trading_enabled:false,
 });
 
-test('AUTO is the third strategy setting for eleven coins, not ADA',()=>{
+test('AUTO is the third strategy setting for twelve coins including ARB',()=>{
   assert.deepEqual(REPLAY_MODES,['LONG','SPOT_SHORT','AUTO']);
   assert.equal(SHARED_STRATEGY_COINS.length,11);
-  assert.equal(SHARED_STRATEGY_COINS.includes('ADA'),false);
+  assert.equal(SHARED_STRATEGY_COINS.includes('ARB'),true);
   assert.equal(validSharedStrategyProfile(profile()),true);
 });
 
