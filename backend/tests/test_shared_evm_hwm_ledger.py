@@ -165,10 +165,10 @@ def test_evm_hwm_does_not_modify_original_btc_eth_ledger():
     lambda c:c.update(conversion_tx_hash=None),
     lambda c:c.update(chain_id=1),
     lambda c:c.update(side="BUY"),
-    lambda c:c.update(stable="USDT"),
+    lambda c:c.update(stable="INVALID"),
 ])
 def test_hwm_never_assesses_native_fee_without_full_matching_sell_cycle(asset,corrupt):
-    entries=rows(asset,stable="USDC")
+    entries=rows(asset)
     corrupt(entries[2])
     cur=Cur(entries)
     with pytest.raises(HTTPException) as failure:
