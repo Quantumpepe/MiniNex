@@ -38,7 +38,7 @@ def row(proof, quoted, price):
     ("UNI","USDT","1.002"),("BNB","BNB","650.2"),
 ])
 def test_persisted_quoted_price_bound_to_actual_original_block(asset,quoted,price):
-    proof=original(asset,stable=("USDT" if quoted=="USDT" else "USDC"))
+    proof=original(asset,stable=("USDT" if asset=="BNB" or quoted=="USDT" else "USDC"))
     value=durable.validate_bound_historical_price(
         proof=proof,row=row(proof,quoted,price),quoted_asset=quoted)
     assert Decimal(value["usd_price"])==Decimal(price)
