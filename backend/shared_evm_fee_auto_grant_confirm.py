@@ -138,7 +138,7 @@ async def confirm_owner_privy_fee_auto_grant(*,did:str,asset:str)->dict:
     user=await fetch_privy_user(did)
     metadata=await fetch_privy_wallet_metadata(row["wallet_id"])
     remote=await _fetch_policy(row["policy_id"])
-    quorum=await check_privy_backend_quorum()
+    quorum=await check_privy_backend_quorum(asset)
     evidence=_verify_owner_fee_grant(
         did=did,record=row,expected=candidate,
         user=user,wallet_metadata=metadata,
@@ -171,7 +171,7 @@ async def get_owner_fee_auto_remote_grant_audit(*,did:str,asset:str)->dict:
     user=await fetch_privy_user(did)
     metadata=await fetch_privy_wallet_metadata(row["wallet_id"])
     remote=await _fetch_policy(row["policy_id"])
-    quorum=await check_privy_backend_quorum()
+    quorum=await check_privy_backend_quorum(asset)
     evidence=_verify_owner_fee_grant(
         did=did,record=row,expected=expected,user=user,
         wallet_metadata=metadata,remote_policy=remote,quorum=quorum)
