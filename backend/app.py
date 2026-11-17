@@ -90,7 +90,11 @@ from .eth_privy_user_grant import get_eth_user_grant_review, confirm_eth_user_gr
 from .eth_live_ledger_audit import get_eth_live_ledger_audit
 from .eth_prelaunch_safety import get_eth_prelaunch_safety_report
 from .eth_privy_policy_incident import get_eth_privy_policy_incident_review
-from .shared_evm_owner_consent import (\n    prepare_evm_consent_challenge, confirm_evm_consent_intent,\n    revoke_evm_consent,\n)\nfrom .eth_user_consent import (
+from .shared_evm_owner_consent import (
+    prepare_evm_consent_challenge, confirm_evm_consent_intent,
+    revoke_evm_consent,
+)
+from .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
 )
