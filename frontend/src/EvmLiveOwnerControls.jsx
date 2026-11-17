@@ -16,7 +16,7 @@ const WORDS={
     warn:'Eine bestätigte Privy-Signatur erlaubt nach ausdrücklichem LIVE-Start echte Blockchain-Transaktionen. Netzwerkgebühren und Handelsverluste sind möglich. Noch kein Auftrag wird durch diesen Freigabe-Klick gesendet.',
     needBudget:'Coin-Budget und Stablecoin in den Handelseinstellungen speichern, bevor du startest.',
     ready:'Freigabe verifiziert',unattached:'Wallet-Freigabe in Privy erforderlich',
-    draft:'Policy bereit zur Veröffentlichung',idle:'Noch nicht verbunden',
+    draft:'Policy bereit zur Veröffentlichung',publish:'Vorbereitete Policy veröffentlichen',idle:'Noch nicht verbunden',
     paused:'Pausiert',running:'Sitzung aktiv – Blockchain-Ausführung nur bei aktivem Backend-Worker',
     off:'Backend-Worker ist noch nicht als aktiv bestätigt. Ein Sitzungsstatus allein ist kein realer Trade.',
     revoked:'Widerrufen; alte Berechtigung nicht automatisch wieder aktivieren',
@@ -34,7 +34,7 @@ const WORDS={
     warn:'A verified Privy grant authorizes real blockchain transactions only after you explicitly start LIVE. Network fees and losses are possible. This grant click does not send a trade.',
     needBudget:'Save your coin budget and settlement stablecoin before enrolling.',
     ready:'Grant verified',unattached:'Wallet grant required in Privy',
-    draft:'Policy can be published',idle:'Not connected',
+    draft:'Policy can be published',publish:'Publish prepared policy',idle:'Not connected',
     paused:'Paused',running:'Session active – blockchain execution requires an enabled backend worker',
     off:'Backend worker activation has not been confirmed. A session status does not prove a trade.',
     revoked:'Revoked; old permission cannot automatically reactivate',
@@ -140,6 +140,15 @@ export default function EvmLiveOwnerControls({
        published?.separate_privy_owner_add_signer_required!==true)
       throw Error('Trading policy publication outcome needs reconciliation');
   });
+  const publishPrepared=()=>command(async()=>{
+    if(permission?.status!=='DRAFT')return;
+    const published=await request(path+'/policy/'+asset+'/publish','POST');
+    if(published?.status!=='REMOTE_VERIFIED_UNATTACHED'||
+       published?.asset!==asset||
+       published?.wallet_signer_attached!==false||
+       published?.separate_privy_owner_add_signer_required!==true)
+      throw Error('Original published policy requires manual reconciliation');
+  });
   const grant=()=>command(async()=>{
     if(permission?.status!=='CONSENT_VERIFIED')return;
     const offer=await request(path+'/policy/'+asset+'/grant-review');
@@ -194,6 +203,9 @@ export default function EvmLiveOwnerControls({
         <button className="privy-wallet-action" type="button"
           disabled={busy} onClick={setup}>{t.setup}</button>
       </>}
+      {current==='DRAFT'&&
+        <button className="privy-wallet-action" type="button" disabled={busy}
+          onClick={publishPrepared}>{t.publish}</button>}
       {current==='CONSENT_VERIFIED'&&<>
         <p className="privy-wallet-description" role="alert">{t.warn}</p>
         <button className="privy-wallet-action" type="button"
