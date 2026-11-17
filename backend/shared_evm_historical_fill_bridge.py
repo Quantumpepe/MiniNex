@@ -18,6 +18,7 @@ from fastapi import HTTPException
 
 from .shared_evm_historical_fill_proof import read_owner_finalized_evm_swap_block
 from .shared_evm_historical_usd import fetch_recent_historical_usd_observation
+from .shared_evm_native_cost_provenance import read_original_native_execution_cost
 from .shared_evm_swap_receipts import _pair
 
 _ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI"))
@@ -106,9 +107,15 @@ async def independently_price_stored_evm_fill(
     joined["stable_usd_proof"] = stable_rate
     joined["native_usd_proof"] = native_rate
     joined["historic_usd_priced"] = True
-    # Explicitly never create an empty conversion object and mark it done.
-    joined["native_conversion"] = None
-    joined["native_cycle_complete"] = row["asset"] not in _NATIVE
+    # A native swap is NOT a settled coin trade until its original
+    # confirmed wrap/unwrap ledger and on-chain costs are independently read.
+    if row["asset"] in _NATIVE:
+        joined["native_conversion"] = await read_original_native_execution_cost(
+            did=did, fill=joined, client=client, now=now)
+        joined["native_cycle_complete"] = True
+    else:
+        joined["native_conversion"] = None
+        joined["native_cycle_complete"] = True
     joined["external_inventory_reconciled"] = False
     joined["fee_assessed"] = False
     return joined
