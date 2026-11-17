@@ -55,7 +55,7 @@ def test_fee_transfer_exact_onchain_erc20_event_owner_treasury(asset):
 
 
 @pytest.mark.parametrize("mutate",[
-    lambda p,t,r,b,f:t.update(from_="evil"),
+    lambda p,t,r,b,f:t.update({"from":"evil"}),
     lambda p,t,r,b,f:t.update(to=TREASURY),
     lambda p,t,r,b,f:t.update(input="0x"+"00"*68),
     lambda p,t,r,b,f:r.update(status="0x0"),
