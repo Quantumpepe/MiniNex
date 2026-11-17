@@ -127,7 +127,7 @@ export function validManualSwapWalletReadiness(data, from, to) {
     states.includes(data.source.record_status) &&
     states.includes(data.destination.record_status) &&
     data.route_class===(src===dst?'SAME_CHAIN':'CROSS_CHAIN') &&
-    data.ada_in_progress===(from==='ARB'||to==='ARB') &&
+    data.arb_in_progress===(from==='ARB'||to==='ARB') &&
     data.linked_wallet_records_checked===true &&
     data.ownership_proof_verified===false &&
     data.native_signer_verified===false &&
