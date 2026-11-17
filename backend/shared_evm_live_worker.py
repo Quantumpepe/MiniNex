@@ -31,6 +31,7 @@ from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
+from .shared_evm_token_hwm_worker import reconcile_verified_erc20_fees_once
 from .shared_evm_native_sell_deposit import (
     prepare_original_native_sell_amount,submit_internal_native_evm_sell_deposit,
 )
@@ -305,6 +306,15 @@ class SharedEvmLiveWorker:
                     raise
                 except Exception:
                     LOG.exception("Original native EVM SELL reconciliation unavailable")
+                # Passive cost/HWM reconciliation is independent of an
+                # individual coin's current ACTIVE vs PAUSED trading state.
+                # Never send a fee wallet transfer or block new trade signals.
+                try:
+                    await reconcile_verified_erc20_fees_once(client=client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Verified EVM token accounting needs reconciliation")
                 for row in sessions:
                     if not evm_auto_worker_enabled():
                         break
