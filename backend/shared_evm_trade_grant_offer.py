@@ -18,7 +18,7 @@ from .shared_evm_owner_consent import _asset
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet
 from .eth_privy_user_grant import _fetch_policy
-from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .shared_evm_trade_policy_roles import check_coin_trade_backend_quorum as check_privy_backend_quorum
 from .storage import _safe_did
 
 
@@ -78,7 +78,7 @@ async def get_owner_trade_grant_offer(*,did:str,asset:str)->dict:
         raise HTTPException(409,"Original wallet owner policy expired or changed") from None
     owned=_owned_eth_wallet(await fetch_privy_user(did),did)
     remote=await _fetch_policy(record["policy_id"])
-    quorum=await check_privy_backend_quorum()
+    quorum=await check_privy_backend_quorum(asset)
     return validate_owner_trade_grant_offer(
         asset=asset,record=record,owned=owned,expected=candidate,
         remote_policy=remote,quorum=quorum)
