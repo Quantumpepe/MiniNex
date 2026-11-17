@@ -53,6 +53,7 @@ from .shared_evm_swap_receipts import check_user_evm_swap
 from .shared_evm_fill_history import get_owner_evm_fill_history
 from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
+from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_allowance import check_evm_source_allowance
 from .shared_evm_swap_preparation import prepare_owner_evm_swap
@@ -635,6 +636,20 @@ def owner_evm_fifo_preview(
     return JSONResponse(read_evm_fifo_gross_preview(did,asset),
         headers={"Cache-Control":"private, no-store",
                  "X-Content-Type-Options":"nosniff"})
+
+
+@app.get("/api/live/evm/auto-readiness/{asset}")
+async def owner_evm_auto_readiness(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Independently review owner Privy wallet, grant journal and quorum."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await get_owner_evm_auto_readiness(did,asset)
+    return JSONResponse(report,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.get("/api/live/evm/permission-status/{asset}")
