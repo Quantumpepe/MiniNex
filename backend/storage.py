@@ -682,37 +682,6 @@ SCHEMA = (
         CHECK(status <> 'PENDING_INTENT' OR owner_signed_at IS NULL),
         CHECK(status <> 'REVOKED' OR revoked_at IS NOT NULL)
     )""",
-    """CREATE TABLE IF NOT EXISTS mininex_evm_auto_fee_sends (
-        privy_did TEXT NOT NULL,
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
-        execution_id TEXT NOT NULL,
-        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
-        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
-        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
-        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
-        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
-        policy_id TEXT NOT NULL,
-        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
-        token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
-        amount_atomic NUMERIC(48,0) NOT NULL CHECK(amount_atomic > 0),
-        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
-        idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 16 AND 96),
-        status TEXT NOT NULL CHECK(status IN
-            ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
-             'PAID_VERIFIED','FINALIZED_REVERTED')),
-        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        PRIMARY KEY(privy_did,asset,execution_id),
-        UNIQUE(chain_id,tx_hash),
-        UNIQUE(privy_did,idempotency_key),
-        FOREIGN KEY(privy_did,asset,execution_id)
-            REFERENCES mininex_evm_verified_fee_payments(privy_did,asset,execution_id),
-        CHECK ((status IN ('SENDING','RECONCILIATION_REQUIRED')
-                AND tx_hash IS NULL)
-            OR (status IN ('SUBMITTED','PAID_VERIFIED','FINALIZED_REVERTED')
-                AND tx_hash IS NOT NULL))
-    )""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_immutable_fill_usd_prices (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
@@ -842,6 +811,37 @@ SCHEMA = (
         CHECK (
             (state='PREPARED' AND tx_hash IS NULL AND paid_at IS NULL)
             OR (state='PAID_VERIFIED' AND tx_hash IS NOT NULL AND paid_at IS NOT NULL))
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_auto_fee_sends (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        execution_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        policy_id TEXT NOT NULL,
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
+        amount_atomic NUMERIC(48,0) NOT NULL CHECK(amount_atomic > 0),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 16 AND 96),
+        status TEXT NOT NULL CHECK(status IN
+            ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+             'PAID_VERIFIED','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        UNIQUE(chain_id,tx_hash),
+        UNIQUE(privy_did,idempotency_key),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_verified_fee_payments(privy_did,asset,execution_id),
+        CHECK ((status IN ('SENDING','RECONCILIATION_REQUIRED')
+                AND tx_hash IS NULL)
+            OR (status IN ('SUBMITTED','PAID_VERIFIED','FINALIZED_REVERTED')
+                AND tx_hash IS NOT NULL))
     )""",
     """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
         privy_did TEXT NOT NULL,
