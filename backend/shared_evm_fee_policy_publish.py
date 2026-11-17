@@ -51,7 +51,7 @@ def original_signed_fee_policy(record:object,*,asset:str,now:int)->dict:
         raise ValueError("No original signed fee permission")
     pair_from=__import__("backend.shared_evm_swap_receipts",fromlist=["_pair"])._pair
     route=pair_from(asset,record["stable"],"BUY")
-    owner,signer=_require_policy_roles()
+    owner,signer=_require_policy_roles(asset)
     if (record.get("chain_id")!=route["chain_id"]
             or record.get("treasury_wallet") != owner_fee_treasury(
                 asset=asset,stable=record["stable"])
