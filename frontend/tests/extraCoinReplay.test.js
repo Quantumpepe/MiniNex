@@ -33,7 +33,7 @@ const sample={
 test('the nine extra coins share the strategy; BTC ETH and ARB stay untouched',()=>{
   assert.deepEqual(EXTRA_REPLAY_COINS,
     ['BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
-  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),true);
+  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),false);
   assert.equal(EXTRA_REPLAY_COINS.includes('ETH'),false);
   assert.equal(EXTRA_REPLAY_COINS.includes('BTC'),false);
   assert.equal(defaultReplayOption().budget,'500');
