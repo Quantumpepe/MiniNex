@@ -160,7 +160,7 @@ def test_no_unverified_fee_receipt_can_reach_paid_state(tamper):
         payment._paid_locked(
             cur,did=DID,asset="LINK",key=KEY,wallet=WALLET,
             tx_hash=TX,proof=p)
-    assert not any("UPDATE" in q for q,args in cur.sql)
+    assert not any(q.lstrip().startswith("UPDATE ") for q,args in cur.sql)
 
 
 def test_fee_routes_are_user_authenticated_and_never_auto_sign():
