@@ -41,7 +41,7 @@ def meta(asset):
         status="GRANT_VERIFIED",
         stable=stable,chain_id=chain,wallet_id="wallet_12345678",
         wallet_address=WALLET,treasury_wallet=TREASURY,
-        owner_max_fee_atomic=Decimal("10000000"),
+        owner_max_fee_atomic=Decimal("100000000000000000000"),
         expires_at=datetime.fromtimestamp(NOW+86400,timezone.utc),
         policy_id=POLICY,policy_sha256=SHA,remote_policy_sha256=SHA,
         revoked_at=None,owner_signed_at=datetime.now(timezone.utc),
