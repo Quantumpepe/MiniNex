@@ -33,6 +33,8 @@ from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
 from .shared_evm_token_hwm_worker import reconcile_verified_erc20_fees_once
 from .shared_evm_passive_finality_worker import reconcile_submitted_evm_swaps_once
+from .shared_evm_auto_fee_finality import reconcile_auto_fee_receipts_once
+from .shared_evm_auto_fee_worker import run_owner_approved_auto_fee_batch
 from .shared_evm_native_sell_deposit import (
     prepare_original_native_sell_amount,submit_internal_native_evm_sell_deposit,
 )
@@ -324,6 +326,22 @@ class SharedEvmLiveWorker:
                     raise
                 except Exception:
                     LOG.exception("Verified EVM token accounting needs reconciliation")
+                try:
+                    # Confirm and credit previously sent exact Treasury fees,
+                    # even if the original user later revokes auto permission.
+                    await reconcile_auto_fee_receipts_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Original verified fee payment finality unavailable")
+                try:
+                    # This is the only monetary fee path: explicitly configured,
+                    # separately user-granted, one HWM obligation per send.
+                    await run_owner_approved_auto_fee_batch(client=client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Owner-authorized EVM automatic fee batch unavailable")
                 for row in sessions:
                     if not evm_auto_worker_enabled():
                         break
