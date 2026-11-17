@@ -126,3 +126,24 @@ def test_budget_reservations_do_not_mix_other_assets_or_paper():
     assert "mininex_live_evm_budget_reservations" in "\n".join(SCHEMA)
     from backend.app import app
     assert all("evm-budget-reserve" not in route.path for route in app.routes)
+
+
+@pytest.mark.parametrize("asset,stable",[
+    ("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
+    ("LINK","USDC"),("UNI","USDC"),
+])
+def test_appreciated_spot_sell_never_hits_arbitrary_usd_budget_cap(asset,stable):
+    cur=Cur(rows(asset,stable,budget=1000,reserved=950))
+    result=run(cur,asset,stable,amount="1400.50",side="SELL")
+    assert result["state"]=="RESERVED"
+    assert result["reserved_usd"]=="1400.50"
+    assert "AND side='BUY'" in cur.sql[3][0]
+    assert cur.sql[4][1][4]=="SELL"
+
+
+def test_buy_still_cannot_overspend_owner_selected_coin_budget():
+    cur=Cur(rows("LINK","USDC",budget=1000,reserved=900))
+    with pytest.raises(HTTPException):
+        run(cur,"LINK","USDC",amount="100.000001",side="BUY")
+    assert "AND side='BUY'" in cur.sql[3][0]
+    assert len(cur.sql)==4
