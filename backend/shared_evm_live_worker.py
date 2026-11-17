@@ -30,6 +30,7 @@ from .shared_evm_policy_reference_rates import (
 from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
+from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
@@ -271,6 +272,15 @@ class SharedEvmLiveWorker:
                     raise
                 except Exception:
                     LOG.exception("Original native EVM BUY completion unavailable")
+                try:
+                    # DEPOSIT receipts, original SELL swap and the final
+                    # complete native cycle are reconciled separately.
+                    # A paused session cannot start a new downstream send.
+                    await reconcile_native_sell_once(client=client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Original native EVM SELL reconciliation unavailable")
                 for row in sessions:
                     if not evm_auto_worker_enabled():
                         break
