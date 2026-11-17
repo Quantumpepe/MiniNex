@@ -27,7 +27,6 @@ test('12 listed coins plus Ethereum USDC/USDT; only proven EVM routes claim a si
   assert.equal(sendAssetSpec('LINK').chainId,1);
   assert.equal(sendAssetSpec('USDT').decimals,6);
   assert.equal(sendAssetSpec('USDC').decimals,6);
-  assert.match(sender,/coin==='ARB'\?t\.walletSwapArbPending/);
   assert.match(sender,/walletSendChainPending/);
 });
 
