@@ -25,7 +25,7 @@ from .privy_live_signer import (
 )
 from .privy_wallet_verification import fetch_privy_user
 from .eth_privy_user_grant import _fetch_policy
-from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .shared_evm_trade_policy_roles import check_coin_trade_backend_quorum as check_privy_backend_quorum
 
 LOG=logging.getLogger("mininex.evm_grant_confirm")
 
@@ -200,7 +200,7 @@ async def confirm_owner_evm_privy_grant(did:str,asset:str)->dict:
     user=await fetch_privy_user(did)
     metadata=await fetch_privy_wallet_metadata(record["wallet_id"])
     policy=await _fetch_policy(record["policy_id"])
-    quorum=await check_privy_backend_quorum()
+    quorum=await check_privy_backend_quorum(asset)
     proof=_prove_remote_owner_grant(
         did=did,record=record,expected=candidate,user=user,
         wallet_metadata=metadata,remote_policy=policy,quorum=quorum)
