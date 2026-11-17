@@ -59,6 +59,7 @@ def data(asset="POL"):
         return {
             "transactionHash":tx,"blockNumber":block,
             "blockHash":BLOCK_HASH,"traceAddress":path,
+            "transactionPosition":0,
             "type":"call","action":{
                 "from":frm,"to":to,"value":hex(amount),
                 "callType":"call",
@@ -161,6 +162,20 @@ def test_owner_native_value_trace_collector_paginates_and_reads_finalized_blocks
                 [traces[0],traces[2]]
                 if "fromAddress" in key else [traces[1]]
             )
+        elif method=="eth_getTransactionReceipt":
+            tx=args[0]
+            block=111 if tx==BUY_CONV else 189
+            result={
+                "transactionHash":tx,
+                "from":OWNER,"to":_pair("BNB","USDT","SELL")["source_token"].lower(),
+                "blockHash":BLOCK_HASH,"blockNumber":hex(block),
+                "transactionIndex":"0x0","status":"0x1",
+                "gasUsed":"0x186a0","effectiveGasPrice":hex(10**9),
+            }
+        elif method=="eth_getBalance":
+            start_balance=10*UNIT
+            end_balance=11*UNIT-2*100000*10**9
+            result=hex(start_balance if args[1]==hex(109) else end_balance)
         else:raise AssertionError(method)
         return httpx.Response(200,json={
             "jsonrpc":"2.0","id":body["id"],"result":result,
@@ -172,6 +187,10 @@ def test_owner_native_value_trace_collector_paginates_and_reads_finalized_blocks
                 asset="BNB",wallet=OWNER,fills=fills,client=client)
     result=asyncio.run(run())
     assert result["verified_native_conversion_count"]==2
+    assert result["observed_interval_native_balance_conserved"] is True
+    assert result["original_gas_balance_conservation"][
+        "total_verified_sender_gas_wei"]==str(2*100000*10**9)
+    assert result["eligible_to_assess_five_percent_fee"] is False
     assert len([m for m,_ in rpc if m=="trace_filter"])==2
     assert len([m for m,_ in rpc if m=="eth_getBlockByNumber"])==3
     assert all(a[0]["fromBlock"]=="0x6e" for m,a in rpc if m=="trace_filter")
