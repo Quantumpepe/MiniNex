@@ -24,7 +24,7 @@ const EVM=Object.freeze({
 // Show the right address family without pretending every chain can send yet.
 export function sendAddressPlaceholder(symbol) {
   const hints={BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
-    DOGE:'D…',ARB:'addr1…'};
+    DOGE:'D…',ARB:'0x…'};
   return hints[symbol]||'0x…';
 }
 export const SEND_ASSETS=ALL;
