@@ -63,11 +63,14 @@ def _assert_no_pending_ethereum_token_send(cur, did:str)->None:
     SENDING is committed. It does not restrict trading capital or amounts.
     """
     cur.execute(
-        """SELECT COUNT(*) AS pending
-           FROM mininex_live_evm_auto_broadcasts
-           WHERE privy_did=%s AND chain_id=1 AND status IN
-             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-        (did,))
+        """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
+               WHERE privy_did=%s AND chain_id=1 AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+               WHERE privy_did=%s AND chain_id=1 AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             AS pending""",
+        (did,did))
     row=cur.fetchone()
     if (type(row) is not dict
             or type(row.get("pending")) is not int
