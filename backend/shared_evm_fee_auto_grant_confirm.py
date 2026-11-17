@@ -49,7 +49,7 @@ def _verify_owner_fee_grant(
     """No client-provided grant claims; all inputs are server Privy GETs."""
     try:
         owned=_owned_eth_wallet(user,did)
-        if (record.get("status")!="REMOTE_UNATTACHED"
+        if (record.get("status") not in ("REMOTE_UNATTACHED","GRANT_VERIFIED")
                 or owned.get("delegated") is not True
                 or owned.get("wallet_id")!=record["wallet_id"]
                 or owned.get("address")!=record["wallet_address"]
@@ -149,3 +149,41 @@ async def confirm_owner_privy_fee_auto_grant(*,did:str,asset:str)->dict:
             return _commit_fee_grant_locked(
                 cur,did=did,asset=asset,evidence=evidence,
                 now=int(time.time()))
+
+
+async def get_owner_fee_auto_remote_grant_audit(*,did:str,asset:str)->dict:
+    """Fresh Privy GET + current local consent; must be repeated before SEND.
+
+    The prior GRANT_VERIFIED SQL label alone does not authorize wallet access.
+    The sending transaction must still recheck this row under the owner lock.
+    """
+    did=_safe_did(did);asset=_asset(asset)
+    row=await asyncio.to_thread(_read_original_fee_grant,did,asset)
+    if (type(row) is not dict or row.get("status")!="GRANT_VERIFIED"
+            or row.get("grant_verified_at") is None
+            or row.get("revoked_at") is not None):
+        raise HTTPException(409,"Wallet owner has no current fee auto consent")
+    try:
+        expected=original_signed_fee_policy(
+            row,asset=asset,now=int(time.time()))
+    except (ValueError,TypeError,KeyError):
+        raise HTTPException(409,"Owner's fee Treasury policy not current") from None
+    user=await fetch_privy_user(did)
+    metadata=await fetch_privy_wallet_metadata(row["wallet_id"])
+    remote=await _fetch_policy(row["policy_id"])
+    quorum=await check_privy_backend_quorum()
+    evidence=_verify_owner_fee_grant(
+        did=did,record=row,expected=expected,user=user,
+        wallet_metadata=metadata,remote_policy=remote,quorum=quorum)
+    return {
+        "asset":asset,"chain_id":row["chain_id"],
+        "owner_wallet":row["wallet_address"],
+        "treasury_wallet":row["treasury_wallet"],
+        "stable":row["stable"],"wallet_id":row["wallet_id"],
+        "policy_id":row["policy_id"],
+        "policy_sha256":row["policy_sha256"],
+        "owner_max_fee_atomic":str(row["owner_max_fee_atomic"]),
+        "owner_fee_grant_remotely_verified":evidence["verified"],
+        "signer_quorum_remotely_verified":True,
+        "fee_transfer_sent":False,
+    }
