@@ -79,3 +79,35 @@ def test_live_buy_native_conversion_invokes_real_privy_sender_once(monkeypatch):
     # Native source validation and persist are covered by the worker integration.
     assert n.native_intent_key(DID,SOURCE,"WITHDRAW")!=(
            n.native_intent_key(DID,SOURCE,"DEPOSIT"))
+
+
+@pytest.mark.parametrize("pending,expected",[
+    (0,None),(1,409),(3,409),(-1,503),(None,503),
+])
+def test_eth_native_send_respects_shared_link_uni_wallet_nonce(pending,expected):
+    class Cursor:
+        def __init__(self):self.queries=[]
+        def execute(self,query,params):self.queries.append((query,params))
+        def fetchone(self):
+            return {"pending":pending}
+    cur=Cursor()
+    if expected is None:
+        n._assert_no_pending_ethereum_token_send(cur,DID)
+    else:
+        with pytest.raises(HTTPException) as error:
+            n._assert_no_pending_ethereum_token_send(cur,DID)
+        assert error.value.status_code==expected
+    assert len(cur.queries)==1
+    sql,args=cur.queries[0]
+    assert "mininex_live_evm_auto_broadcasts" in sql
+    assert "chain_id=1" in sql
+    assert "RECONCILIATION_REQUIRED" in sql
+    assert args==(DID,)
+
+
+def test_eth_native_claim_checks_shared_nonce_inside_original_transaction():
+    import inspect
+    source=inspect.getsource(n._native_claim_locked)
+    assert "_assert_no_pending_ethereum_token_send(cur,did)" in source
+    assert source.index("_assert_no_pending_ethereum_token_send(cur,did)")<source.index(
+        "INSERT INTO mininex_live_eth_auto_native_steps")

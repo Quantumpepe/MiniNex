@@ -56,6 +56,27 @@ def _atomic_wei(amount:str)->int:
     return int(wei)
 
 
+def _assert_no_pending_ethereum_token_send(cur, did:str)->None:
+    """ETH, LINK and UNI share the same nonce of one Privy EVM wallet.
+
+    This check runs inside the existing ETH native order transaction before
+    SENDING is committed. It does not restrict trading capital or amounts.
+    """
+    cur.execute(
+        """SELECT COUNT(*) AS pending
+           FROM mininex_live_evm_auto_broadcasts
+           WHERE privy_did=%s AND chain_id=1 AND status IN
+             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+        (did,))
+    row=cur.fetchone()
+    if (type(row) is not dict
+            or type(row.get("pending")) is not int
+            or row["pending"]<0):
+        raise HTTPException(503,"Cannot verify shared EVM wallet nonce")
+    if row["pending"]!=0:
+        raise HTTPException(409,"Ethereum token swap is still pending")
+
+
 def _native_claim_locked(cur, *, did:str, source_key:str,
                          operation:str, amount_wei:int,
                          stable:str, wallet:str, wallet_id:str,
@@ -131,6 +152,7 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
              ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",(did,))
     if cur.fetchone()["pending"]!=0:
         raise HTTPException(409,"Prior native ETH transaction unresolved")
+    _assert_no_pending_ethereum_token_send(cur,did)
     if operation=="WITHDRAW":
         # Only WETH received by a fully finalized confirmed MiniNex BUY
         # may be converted to native ETH without an additional trade.
