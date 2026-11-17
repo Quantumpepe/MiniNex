@@ -25,6 +25,7 @@ REQUIRED=(
     "mininex_evm_asset_hwm",
     "mininex_evm_fee_events",
     "mininex_evm_fee_obligations",
+    "mininex_evm_verified_fee_payments",
 )
 
 
@@ -77,3 +78,66 @@ def test_real_postgres_original_native_sell_cannot_be_claimed_twice():
                    WHERE privy_did=%s AND asset='BNB' AND intent_key=%s""",
                 (did,key))
             assert cur.fetchone()[0]==1
+
+
+@pytest.mark.skipif(not _ci_dsn(),reason="Only ephemeral CI PostgreSQL may run")
+def test_real_postgres_fee_payment_requires_one_original_fee_and_one_real_hash():
+    """One owner+asset+HWM close can be credited once; tx hash cannot be reused."""
+    did="did:privy:fee_ci_"+uuid.uuid4().hex
+    first="sig_"+uuid.uuid4().hex
+    second="sig_"+uuid.uuid4().hex
+    wallet="0x"+"ab"*20
+    treasury="0x"+"cd"*20
+    token="0x"+"ef"*20
+    tx="0x"+"12"*32
+    with psycopg.connect(_ci_dsn(),connect_timeout=6) as conn:
+        with conn.cursor() as cur:
+            for stmt in SCHEMA:
+                cur.execute(stmt)
+            cur.execute("INSERT INTO mininex_accounts(privy_did) VALUES (%s)",(did,))
+            cur.execute(
+                "INSERT INTO mininex_evm_asset_hwm(privy_did,asset) VALUES (%s,'LINK')",
+                (did,))
+            for key in (first,second):
+                cur.execute(
+                    """INSERT INTO mininex_evm_fee_events
+                       (privy_did,asset,execution_id,realized_net_delta_usd,
+                        cumulative_realized_net_usd,high_water_mark_usd,
+                        fee_rate,fee_assessed_usd,source_tx_hash)
+                       VALUES (%s,'LINK',%s,50,50,50,0.05,2.5,%s)""",
+                    (did,key,"0x"+"34"*32))
+                cur.execute(
+                    """INSERT INTO mininex_evm_fee_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,'LINK',%s,2.5)""",(did,key))
+            stmt="""INSERT INTO mininex_evm_verified_fee_payments
+                     (privy_did,asset,execution_id,chain_id,stable,
+                      stable_token_address,owner_wallet,treasury_wallet,
+                      fee_due_usd,stable_usd,token_amount_atomic)
+                     VALUES (%s,'LINK',%s,1,'USDC',%s,%s,%s,2.5,1,2500000)"""
+            cur.execute(stmt,(did,first,token,wallet,treasury))
+            cur.execute(
+                """UPDATE mininex_evm_verified_fee_payments
+                   SET state='PAID_VERIFIED',tx_hash=%s,paid_at=now()
+                   WHERE privy_did=%s AND asset='LINK' AND execution_id=%s""",
+                (tx,did,first))
+            with pytest.raises(psycopg.errors.UniqueViolation):
+                with conn.transaction():
+                    cur.execute(stmt,(did,first,token,wallet,treasury))
+            cur.execute(stmt,(did,second,token,wallet,treasury))
+            with pytest.raises(psycopg.errors.UniqueViolation):
+                with conn.transaction():
+                    cur.execute(
+                        """UPDATE mininex_evm_verified_fee_payments
+                           SET state='PAID_VERIFIED',tx_hash=%s,paid_at=now()
+                           WHERE privy_did=%s AND asset='LINK' AND execution_id=%s""",
+                        (tx,did,second))
+            cur.execute(
+                """SELECT COUNT(*) FROM mininex_evm_verified_fee_payments
+                   WHERE privy_did=%s AND state='PAID_VERIFIED'""",(did,))
+            assert cur.fetchone()[0]==1
+            cur.execute(
+                """SELECT state,tx_hash FROM mininex_evm_verified_fee_payments
+                   WHERE privy_did=%s AND asset='LINK' AND execution_id=%s""",
+                (did,second))
+            assert cur.fetchone()==("PREPARED",None)
