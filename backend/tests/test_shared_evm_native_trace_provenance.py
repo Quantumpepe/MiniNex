@@ -63,6 +63,7 @@ def sample(asset="BNB",side="BUY"):
             trace([],WALLET,wrapped,0),
             trace([0],wrapped,WALLET,UNIT*5//2),
         ]
+        traces[0]["subtraces"]=1
     else:
         traces=[trace([],WALLET,wrapped,UNIT*5//2)]
     final={"number":"0x70"}
@@ -224,3 +225,26 @@ def test_trace_rpc_missing_is_not_silently_accepted(monkeypatch):
     with pytest.raises(HTTPException) as err:
         asyncio.run(check())
     assert err.value.status_code==502
+
+
+def test_truncated_native_internal_trace_tree_is_not_a_complete_wallet_proof():
+    evidence=sample("BNB","BUY")
+    evidence["traces"].pop()  # root says it has one child
+    with pytest.raises(ValueError):
+        verify_original_native_conversion_trace(**evidence)
+
+
+def test_unreported_extra_trace_is_rejected_even_when_wallet_balance_unchanged():
+    evidence=sample("AVAX","BUY")
+    evidence["traces"][0]["subtraces"]=2
+    another=deepcopy(evidence["traces"][1])
+    another["traceAddress"]=[1]
+    another["action"]["from"]="0x"+"dd"*20
+    another["action"]["to"]="0x"+"ee"*20
+    another["action"]["value"]="0x0"
+    evidence["traces"].append(another)
+    assert verify_original_native_conversion_trace(
+        **evidence)["full_historical_wallet_activity_proven"] is False
+    evidence["traces"].pop()
+    with pytest.raises(ValueError):
+        verify_original_native_conversion_trace(**evidence)
