@@ -57,6 +57,13 @@ def _conversion_fee(row: dict, asset: str, side: str,
             raise ValueError("Unexpected native conversion on ERC20 trade")
         return Decimal(0)
     if (type(conversion) is not dict or conversion.get("finalized") is not True
+            or conversion.get("mode") != "INDEPENDENT_FINALIZED_NATIVE_EVM_CONVERSION_COST"
+            or conversion.get("asset") != asset
+            or conversion.get("side") != side
+            or conversion.get("chain_id") != row.get("chain_id")
+            or conversion.get("wallet_address") != row.get("wallet_address")
+            or conversion.get("intent_key") != row.get("intent_key")
+            or conversion.get("swap_tx_hash") != row.get("tx_hash")
             or conversion.get("operation") != (
                 "WITHDRAW" if side == "BUY" else "DEPOSIT")
             or type(conversion.get("tx_hash")) is not str
@@ -144,6 +151,8 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
                     or (block, tx_index) <= position
                     or not audit["start_block"] <= block <= audit["end_block"]):
                 raise ValueError("Duplicate/out-of-order/unverified trade")
+            if item.get("native_cycle_complete") is not True:
+                raise ValueError("Native EVM order not economically complete")
             seen.add(tx_hash)
             seen_intents.add(item["intent_key"])
             position = (block, tx_index)
