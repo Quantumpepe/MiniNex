@@ -128,7 +128,7 @@ def test_buy_original_native_withdraw_is_rejected_if_any_proof_is_modified(chang
     lambda a:a["traces"][1]["action"].update(
         to="0x"+"dd"*20),
     lambda a:a["traces"][1]["action"].update(
-        from="0x"+"dd"*20),
+        **{"from":"0x"+"dd"*20}),
     lambda a:a["traces"][1]["action"].update(
         value=hex(2*UNIT)),
     lambda a:a["traces"][1].update(traceAddress=[]),
