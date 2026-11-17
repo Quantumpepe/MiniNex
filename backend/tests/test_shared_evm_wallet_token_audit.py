@@ -23,11 +23,11 @@ def sample(asset):
     fills=[
         dict(mode="INDEPENDENT_FINALIZED_EVM_EXECUTION",
              onchain_finalized=True,asset=asset,wallet_address=WALLET,
-             tx_hash=BUY,block_number=100,side="BUY",
+             tx_hash=BUY,block_number=100,block_hash="0x"+"ef"*32,transaction_index=0,side="BUY",
              destination_amount="2",source_amount="100"),
         dict(mode="INDEPENDENT_FINALIZED_EVM_EXECUTION",
              onchain_finalized=True,asset=asset,wallet_address=WALLET,
-             tx_hash=SELL,block_number=200,side="SELL",
+             tx_hash=SELL,block_number=200,block_hash="0x"+"ef"*32,transaction_index=0,side="SELL",
              source_amount="1",destination_amount="75"),
     ]
     def log(tx, idx, sender, receiver, amount, block):
@@ -63,6 +63,7 @@ def test_source_complete_wallet_log_audit_matches_exact_fifo(asset):
     lambda f,i,o,l:o[0].update(removed=True),
     lambda f,i,o,l:i[0].update(address="0x"+"aa"*20),
     lambda f,i,o,l:o[0].update(transactionHash="0x"+"33"*32),
+    lambda f,i,o,l:o[0].update(blockHash="0x"+"aa"*32),
     lambda f,i,o,l:i[0].update(blockNumber="0xff"),
     lambda f,i,o,l:i.append(deepcopy(i[0])),
     lambda f,i,o,l:i[0].update(topics=[_TRANSFER_TOPIC,
