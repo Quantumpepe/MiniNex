@@ -49,7 +49,7 @@ def _claim_policy_publication_locked(
     cur.execute(
         """SELECT asset,chain_id,stable,wallet_id,wallet_address,
                   owner_id,signer_id,policy_id,policy_sha256,
-                  candidate_json,expires_at,status,revoked_at,budget_revision
+                  candidate_json,consent_sha256,expires_at,status,revoked_at,budget_revision
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     policy=cur.fetchone()
@@ -77,7 +77,8 @@ def _claim_policy_publication_locked(
             or consent.get("wallet_address")!=policy["wallet_address"]
             or consent.get("stable")!=policy["stable"]
             or consent.get("chain_id")!=policy["chain_id"]
-            or consent.get("budget_revision")!=policy["budget_revision"]):
+            or consent.get("budget_revision")!=policy["budget_revision"]
+            or consent.get("message_sha256")!=policy.get("consent_sha256")):
         raise HTTPException(409,"Original coin enrollment intent was revoked")
     try:
         candidate=validate_pinned_evm_policy(
