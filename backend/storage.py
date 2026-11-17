@@ -650,6 +650,7 @@ SCHEMA = (
         block_hash TEXT NOT NULL CHECK(block_hash ~ '^0x[0-9a-f]{64}$'),
         block_unix BIGINT NOT NULL CHECK(block_unix > 0),
         observed_unix BIGINT NOT NULL CHECK(observed_unix > 0),
+        CHECK (abs(observed_unix-block_unix) <= 180),
         usd_price NUMERIC(36,18) NOT NULL CHECK(usd_price > 0),
         provider TEXT NOT NULL CHECK(provider='COINGECKO_MARKET_CHART_RANGE'),
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -657,6 +658,24 @@ SCHEMA = (
         FOREIGN KEY(chain_id,tx_hash)
             REFERENCES mininex_live_evm_verified_fills(chain_id,tx_hash)
     )""",
+    """CREATE OR REPLACE FUNCTION mininex_prevent_historical_rate_mutation()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+           RAISE EXCEPTION 'Verified original historical USD quote is immutable';
+       END $$""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (
+               SELECT 1 FROM pg_trigger
+                WHERE tgname='mininex_historical_usd_rate_write_once'
+           ) THEN
+               CREATE TRIGGER mininex_historical_usd_rate_write_once
+               BEFORE UPDATE OR DELETE
+               ON mininex_evm_immutable_fill_usd_prices
+               FOR EACH ROW EXECUTE FUNCTION
+                   mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_asset_hwm (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
