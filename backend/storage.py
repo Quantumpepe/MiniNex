@@ -204,6 +204,47 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_owner_permissions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL CHECK(wallet_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        owner_id TEXT NOT NULL CHECK(owner_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        signer_id TEXT NOT NULL CHECK(signer_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        policy_id TEXT CHECK(policy_id IS NULL OR
+            policy_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        remote_policy_sha256 TEXT CHECK(remote_policy_sha256 IS NULL OR
+            remote_policy_sha256 ~ '^[0-9a-f]{64}$'),
+        consent_sha256 TEXT CHECK(consent_sha256 IS NULL OR
+            consent_sha256 ~ '^[0-9a-f]{64}$'),
+        consent_verified_at TIMESTAMPTZ,
+        grant_verified_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT'
+            CHECK(status IN ('DRAFT','CONSENT_VERIFIED',
+              'GRANT_VERIFIED','REVOKED')),
+        revision BIGINT NOT NULL DEFAULT 0 CHECK(revision >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        CHECK(owner_id <> signer_id),
+        CHECK (
+            (asset='BNB' AND chain_id=56 AND stable='USDT') OR
+            (asset='POL' AND chain_id=137 AND stable='USDC') OR
+            (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
+            (asset IN ('LINK','UNI') AND chain_id=1)),
+        CHECK(status NOT IN ('CONSENT_VERIFIED','GRANT_VERIFIED') OR
+            (consent_sha256 IS NOT NULL AND consent_verified_at IS NOT NULL)),
+        CHECK(status <> 'GRANT_VERIFIED' OR
+            (policy_id IS NOT NULL AND remote_policy_sha256=policy_sha256
+                AND grant_verified_at IS NOT NULL)),
+        CHECK(status <> 'REVOKED' OR revoked_at IS NOT NULL)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_evm_owner_permissions_chain
+       ON mininex_live_evm_owner_permissions(privy_did,chain_id,status)""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
