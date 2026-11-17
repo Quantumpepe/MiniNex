@@ -204,6 +204,24 @@ def _claim_native_sell_locked(
         row=cur.fetchone()
         if type(row) is not dict or row.get("pending")!=0:
             raise HTTPException(409,"Another wallet network transaction unresolved")
+    # The previous native BUY may already be swapped but not yet
+    # converted into the real native wallet balance. Preserve that
+    # original cycle before depositing and selling a new position.
+    cur.execute(
+        """SELECT COUNT(*) AS pending
+           FROM mininex_live_evm_auto_broadcasts b
+           LEFT JOIN mininex_live_evm_completed_native_cycles c
+             ON c.privy_did=b.privy_did AND c.asset=b.asset
+            AND c.intent_key=b.intent_key
+           WHERE b.privy_did=%s AND b.chain_id=%s
+             AND b.side='BUY' AND b.status='FINALIZED_SUCCESS'
+             AND c.intent_key IS NULL""",
+        (did,pair["chain_id"]))
+    unsettled=cur.fetchone()
+    if (type(unsettled) is not dict
+            or type(unsettled.get("pending")) is not int
+            or unsettled["pending"]!=0):
+        raise HTTPException(409,"Previous native BUY cycle unsettled")
     # A finalized deposit is not yet a finished SELL. Repeated market
     # ticks must not deposit a second native amount while the first
     # original event has no durable downstream Router02 order.
