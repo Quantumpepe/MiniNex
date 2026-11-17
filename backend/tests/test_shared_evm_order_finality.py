@@ -21,6 +21,8 @@ class Cursor:
     def execute(self,query,args):self.sql.append((query,args))
     def fetchone(self):
         if self.sql[-1][0].lstrip().startswith("UPDATE"):
+            if "mininex_live_evm_budget_reservations" in self.sql[-1][0]:
+                return {"state":"FINALIZED"}
             return {"status":self.update_status or self.sql[-1][1][0]}
         return self.row
 
@@ -55,13 +57,15 @@ def test_all_evm_assets_bind_onchain_receipt_to_durable_intent(asset,success):
     state=_finalize_locked(
         cur,did=DID,key=KEY,asset=asset,proof=proof)
     assert state==("FINALIZED_SUCCESS" if success else "FINALIZED_REVERTED")
-    assert len(cur.sql)==(3 if success else 2)
+    assert len(cur.sql)==(4 if success else 3)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "AND status='SUBMITTED'" in cur.sql[1][0]
     assert cur.sql[1][1][-1]==TX
     if success:
         assert "INSERT INTO mininex_live_evm_verified_fills" in cur.sql[2][0]
         assert cur.sql[2][1][4]==TX
+    assert "mininex_live_evm_budget_reservations" in cur.sql[-1][0]
+    assert "AND state='SUBMITTED'" in cur.sql[-1][0]
 
 
 @pytest.mark.parametrize("alter",[
