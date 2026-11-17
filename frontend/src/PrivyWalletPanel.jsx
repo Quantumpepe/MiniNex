@@ -9,6 +9,7 @@ import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
 import EvmFeeAutoOwnerConsent from './EvmFeeAutoOwnerConsent.jsx';
+import EvmLiveOwnerControls from './EvmLiveOwnerControls.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
 import BtcSendEntry from './BtcSendEntry.jsx';
@@ -484,10 +485,16 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       stable={stable} getAccessToken={getAccessToken}
       enabled={verifiedAccount}/> :
     ['BNB','POL','AVAX','LINK','UNI'].includes(asset) ?
-      <EvmFeeAutoOwnerConsent key={'fee-auto-'+user?.id+'-'+asset}
-        asset={asset} stable={stable} lang={lang}
-        address={address} userId={user?.id}
-        getAccessToken={getAccessToken} enabled={verifiedAccount}/> : null;
+      <div className="mininex-coin-live-permissions">
+        <EvmLiveOwnerControls key={'live-'+user?.id+'-'+asset}
+          asset={asset} stable={stable} lang={lang}
+          address={address} userId={user?.id}
+          getAccessToken={getAccessToken} enabled={verifiedAccount}/>
+        <EvmFeeAutoOwnerConsent key={'fee-auto-'+user?.id+'-'+asset}
+          asset={asset} stable={stable} lang={lang}
+          address={address} userId={user?.id}
+          getAccessToken={getAccessToken} enabled={verifiedAccount}/>
+      </div> : null;
 
   const renderSessionControls = asset =>
     <AssetPaperControl asset={asset} t={t} getAccessToken={getAccessToken}
