@@ -90,7 +90,7 @@ from .eth_privy_user_grant import get_eth_user_grant_review, confirm_eth_user_gr
 from .eth_live_ledger_audit import get_eth_live_ledger_audit
 from .eth_prelaunch_safety import get_eth_prelaunch_safety_report
 from .eth_privy_policy_incident import get_eth_privy_policy_incident_review
-from .eth_user_consent import (
+from .shared_evm_owner_consent import (\n    prepare_evm_consent_challenge, confirm_evm_consent_intent,\n    revoke_evm_consent,\n)\nfrom .eth_user_consent import (
     prepare_eth_consent_challenge, confirm_eth_consent_intent,
     revoke_eth_consent_intent,
 )
@@ -1110,6 +1110,48 @@ class EthConsentSignatureRequest(BaseModel):
     """Only a wallet-produced EIP-191 proof, not a Privy delegation."""
     model_config = ConfigDict(extra="forbid")
     signature: str = Field(min_length=132, max_length=132, pattern=r"^0x[0-9a-fA-F]{130}$")
+
+
+@app.post("/api/live/evm/consent/{asset}/challenge")
+async def owner_evm_consent_challenge(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """One user-initiated wallet-signable coin intent. Does NOT delegate."""
+    identity=verify_privy_bearer(authorization)
+    result=await prepare_evm_consent_challenge(
+        identity["user_id"],identity["session_id"],asset)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/consent/{asset}/confirm")
+async def owner_evm_consent_confirm(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    body: EthConsentSignatureRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Verify exact EIP-191 owner signature; not a wallet signer grant."""
+    identity=verify_privy_bearer(authorization)
+    result=await confirm_evm_consent_intent(
+        identity["user_id"],identity["session_id"],asset,body.signature)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/consent/{asset}/revoke")
+def owner_evm_consent_revoke(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Locally stop future coin orders; Privy remote signer revoke remains separate."""
+    identity=verify_privy_bearer(authorization)
+    result=revoke_evm_consent(identity["user_id"],asset)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.post("/api/live/eth/consent/challenge")
