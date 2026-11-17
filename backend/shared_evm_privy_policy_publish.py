@@ -25,7 +25,7 @@ from .shared_evm_privy_grant_review import verify_exact_remote_evm_policy
 from .shared_evm_owner_consent import _asset
 from .privy_wallet_verification import APP_ID,fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet
-from .eth_user_consent import _require_policy_roles
+from .shared_evm_trade_policy_roles import require_coin_trade_policy_roles as _require_policy_roles
 from .eth_privy_policy_transport import _auth
 from .storage import _db_url,_ensure_schema,_safe_did
 
@@ -238,7 +238,7 @@ async def publish_user_evm_privy_policy(did:str,asset:str)->dict:
     asset=_asset(asset)
     user=await fetch_privy_user(did)
     owned=_owned_eth_wallet(user,did)
-    owner_id,signer_id=_require_policy_roles()
+    owner_id,signer_id=_require_policy_roles(asset)
     now=int(time.time())
     try:
         claimed=await asyncio.to_thread(
