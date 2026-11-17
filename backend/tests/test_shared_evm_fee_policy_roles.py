@@ -68,3 +68,16 @@ def test_bad_asset_cannot_query_another_quorum(monkeypatch):
     install(monkeypatch)
     with pytest.raises(ValueError):
         roles.require_fee_policy_roles("ETH")
+
+
+def test_no_fee_quorum_can_reuse_a_distinct_coin_trading_signer(monkeypatch):
+    install(monkeypatch)
+    monkeypatch.setenv("MININEX_PRIVY_EVM_BNB_TRADE_SIGNER_ID",
+                       "trade_bnb_12345678")
+    monkeypatch.setenv("MININEX_PRIVY_EVM_POL_TRADE_SIGNER_ID",
+                       "trade_pol_12345678")
+    monkeypatch.setenv("MININEX_PRIVY_EVM_UNI_FEE_SIGNER_ID",
+                       "trade_bnb_12345678")
+    with pytest.raises(HTTPException) as err:
+        roles.require_fee_policy_roles("UNI")
+    assert err.value.status_code==409
