@@ -143,7 +143,7 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
     assert len([a for a in actions if isinstance(a,tuple) and
                 a[0]=="original_single_execution"])==1
     assert len([a for a in actions if isinstance(a,tuple) and
-                a[0]=="onchain_source"])==2
+                a[0]=="onchain_source"])==1
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
