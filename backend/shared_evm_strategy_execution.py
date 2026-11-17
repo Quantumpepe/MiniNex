@@ -2,7 +2,7 @@
 
 This is an INTERNAL strategy entry point, not a public API or an automatic
 scheduler. A future user-started worker must supply immutable strategy IDs,
-actual proposed USD allocation and the owner-selected coin settings.
+immutable event IDs and the owner's selected coin settings.
 
 One fresh on-chain quote is used for both the independent capital reservation
 and the final Privy transaction. A pre-claim failure cancels only a never-sent
@@ -14,6 +14,8 @@ import hashlib
 import json
 import logging
 import re
+import time
+from decimal import Decimal,ROUND_CEILING
 
 import httpx
 from fastapi import HTTPException
@@ -21,6 +23,11 @@ from fastapi import HTTPException
 from .live_orders import valid_order_key
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_swap_preparation import prepare_owner_evm_swap
+from .shared_evm_auto_preflight import inspect_evm_exact_swap
+from .shared_evm_policy_reference_rates import (
+    _price,fetch_evm_policy_reference_rates,
+)
+from .live_eth_quotes import _quantity
 from .shared_evm_privy_order_submit import (
     _fingerprint_prepared_quote,submit_internal_privy_evm_order,
 )
@@ -60,9 +67,61 @@ def derive_evm_strategy_signal_key(
     return valid_order_key("sig_"+hashlib.sha256(material).hexdigest()[:60])
 
 
+def verified_evm_quote_usd_notional(
+    *,prepared:dict,asset:str,side:str,stable:str,amount:str,
+    prices:dict,now:int,
+)->str:
+    """Reserve the genuine source-token value, never caller-supplied USD.
+
+    BUY: exact stablecoin input x fresh USD reference.
+    SELL: exact coin input x fresh USD reference. The quote's minimum
+    output is not an honest measure of an already-held coin position.
+    Rounded UP to the database's six USD decimal places.
+    """
+    pair=_pair(asset,stable,side)
+    if (type(prepared) is not dict
+            or prepared.get("asset")!=asset
+            or prepared.get("side")!=side
+            or prepared.get("stable")!=stable
+            or prepared.get("chain_id")!=pair["chain_id"]
+            or prepared.get("network")!=pair["network"]
+            or prepared.get("input_amount")!=amount
+            or prepared.get("source_token_address")!=pair["source_token"]
+            or prepared.get("output_token_address")!=pair["output_token"]
+            or type(prepared.get("wallet_address")) is not str
+            or type(now) is not int or now<=0):
+        raise ValueError("Verified EVM quote and event terms differ")
+    tx=prepared.get("unsigned_transaction")
+    if type(tx) is not dict or type(tx.get("data")) is not str:
+        raise ValueError("Missing verified EVM calldata")
+    data=tx["data"]
+    if (not data.startswith("0x04e45aaf")
+            or len(data)!=2+8+7*64):
+        raise ValueError("Invalid original V3 Router02 calldata")
+    try:
+        input_atomic=str(int(data[10+4*64:10+5*64],16))
+        min_out_atomic=str(int(data[10+5*64:10+6*64],16))
+        _,requested_atomic=_quantity(amount,pair["source_decimals"])
+        if input_atomic!=str(requested_atomic):
+            raise ValueError("Signal quantity differs from actual DEX swap")
+        inspect_evm_exact_swap(
+            tx,asset=asset,wallet=prepared["wallet_address"],
+            side=side,stable=stable,input_atomic=input_atomic,
+            minimum_output_atomic=min_out_atomic)
+        price=_price(prices,stable if side=="BUY" else asset,now)
+        notional=(Decimal(input_atomic)
+                  / (Decimal(10)**pair["source_decimals"])
+                  *price).quantize(Decimal("0.000001"),rounding=ROUND_CEILING)
+        if notional<=0 or notional>=Decimal("1e22"):
+            raise ValueError("Invalid positive USD reservation")
+        return format(notional,"f")
+    except (KeyError,TypeError,ValueError,ArithmeticError):
+        raise ValueError("EVM amount or current USD reference unverified") from None
+
+
 async def execute_internal_evm_strategy_signal(
     *,did:str,asset:str,strategy_run_id:str,signal_event_id:str,
-    side:str,stable:str,amount:str,amount_usd:str,budget_revision:int,
+    side:str,stable:str,amount:str,budget_revision:int,
     client:httpx.AsyncClient,
 )->dict:
     """Process a single server-originated strategy event without requoting.
@@ -75,7 +134,6 @@ async def execute_internal_evm_strategy_signal(
     if (asset not in _ASSETS
             or side not in ("BUY","SELL")
             or type(amount) is not str
-            or type(amount_usd) is not str
             or type(budget_revision) is not int or budget_revision<1
             or type(client) is not httpx.AsyncClient):
         raise ValueError("Untrusted internal EVM strategy signal")
@@ -86,8 +144,12 @@ async def execute_internal_evm_strategy_signal(
     prepared=await prepare_owner_evm_swap(
         did,asset=asset,side=side,stable=stable,amount=amount)
     quote_sha=_fingerprint_prepared_quote(prepared)
-    # This reserves ONLY the selected coin's user-configured budget.
-    # It does not authorize a transfer or supply a second quote.
+    rates=await fetch_evm_policy_reference_rates(asset,stable)
+    amount_usd=verified_evm_quote_usd_notional(
+        prepared=prepared,asset=asset,side=side,stable=stable,
+        amount=amount,prices=rates,now=int(time.time()))
+    # Reserve ONLY the owner's chosen per-coin budget, using the amount
+    # derived from this exact DEX calldata and current USD market reference.
     reserve_internal_evm_coin_budget(
         did=did,asset=asset,intent_key=key,side=side,stable=stable,
         amount_usd=amount_usd,quote_sha256=quote_sha,
