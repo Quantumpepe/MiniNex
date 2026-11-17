@@ -130,6 +130,97 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
          identity["side"],identity["stable"]))
 
 
+def _claim_authorized_evm_order_locked(
+    cur,*,did:str,key:str,identity:dict,
+    quote_sha256:str,budget_revision:int,
+)->None:
+    """Atomic last-mile gate before any Privy RPC or signer use.
+
+    Same transaction locks the owner asset's consent, policy and reserved
+    budget; a revocation or settings change between GET/readback and SEND
+    blocks the SENDING claim. Remote Privy policy and quorum must ALSO have
+    been freshly verified by the caller before entering this transaction.
+    """
+    if (type(identity) is not dict
+            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI")
+            or type(quote_sha256) is not str
+            or not _SHA.fullmatch(quote_sha256)
+            or type(budget_revision) is not int or budget_revision<1):
+        raise ValueError("Unverified executable coin order")
+    asset=identity["asset"]
+    pair=_pair(asset,identity.get("stable"),identity.get("side"))
+    cur.execute(
+        """SELECT status,stable,chain_id,wallet_id,wallet_address,
+                  policy_id,remote_policy_sha256,policy_sha256,
+                  consent_sha256,expires_at,revoked_at,budget_revision
+           FROM mininex_live_evm_owner_permissions
+           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+    policy=cur.fetchone()
+    from datetime import datetime,timezone
+    if (type(policy) is not dict
+            or policy.get("status")!="GRANT_VERIFIED"
+            or policy.get("revoked_at") is not None
+            or policy.get("stable")!=identity["stable"]
+            or policy.get("chain_id")!=pair["chain_id"]
+            or policy.get("wallet_id")!=identity["wallet_id"]
+            or policy.get("wallet_address")!=identity["wallet_address"]
+            or policy.get("budget_revision")!=budget_revision
+            or policy.get("remote_policy_sha256")!=policy.get("policy_sha256")
+            or not _SHA.fullmatch(str(policy.get("policy_sha256","")))
+            or type(policy.get("policy_id")) is not str
+            or not isinstance(policy.get("expires_at"),datetime)
+            or policy["expires_at"].tzinfo is None
+            or policy["expires_at"]<=datetime.now(timezone.utc)):
+        raise HTTPException(409,"Current owner-approved EVM signer grant required")
+    cur.execute(
+        """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                  budget_revision,message_sha256,confirmed_at
+           FROM mininex_live_evm_consent_challenges
+           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+    consent=cur.fetchone()
+    if (type(consent) is not dict
+            or consent.get("status")!="SIGNED_INTENT"
+            or consent.get("confirmed_at") is None
+            or consent.get("wallet_id")!=policy["wallet_id"]
+            or consent.get("wallet_address")!=policy["wallet_address"]
+            or consent.get("chain_id")!=pair["chain_id"]
+            or consent.get("stable")!=identity["stable"]
+            or consent.get("budget_revision")!=budget_revision
+            or consent.get("message_sha256")!=policy["consent_sha256"]):
+        raise HTTPException(409,"Matching signed coin consent required")
+    cur.execute(
+        """SELECT stable,revision FROM mininex_extra_coin_preferences
+           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+    settings=cur.fetchone()
+    if (type(settings) is not dict
+            or settings.get("revision")!=budget_revision
+            or settings.get("stable")!=identity["stable"]):
+        raise HTTPException(409,"Coin settings changed since signed approval")
+    cur.execute(
+        """SELECT state,side,stable,budget_revision,quote_sha256
+           FROM mininex_live_evm_budget_reservations
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s FOR UPDATE""",
+        (did,asset,key))
+    reserved=cur.fetchone()
+    if (type(reserved) is not dict or reserved.get("state")!="RESERVED"
+            or reserved.get("side")!=identity["side"]
+            or reserved.get("stable")!=identity["stable"]
+            or reserved.get("budget_revision")!=budget_revision
+            or reserved.get("quote_sha256")!=quote_sha256):
+        raise HTTPException(409,"No matching durable per-coin strategy reservation")
+    # This helper also atomically guards all unresolved same-wallet network
+    # transactions, including ETH native conversions for LINK and UNI.
+    _claim_locked(cur,did=did,key=key,identity=identity)
+    cur.execute(
+        """UPDATE mininex_live_evm_budget_reservations
+           SET state='SENDING',updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND state='RESERVED' RETURNING state""",(did,asset,key))
+    updated=cur.fetchone()
+    if type(updated) is not dict or updated.get("state")!="SENDING":
+        raise HTTPException(409,"Concurrent budget claim conflict")
+
+
 def claim_internal_evm_send(*,did:str,intent_key:str,identity:dict)->dict:
     """Commit the SENDING claim before an independently authorized RPC send.
 
