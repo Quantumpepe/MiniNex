@@ -32,6 +32,7 @@ from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
 from .shared_evm_token_hwm_worker import reconcile_verified_erc20_fees_once
+from .shared_evm_passive_finality_worker import reconcile_submitted_evm_swaps_once
 from .shared_evm_native_sell_deposit import (
     prepare_original_native_sell_amount,submit_internal_native_evm_sell_deposit,
 )
@@ -289,6 +290,14 @@ class SharedEvmLiveWorker:
                 continue
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                try:
+                    # Finalize the exact original Router02 submissions first.
+                    # Never rebroadcast and never require an ACTIVE session.
+                    await reconcile_submitted_evm_swaps_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Original EVM submitted swap finality unavailable")
                 try:
                     # Complete prior finalized native BUYs without using
                     # a second trade signal or retrying an uncertain send.
