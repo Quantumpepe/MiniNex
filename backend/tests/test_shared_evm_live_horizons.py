@@ -14,11 +14,11 @@ class Trend:
         self.step=step
     def snapshot(self,*,now):
         return {"LINK":{"market_data_valid":True,
-                        "price_usdt":100+float(self.window)/20000}}
+                        "price_usdt":100+float(self.window)/200}}
     def history(self,asset,*,limit):
         assert asset=="LINK"
         return [{"timestamp":float(i),
-                 "price_usdt":100+(float(i)-(NOW-self.window))/20000}
+                 "price_usdt":100+(float(i)-(NOW-self.window))/200}
                 for i in range(int(NOW-self.window),int(NOW)+1,self.step)]
 
 
