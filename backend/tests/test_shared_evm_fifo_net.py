@@ -149,3 +149,35 @@ def test_no_synthetic_fee_signer_or_database_persistence_in_math_module():
     assert "sign_privy" not in source
     assert "record_internal_evm_realized_close" not in source
     assert "fee_assessed\" = True" not in source
+
+
+def test_multiple_partial_closes_consume_buy_gas_once_and_preserve_fifo():
+    records = [
+        trade("LINK", "BUY", "USDC", 100, TX1, "100", "4",
+              native_price="100", network_fee="0.04"),
+        trade("LINK", "SELL", "USDC", 200, TX2, "1", "40",
+              native_price="100", network_fee="0.01"),
+        trade("LINK", "SELL", "USDC", 300, TX3, "3", "90",
+              native_price="100", network_fee="0.01"),
+    ]
+    result = reconcile_verified_evm_fifo_net(ledger("LINK", records))
+    first, second = result["closed_trades"]
+    assert Decimal(first["fifo_acquisition_cost_usd"]) == Decimal("25")
+    assert Decimal(second["fifo_acquisition_cost_usd"]) == Decimal("75")
+    assert Decimal(first["network_and_conversion_cost_usd"]) == Decimal("2")
+    assert Decimal(second["network_and_conversion_cost_usd"]) == Decimal("4")
+    assert result["remaining_fifo_units"] == "0"
+    assert result["fee_assessed"] is False
+
+
+def test_realized_loss_is_not_a_fee_and_is_never_hidden():
+    records = [
+        trade("UNI", "BUY", "USDC", 100, TX1, "200", "2",
+              network_fee="0"),
+        trade("UNI", "SELL", "USDC", 200, TX2, "2", "100",
+              network_fee="0"),
+    ]
+    result = reconcile_verified_evm_fifo_net(ledger("UNI", records))
+    close = result["closed_trades"][0]
+    assert Decimal(close["realized_net_usd"]) == Decimal("-100")
+    assert close["fee_assessed"] is False
