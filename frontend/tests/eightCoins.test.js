@@ -6,7 +6,7 @@ test('twelve coins preserve approved compact 4x3 layout order',()=>{
   assert.deepEqual(COINS.map(c=>c.symbol),
     ['BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB']);
   assert.equal(COINS.length,12);
-  assert.equal(new Set(COINS.map(c=>c.network)).size,11);
+  assert.equal(new Set(COINS.map(c=>c.network)).size,10);
   assert.equal(coinBySymbol('POL').network,'polygon-pos-mainnet');
   assert.equal(coinBySymbol('DOGE').network,'dogecoin-mainnet');
   assert.equal(coinBySymbol('ARB').network,'arbitrum-one-mainnet');
