@@ -83,7 +83,7 @@ def test_full_minined_token_history_real_net_without_auto_fee(monkeypatch):
 
 @pytest.mark.parametrize("change",[
     lambda a:a.update(external_inventory_reconciled=False),
-    lambda a:a.update(matched_mininex_swap_transfers=1),
+    lambda a:a.update(matched_mininex_swap_transfers=0),
     lambda a:a.update(all_asset_movements_match_verified_orders=False),
 ])
 def test_unverified_inventory_never_reaches_net_pnl(monkeypatch,change):
