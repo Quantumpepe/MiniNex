@@ -263,6 +263,57 @@ def _record_result_locked(cur,*,did:str,asset:str,key:str,
     return state
 
 
+def _record_authorized_result_locked(
+    cur,*,did:str,asset:str,key:str,digest:str,tx_hash:str|None,
+)->str:
+    """Broadcast and budget reservation move together or both roll back.
+
+    The actual RPC must have been attempted at most once after the committed
+    authorized SENDING claim. Timeout/unknown result permanently retains
+    RECONCILIATION_REQUIRED; funds remain reserved until reconciliation.
+    """
+    state=_record_result_locked(
+        cur,did=did,asset=asset,key=key,digest=digest,tx_hash=tx_hash)
+    cur.execute(
+        """UPDATE mininex_live_evm_budget_reservations
+           SET state=%s,updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND state='SENDING' RETURNING state""",
+        (state,did,asset,key))
+    updated=cur.fetchone()
+    if type(updated) is not dict or updated.get("state")!=state:
+        raise HTTPException(409,"EVM budget/broadcast persistence conflict")
+    return state
+
+
+def record_internal_authorized_evm_send_result(
+    *,did:str,asset:str,intent_key:str,digest:str,tx_hash:str|None,
+)->dict:
+    """Internal approved executor only, never a public HTTP writer."""
+    did=_safe_did(did)
+    key=valid_order_key(intent_key)
+    if (asset not in ("BNB","POL","AVAX","LINK","UNI")
+            or type(digest) is not str or not _SHA.fullmatch(digest)
+            or tx_hash is not None and (
+                type(tx_hash) is not str or not _HASH.fullmatch(tx_hash))):
+        raise ValueError("Invalid privileged EVM send outcome")
+    try:
+        url=_db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                state=_record_authorized_result_locked(
+                    cur,did=did,asset=asset,key=key,
+                    digest=digest,tx_hash=tx_hash)
+    except psycopg.Error:
+        raise HTTPException(
+            503,"Cannot durably bind EVM broadcast to reserved budget") from None
+    return {
+        "asset":asset,"intent_key":key,"state":state,
+        "tx_hash":tx_hash,"retry_allowed":False,
+    }
+
+
 def record_internal_evm_send_result(
     *,did:str,asset:str,intent_key:str,digest:str,tx_hash:str|None,
 )->dict:
