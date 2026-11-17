@@ -17,11 +17,12 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .eth_user_consent import (
-    _require_identity, _require_policy_roles, verify_eoa_eip191_signature,
+    _require_identity, verify_eoa_eip191_signature,
 )
 from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import APP_ID, fetch_privy_user
 from .shared_evm_swap_receipts import _pair
+from .shared_evm_trade_policy_roles import require_coin_trade_policy_roles as _require_policy_roles
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
 LOG=logging.getLogger("mininex.evm_signed_intent")
@@ -219,7 +220,7 @@ async def prepare_evm_consent_challenge(
 )->dict:
     did,session_sha256=_require_identity(did,session_id)
     asset=_asset(asset)
-    owner,executor=_require_policy_roles()
+    owner,executor=_require_policy_roles(asset)
     owned=_owned_wallet_from_privy(await fetch_privy_user(did),did)
     now=int(time.time())
     try:
