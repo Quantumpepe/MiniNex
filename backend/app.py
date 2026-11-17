@@ -63,6 +63,9 @@ from .shared_evm_auto_sessions import (
     start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
 )
 from .shared_evm_fifo import read_evm_fifo_gross_preview
+from .shared_evm_fee_auto_consent import (
+    begin_owner_fee_auto_consent,confirm_owner_fee_auto_consent,
+)
 from .shared_evm_fee_payment import (
     prepare_owner_verified_evm_fee,confirm_owner_verified_evm_fee,
     get_owner_verified_evm_fee,
@@ -659,6 +662,50 @@ def owner_evm_fifo_preview(
 
 class EvmFeePaymentConfirmRequest(BaseModel):
     tx_hash: str = Field(min_length=66,max_length=66)
+
+
+class EvmAutoFeeOwnerIntentRequest(BaseModel):
+    """Only owner's fee-per-transfer choice and policy expiry are supplied."""
+    model_config=ConfigDict(extra="forbid")
+    max_fee_atomic: str = Field(min_length=1,max_length=45,
+                                pattern=r"^[1-9][0-9]*$")
+    policy_expires_unix: StrictInt = Field(gt=0)
+
+
+@app.post("/api/live/evm/fee-auto-consent/{asset}/challenge")
+async def owner_evm_auto_fee_consent_challenge(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    request: EvmAutoFeeOwnerIntentRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Explicit separate fee scope signature; never publish or attach signer."""
+    identity=verify_privy_bearer(authorization)
+    result=await begin_owner_fee_auto_consent(
+        did=identity["user_id"],session_id=identity["session_id"],
+        asset=asset,max_fee_atomic=request.max_fee_atomic,
+        expires_at=request.policy_expires_unix)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+class EvmAutoFeeConfirmIntentRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    signature: str = Field(
+        min_length=132,max_length=132,
+        pattern=r"^0x[0-9a-fA-F]{130}$")
+
+
+@app.post("/api/live/evm/fee-auto-consent/{asset}/confirm")
+async def owner_evm_auto_fee_consent_confirm(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    request: EvmAutoFeeConfirmIntentRequest,
+    authorization: str | None = Header(default=None),
+):
+    """User-signed EIP191 proof; still no Privy policy or wallet grant."""
+    identity=verify_privy_bearer(authorization)
+    result=await confirm_owner_fee_auto_consent(
+        did=identity["user_id"],session_id=identity["session_id"],
+        asset=asset,signature=request.signature)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/evm/fee-payment/{asset}/{execution_id}")
