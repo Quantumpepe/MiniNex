@@ -26,7 +26,7 @@ _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _HEX=re.compile(r"^0x(?:0|[1-9a-f][0-9a-f]*)$")
 _BLOCKS_PER_RPC=128
-_TRACES_PER_RPC=500
+_TRACES_PER_RPC=75
 _ATOMIC=Decimal(10)**18
 
 
@@ -191,6 +191,7 @@ async def _scan_trace_filter(client:httpx.AsyncClient,url:str,
         high=min(end,low+_BLOCKS_PER_RPC-1)
         for address_key in ("fromAddress","toAddress"):
             offset=0
+            page_keys=set()
             while True:
                 args={
                     "fromBlock":hex(low),"toBlock":hex(high),
@@ -204,6 +205,13 @@ async def _scan_trace_filter(client:httpx.AsyncClient,url:str,
                     raise ValueError("Incomplete historical value trace filter")
                 if len(page)>_TRACES_PER_RPC:
                     raise ValueError("Archive RPC exceeded requested value trace page")
+                for trace in page:
+                    if type(trace) is not dict or type(trace.get("traceAddress")) is not list:
+                        raise ValueError("Untrusted native trace page")
+                    key=(trace.get("transactionHash"),tuple(trace["traceAddress"]))
+                    if key in page_keys:
+                        raise ValueError("Archive RPC ignored pagination offset")
+                    page_keys.add(key)
                 events.extend(page)
                 if len(page)<_TRACES_PER_RPC:break
                 offset+=len(page)
