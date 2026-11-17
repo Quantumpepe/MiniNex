@@ -186,16 +186,9 @@ async def execute_owner_evm_live_tick(
     if amount is None:
         return {"asset":asset,"state":"WAIT",
                 "reason":"NO_APPROVED_VERIFIED_SOURCE_BALANCE"}
-    # Revalidate the chosen FULL amount independently before quote or send.
-    # The exact final send also checks its own onchain quote, grant,
-    # consent and reservation in a permanent SENDING claim.
-    full=await check_evm_source_allowance(
-        did,asset=asset,side=side,stable=stable,amount=amount)
-    if (full.get("source_funds_sufficient") is not True
-            or full.get("router_allowance_sufficient") is not True
-            or full.get("native_gas_available") is not True):
-        return {"asset":asset,"state":"WAIT",
-                "reason":"SOURCE_BALANCE_OR_OWNER_APPROVAL_CHANGED"}
+    # The coordinator fetches a fresh Router02 quote AND checks exact full
+    # source/allowance/gas atomics once more before any budget claim/send.
+    # Do not repeat the identical RPC here just to delay order execution.
     run="owner_"+row["started_by_owner_at"].astimezone(
         timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     event="market_"+str(int(current//60))
