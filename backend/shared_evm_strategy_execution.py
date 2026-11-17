@@ -10,7 +10,10 @@ reservation; any SENDING/unknown outcome is NEVER retried or released.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import re
 
 import httpx
 from fastapi import HTTPException
@@ -28,11 +31,38 @@ from .shared_evm_coin_budget_reserve import (
 from .storage import _safe_did
 
 LOG=logging.getLogger("mininex.evm_approved_signal")
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_SIGNAL_REF=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
+
+
+def derive_evm_strategy_signal_key(
+    *,did:str,asset:str,side:str,stable:str,
+    strategy_run_id:str,signal_event_id:str,
+)->str:
+    """One durable order key per server-originated strategy event.
+
+    Requoting or changing an event's trade terms cannot produce a new key
+    and circumvent the unique original-signal reservation. The run/event
+    identifiers are internal worker provenance, never client input.
+    """
+    did=_safe_did(did)
+    if (type(asset) is not str or asset not in _ASSETS
+            or type(strategy_run_id) is not str
+            or not _SIGNAL_REF.fullmatch(strategy_run_id)
+            or type(signal_event_id) is not str
+            or not _SIGNAL_REF.fullmatch(signal_event_id)):
+        raise ValueError("Untrusted server strategy event provenance")
+    pair=_pair(asset,stable,side)
+    material=json.dumps(
+        [did,asset,pair["chain_id"],strategy_run_id,signal_event_id],
+        separators=(",",":"),ensure_ascii=True,
+    ).encode("ascii")
+    return valid_order_key("sig_"+hashlib.sha256(material).hexdigest()[:60])
 
 
 async def execute_internal_evm_strategy_signal(
-    *,did:str,asset:str,intent_key:str,side:str,stable:str,
-    amount:str,amount_usd:str,budget_revision:int,
+    *,did:str,asset:str,strategy_run_id:str,signal_event_id:str,
+    side:str,stable:str,amount:str,amount_usd:str,budget_revision:int,
     client:httpx.AsyncClient,
 )->dict:
     """Process a single server-originated strategy event without requoting.
@@ -42,15 +72,16 @@ async def execute_internal_evm_strategy_signal(
     original signal reservation are rechecked before every actual send.
     """
     did=_safe_did(did)
-    key=valid_order_key(intent_key)
-    if (asset not in ("BNB","POL","AVAX","LINK","UNI")
+    if (asset not in _ASSETS
             or side not in ("BUY","SELL")
             or type(amount) is not str
             or type(amount_usd) is not str
             or type(budget_revision) is not int or budget_revision<1
             or type(client) is not httpx.AsyncClient):
         raise ValueError("Untrusted internal EVM strategy signal")
-    _pair(asset,stable,side)
+    key=derive_evm_strategy_signal_key(
+        did=did,asset=asset,side=side,stable=stable,
+        strategy_run_id=strategy_run_id,signal_event_id=signal_event_id)
 
     prepared=await prepare_owner_evm_swap(
         did,asset=asset,side=side,stable=stable,amount=amount)
