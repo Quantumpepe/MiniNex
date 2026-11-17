@@ -63,6 +63,9 @@ from .shared_evm_auto_sessions import (
     start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
 )
 from .shared_evm_fifo import read_evm_fifo_gross_preview
+from .shared_evm_fee_auto_status import (
+    owner_fee_auto_permission_status,revoke_owner_fee_auto_permission,
+)
 from .shared_evm_fee_auto_consent import (
     begin_owner_fee_auto_consent,confirm_owner_fee_auto_consent,
 )
@@ -706,6 +709,30 @@ async def owner_evm_auto_fee_consent_confirm(
         did=identity["user_id"],session_id=identity["session_id"],
         asset=asset,signature=request.signature)
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/evm/fee-auto-consent/{asset}")
+def owner_evm_auto_fee_permission_status(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Only this authenticated owner can read their own separate fee grant."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        owner_fee_auto_permission_status(did=did,asset=asset),
+        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/fee-auto-consent/{asset}/revoke")
+def owner_evm_auto_fee_permission_revoke(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI"],
+    authorization: str | None = Header(default=None),
+):
+    """Owner immediately revokes MiniNex local fee permission; Privy remote separate."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        revoke_owner_fee_auto_permission(did=did,asset=asset),
+        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/evm/fee-payment/{asset}/{execution_id}")
