@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from threading import Lock
 
 import psycopg
 from fastapi import HTTPException
@@ -24,16 +25,16 @@ from .storage import _db_url,_ensure_schema
 LOG=logging.getLogger("mininex.evm_auto_fee_finality")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_AUTO_FEE_FINALITY_LOCK=Lock()
+_AUTO_FEE_FINALITY_OFFSET=0
 
 
 def _submitted_automatic_owner_fee_records(limit:int=30)->list[dict]:
     if type(limit) is not int or not 1<=limit<=500:
         raise ValueError("Invalid original fee settlement scan size")
+    global _AUTO_FEE_FINALITY_OFFSET
     db=_db_url();_ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT a.privy_did,a.asset,a.execution_id,a.chain_id,
+    sql="""SELECT a.privy_did,a.asset,a.execution_id,a.chain_id,
                           a.stable,a.wallet_address,a.treasury_wallet,
                           a.token_address,a.amount_atomic,a.tx_hash,
                           p.asset AS payment_asset,p.stable AS payment_stable,
@@ -47,8 +48,22 @@ def _submitted_automatic_owner_fee_records(limit:int=30)->list[dict]:
                      ON p.privy_did=a.privy_did AND p.asset=a.asset
                     AND p.execution_id=a.execution_id
                    WHERE a.status='SUBMITTED' AND a.tx_hash IS NOT NULL
-                   ORDER BY a.created_at ASC LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY a.created_at ASC,a.privy_did,a.asset,a.execution_id
+                   LIMIT %s OFFSET %s"""
+    # Old unresolved receipts never prevent other owner's finalized fees
+    # from being verified. This is a read-only scan, not a payment retry.
+    with _AUTO_FEE_FINALITY_LOCK:
+        offset=_AUTO_FEE_FINALITY_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    rows=list(cur.fetchall())
+        _AUTO_FEE_FINALITY_OFFSET=offset+len(rows)
+    return rows
 
 
 def original_auto_fee_draft(row:object)->dict:
