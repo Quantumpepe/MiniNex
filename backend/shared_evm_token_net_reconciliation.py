@@ -24,7 +24,7 @@ from .shared_evm_historical_fill_bridge import independently_price_stored_evm_fi
 from .shared_evm_wallet_token_audit import audit_owner_erc20_token_inventory
 from .storage import _db_url, _ensure_schema, _safe_did
 
-_ASSETS = frozenset(("LINK", "UNI"))
+_ASSETS = frozenset(("LINK", "UNI", "ARB"))
 
 
 def _verified_account_fill(row: dict, asset: str) -> dict:
