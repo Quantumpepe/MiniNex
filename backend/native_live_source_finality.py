@@ -1,0 +1,234 @@
+"""Passive owner-bound BTC/SOL/XRP original-source finality.
+
+Reads original Privy wallet identity and confirmed source-chain transactions,
+then records the exact immutable source proof alongside a SUBMITTED journal
+row. This is NOT a swap output, destination receipt, position, or 5% fee.
+Never sends, retries, approves, signs or creates a user order.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+from threading import Lock
+
+from fastapi import HTTPException
+import psycopg
+from psycopg.rows import dict_row
+
+from .storage import _db_url,_ensure_schema,_safe_did
+from .native_live_order_journal import _valid_source_hash
+from .native_thor_swap_quote import _exact_owner_wallets
+from .privy_wallet_verification import fetch_privy_user
+from .native_trade_receipts import get_owner_native_sender_receipt
+from .live_btc_receipts import check_native_btc_transaction
+
+LOG=logging.getLogger("mininex.native_source_finality")
+_FINALITY_PAGE_LOCK=Lock()
+_FINALITY_PAGE_OFFSET=0
+_CHAIN={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet"}
+
+
+def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
+    """Exact source-chain finality; never infer swap output or profit."""
+    if (type(record) is not dict or type(proof) is not dict
+            or record.get("status")!="SUBMITTED"
+            or record.get("side")!="SELL"
+            or record.get("asset") not in _CHAIN
+            or record.get("chain")!=_CHAIN[record["asset"]]
+            or record.get("source_wallet")!=owner_wallet
+            or type(record.get("source_tx_hash")) is not str
+            or not _valid_source_hash(record["asset"],"SELL",
+                                      record["source_tx_hash"])):
+        raise ValueError("Original source chain identity not verified")
+    asset=record["asset"]
+    tx=record["source_tx_hash"]
+    if asset=="BTC":
+        if (proof.get("mode")!="BTC_MAINNET_WALLET_TX_OBSERVATION"
+                or proof.get("asset")!="BTC"
+                or proof.get("network")!="bitcoin-mainnet"
+                or proof.get("txid")!=tx.lower()
+                or proof.get("owned_address_proved_by_privy") is not True
+                or proof.get("owner_input_observed") is not True
+                or proof.get("explorer_reports_confirmed") is not True
+                or proof.get("recommended_confirmation_threshold_met") is not True
+                or type(proof.get("confirmations_observed")) is not int
+                or proof["confirmations_observed"]<6
+                or proof.get("crosschain_swap_fill_verified") is not False
+                or proof.get("ethereum_stablecoin_settlement_verified") is not False
+                or proof.get("wallet_signed") is not False
+                or proof.get("can_submit") is not False):
+            raise ValueError("Bitcoin source transaction is not finalized")
+        checkpoint={"confirmations":proof["confirmations_observed"],
+                    "wallet_input_sats":proof.get("wallet_input_sats"),
+                    "wallet_output_sats":proof.get("wallet_output_sats"),
+                    "network_fee_btc":proof.get("transaction_fee_btc")}
+    else:
+        correct=(proof.get("source_wallet_signature_verified") is True if asset=="SOL"
+                 else proof.get("source_wallet_transaction_verified") is True)
+        checkpoint_value=(
+            proof.get("source_chain_slot") if asset=="SOL" else
+            proof.get("source_chain_ledger"))
+        if (not correct or proof.get("mode")!="OWNER_NATIVE_SOURCE_RECEIPT_READ_ONLY"
+                or proof.get("asset")!=asset
+                or proof.get("network")!=_CHAIN[asset]
+                or proof.get("source_tx_hash")!=tx
+                or proof.get("source_chain_finalized") is not True
+                or type(checkpoint_value) is not int or checkpoint_value<=0
+                or proof.get("destination_finality_still_required") is not True
+                or proof.get("cross_chain_swap_completed") is not False
+                or proof.get("destination_stablecoin_received") is not False
+                or proof.get("trading_profit_recorded") is not False
+                or proof.get("fee_assessed") is not False
+                or proof.get("can_submit") is not False):
+            raise ValueError("Native source receipt does not verify original payment")
+        fee=("network_fee_lamports" if asset=="SOL" else "network_fee_drops")
+        network_fee=proof.get(fee)
+        if (type(network_fee) is not str or
+                not network_fee.isdigit() or len(network_fee)>30):
+            raise ValueError("Source-chain fee cannot be reconstructed")
+        checkpoint={
+            "chain_height":checkpoint_value,
+            "network_fee_atomic":network_fee,
+        }
+    record_fields={
+        "mode":"EXACT_OWNER_NATIVE_SOURCE_FINALITY_ONLY",
+        "asset":asset,"network":_CHAIN[asset],"side":"SELL",
+        "intent_key":record.get("intent_key"),
+        "source_tx_hash":tx,"source_wallet":owner_wallet,
+        "owner_privy_did":record.get("privy_did"),
+        "original_order_sha256":record.get("payload_sha256"),
+        "checkpoint":checkpoint,
+        "source_chain_finalized":True,
+        "destination_settlement_finalized":False,
+        "net_profit_verified":False,
+        "fee_assessed":False,
+        "broadcast_or_retry_performed":False,
+    }
+    commitment=hashlib.sha256(json.dumps(
+        record_fields,sort_keys=True,separators=(",",":"),ensure_ascii=True,
+    ).encode("utf-8")).hexdigest()
+    return {"source_proof_sha256":commitment,**record_fields}
+
+
+def _pending_original_source_submissions(limit:int=32)->list[dict]:
+    """Fair bounded receipt work pages, not a trade-count or budget limit."""
+    global _FINALITY_PAGE_OFFSET
+    if type(limit) is not int or limit<=0 or limit>256:
+        raise ValueError("Invalid finality database work page")
+    db=_db_url()
+    _ensure_schema(db)
+    query="""SELECT privy_did,asset,intent_key,payload_sha256,side,
+                    chain,source_wallet,source_tx_hash,status
+             FROM mininex_live_native_order_intents
+             WHERE status='SUBMITTED' AND side='SELL'
+               AND asset IN ('BTC','SOL','XRP')
+               AND source_tx_hash IS NOT NULL
+             ORDER BY created_at ASC,privy_did,asset,intent_key
+             LIMIT %s OFFSET %s"""
+    with _FINALITY_PAGE_LOCK:
+        offset=_FINALITY_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,offset))
+                records=list(cur.fetchall())
+                if not records and offset:
+                    offset=0
+                    cur.execute(query,(limit,0))
+                    records=list(cur.fetchall())
+        _FINALITY_PAGE_OFFSET=offset+len(records)
+    return records
+
+
+def _persist_source_finality_locked(
+    cur,*,original:dict,verified:dict,
+)->str:
+    """One linearized transition; original chain hash never changes."""
+    if (type(original) is not dict or type(verified) is not dict
+            or verified.get("source_chain_finalized") is not True
+            or verified.get("destination_settlement_finalized") is not False
+            or verified.get("net_profit_verified") is not False
+            or verified.get("fee_assessed") is not False
+            or verified.get("broadcast_or_retry_performed") is not False
+            or verified.get("asset")!=original.get("asset")
+            or verified.get("source_tx_hash")!=original.get("source_tx_hash")
+            or verified.get("original_order_sha256")!=original.get("payload_sha256")
+            or verified.get("source_wallet")!=original.get("source_wallet")
+            or verified.get("owner_privy_did")!=original.get("privy_did")):
+        raise HTTPException(409,"Original source finality not bound to journal")
+    did=_safe_did(original["privy_did"])
+    asset=original["asset"]
+    key=original["intent_key"]
+    digest=verified.get("source_proof_sha256")
+    if (type(digest) is not str or len(digest)!=64 or
+            any(c not in "0123456789abcdef" for c in digest)):
+        raise ValueError("Invalid original chain proof digest")
+    cur.execute(
+        """SELECT status,side,chain,source_wallet,source_tx_hash,
+                  payload_sha256,source_proof_sha256
+           FROM mininex_live_native_order_intents
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+           FOR UPDATE""",(did,asset,key))
+    row=cur.fetchone()
+    if (type(row) is not dict or row.get("status")!="SUBMITTED"
+            or row.get("side")!="SELL"
+            or row.get("chain")!=_CHAIN.get(asset)
+            or row.get("source_wallet")!=original.get("source_wallet")
+            or row.get("source_tx_hash")!=original.get("source_tx_hash")
+            or row.get("payload_sha256")!=original.get("payload_sha256")
+            or row.get("source_proof_sha256") is not None):
+        raise HTTPException(409,"Native source already claimed or changed")
+    cur.execute(
+        """UPDATE mininex_live_native_order_intents
+           SET status='SOURCE_FINALIZED',
+               source_proof_sha256=%s,source_finalized_at=now(),
+               updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND status='SUBMITTED' AND source_tx_hash=%s
+             AND source_proof_sha256 IS NULL
+           RETURNING status""",
+        (digest,did,asset,key,original["source_tx_hash"]))
+    result=cur.fetchone()
+    if type(result) is not dict or result.get("status")!="SOURCE_FINALIZED":
+        raise HTTPException(409,"Native original receipt persistence conflict")
+    return "SOURCE_FINALIZED"
+
+
+async def reconcile_original_native_source_once(limit:int=32)->dict:
+    """Reconcile receipts from submitted user-approved original sends only.
+
+    A failed or temporarily unconfirmed receipt remains SUBMITTED for future
+    read-only checks, not an authorization to resubmit.
+    """
+    rows=_pending_original_source_submissions(limit)
+    done=errors=0
+    for original in rows:
+        try:
+            did=_safe_did(original["privy_did"])
+            asset=original["asset"]
+            user=await fetch_privy_user(did)
+            owned,_eth=_exact_owner_wallets(user,did,asset)
+            if owned!=original["source_wallet"]:
+                raise ValueError("Original Privy wallet changed")
+            hash_=original["source_tx_hash"]
+            proof=(await check_native_btc_transaction(did,hash_) if asset=="BTC"
+                   else await get_owner_native_sender_receipt(
+                       did,asset=asset,transaction_hash=hash_))
+            evidence=_confirmed_original_source(original,proof,owned)
+            db=_db_url()
+            _ensure_schema(db)
+            with psycopg.connect(db,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    _persist_source_finality_locked(
+                        cur,original=original,verified=evidence)
+            done+=1
+        except (ValueError,HTTPException,psycopg.Error,TypeError,KeyError):
+            errors+=1
+    return {
+        "mode":"NATIVE_ORIGINAL_SOURCE_READ_ONLY_RECONCILIATION",
+        "scanned":len(rows),"finalized_sources":done,
+        "unverified_or_unavailable":errors,
+        "destination_settlements_confirmed":0,
+        "realized_profit_assessed":False,
+        "fees_paid":False,"new_transactions_sent":0,
+    }
