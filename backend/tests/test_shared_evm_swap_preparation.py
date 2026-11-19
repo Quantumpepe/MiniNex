@@ -46,7 +46,7 @@ def sample(asset,side,stable,amount,*,balance_ok=True,allowance_ok=True,gas_ok=T
 
 @pytest.mark.parametrize("asset,stable",[
     ("ETH","USDC"),("ETH","USDT"),("LINK","USDC"),
-    ("UNI","USDT"),("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
+    ("UNI","USDT"),("ARB","USDC"),("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
 ])
 @pytest.mark.parametrize("side",["BUY","SELL"])
 def test_all_evm_assets_join_exact_quote_balance_and_allowance(asset,stable,side):
@@ -107,7 +107,7 @@ def test_cross_chain_wallet_token_and_atomic_mismatches_fail_closed(change):
 
 @pytest.mark.parametrize("asset,stable",[
     ("ETH","USDC"),("BNB","USDT"),("POL","USDC"),
-    ("AVAX","USDC"),("LINK","USDC"),("UNI","USDT"),
+    ("AVAX","USDC"),("LINK","USDC"),("UNI","USDT"),("ARB","USDC"),
 ])
 def test_one_executor_routes_every_evm_asset_through_own_quote_and_shared_allowance(
     monkeypatch,asset,stable
