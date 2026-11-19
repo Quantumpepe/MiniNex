@@ -292,3 +292,20 @@ def test_arb_replaces_ada_with_real_usdt_and_independent_usd_reference():
     assert service.history("ARB")[0]["price_usdt"]==1.2
     with pytest.raises(ValueError):
         service.history("ADA")
+
+
+def test_arb_history_and_price_snapshot_http_endpoints_no_longer_return_404():
+    """Regression for the Android update: /api/market/history/ARB was 404."""
+    from fastapi.testclient import TestClient
+    from backend.app import app
+    client=TestClient(app)
+    chart=client.get("/api/market/history/ARB?limit=3600")
+    assert chart.status_code==200
+    assert chart.json()["asset"]=="ARB"
+    assert chart.json()["currency"]=="USDT"
+    assert isinstance(chart.json()["points"],list)
+    prices=client.get("/api/market/prices")
+    assert prices.status_code==200
+    assert "ARB" in prices.json()["markets"]
+    assert "ADA" not in prices.json()["markets"]
+    assert client.get("/api/market/history/ADA").status_code==404
