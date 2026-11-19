@@ -107,3 +107,28 @@ def test_unrelated_user_transaction_gas_is_counted_and_not_silently_ignored():
     kwargs["receipts"].pop(new_tx)
     with pytest.raises(ValueError):
         verify_owner_native_balance_and_gas(**kwargs)
+
+
+def test_archived_wallet_nonce_proves_all_sender_transactions_were_seen():
+    original=fixture()
+    original.update(sender_nonce_before="0x9",sender_nonce_after="0xb")
+    proof=verify_owner_native_balance_and_gas(**original)
+    assert proof["archived_sender_nonce_delta_verified"] is True
+    assert proof["all_sender_transactions_in_observed_interval_reconciled"] is True
+    assert proof["wallet_lifetime_and_acquisition_basis_proven"] is False
+    assert proof["five_percent_hwm_writable"] is False
+
+
+@pytest.mark.parametrize("before,after",[
+    ("0x9","0xa"),  # one gas-paying original transaction hidden
+    ("0x9","0xc"),  # a third zero-value send missed by trace_filter
+    ("0xb","0x9"),  # reorg or wrong archival state
+    ("0x9",None),   # incomplete archive response
+    (None,"0xb"),
+    ("0xz","0xb"),  # noncanonical nonce
+])
+def test_native_nonce_mismatch_cannot_certify_full_owner_sender_gas(before,after):
+    original=fixture()
+    original.update(sender_nonce_before=before,sender_nonce_after=after)
+    with pytest.raises(ValueError):
+        verify_owner_native_balance_and_gas(**original)
