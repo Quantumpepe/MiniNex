@@ -1,4 +1,4 @@
-"""One real-quote plan dispatcher for all eleven trade coins; no real sends."""
+"""One real-quote plan dispatcher for all twelve trade coins; no real sends."""
 import asyncio
 import time
 
@@ -61,7 +61,8 @@ def venues(monkeypatch):
     async def native_evm(did,*,asset,side,stable,amount):
         seen.append(("NATIVE_EVM",did,asset,side,stable,amount))
         return {
-            "mode":"SHARED_NATIVE_EVM_V3_QUOTE",
+            "mode":("SHARED_EVM_ERC20_V3_QUOTE" if asset=="ARB"
+                    else "SHARED_NATIVE_EVM_V3_QUOTE"),
             "asset":asset,"network":get_asset(asset).blockchain,
             "chain_id":get_asset(asset).chain_id,
             "side":side,"stable":stable,"input_amount":amount,
@@ -115,11 +116,13 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
         assert plan["wallet_funds_verified"] is True
         assert plan["quote_level"]=="WALLET_VERIFIED_UNSIGNED_ERC20_SWAP"
         assert plan["transaction_preview_created"] is True
-    elif asset in ("BNB","POL","AVAX"):
+    elif asset in ("BNB","POL","AVAX","ARB"):
         assert venues==[("NATIVE_EVM",DID,asset,side,stable,amount)]
         assert plan["wallet_funds_verified"] is True
-        assert plan["quote_level"]=="WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP"
-        assert plan["native_wrap_unwrap_not_yet_settled"] is True
+        assert plan["quote_level"]==(
+            "WALLET_VERIFIED_UNSIGNED_ERC20_SWAP" if asset=="ARB"
+            else "WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP")
+        assert plan["native_wrap_unwrap_not_yet_settled"] is (asset!="ARB")
     else:
         assert venues==[("OTHER",plan["source_asset"],plan["destination_asset"],amount)]
         assert plan["wallet_funds_verified"] is False

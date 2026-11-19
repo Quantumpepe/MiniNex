@@ -9,7 +9,7 @@ settlement remain separate before end-to-end LIVE.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 import hashlib
 import os
@@ -61,6 +61,12 @@ CHAINS={
         "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
         "USDC","0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",6,
         "https://developers.uniswap.org/docs/protocols/v3/deployments/v3-polygon-deployments"),
+    "ARB":ChainRoute(42161,"arbitrum-one-mainnet",
+        "0x912CE59144191C1204E64559FE8253a0e49E6548",
+        "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+        "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+        "USDC","0xaf88d065e77c8cC2239327C5EDb3A432268e5831",6,
+        "https://developers.uniswap.org/docs/protocols/v3/deployments/v3-arbitrum-deployments"),
     "AVAX":ChainRoute(43114,"avalanche-c-mainnet",
         "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
         "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
@@ -74,6 +80,11 @@ def _route(asset:str,stable:str)->ChainRoute:
     if type(asset) is not str or asset not in CHAINS:
         raise HTTPException(404,"Unsupported native EVM trading asset")
     route=CHAINS[asset]
+    # ARB is an ERC-20 token, NOT Arbitrum gas. It trades against native
+    # Circle USDC or genuine Arbitrum USDT0; ETH remains the gas currency.
+    if asset=="ARB" and stable=="USDT":
+        route=replace(route,stable="USDT",
+            stable_contract="0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9")
     if stable!=route.stable or type(stable) is not str:
         raise HTTPException(422,"Stablecoin contract not verified for this EVM route")
     if chain_for_asset(asset)!=(route.chain_id,route.network):
@@ -144,7 +155,8 @@ async def quote_native_evm_trade(
             raise ValueError("No owned Privy EVM wallet")
     except (ValueError,KeyError,TypeError):
         raise HTTPException(503,"User owned EVM wallet unavailable") from None
-    chain,network,fallback,env=_RPC[asset]
+    chain,network,fallback,env=_RPC[
+        "ARB_TOKENS" if asset=="ARB" else asset]
     if chain!=route.chain_id or network!=route.network:
         raise HTTPException(503,"EVM RPC network configuration mismatch")
     rpc_url=os.getenv(env,"").strip() or fallback
@@ -220,7 +232,8 @@ async def quote_native_evm_trade(
             "transaction_expires_at":int(time.time())+15,
             "requires_owner_wallet_signature":True,
         } if include_user_transaction else {}),
-        "mode":"SHARED_NATIVE_EVM_V3_QUOTE",
+        "mode":("SHARED_EVM_ERC20_V3_QUOTE" if asset=="ARB"
+                else "SHARED_NATIVE_EVM_V3_QUOTE"),
         "asset":asset,"network":network,"chain_id":route.chain_id,
         "side":side,"stable":stable,"input_amount":amount,
         "expected_output_amount":format(
@@ -234,7 +247,7 @@ async def quote_native_evm_trade(
         "quote_fee_tier":fee,"quote_gas_estimate":gas,
         "router":route.router,
         "unsigned_swap_hash":hashlib.sha256(bytes.fromhex(tx["data"][2:])).hexdigest(),
-        "native_wrap_unwrap_not_yet_settled":True,
+        "native_wrap_unwrap_not_yet_settled":asset!="ARB",
         "source_token_allowance_not_checked":True,
         "wallet_identity_verified":True,
         "wallet_funds_verified":True,

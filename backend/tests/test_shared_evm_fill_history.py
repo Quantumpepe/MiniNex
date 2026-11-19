@@ -30,7 +30,7 @@ def record(asset,side="BUY",stable=None):
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("side",["BUY","SELL"])
 def test_each_real_evm_coin_has_separate_finalized_buy_sell_history(asset,side):
     v=h._verified_fill_row(record(asset,side),asset)

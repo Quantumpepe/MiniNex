@@ -53,12 +53,14 @@ def test_five_evm_assets_have_independent_bound_durable_send_identity(
     assert len(i["request_digest"])==64
     assert i["signed_or_sent"] is False
     cur=Cursor([{"privy_did":DID},{"pending":0}] +
-               ([{"pending":0},{"pending":0}] if chain==1 else []))
+               ([{"pending":0},{"pending":0}] if chain==1 else
+                [{"pending":0},{"pending":0},{"pending":0},{"pending":0}]))
     _claim_locked(cur,did=DID,key=KEY,identity=i)
-    assert len(cur.sql)==(5 if chain==1 else 3)
+    assert len(cur.sql)==(5 if chain==1 else 7)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "chain_id=%s" in cur.sql[1][0]
-    assert cur.sql[1][1]==(DID,chain)
+    assert cur.sql[1][1]==(DID,chain,DID,chain)
+    assert "mininex_evm_auto_fee_sends" in cur.sql[1][0]
     assert "'SENDING'" in cur.sql[-1][0]
     assert i["request_digest"] in cur.sql[-1][1]
 
@@ -127,3 +129,50 @@ def test_eth_legacy_journal_is_not_silently_replaced():
 def test_new_journal_not_accessible_from_public_api():
     from backend.app import app
     assert all("evm-auto-broadcast" not in r.path for r in app.routes)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_unresolved_native_conversion_blocks_same_chain_swap(asset):
+    cur=Cursor([{"privy_did":DID},{"pending":0},{"pending":1}])
+    with pytest.raises(HTTPException):
+        _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+    assert len(cur.sql)==3
+    assert "mininex_live_evm_native_auto_steps" in cur.sql[-1][0]
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in q
+                   for q,args in cur.sql)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_pending_native_sell_deposit_blocks_same_chain_swap(asset):
+    cur=Cursor([{"privy_did":DID},{"pending":0},
+                {"pending":0},{"pending":1}])
+    with pytest.raises(HTTPException) as err:
+        _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+    assert err.value.status_code==409
+    assert "mininex_live_evm_native_sell_intents" in cur.sql[-1][0]
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
+                   for sql,args in cur.sql)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_another_signal_cannot_preempt_earlier_finalized_native_sell(asset):
+    cur=Cursor([{"privy_did":DID},{"pending":0},
+                {"pending":0},{"pending":0},{"pending":1}])
+    with pytest.raises(HTTPException) as err:
+        _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+    assert err.value.status_code==409
+    assert "AND n.intent_key<>%s" in cur.sql[-1][0]
+    assert KEY==cur.sql[-1][1][-1]
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in q
+                   for q,args in cur.sql)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_other_swap_cannot_spend_unsettled_native_buy_position(asset):
+    cur=Cursor([{"privy_did":DID},{"pending":0},{"pending":0},
+                {"pending":0},{"pending":0},{"pending":1}])
+    with pytest.raises(HTTPException):
+        _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+    assert "mininex_live_evm_completed_native_cycles" in cur.sql[-1][0]
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
+                   for sql,args in cur.sql)

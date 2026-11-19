@@ -27,47 +27,72 @@ _ZERO = _D("0")
 _RESERVE = _D("0.000000000000000001")
 
 
-def verified_live_eth_momentum(market, *, now: float) -> dict:
+_HORIZON_WINDOWS={
+    "5m":(60,120,300),
+    "15m":(60,180,900),
+    "1h":(300,1200,3600),
+    "24h":(3600,21600,86400),
+}
+
+
+def verified_live_evm_momentum(
+    market, *, asset: str, now: float, horizon:str="15m",
+) -> dict:
     """Momentum/trailing signal from actual fresh external prices, never PAPER."""
     if type(now) not in (int,float) or not math.isfinite(now) or now<=0:
         raise ValueError("Invalid market timestamp")
-    feed=market.snapshot(now=now)["markets"]["ETH"]
+    if type(asset) is not str or asset not in (
+            "ETH","BNB","POL","AVAX","LINK","UNI"):
+        raise ValueError("Unsupported verified EVM live market")
+    if type(horizon) is not str or horizon not in _HORIZON_WINDOWS:
+        raise ValueError("Unsupported owner-chosen LIVE market horizon")
+    fast_window,slow_window,history_window=_HORIZON_WINDOWS[horizon]
+    snapshot=market.snapshot(now=now)
+    feed=(snapshot["markets"] if "markets" in snapshot else snapshot)[asset]
     price=feed.get("price_usdt")
     if (feed.get("market_data_valid") is not True
             or type(price) not in (int,float)
             or not math.isfinite(price) or price<=0):
         return {"action":"WAIT","reason":"LIVE_MARKET_DATA_UNVERIFIED"}
     points=[]
-    for entry in market.history("ETH",limit=3600):
+    for entry in market.history(asset,limit=3600):
         try:
             t=float(entry["timestamp"]);v=float(entry["price_usdt"])
         except (ValueError,TypeError,KeyError,OverflowError):
             continue
-        if math.isfinite(t) and math.isfinite(v) and v>0 and 0<=now-t<=900:
+        if (math.isfinite(t) and math.isfinite(v)
+                and v>0 and 0<=now-t<=history_window):
             points.append((t,v))
     points.sort()
-    if len(points)<20 or now-points[0][0]<180 or now-points[-1][0]>12:
+    if (len(points)<20 or now-points[0][0]<slow_window
+            or now-points[-1][0]>12):
         return {"action":"WAIT","reason":"LIVE_OBSERVATION_INCOMPLETE"}
     def history_price(age):
         older=[value for t,value in points if t<=now-age]
         return older[-1] if older else None
-    p60=history_price(60);p180=history_price(180)
+    p60=history_price(fast_window);p180=history_price(slow_window)
     if not p60 or not p180:
         return {"action":"WAIT","reason":"LIVE_MOMENTUM_INCOMPLETE"}
     m60=(price/p60-1)*100
     m180=(price/p180-1)*100
     high=max(v for _,v in points)
     high_drawdown=(1-price/high)*100
+    details={"market_price":str(price),"m60":m60,"m180":m180,
+             "horizon":horizon,"fast_lookback_seconds":fast_window,
+             "slow_lookback_seconds":slow_window}
     if m60>=0.12 and m180>=0.22 and high_drawdown<0.6:
         return {"action":"BUY","reason":"LIVE_CONFIRMED_UPTREND",
-                "market_price":str(price),
-                "m60":m60,"m180":m180}
+                **details}
     if ((m60<=-0.13 and m180<=-0.22)
             or (high_drawdown>=0.8 and m60<=-0.06)):
         return {"action":"SELL","reason":"LIVE_CONFIRMED_REVERSAL",
-                "market_price":str(price),
-                "m60":m60,"m180":m180}
+                **details}
     return {"action":"WAIT","reason":"LIVE_NO_TRADE_SIGNAL"}
+
+
+def verified_live_eth_momentum(market, *, now: float) -> dict:
+    """Preserve the ETH API and use the identical EVM strategy signal logic."""
+    return verified_live_evm_momentum(market,asset="ETH",now=now)
 
 
 def _positive_decimal(value,what):

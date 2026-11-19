@@ -102,7 +102,8 @@ def test_eth_native_send_respects_shared_link_uni_wallet_nonce(pending,expected)
     assert "mininex_live_evm_auto_broadcasts" in sql
     assert "chain_id=1" in sql
     assert "RECONCILIATION_REQUIRED" in sql
-    assert args==(DID,)
+    assert args==(DID,DID)
+    assert "mininex_evm_auto_fee_sends" in sql
 
 
 def test_eth_native_claim_checks_shared_nonce_inside_original_transaction():

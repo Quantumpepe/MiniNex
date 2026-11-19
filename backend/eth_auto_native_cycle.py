@@ -63,11 +63,14 @@ def _assert_no_pending_ethereum_token_send(cur, did:str)->None:
     SENDING is committed. It does not restrict trading capital or amounts.
     """
     cur.execute(
-        """SELECT COUNT(*) AS pending
-           FROM mininex_live_evm_auto_broadcasts
-           WHERE privy_did=%s AND chain_id=1 AND status IN
-             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-        (did,))
+        """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
+               WHERE privy_did=%s AND chain_id=1 AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+               WHERE privy_did=%s AND chain_id=1 AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             AS pending""",
+        (did,did))
     row=cur.fetchone()
     if (type(row) is not dict
             or type(row.get("pending")) is not int
@@ -125,6 +128,15 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
             or consent.get("revoked_at") is not None
             or consent.get("limits_revision")!=limits["revision"]):
         raise HTTPException(409,"Native conversion no longer authorized")
+    # ETH, LINK, UNI and ETH native conversions share the same wallet nonce.
+    # Lock the SAME owner account row as the common EVM order claim before
+    # checking pending transactions. This closes concurrent check/insert races.
+    cur.execute(
+        """SELECT privy_did FROM mininex_accounts
+           WHERE privy_did=%s FOR UPDATE""",(did,))
+    shared_owner=cur.fetchone()
+    if type(shared_owner) is not dict or shared_owner.get("privy_did")!=did:
+        raise HTTPException(409,"Shared EVM wallet account lock unavailable")
     cur.execute(
         """SELECT intent_key,operation,amount_wei,status
            FROM mininex_live_eth_auto_native_steps

@@ -152,3 +152,37 @@ def test_sell_with_zero_verified_weth_can_wrap_native_once(monkeypatch):
     assert len(calls)==1
     assert calls[0][0]=="DEPOSIT"
     assert calls[0][1]>0
+
+
+class ExtraMarket:
+    def __init__(self,asset,trend):
+        self.asset=asset
+        self.trend=trend
+    def snapshot(self,*,now):
+        price=100.5 if self.trend=="up" else 99
+        return {self.asset:{"market_data_valid":True,
+                            "price_usdt":price}}
+    def history(self,asset,*,limit):
+        assert asset==self.asset
+        return [{"timestamp":t,"price_usdt":
+            (100+(t-810)/190*0.5 if self.trend=="up"
+             else 100-(t-810)/190)}
+            for t in range(810,1001,5)]
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("trend,expected",[
+    ("up","BUY"),("down","SELL")
+])
+def test_same_verified_live_evm_momentum_for_each_extra_coin(asset,trend,expected):
+    result=live.verified_live_evm_momentum(
+        ExtraMarket(asset,trend),asset=asset,now=1000)
+    assert result["action"]==expected
+    assert "market_price" in result
+
+
+@pytest.mark.parametrize("asset",["ADA","BTC","DOGE"])
+def test_non_evm_assets_cannot_enter_evm_live_momentum(asset):
+    with pytest.raises(ValueError):
+        live.verified_live_evm_momentum(
+            ExtraMarket(asset,"up"),asset=asset,now=1000)

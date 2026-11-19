@@ -11,22 +11,24 @@ DID="did:privy:owner"
 OTHER="did:privy:other"
 TX="0x"+"ab"*32
 WHEN=datetime(2026,11,17,12,0,tzinfo=timezone.utc)
-CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
+CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1,"ARB":42161}
 
 
-def row(asset,stage="SUBMITTED",stable=None):
+def row(asset,stage="SUBMITTED",stable=None,side="BUY",native=False,fee=False,paid=False):
     return {
         "asset":asset,"chain_id":CHAIN[asset],
         "intent_key":"sig_abcdef01234567890123456789",
-        "side":"BUY","stable":stable or (
+        "side":side,"stable":stable or (
             "USDT" if asset=="BNB" else "USDC"),
         "status":stage,
         "tx_hash":TX if stage not in ("SENDING","RECONCILIATION_REQUIRED") else None,
         "created_at":WHEN,"updated_at":WHEN,
+        "native_cycle_verified":native,"hwm_fee_recorded":fee,
+        "fee_payment_verified":paid,
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("stage",[
     "SENDING","SUBMITTED","RECONCILIATION_REQUIRED",
     "FINALIZED_SUCCESS","FINALIZED_REVERTED",
@@ -41,6 +43,8 @@ def test_five_coins_have_correct_isolated_pending_and_final_state(asset,stage):
     assert r["automatic_retry_allowed"] is False
     assert r["realized_net_pnl_usd"] is None
     assert r["fee_transferred"] is False
+    assert r["native_trade_cycle_settled"] is False
+    assert r["five_percent_hwm_accounting_recorded"] is False
 
 
 @pytest.mark.parametrize("mutate",[
@@ -83,7 +87,7 @@ def test_query_scopes_privy_owner_and_coin_and_never_shows_simulation(monkeypatc
     assert r["history_truncated"] is True
     assert r["includes_simulation"] is False
     assert not status.get_owner_live_evm_order_status(OTHER,asset="AVAX")["orders"]
-    assert all("WHERE privy_did=%s AND asset=%s" in q for q,a in fake.calls)
+    assert all("WHERE b.privy_did=%s AND b.asset=%s" in q for q,a in fake.calls)
 
 
 def test_real_order_status_api_is_read_only_and_auth_required():
@@ -101,3 +105,52 @@ def test_real_order_status_api_is_read_only_and_auth_required():
 def test_non_additional_evm_assets_use_separate_existing_ledgers(asset):
     with pytest.raises(HTTPException):
         status.get_owner_live_evm_order_status(DID,asset=asset)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_completed_native_trade_and_fee_are_shown_only_after_verified_ledgers(asset):
+    actual=row(asset,stage="FINALIZED_SUCCESS",side="SELL",
+               native=True,fee=True)
+    result=status._verified_order_row(actual,asset)
+    assert result["native_trade_cycle_settled"] is True
+    assert result["five_percent_hwm_accounting_recorded"] is True
+    assert result["fee_transferred"] is False
+
+
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
+def test_erc20_sells_can_have_recorded_hwm_without_native_conversion(asset):
+    actual=row(asset,stage="FINALIZED_SUCCESS",side="SELL",fee=True)
+    result=status._verified_order_row(actual,asset)
+    assert result["native_trade_cycle_settled"] is False
+    assert result["five_percent_hwm_accounting_recorded"] is True
+
+
+@pytest.mark.parametrize("alter",[
+    lambda r:r.update(native_cycle_verified="true"),
+    lambda r:r.update(hwm_fee_recorded=1),
+    lambda r:r.update(status="SUBMITTED",native_cycle_verified=True),
+    lambda r:r.update(status="FINALIZED_REVERTED",hwm_fee_recorded=True),
+    lambda r:r.update(side="BUY",hwm_fee_recorded=True),
+])
+def test_unproved_or_invalid_completion_flags_are_rejected(alter):
+    actual=row("AVAX",stage="FINALIZED_SUCCESS")
+    alter(actual)
+    with pytest.raises(ValueError):
+        status._verified_order_row(actual,"AVAX")
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+def test_only_verified_owner_payment_recognized_in_real_order_history(asset):
+    result=status._verified_order_row(row(
+        asset,stage="FINALIZED_SUCCESS",side="SELL",
+        fee=True,paid=True,native=asset in ("BNB","POL","AVAX")),asset)
+    assert result["five_percent_hwm_accounting_recorded"] is True
+    assert result["fee_transferred"] is True
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+def test_unassessed_or_fake_fee_payment_rejected(asset):
+    with pytest.raises(ValueError):
+        status._verified_order_row(row(
+            asset,stage="FINALIZED_SUCCESS",side="SELL",
+            fee=False,paid=True),asset)

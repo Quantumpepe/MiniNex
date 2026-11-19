@@ -19,12 +19,14 @@ NETWORK_ASSETS = {
     "bsc-mainnet": frozenset(("BNB",)),
     "polygon-pos-mainnet": frozenset(("POL",)),
     "avalanche-c-mainnet": frozenset(("AVAX",)),
+    "arbitrum-one-mainnet": frozenset(("ARB",)),
 }
 CHAIN_IDS = {
     "ethereum-mainnet": 1,
     "bsc-mainnet": 56,
     "polygon-pos-mainnet": 137,
     "avalanche-c-mainnet": 43114,
+    "arbitrum-one-mainnet": 42161,
 }
 
 @dataclass(frozen=True)

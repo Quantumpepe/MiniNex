@@ -1,4 +1,4 @@
-"""Common eleven-coin trade routing for *real* provider-backed swap prices.
+"""Common twelve-coin trade routing for *real* provider-backed swap prices.
 
 One API contract dispatches a proposed BUY/SELL to existing network adapters:
 Ethereum uses the same user-owned verified Uniswap swap planner, Bitcoin uses
@@ -27,10 +27,9 @@ from .storage import _safe_did
 from .strategy_replay import REPLAY_ASSETS
 
 
-# Market-data/replay enablement is not equivalent to a verified EVM trade
-# adapter. ARB has an independently verified wallet reader, but no
-# execution/quote family in shared_evm_execution yet.
-TRADE_COINS = tuple(asset for asset in REPLAY_ASSETS if asset != "ARB")
+# All twelve coins can obtain a read-only quote, but real execution
+# requires a separately owner-granted policy and verified on-chain route.
+TRADE_COINS = tuple(REPLAY_ASSETS)
 _MONEY = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 _DRY_RUN_ONLY = {
     "real_order_created": False,
@@ -80,7 +79,7 @@ def trade_plan_request(asset: object, side: object, stable: object,
 
 async def get_unified_trade_plan(did: str, *, asset: str, side: str,
                                  stable: str, amount: str) -> dict:
-    """Use ONE entry point for eleven coins instead of eleven UI/backend flows.
+    """Use ONE entry point for twelve coins instead of eleven UI/backend flows.
 
     ETH/BTC provider adapters check the user's actual Privy wallets and funds.
     The other nine adapters provide ONLY a real venue market quote, not wallet
@@ -133,11 +132,12 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
             "approval_or_permit_required":True,
             "transaction_preview_created":True,
         }
-    elif asset in ("BNB","POL","AVAX"):
+    elif asset in ("BNB","POL","AVAX","ARB"):
         upstream=await quote_native_evm_trade(
             did,asset=asset,side=side,stable=stable,amount=amount)
         if (type(upstream) is not dict
-                or upstream.get("mode")!="SHARED_NATIVE_EVM_V3_QUOTE"
+                or upstream.get("mode")!=("SHARED_EVM_ERC20_V3_QUOTE"
+                    if asset=="ARB" else "SHARED_NATIVE_EVM_V3_QUOTE")
                 or upstream.get("asset")!=asset
                 or upstream.get("network")!=request["network"]
                 or upstream.get("chain_id")!=request["chain_id"]
@@ -151,14 +151,15 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
                 or upstream.get("can_submit") is not False):
             raise HTTPException(502,"Native EVM v3 route mismatch")
         result={
-            "quote_level":"WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP",
+            "quote_level":("WALLET_VERIFIED_UNSIGNED_ERC20_SWAP"
+                           if asset=="ARB" else "WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP"),
             "wallet_funds_verified":True,
             "quote_provider":"UNISWAP_V3_CHAIN_SPECIFIC",
             "estimated_output_amount":upstream.get("expected_output_amount"),
             "minimum_output_amount":upstream.get("minimum_output_amount"),
             "approval_or_permit_required":True,
             "transaction_preview_created":True,
-            "native_wrap_unwrap_not_yet_settled":True,
+            "native_wrap_unwrap_not_yet_settled":asset!="ARB",
         }
     elif asset=="BTC":
         upstream=await quote_native_btc(

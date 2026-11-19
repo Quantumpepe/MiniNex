@@ -77,6 +77,7 @@ def inspect_remote_privy_backend_quorum(
 
 async def check_privy_backend_quorum(
     client: httpx.AsyncClient | None = None,
+    *,expected_quorum_id: str | None = None,
 ) -> dict:
     """Read back the registered quorum using server-only Privy credentials.
 
@@ -92,7 +93,8 @@ async def check_privy_backend_quorum(
         "owner_wallet_delegation_verified": False,
         "live_execution_enabled": False,
     }
-    quorum = os.getenv("MININEX_PRIVY_ETH_SIGNER_ID", "").strip()
+    quorum = (os.getenv("MININEX_PRIVY_ETH_SIGNER_ID", "").strip()
+              if expected_quorum_id is None else expected_quorum_id)
     secret = os.getenv("MININEX_PRIVY_APP_SECRET", "").strip()
     if (not secret or not local["local_private_key_matches_configured_quorum_member"]
             or not _QUORUM_ID.fullmatch(quorum)):

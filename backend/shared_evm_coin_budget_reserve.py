@@ -22,7 +22,7 @@ from .shared_evm_swap_receipts import _pair
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
@@ -55,7 +55,8 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             or settings.get("stable")!=stable):
         raise HTTPException(409,"Independent coin budget changed or unavailable")
     cur.execute(
-        """SELECT status,expires_at,revoked_at,stable
+        """SELECT status,expires_at,revoked_at,stable,
+                  wallet_id,wallet_address,consent_sha256
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",
         (did,asset))
@@ -69,12 +70,37 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             or permission["expires_at"].tzinfo is None
             or permission["expires_at"]<=datetime.now(timezone.utc)):
         raise HTTPException(409,"This coin lacks verified, active user permission")
-    # Include all unresolved reservations, even if the on-chain send status
-    # is uncertain. A timeout is never permission to spend that money again.
+    # The remote signer grant is not proof of the owner's EIP-191 intent.
+    # Bind both to the exact original wallet, budget revision, settlement
+    # and immutable signed text. A changed preference needs new consent.
+    cur.execute(
+        """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                  budget_revision,budget_usd,message_sha256,confirmed_at
+           FROM mininex_live_evm_consent_challenges
+           WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+        (did,asset))
+    consent=cur.fetchone()
+    if (type(consent) is not dict
+            or consent.get("status")!="SIGNED_INTENT"
+            or consent.get("chain_id")!=_pair(asset,stable,side)["chain_id"]
+            or consent.get("stable")!=stable
+            or consent.get("budget_revision")!=expected_revision
+            or Decimal(str(consent.get("budget_usd")))!=Decimal(settings["budget_usd"])
+            or consent.get("confirmed_at") is None
+            or consent.get("wallet_id")!=permission.get("wallet_id")
+            or consent.get("wallet_address")!=permission.get("wallet_address")
+            or consent.get("message_sha256")!=permission.get("consent_sha256")):
+        raise HTTPException(409,"Current wallet-signed coin budget consent required")
+    # BUY consumes the owner's selected per-coin buying budget.
+    # SELL reduces an existing spot position: its appreciated USD value
+    # must not become an artificial trading cap. Every SELL still requires
+    # exact owner consent, source-token balance, Privy policy and a durable
+    # once-only claim, but it does not spend fresh stablecoin capital.
+    # An uncertain BUY still consumes its reservation until reconciled.
     cur.execute(
         """SELECT COALESCE(SUM(amount_usd),0) AS reserved_usd
            FROM mininex_live_evm_budget_reservations
-           WHERE privy_did=%s AND asset=%s
+           WHERE privy_did=%s AND asset=%s AND side='BUY'
              AND state IN ('RESERVED','SENDING','SUBMITTED',
                            'RECONCILIATION_REQUIRED')""",
         (did,asset))
@@ -82,7 +108,8 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
     if type(reserved_row) is not dict or reserved_row.get("reserved_usd") is None:
         raise HTTPException(503,"Cannot verify this coin's reserved capital")
     reserved=Decimal(str(reserved_row["reserved_usd"]))
-    if reserved<0 or reserved+amount>Decimal(settings["budget_usd"]):
+    if reserved<0 or (side=="BUY" and
+                      reserved+amount>Decimal(settings["budget_usd"])):
         raise HTTPException(409,"User-selected coin budget already reserved")
     # A previous key is never reused, even after it becomes finalized.
     cur.execute(
@@ -121,3 +148,59 @@ def reserve_internal_evm_coin_budget(
     except psycopg.Error:
         LOG.warning("Independent EVM budget reservation unavailable")
         raise HTTPException(503,"EVM coin budget reservation unavailable") from None
+
+
+def _cancel_unsubmitted_locked(
+    cur,*,did:str,asset:str,key:str,quote_sha256:str,
+)->bool:
+    """Release ONLY an untouched RESERVED quote; never an attempted send.
+
+    Lock the original account row first, exactly as the Privy SENDING
+    claimant does, so a concurrently starting broadcast cannot race this
+    decision. The cancelled signal key remains terminal forever.
+    """
+    if (asset not in _ASSETS or type(quote_sha256) is not str
+            or not _SHA.fullmatch(quote_sha256)):
+        raise ValueError("Unverified EVM budget cancellation")
+    key=valid_order_key(key)
+    cur.execute(
+        """SELECT privy_did FROM mininex_accounts
+           WHERE privy_did=%s FOR UPDATE""",(did,))
+    owner=cur.fetchone()
+    if type(owner) is not dict or owner.get("privy_did")!=did:
+        raise HTTPException(409,"Owner account is not available")
+    cur.execute(
+        """SELECT status FROM mininex_live_evm_auto_broadcasts
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s FOR UPDATE""",
+        (did,asset,key))
+    sent=cur.fetchone()
+    if sent is not None:
+        # A SENDING, SUBMITTED, uncertain or finalized transaction always
+        # remains subject to on-chain reconciliation, never cancellation.
+        return False
+    cur.execute(
+        """UPDATE mininex_live_evm_budget_reservations
+           SET state='CANCELLED',updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND quote_sha256=%s AND state='RESERVED'
+           RETURNING state""",(did,asset,key,quote_sha256))
+    changed=cur.fetchone()
+    return type(changed) is dict and changed.get("state")=="CANCELLED"
+
+
+def cancel_internal_unsubmitted_evm_reservation(
+    *,did:str,asset:str,intent_key:str,quote_sha256:str,
+)->bool:
+    """Internal cleanup after PRE-broadcast failure, never a wallet refund."""
+    did=_safe_did(did)
+    try:
+        url=_db_url()
+        _ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                return _cancel_unsubmitted_locked(
+                    cur,did=did,asset=asset,key=intent_key,
+                    quote_sha256=quote_sha256)
+    except psycopg.Error:
+        LOG.warning("Failed to release an unsubmitted EVM quote reservation")
+        raise HTTPException(503,"Cannot safely release original EVM reservation") from None

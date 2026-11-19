@@ -1,26 +1,27 @@
-// One quote request and one response contract for all eleven MiniNex coins.
+// One backward-compatible quote response contract for all twelve MiniNex coins.
 // Real wallet balances are never inferred from PAPER budgets or preferences.
 export const LIVE_PLAN_COINS=Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB',
 ]);
 export const LIVE_SETTLEMENTS=Object.freeze({
   BTC:['USDC','USDT'],ETH:['USDC','USDT'],BNB:['USDT'],
   SOL:['USDC','USDT'],XRP:['USDC'],TRX:['USDT'],POL:['USDC'],
   AVAX:['USDC'],LINK:['USDC','USDT'],
-  DOGE:['USDC','USDT'],UNI:['USDC','USDT'],
+  DOGE:['USDC','USDT'],UNI:['USDC','USDT'],ARB:['USDC','USDT'],
 });
 export const LIVE_NETWORKS=Object.freeze({
   BTC:'bitcoin-mainnet',ETH:'ethereum-mainnet',BNB:'bsc-mainnet',
   SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet',
   POL:'polygon-pos-mainnet',AVAX:'avalanche-c-mainnet',
   LINK:'ethereum-mainnet',DOGE:'dogecoin-mainnet',UNI:'ethereum-mainnet',
+  ARB:'arbitrum-one-mainnet',
 });
 const COIN_PRECISION=Object.freeze({
   BTC:8,ETH:18,BNB:18,SOL:8,XRP:6,TRX:6,POL:18,
-  AVAX:18,LINK:18,DOGE:8,UNI:18,
+  AVAX:18,LINK:18,DOGE:8,UNI:18,ARB:18,
 });
 const LIVE_EVM_CHAINS=Object.freeze({
-  ETH:1,BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,
+  ETH:1,BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,ARB:42161,
 });
 const AMOUNT=/^(?:0|[1-9][0-9]*)(?:\.([0-9]+))?$/;
 const POSITIVE=value=>typeof value==='string'&&value.length<=85&&
@@ -77,10 +78,12 @@ export function validLiveTradePlan(value,request){
     if(value.quote_level!==PROVIDER_LEVELS.BTC||
        value.wallet_funds_verified!==true||
        value.quote_provider!=='THORCHAIN_PUBLIC_MCP')return false;
-  }else if(['LINK','UNI'].includes(request.asset)){
+  }else if(['LINK','UNI','ARB'].includes(request.asset)){
     if(value.quote_level!==PROVIDER_LEVELS.ERC20||
        value.wallet_funds_verified!==true||
-       value.quote_provider!=='UNISWAP_ETHEREUM_ERC20')return false;
+       value.quote_provider!==(request.asset==='ARB'
+         ? 'UNISWAP_V3_CHAIN_SPECIFIC' : 'UNISWAP_ETHEREUM_ERC20')||
+       (request.asset==='ARB'&&value.native_wrap_unwrap_not_yet_settled!==false))return false;
   }else if(['BNB','POL','AVAX'].includes(request.asset)){
     if(value.quote_level!==PROVIDER_LEVELS.NATIVE_EVM||
        value.wallet_funds_verified!==true||

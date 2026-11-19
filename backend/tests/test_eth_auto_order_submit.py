@@ -23,6 +23,7 @@ def test_claim_requires_active_user_consent_and_policy():
        "candidate_sha256":"c"*64,"remote_policy_sha256":"c"*64,
        "expires_at_unix":10**11},
       {"status":"SIGNED_INTENT","revoked_at":None,"limits_revision":3},
+      {"privy_did":DID},
       {"pending":0},
       {"pending":0},
       {"pending":0},
@@ -41,10 +42,11 @@ def test_claim_requires_active_user_consent_and_policy():
   (1,{"status":"REVOKE_REQUESTED"}),
   (1,{"policy_id":"different"}),
   (2,{"status":"REVOKED"}),
-  (3,{"pending":1}),
+  (3,{"privy_did":"did:privy:other"}),
   (4,{"pending":1}),
   (5,{"pending":1}),
-  (6,{"state":"SENDING"}),
+  (6,{"pending":1}),
+  (7,{"state":"SENDING"}),
 ])
 def test_claim_does_not_send_on_invalid_state(row_index,alter):
     class Cursor:
@@ -59,6 +61,7 @@ def test_claim_does_not_send_on_invalid_state(row_index,alter):
        "candidate_sha256":"c"*64,"remote_policy_sha256":"c"*64,
        "expires_at_unix":10**11},
       {"status":"SIGNED_INTENT","revoked_at":None,"limits_revision":3},
+      {"privy_did":DID},
       {"pending":0},
       {"pending":0},
       {"pending":0},
@@ -84,6 +87,7 @@ def test_eth_auto_claim_refuses_pending_link_or_uni_on_same_wallet():
        "candidate_sha256":"c"*64,"remote_policy_sha256":"c"*64,
        "expires_at_unix":10**11},
       {"status":"SIGNED_INTENT","revoked_at":None,"limits_revision":3},
+      {"privy_did":DID},
       {"pending":0},{"pending":0},{"pending":2},
     ]
     class Cursor:

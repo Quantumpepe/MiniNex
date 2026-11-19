@@ -65,9 +65,12 @@ async def check_evm_source_allowance(
     except (KeyError,TypeError,ValueError):
         raise HTTPException(503,"Verified EVM owner wallet required") from None
     source=pair["source_token"]
+    destination=pair["output_token"]
     router=pair["router"]
     if asset in _RPC:
         chain,network,fallback,env=_RPC[asset]
+    elif asset=="ARB":
+        chain,network,fallback,env=_RPC["ARB_TOKENS"]
     else:
         chain,network,fallback,env=_RPC["ETH_TOKENS"]
     if (chain!=pair["chain_id"] or network!=pair["network"]):
@@ -85,18 +88,30 @@ async def check_evm_source_allowance(
             chain_hex=await _rpc(client,url,"eth_chainId",[],1)
             if _decode_quantity(chain_hex)!=chain:
                 raise ValueError("Wrong actual EVM network")
-            balances=await asyncio.gather(
-                _rpc(client,url,"eth_call",[
-                    {"to":source,
-                     "data":_BALANCE_SELECTOR+owner_word},"latest"],2),
-                _rpc(client,url,"eth_call",[
-                    {"to":source,
-                     "data":_ALLOWANCE_SELECTOR+owner_word+spender_word},"latest"],3),
-                _rpc(client,url,"eth_getBalance",[wallet,"latest"],4),
-            )
+            source_balance_call=_rpc(client,url,"eth_call",[
+                {"to":source,
+                 "data":_BALANCE_SELECTOR+owner_word},"latest"],2)
+            allowance_call=_rpc(client,url,"eth_call",[
+                {"to":source,
+                 "data":_ALLOWANCE_SELECTOR+owner_word+spender_word},"latest"],3)
+            gas_call=_rpc(client,url,"eth_getBalance",[wallet,"latest"],4)
+            # A BUY's output-token holdings are already owned capital.
+            # Fetch them in the SAME RPC batch, avoiding another full
+            # owner/chain round trip before the live budget reservation.
+            if side=="BUY":
+                balances=await asyncio.gather(
+                    source_balance_call,allowance_call,gas_call,
+                    _rpc(client,url,"eth_call",[
+                        {"to":destination,
+                         "data":_BALANCE_SELECTOR+owner_word},"latest"],5))
+            else:
+                balances=await asyncio.gather(
+                    source_balance_call,allowance_call,gas_call)
         balance=_decode_quantity(balances[0],word=True)
         allowance=_decode_quantity(balances[1],word=True)
         native=_decode_quantity(balances[2])
+        destination_balance=(
+            _decode_quantity(balances[3],word=True) if side=="BUY" else None)
     except (httpx.HTTPError,ValueError,TypeError,OverflowError):
         raise HTTPException(502,"Verified EVM source allowance unavailable") from None
 
@@ -112,6 +127,13 @@ async def check_evm_source_allowance(
         "asset":asset,"network":network,"chain_id":chain,
         "side":side,"stable":stable,"input_amount":amount,
         "source_token_address":source,
+        "destination_token_address":destination,
+        "destination_balance_atomic":(
+            str(destination_balance) if destination_balance is not None else None),
+        "destination_balance":(
+            format(Decimal(destination_balance)/
+                   (Decimal(10)**pair["output_decimals"]),"f")
+            if destination_balance is not None else None),
         "router":router,"wallet_address":wallet.lower(),
         "source_balance_atomic":str(balance),
         "router_allowance_atomic":str(allowance),

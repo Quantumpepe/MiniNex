@@ -18,7 +18,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
 
 LOG=logging.getLogger("mininex.evm_real_fill_history")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _verified_fill_row(row: object,asset:str) -> dict:
@@ -47,6 +47,7 @@ def _verified_fill_row(row: object,asset:str) -> dict:
     return {
         "asset":asset,"chain_id":expected["chain_id"],
         "network":expected["network"],"intent_key":row["intent_key"],
+        "wallet_address":row["wallet_address"].lower(),
         "tx_hash":row["tx_hash"],"side":side,"stable":stable,
         "spent_asset":stable if side=="BUY" else asset,
         "received_asset":asset if side=="BUY" else stable,

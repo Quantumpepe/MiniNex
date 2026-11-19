@@ -1,4 +1,4 @@
-"""Passive, chain-scoped settlement worker for five additional EVM assets.
+"""Passive, chain-scoped settlement worker for six additional EVM assets.
 
 This worker NEVER sends or signs a transaction, creates a policy, activates
 AUTO, or assesses a fee. It only reconciles previously durably SUBMITTED
@@ -19,7 +19,7 @@ from .storage import _db_url, _ensure_schema
 
 LOG=logging.getLogger("mininex.evm_passive_settlement")
 _INTERVAL_SECONDS=30
-_SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _settlement_enabled()->bool:
@@ -45,7 +45,7 @@ def _pending_submitted(limit:int=25)->list[dict]:
                 """SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
                    FROM mininex_live_evm_auto_broadcasts
                    WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
-                     AND asset IN ('BNB','POL','AVAX','LINK','UNI')
+                     AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
                    ORDER BY created_at ASC LIMIT %s""",
                 (limit,))
             return list(cur.fetchall())

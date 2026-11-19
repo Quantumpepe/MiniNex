@@ -15,7 +15,7 @@ from .live_orders import valid_order_key
 from .shared_evm_swap_receipts import check_user_evm_swap,_pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _finalize_locked(
@@ -107,6 +107,23 @@ def _finalize_locked(
              amounts["source_spent_amount"],
              amounts["destination_received_amount"],
              amounts["network_fee_native"]))
+    # A finalized SwapRouter02 leg is NOT a completed native trade.
+    # BNB/POL/AVAX require a separately finalized, matching wrap/unwrap.
+    # A reverted swap may also leave a preceding native DEPOSIT on-chain.
+    # Keep those allocations reserved for reconciliation; never reuse them.
+    budget_state=(
+        "RECONCILIATION_REQUIRED" if asset in ("BNB","POL","AVAX")
+        else "FINALIZED")
+    cur.execute(
+        """UPDATE mininex_live_evm_budget_reservations
+           SET state=%s,updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND state='SUBMITTED'
+           RETURNING state""",(budget_state,did,asset,key))
+    finalized_budget=cur.fetchone()
+    if (type(finalized_budget) is not dict
+            or finalized_budget.get("state")!=budget_state):
+        raise HTTPException(409,"EVM finality/budget accounting conflict")
     return state
 
 

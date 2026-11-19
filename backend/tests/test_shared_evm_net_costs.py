@@ -35,7 +35,7 @@ def evidence(asset,stable=None):
     }
 
 
-@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_all_six_evm_coins_share_exact_net_settlement_math(asset):
     p=evidence(asset)
     r=calculate_verified_evm_net_costs(p)

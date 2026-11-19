@@ -143,7 +143,7 @@ class ExtraMarketData:
         self._historical: dict[str, list[dict[str, float]]] = {asset: [] for asset in EXTRA_ASSETS}
         # 97 completed 15m candles provide ~24h of genuine close prices.
         # Keep this separate from the short 1m series and live WS ticks.
-        # All ten enabled extra coins, including ARB, have historical chart data.
+        # All ten extra coins, including ARB, have a genuine long history feed.
         self._long_historical: dict[str, list[dict[str, float]]] = {
             asset: [] for asset in EXTRA_ASSETS
         }
@@ -345,14 +345,22 @@ class ExtraMarketData:
         if asset not in EXTRA_ASSETS:
             raise ValueError("Unsupported read-only market")
         at = self.clock()
-        data = [point for point in self._long_historical.get(asset,())
+        long = [point for point in self._long_historical.get(asset,())
                 if 0 <= at - point["timestamp"] <= 86400]
-        data.extend(point for point in self._historical[asset]
-                    if 0 <= at - point["timestamp"] <= 7200)
-        data.extend(point for point in self._ticks[asset]
-                    if 0 <= at - point["timestamp"] <= 7200)
-        data.sort(key=lambda point: point["timestamp"])
-        return data[-max(1, min(limit, 3600)):]
+        recent = [point for point in self._historical[asset]
+                  if 0 <= at - point["timestamp"] <= 7200]
+        recent.extend(point for point in self._ticks[asset]
+                      if 0 <= at - point["timestamp"] <= 7200)
+        recent.sort(key=lambda point: point["timestamp"])
+        count=max(1,min(limit,3600))
+        if count==3600:
+            # The LIVE 24h horizon depends on genuine 15-minute candles.
+            # Never discard all 24-hour evidence merely because fast WS
+            # ticks filled up the tail of the combined 3600 samples.
+            long=long[-count:]
+            recent=recent[-max(0,count-len(long)):]
+            return sorted(long+recent,key=lambda point: point["timestamp"])
+        return sorted(long+recent,key=lambda point: point["timestamp"])[-count:]
 
     def ingest_candles(self, asset: str, rows: Any, *,
                        now: float | None = None) -> int:
@@ -559,8 +567,9 @@ class ExtraMarketData:
                         })
                         response.raise_for_status()
                         self.ingest_candles(asset, response.json(), now=now)
-                        # 97 genuine 15m closes cover the 24h chart window.
-                        # ARB receives the same market data as every other coin.
+                        # A second, low-rate public request every 5 min.
+                        # 97 x 15m completed closes cover the 24h mode
+                        # without fetching thousands of minute candles.
                         end_long=(int(now)//900*900-1)*1000
                         long_response=await client.get(CANDLES_URL,params={
                             "symbol":asset+"USDT","interval":"15m",

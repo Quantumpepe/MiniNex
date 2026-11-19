@@ -15,9 +15,9 @@ from .storage import _safe_did
 from .shared_evm_permission_status import read_owner_evm_permission_status
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet,fetch_privy_wallet_metadata
-from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .shared_evm_trade_policy_roles import check_coin_trade_backend_quorum as check_privy_backend_quorum
 
-_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def assess_evm_auto_readiness(
@@ -92,7 +92,7 @@ async def get_owner_evm_auto_readiness(did:str,asset:str)->dict:
     user=await fetch_privy_user(did)
     owned=_owned_eth_wallet(user,did)
     wallet=await fetch_privy_wallet_metadata(owned["wallet_id"])
-    quorum=await check_privy_backend_quorum()
+    quorum=await check_privy_backend_quorum(asset)
     return assess_evm_auto_readiness(
         asset=asset,permission=permission,user=user,
         wallet=wallet,quorum=quorum)

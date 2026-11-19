@@ -204,9 +204,37 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_policy_publications (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL CHECK(idempotency_key ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL CHECK(status IN (
+            'SUBMITTING','UNCERTAIN','REMOTE_VERIFIED_UNATTACHED')),
+        policy_id TEXT CHECK(policy_id IS NULL OR
+            policy_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        UNIQUE(idempotency_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_sessions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        status TEXT NOT NULL DEFAULT 'PAUSED'
+            CHECK(status IN ('ACTIVE','PAUSED','STOPPED')),
+        started_by_owner_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        CHECK (status <> 'ACTIVE' OR started_by_owner_at IS NOT NULL)
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_budget_reservations (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
         intent_key TEXT NOT NULL CHECK(intent_key ~ '^[A-Za-z0-9_-]{8,96}$'),
         stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
         side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
@@ -222,14 +250,42 @@ SCHEMA = (
         CHECK(
             (asset='BNB' AND stable='USDT') OR
             (asset IN ('POL','AVAX') AND stable='USDC') OR
-            asset IN ('LINK','UNI'))
+            asset IN ('LINK','UNI','ARB'))
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_evm_budget_reserved_by_owner
        ON mininex_live_evm_budget_reservations(privy_did,asset,state)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_consent_challenges (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        session_sha256 TEXT NOT NULL CHECK(session_sha256 ~ '^[0-9a-f]{64}$'),
+        wallet_id TEXT NOT NULL CHECK(wallet_id ~ '^[A-Za-z0-9_-]{6,160}$'),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        budget_usd NUMERIC(36,6) NOT NULL CHECK(budget_usd > 0),
+        permission_revision BIGINT NOT NULL CHECK(permission_revision >= 0),
+        message_text TEXT NOT NULL CHECK(length(message_text) BETWEEN 120 AND 3500),
+        message_sha256 TEXT NOT NULL CHECK(message_sha256 ~ '^[0-9a-f]{64}$'),
+        issued_at TIMESTAMPTZ NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING'
+            CHECK(status IN ('PENDING','SIGNED_INTENT','REVOKED')),
+        confirmed_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        PRIMARY KEY(privy_did,asset),
+        CHECK(expires_at>issued_at AND expires_at<=issued_at+interval '5 minutes'),
+        CHECK(
+            (asset='BNB' AND chain_id=56 AND stable='USDT') OR
+            (asset='POL' AND chain_id=137 AND stable='USDC') OR
+            (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
+            (asset IN ('LINK','UNI') AND chain_id=1) OR
+            (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_owner_permissions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
-        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
         stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
         wallet_id TEXT NOT NULL CHECK(wallet_id ~ '^[A-Za-z0-9_-]{6,160}$'),
         wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
@@ -257,7 +313,8 @@ SCHEMA = (
             (asset='BNB' AND chain_id=56 AND stable='USDT') OR
             (asset='POL' AND chain_id=137 AND stable='USDC') OR
             (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
-            (asset IN ('LINK','UNI') AND chain_id=1)),
+            (asset IN ('LINK','UNI') AND chain_id=1) OR
+            (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT'))),
         CHECK(status NOT IN ('CONSENT_VERIFIED','GRANT_VERIFIED') OR
             (consent_sha256 IS NOT NULL AND consent_verified_at IS NOT NULL)),
         CHECK(status <> 'GRANT_VERIFIED' OR
@@ -267,10 +324,14 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_evm_owner_permissions_chain
        ON mininex_live_evm_owner_permissions(privy_did,chain_id,status)""",
+    """ALTER TABLE mininex_live_evm_owner_permissions
+       ADD COLUMN IF NOT EXISTS budget_revision BIGINT""",
+    """ALTER TABLE mininex_live_evm_owner_permissions
+       ADD COLUMN IF NOT EXISTS candidate_json JSONB""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
-        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
         intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 8 AND 96),
         wallet_address TEXT NOT NULL CHECK (
             wallet_address ~ '^0x[0-9a-f]{40}$'),
@@ -292,7 +353,8 @@ SCHEMA = (
             (asset='BNB' AND chain_id=56 AND stable='USDT') OR
             (asset='POL' AND chain_id=137 AND stable='USDC') OR
             (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
-            (asset IN ('LINK','UNI') AND chain_id=1)),
+            (asset IN ('LINK','UNI') AND chain_id=1) OR
+            (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT'))),
         CHECK (status NOT IN (
             'SUBMITTED','FINALIZED_SUCCESS','FINALIZED_REVERTED')
             OR tx_hash IS NOT NULL)
@@ -436,12 +498,12 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
        ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
-    # Permanent individual setup for the nine additional coins. This is NOT
+    # Permanent individual setup for the ten additional coins. This is NOT
     # shared across coins and does not modify a running PAPER or LIVE session.
     """CREATE TABLE IF NOT EXISTS mininex_extra_coin_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
-            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')),
         budget_usd BIGINT NOT NULL DEFAULT 500
             CHECK (budget_usd > 0),
         mode TEXT NOT NULL DEFAULT 'LONG'
@@ -454,16 +516,16 @@ SCHEMA = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (privy_did,asset)
     )""",
-    # Independent virtual accounts for nine extra coins. BTC/ETH schemas and
-    # real HWM/fee/live ledgers remain untouched. ADA stays unavailable.
+    # Independent virtual accounts for ten extra coins. BTC/ETH schemas and
+    # real HWM/fee/live ledgers remain untouched.
     """CREATE TABLE IF NOT EXISTS mininex_extra_paper_sessions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
-            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')),
         status TEXT NOT NULL DEFAULT 'ACTIVE'
             CHECK (status IN ('ACTIVE','PAUSED')),
         settlement TEXT NOT NULL CHECK (settlement IN ('USDC','USDT')),
-        strategy_mode TEXT NOT NULL CHECK (strategy_mode IN ('LONG','SPOT_SHORT')),
+        strategy_mode TEXT NOT NULL CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO')),
         horizon TEXT NOT NULL CHECK (horizon IN ('5m','15m','1h','24h')),
         initial_demo_cash NUMERIC(28,8) NOT NULL
             CHECK (initial_demo_cash > 0),
@@ -503,8 +565,8 @@ SCHEMA = (
     )""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_verified_fills (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
-        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114)),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
         intent_key TEXT NOT NULL,
         tx_hash TEXT NOT NULL CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
         wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
@@ -519,9 +581,151 @@ SCHEMA = (
         FOREIGN KEY(privy_did,asset,intent_key)
             REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_native_sell_intents (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
+        intent_key TEXT NOT NULL CHECK(intent_key ~ '^[A-Za-z0-9_-]{8,96}$'),
+        strategy_run_id TEXT NOT NULL CHECK(length(strategy_run_id) BETWEEN 8 AND 128),
+        signal_event_id TEXT NOT NULL CHECK(length(signal_event_id) BETWEEN 8 AND 128),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision >= 1),
+        amount_wei NUMERIC(48,0) NOT NULL CHECK(amount_wei > 0),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL DEFAULT 'SENDING' CHECK(status IN
+          ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+           'FINALIZED_SUCCESS','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        UNIQUE(chain_id,tx_hash)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_native_auto_steps (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
+        intent_key TEXT NOT NULL CHECK(intent_key ~ '^[A-Za-z0-9_-]{8,96}$'),
+        operation TEXT NOT NULL CHECK(operation IN ('DEPOSIT','WITHDRAW')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (56,137,43114)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        amount_wei NUMERIC(48,0) NOT NULL CHECK(amount_wei > 0),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL DEFAULT 'SENDING' CHECK(status IN
+           ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+            'FINALIZED_SUCCESS','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key,operation),
+        UNIQUE(chain_id,tx_hash),
+        FOREIGN KEY(privy_did,asset,intent_key)
+            REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_completed_native_cycles (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX')),
+        intent_key TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (56,137,43114)),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        swap_tx_hash TEXT NOT NULL CHECK(swap_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        conversion_tx_hash TEXT NOT NULL CHECK(
+            conversion_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        UNIQUE(chain_id,conversion_tx_hash),
+        FOREIGN KEY(privy_did,asset,intent_key)
+            REFERENCES mininex_live_evm_auto_broadcasts(privy_did,asset,intent_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_fee_auto_permissions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        owner_id TEXT NOT NULL,
+        signer_id TEXT NOT NULL,
+        owner_max_fee_atomic NUMERIC(48,0) NOT NULL CHECK(owner_max_fee_atomic > 0),
+        expires_at TIMESTAMPTZ NOT NULL,
+        challenge_text TEXT NOT NULL,
+        challenge_sha256 TEXT NOT NULL CHECK(challenge_sha256 ~ '^[0-9a-f]{64}$'),
+        challenge_expires_at TIMESTAMPTZ NOT NULL,
+        owner_signed_at TIMESTAMPTZ,
+        policy_json JSONB NOT NULL,
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        policy_id TEXT,
+        remote_policy_sha256 TEXT,
+        grant_verified_at TIMESTAMPTZ,
+        status TEXT NOT NULL CHECK(status IN
+            ('PENDING_INTENT','CONSENT_SIGNED','REMOTE_UNATTACHED',
+             'GRANT_VERIFIED','REVOKED','REMOTE_UNCERTAIN')),
+        idempotency_key TEXT,
+        policy_attempted_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        CHECK(wallet_address <> treasury_wallet),
+        CHECK(owner_id <> signer_id),
+        CHECK((asset='BNB' AND chain_id=56 AND stable='USDT') OR
+              (asset='POL' AND chain_id=137 AND stable='USDC') OR
+              (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR
+              (asset IN ('LINK','UNI') AND chain_id=1) OR
+            (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT'))),
+        CHECK(status <> 'GRANT_VERIFIED' OR
+              (owner_signed_at IS NOT NULL AND grant_verified_at IS NOT NULL
+               AND policy_id IS NOT NULL AND
+               remote_policy_sha256=policy_sha256)),
+        CHECK(status <> 'PENDING_INTENT' OR owner_signed_at IS NULL),
+        CHECK(status <> 'REVOKED' OR revoked_at IS NOT NULL)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_immutable_fill_usd_prices (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        tx_hash TEXT NOT NULL CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        quoted_asset TEXT NOT NULL CHECK(quoted_asset IN
+            ('ETH','BNB','POL','AVAX','USDC','USDT')),
+        block_number BIGINT NOT NULL CHECK(block_number > 0),
+        block_hash TEXT NOT NULL CHECK(block_hash ~ '^0x[0-9a-f]{64}$'),
+        block_unix BIGINT NOT NULL CHECK(block_unix > 0),
+        observed_unix BIGINT NOT NULL CHECK(observed_unix > 0),
+        CHECK (abs(observed_unix-block_unix) <= 180),
+        usd_price NUMERIC(36,18) NOT NULL CHECK(usd_price > 0),
+        provider TEXT NOT NULL CHECK(provider='COINGECKO_MARKET_CHART_RANGE'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,tx_hash,quoted_asset),
+        FOREIGN KEY(chain_id,tx_hash)
+            REFERENCES mininex_live_evm_verified_fills(chain_id,tx_hash)
+    )""",
+    """CREATE OR REPLACE FUNCTION mininex_prevent_historical_rate_mutation()
+       RETURNS trigger LANGUAGE plpgsql AS $$
+       BEGIN
+           RAISE EXCEPTION 'Verified original historical USD quote is immutable';
+       END $$""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (
+               SELECT 1 FROM pg_trigger
+                WHERE tgname='mininex_historical_usd_rate_write_once'
+           ) THEN
+               CREATE TRIGGER mininex_historical_usd_rate_write_once
+               BEFORE UPDATE OR DELETE
+               ON mininex_evm_immutable_fill_usd_prices
+               FOR EACH ROW EXECUTE FUNCTION
+                   mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_asset_hwm (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
         cumulative_realized_net_usd NUMERIC(36,12) NOT NULL DEFAULT 0,
         high_water_mark_usd NUMERIC(36,12) NOT NULL DEFAULT 0
             CHECK(high_water_mark_usd >= 0),
@@ -532,7 +736,7 @@ SCHEMA = (
     )""",
     """CREATE TABLE IF NOT EXISTS mininex_evm_fee_events (
         privy_did TEXT NOT NULL,
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI')),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
         execution_id TEXT NOT NULL CHECK(length(execution_id) BETWEEN 1 AND 180),
         realized_net_delta_usd NUMERIC(36,12) NOT NULL,
         cumulative_realized_net_usd NUMERIC(36,12) NOT NULL,
@@ -550,14 +754,98 @@ SCHEMA = (
         asset TEXT NOT NULL,
         execution_id TEXT NOT NULL,
         fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
-        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER'
-            CHECK(settlement_status='AWAITING_VERIFIED_TRANSFER'),
+        settlement_status TEXT NOT NULL DEFAULT 'AWAITING_VERIFIED_TRANSFER',
         settlement_tx_hash TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY(privy_did,asset,execution_id),
         FOREIGN KEY(privy_did,asset,execution_id)
             REFERENCES mininex_evm_fee_events(privy_did,asset,execution_id),
-        CHECK(settlement_tx_hash IS NULL)
+        CONSTRAINT mininex_evm_fee_obligations_payment_state_check CHECK (
+            (settlement_status='AWAITING_VERIFIED_TRANSFER'
+             AND settlement_tx_hash IS NULL)
+            OR (settlement_status='PAID_VERIFIED'
+                AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'))
+    )""",
+    """DO $$
+       BEGIN
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_status_check;
+         ALTER TABLE mininex_evm_fee_obligations
+           DROP CONSTRAINT IF EXISTS
+           mininex_evm_fee_obligations_settlement_tx_hash_check;
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conname='mininex_evm_fee_obligations_payment_state_check'
+             AND conrelid='mininex_evm_fee_obligations'::regclass
+         ) THEN
+           ALTER TABLE mininex_evm_fee_obligations
+             ADD CONSTRAINT mininex_evm_fee_obligations_payment_state_check
+             CHECK (
+               (settlement_status='AWAITING_VERIFIED_TRANSFER'
+                AND settlement_tx_hash IS NULL)
+               OR (settlement_status='PAID_VERIFIED'
+                   AND settlement_tx_hash ~ '^0x[0-9a-f]{64}$'));
+         END IF;
+       END
+       $$""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_verified_fee_payments (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        execution_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        stable_token_address TEXT NOT NULL CHECK(
+            stable_token_address ~ '^0x[0-9a-f]{40}$'),
+        owner_wallet TEXT NOT NULL CHECK(owner_wallet ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        fee_due_usd NUMERIC(36,12) NOT NULL CHECK(fee_due_usd > 0),
+        stable_usd NUMERIC(36,12) NOT NULL CHECK(
+            stable_usd >= 0.95 AND stable_usd <= 1.05),
+        token_amount_atomic NUMERIC(48,0) NOT NULL CHECK(token_amount_atomic > 0),
+        state TEXT NOT NULL DEFAULT 'PREPARED' CHECK(
+            state IN ('PREPARED','PAID_VERIFIED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        prepared_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        paid_at TIMESTAMPTZ,
+        PRIMARY KEY(privy_did,asset,execution_id),
+        UNIQUE(chain_id,tx_hash),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_fee_obligations(privy_did,asset,execution_id),
+        CHECK (
+            (state='PREPARED' AND tx_hash IS NULL AND paid_at IS NULL)
+            OR (state='PAID_VERIFIED' AND tx_hash IS NOT NULL AND paid_at IS NOT NULL))
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_evm_auto_fee_sends (
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        execution_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        policy_id TEXT NOT NULL,
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
+        amount_atomic NUMERIC(48,0) NOT NULL CHECK(amount_atomic > 0),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 16 AND 96),
+        status TEXT NOT NULL CHECK(status IN
+            ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+             'PAID_VERIFIED','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,execution_id),
+        UNIQUE(chain_id,tx_hash),
+        UNIQUE(privy_did,idempotency_key),
+        FOREIGN KEY(privy_did,asset,execution_id)
+            REFERENCES mininex_evm_verified_fee_payments(privy_did,asset,execution_id),
+        CHECK ((status IN ('SENDING','RECONCILIATION_REQUIRED')
+                AND tx_hash IS NULL)
+            OR (status IN ('SUBMITTED','PAID_VERIFIED','FINALIZED_REVERTED')
+                AND tx_hash IS NOT NULL))
     )""",
     """CREATE TABLE IF NOT EXISTS mininex_treasury_obligations (
         privy_did TEXT NOT NULL,
@@ -619,6 +907,124 @@ SCHEMA = (
     END $paper_budget_migration$""",
     """ALTER TABLE mininex_extra_coin_preferences
        ALTER COLUMN budget_usd TYPE BIGINT""",
+    # Existing owner accounts were created before ARB replaced ADA. CREATE
+    # TABLE IF NOT EXISTS cannot update their constraints: migrate both tables
+    # in place WITHOUT deleting an existing balance, row or user preference.
+    """ALTER TABLE mininex_extra_coin_preferences
+       DROP CONSTRAINT IF EXISTS
+       mininex_extra_coin_preferences_asset_check""",
+    """ALTER TABLE mininex_extra_coin_preferences
+       ADD CONSTRAINT mininex_extra_coin_preferences_asset_check
+       CHECK (asset IN
+         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS
+       mininex_extra_paper_sessions_asset_check""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       ADD CONSTRAINT mininex_extra_paper_sessions_asset_check
+       CHECK (asset IN
+         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
+    # The common per-coin AUTO strategy exists in application code; repair the
+    # historic SQL check so independently selected AUTO settings can persist.
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS
+       mininex_extra_paper_sessions_strategy_mode_check""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
+    # Existing PostgreSQL tables predate ARB. Preserve records while
+    # replacing ONLY their previous auto-generated asset/chain CHECKs.
+    """DO $arb_evm_schema_upgrade$
+    DECLARE name text; definition text; oldcheck record;
+    BEGIN
+      FOREACH name IN ARRAY ARRAY['mininex_live_evm_policy_publications','mininex_live_evm_auto_sessions','mininex_live_evm_budget_reservations','mininex_live_evm_consent_challenges','mininex_live_evm_owner_permissions','mininex_live_evm_auto_broadcasts','mininex_live_evm_verified_fills','mininex_evm_fee_auto_permissions','mininex_evm_immutable_fill_usd_prices','mininex_evm_asset_hwm','mininex_evm_fee_events','mininex_evm_verified_fee_payments','mininex_evm_auto_fee_sends'] LOOP
+        IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+          conrelid=name::regclass AND conname='mininex_evm_arb_asset_v2') THEN
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I',
+                         name,name||'_asset_check');
+          EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_asset_v2 CHECK (asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))$arbcheck$,name);
+        END IF;
+      END LOOP;
+      FOREACH name IN ARRAY ARRAY['mininex_live_evm_auto_sessions','mininex_live_evm_consent_challenges','mininex_live_evm_owner_permissions','mininex_live_evm_auto_broadcasts','mininex_live_evm_verified_fills','mininex_evm_fee_auto_permissions','mininex_evm_immutable_fill_usd_prices','mininex_evm_verified_fee_payments','mininex_evm_auto_fee_sends'] LOOP
+        IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+          conrelid=name::regclass AND conname='mininex_evm_arb_chain_v2') THEN
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I',
+                         name,name||'_chain_id_check');
+          EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_chain_v2 CHECK (chain_id IN (1,56,137,43114,42161))',name);
+        END IF;
+      END LOOP;
+      name:='mininex_live_evm_budget_reservations';
+      IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        FOR oldcheck IN SELECT conname FROM pg_constraint c
+          WHERE c.conrelid=name::regclass AND c.contype='c'
+            AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
+            AND pg_get_constraintdef(c.oid) LIKE '%UNI%'
+            AND pg_get_constraintdef(c.oid) NOT LIKE '%ARB%'
+            AND (pg_get_constraintdef(c.oid) LIKE '%stable%'
+                 OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
+        END LOOP;
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND stable='USDT') OR (asset IN ('POL','AVAX') AND stable='USDC') OR (asset IN ('LINK','UNI','ARB')))$arbcheck$,name);
+      END IF;
+      name:='mininex_live_evm_consent_challenges';
+      IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        FOR oldcheck IN SELECT conname FROM pg_constraint c
+          WHERE c.conrelid=name::regclass AND c.contype='c'
+            AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
+            AND pg_get_constraintdef(c.oid) LIKE '%UNI%'
+            AND pg_get_constraintdef(c.oid) NOT LIKE '%ARB%'
+            AND (pg_get_constraintdef(c.oid) LIKE '%stable%'
+                 OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
+        END LOOP;
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
+      END IF;
+      name:='mininex_live_evm_owner_permissions';
+      IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        FOR oldcheck IN SELECT conname FROM pg_constraint c
+          WHERE c.conrelid=name::regclass AND c.contype='c'
+            AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
+            AND pg_get_constraintdef(c.oid) LIKE '%UNI%'
+            AND pg_get_constraintdef(c.oid) NOT LIKE '%ARB%'
+            AND (pg_get_constraintdef(c.oid) LIKE '%stable%'
+                 OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
+        END LOOP;
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
+      END IF;
+      name:='mininex_live_evm_auto_broadcasts';
+      IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        FOR oldcheck IN SELECT conname FROM pg_constraint c
+          WHERE c.conrelid=name::regclass AND c.contype='c'
+            AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
+            AND pg_get_constraintdef(c.oid) LIKE '%UNI%'
+            AND pg_get_constraintdef(c.oid) NOT LIKE '%ARB%'
+            AND (pg_get_constraintdef(c.oid) LIKE '%stable%'
+                 OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
+        END LOOP;
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
+      END IF;
+      name:='mininex_evm_fee_auto_permissions';
+      IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
+        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        FOR oldcheck IN SELECT conname FROM pg_constraint c
+          WHERE c.conrelid=name::regclass AND c.contype='c'
+            AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
+            AND pg_get_constraintdef(c.oid) LIKE '%UNI%'
+            AND pg_get_constraintdef(c.oid) NOT LIKE '%ARB%'
+            AND (pg_get_constraintdef(c.oid) LIKE '%stable%'
+                 OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
+          EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
+        END LOOP;
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
+      END IF;
+    END $arb_evm_schema_upgrade$""",
+
     """DO $migration$
     DECLARE item RECORD;
     BEGIN

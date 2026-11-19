@@ -24,7 +24,7 @@ class Cur:
 def rows(asset,net_cumulative="0",hwm="0",stable=None):
     stable=stable or ("USDT" if asset=="BNB" else "USDC")
     chains={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
-    return [
+    result=[
         {"status":"FINALIZED_SUCCESS","side":"SELL","tx_hash":TX,
          "chain_id":chains[asset],"stable":stable},
         {"chain_id":chains[asset],"tx_hash":TX,"side":"SELL",
@@ -35,6 +35,13 @@ def rows(asset,net_cumulative="0",hwm="0",stable=None):
          "high_water_mark_usd":Decimal(hwm)},
         None,
     ]
+    if asset in ("BNB","POL","AVAX"):
+        result.insert(2,{
+            "swap_tx_hash":TX,
+            "conversion_tx_hash":"0x"+"cd"*32,
+            "chain_id":chains[asset],"side":"SELL","stable":stable,
+        })
+    return result
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
@@ -46,10 +53,10 @@ def test_five_independent_verified_coin_hwm_ledgers(asset):
     assert Decimal(r["fee_assessed_usd"])==Decimal("10.000000")
     assert Decimal(r["high_water_mark_usd"])==Decimal("200")
     assert r["fee_token_transferred"] is False
-    assert len(cur.sql)==8
+    assert len(cur.sql)==(9 if asset in ("BNB","POL","AVAX") else 8)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "FOR UPDATE" in cur.sql[1][0]
-    assert "FOR UPDATE" in cur.sql[3][0]
+    assert "FOR UPDATE" in cur.sql[4 if asset in ("BNB","POL","AVAX") else 3][0]
     assert "mininex_evm_fee_obligations" in cur.sql[-1][0]
 
 
@@ -102,7 +109,7 @@ def test_duplicate_execution_with_changed_economic_facts_fails(
         _assess_locked(cur,did=DID,asset="AVAX",execution_id=KEY,
                        source_tx_hash=TX,realized_net_usd="100")
     assert err.value.status_code==409
-    assert len(cur.sql)==5
+    assert len(cur.sql)==6
 
 
 def test_identical_execution_is_idempotent_and_does_not_add_second_fee():
@@ -149,3 +156,37 @@ def test_evm_hwm_does_not_modify_original_btc_eth_ledger():
     assert "CREATE TABLE IF NOT EXISTS mininex_asset_hwm" in schema
     from backend.app import app
     assert all("evm-fee-write" not in r.path for r in app.routes)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+@pytest.mark.parametrize("corrupt",[
+    lambda c:c.update(swap_tx_hash="0x"+"ee"*32),
+    lambda c:c.update(conversion_tx_hash="0x"+"ab"*32),
+    lambda c:c.update(conversion_tx_hash=None),
+    lambda c:c.update(chain_id=1),
+    lambda c:c.update(side="BUY"),
+    lambda c:c.update(stable="INVALID"),
+])
+def test_hwm_never_assesses_native_fee_without_full_matching_sell_cycle(asset,corrupt):
+    entries=rows(asset)
+    corrupt(entries[2])
+    cur=Cur(entries)
+    with pytest.raises(HTTPException) as failure:
+        _assess_locked(cur,did=DID,asset=asset,
+                       execution_id=KEY,source_tx_hash=TX,
+                       realized_net_usd="100")
+    assert failure.value.status_code==409
+    assert len(cur.sql)==3
+    assert not any("INSERT INTO mininex_evm_fee_events" in sql
+                   for sql,args in cur.sql)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+def test_missing_native_cycle_never_assesses_fee(asset):
+    entries=rows(asset)
+    entries[2]=None
+    cur=Cur(entries)
+    with pytest.raises(HTTPException):
+        _assess_locked(cur,did=DID,asset=asset,execution_id=KEY,
+                       source_tx_hash=TX,realized_net_usd="100")
+    assert len(cur.sql)==3
