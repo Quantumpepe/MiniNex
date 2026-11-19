@@ -88,7 +88,7 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
     amount="25" if side=="BUY" else "0.1"
     plan=asyncio.run(router.get_unified_trade_plan(
         DID,asset=asset,side=side,stable=stable,amount=amount))
-    assert plan["mode"]=="UNIFIED_TWELVE_COIN_TRADE_PLAN"
+    assert plan["mode"]=="UNIFIED_ELEVEN_COIN_TRADE_PLAN"
     assert plan["asset"]==asset
     assert plan["side"]==side
     assert plan["source_asset"]==(stable if side=="BUY" else asset)
