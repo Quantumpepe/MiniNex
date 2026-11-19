@@ -73,6 +73,8 @@ def test_destination_bound_native_buy_identifies_eth_erc20_router_requirement(as
     assert result["source_wallet"]==ETH
     assert result["destination_wallet"]==native
     assert result["needs_erc20_router"] is True
+    assert result["inbound_router"]=="0x"+"c"*40
+    assert result["refund_path_verified"] is True
     assert result["execution_enabled"] is False
 
 
@@ -215,3 +217,14 @@ def test_private_thornode_quote_checks_real_owner_destination_before_rpc(monkeyp
     assert calls[0][1]["params"]["from_asset"]=="BTC.BTC"
     assert calls[0][1]["params"]["amount"]=="100000000"
     assert calls[1][0].endswith("/inbound_addresses")
+
+
+def test_eth_buy_unexpected_router_address_never_claims_prepared_transaction():
+    now=1803000000
+    quote,inbounds,native,target=route("SOL",side="BUY",now=now)
+    inbounds[0]["router"]="unknown_router"
+    with pytest.raises(ValueError):
+        m.validate_thornode_route_terms(
+            asset="SOL",side="BUY",stable="USDC",amount="1",
+            native_owner=native,eth_owner=ETH,
+            quote=quote,inbounds=inbounds,now=now)

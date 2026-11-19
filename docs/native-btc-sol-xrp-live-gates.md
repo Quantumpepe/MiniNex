@@ -63,3 +63,24 @@ submit transactions or grant anything in Privy.
 No automatic LIVE launch until all requirements are met and user confirms
 Privy policies. EVM switches never enable native signing by implication.
 TRX and DOGE follow only after these three chains.
+
+
+## Additional BUY source and refund binding (same PR)
+
+- For BTC/SOL/XRP BUY, an actual finalized Ethereum mainnet source receipt
+  can now be independently inspected for exact owner address, original hash,
+  canonical block, official ERC-20 USDC/USDT Transfer, THORChain router
+  Deposit event, depositWithExpiry parameters, current trusted Asgard vault,
+  original coin destination and refund-to-owner memo.
+- An internal-only fair-page passive source reconciler can commit that
+  original receipt digest into the immutable journal; it cannot send.
+- The private THORChain quote includes the explicit original-source
+  refund_address request and verifies the refund field in the returned memo.
+  Native wallet case sensitivity is preserved on SOL/XRP.
+- An exact unsigned Ethereum original BUY depositWithExpiry transaction
+  constructor uses the current owner-bound quote and canonical ABI. Its
+  internal output explicitly requires separate Privy policy confirmation,
+  live gas/allowance verification and wallet signing before any send.
+- Actual Privy native signing, ERC20 allowance, native chain send builders,
+  retry/refund reconciliation, full FIFO/HWM and real-money mainnet validation
+  remain outside these read-only steps. No Render environment toggles changed.

@@ -124,8 +124,9 @@ def validate_thornode_route_terms(
     for name in ("halted","global_trading_paused","chain_trading_paused"):
         if active.get(name) is not False:
             raise ValueError("THORChain source network not verifiably active")
-    if side=="BUY" and not isinstance(active.get("router"),str):
-        raise ValueError("ERC-20 inbound requires a current THORChain router")
+    if side=="BUY" and (type(active.get("router")) is not str or
+                        not re.fullmatch(r"0x[a-fA-F0-9]{40}",active["router"])):
+        raise ValueError("ERC-20 inbound requires a verified THORChain router")
 
     memo=quote.get("memo")
     if (type(memo) is not str or not 5<len(memo.encode("utf-8"))<=250
@@ -158,6 +159,7 @@ def validate_thornode_route_terms(
         "source_wallet":eth_owner if side=="BUY" else native_owner,
         "destination_wallet":target,
         "inbound_vault":quote["inbound_address"],
+        "inbound_router":active["router"] if side=="BUY" else None,
         "memo":memo,
         "quote_expires_at":datetime.fromtimestamp(expiry,tz=timezone.utc),
         "expected_output_units_1e8":quote["expected_amount_out"],
