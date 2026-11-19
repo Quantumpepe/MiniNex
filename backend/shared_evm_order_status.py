@@ -1,6 +1,6 @@
 """Owner-scoped durable LIVE EVM order states, never paper or invented fills.
 
-Read-only display of existing order journal facts for the five additional
+Read-only display of existing order journal facts for the six additional
 EVM assets. No transfers, account balances, position PnL or fee settlement
 are inferred from SUBMITTED or finalized ERC20 swap status.
 """
@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
 
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _STATES=frozenset((
     "SENDING","SUBMITTED","RECONCILIATION_REQUIRED",
     "FINALIZED_SUCCESS","FINALIZED_REVERTED",
