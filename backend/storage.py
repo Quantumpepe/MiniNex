@@ -495,12 +495,12 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_user_paper_trades_by_owner
        ON mininex_user_paper_trades(privy_did,asset,occurred_at DESC)""",
-    # Permanent individual setup for the nine additional coins. This is NOT
+    # Permanent individual setup for the ten additional coins. This is NOT
     # shared across coins and does not modify a running PAPER or LIVE session.
     """CREATE TABLE IF NOT EXISTS mininex_extra_coin_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
-            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')),
         budget_usd BIGINT NOT NULL DEFAULT 500
             CHECK (budget_usd > 0),
         mode TEXT NOT NULL DEFAULT 'LONG'
@@ -513,12 +513,12 @@ SCHEMA = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (privy_did,asset)
     )""",
-    # Independent virtual accounts for nine extra coins. BTC/ETH schemas and
-    # real HWM/fee/live ledgers remain untouched. ADA stays unavailable.
+    # Independent virtual accounts for ten extra coins. BTC/ETH schemas and
+    # real HWM/fee/live ledgers remain untouched.
     """CREATE TABLE IF NOT EXISTS mininex_extra_paper_sessions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
-            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI')),
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')),
         status TEXT NOT NULL DEFAULT 'ACTIVE'
             CHECK (status IN ('ACTIVE','PAUSED')),
         settlement TEXT NOT NULL CHECK (settlement IN ('USDC','USDT')),
@@ -903,6 +903,23 @@ SCHEMA = (
     END $paper_budget_migration$""",
     """ALTER TABLE mininex_extra_coin_preferences
        ALTER COLUMN budget_usd TYPE BIGINT""",
+    # Existing owner accounts were created before ARB replaced ADA. CREATE
+    # TABLE IF NOT EXISTS cannot update their constraints: migrate both tables
+    # in place WITHOUT deleting an existing balance, row or user preference.
+    """ALTER TABLE mininex_extra_coin_preferences
+       DROP CONSTRAINT IF EXISTS
+       mininex_extra_coin_preferences_asset_check""",
+    """ALTER TABLE mininex_extra_coin_preferences
+       ADD CONSTRAINT mininex_extra_coin_preferences_asset_check
+       CHECK (asset IN
+         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS
+       mininex_extra_paper_sessions_asset_check""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       ADD CONSTRAINT mininex_extra_paper_sessions_asset_check
+       CHECK (asset IN
+         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
     """DO $migration$
     DECLARE item RECORD;
     BEGIN
