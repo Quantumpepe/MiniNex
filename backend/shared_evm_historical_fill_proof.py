@@ -20,7 +20,7 @@ from .shared_evm_swap_receipts import _pair, _receipt_rpc, check_user_evm_swap
 
 _HASH = re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
-_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI"))
+_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI", "ARB", "ARB"))
 
 
 def verified_evm_swap_block_evidence(
@@ -105,7 +105,7 @@ async def read_owner_finalized_evm_swap_block(
         raise HTTPException(409, "Original EVM swap is not finalized")
     chain, network, fallback, env = (
         _RPC[asset] if asset in ("BNB", "POL", "AVAX")
-        else _RPC["ETH_TOKENS"])
+        else (_RPC["ARB_TOKENS"] if asset=="ARB" else _RPC["ETH_TOKENS"]))
     if chain != route["chain_id"] or network != route["network"]:
         raise ValueError("Wrong historical EVM chain source")
     url = os.getenv(env, "").strip() or fallback
