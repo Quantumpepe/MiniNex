@@ -17,7 +17,7 @@ from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet,fetch_privy_wallet_metadata
 from .shared_evm_trade_policy_roles import check_coin_trade_backend_quorum as check_privy_backend_quorum
 
-_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB","ARB"))
+_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def assess_evm_auto_readiness(
