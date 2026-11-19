@@ -24,6 +24,10 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.native_evm_buy_reconcile")
 _NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE_BUY_UNWRAP_PAGE_LOCK=Lock()
+_NATIVE_BUY_UNWRAP_PAGE_OFFSET=0
+_NATIVE_BUY_CYCLE_PAGE_LOCK=Lock()
+_NATIVE_BUY_CYCLE_PAGE_OFFSET=0
 _NATIVE_BUY_RECEIPT_PAGE_LOCK=Lock()
 _NATIVE_BUY_RECEIPT_PAGE_OFFSET=0
 
@@ -132,12 +136,10 @@ async def reconcile_original_native_step(row:dict)->str:
 
 def completed_native_buys_needing_cycle(limit:int=20)->list[dict]:
     """Only already-converted onchain BUYs whose original budget is locked."""
+    global _NATIVE_BUY_CYCLE_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT b.privy_did,b.asset,b.intent_key,b.tx_hash AS swap_tx_hash,
+    query="""SELECT b.privy_did,b.asset,b.intent_key,b.tx_hash AS swap_tx_hash,
                           n.tx_hash AS native_tx_hash,b.side,b.stable
                    FROM mininex_live_evm_auto_broadcasts b
                    JOIN mininex_live_evm_native_auto_steps n
@@ -150,18 +152,29 @@ def completed_native_buys_needing_cycle(limit:int=20)->list[dict]:
                      AND b.status='FINALIZED_SUCCESS' AND b.side='BUY'
                      AND n.status='FINALIZED_SUCCESS'
                      AND r.state='RECONCILIATION_REQUIRED'
-                   ORDER BY n.updated_at ASC LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY n.updated_at ASC,n.privy_did,n.asset,n.intent_key LIMIT %s OFFSET %s"""
+    # Rotate across all owner-approved native steps; a stalled older receipt
+    # or unresolved downstream operation must not starve newer owners.
+    with _NATIVE_BUY_CYCLE_PAGE_LOCK:
+        selected=_NATIVE_BUY_CYCLE_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,selected))
+                items=list(cur.fetchall())
+                if not items and selected:
+                    selected=0
+                    cur.execute(query,(limit,0))
+                    items=list(cur.fetchall())
+        _NATIVE_BUY_CYCLE_PAGE_OFFSET=selected+len(items)
+    return items
 
 
 def original_native_buys_without_step(limit:int=20)->list[dict]:
     """Only approved, owner-active, finalized BUYs eligible for once-only unwrap."""
+    global _NATIVE_BUY_UNWRAP_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT b.privy_did,b.asset,b.intent_key
+    query="""SELECT b.privy_did,b.asset,b.intent_key
                    FROM mininex_live_evm_auto_broadcasts b
                    JOIN mininex_live_evm_verified_fills f
                      ON f.privy_did=b.privy_did AND f.asset=b.asset
@@ -180,8 +193,21 @@ def original_native_buys_without_step(limit:int=20)->list[dict]:
                      AND s.status='ACTIVE' AND s.started_by_owner_at IS NOT NULL
                      AND r.state='RECONCILIATION_REQUIRED'
                      AND n.intent_key IS NULL
-                   ORDER BY b.created_at ASC LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY b.created_at ASC,b.privy_did,b.asset,b.intent_key LIMIT %s OFFSET %s"""
+    # Rotate across all owner-approved native steps; a stalled older receipt
+    # or unresolved downstream operation must not starve newer owners.
+    with _NATIVE_BUY_UNWRAP_PAGE_LOCK:
+        selected=_NATIVE_BUY_UNWRAP_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,selected))
+                items=list(cur.fetchall())
+                if not items and selected:
+                    selected=0
+                    cur.execute(query,(limit,0))
+                    items=list(cur.fetchall())
+        _NATIVE_BUY_UNWRAP_PAGE_OFFSET=selected+len(items)
+    return items
 
 
 async def reconcile_native_buy_cycle_once(*,client:httpx.AsyncClient,
