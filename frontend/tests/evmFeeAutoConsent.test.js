@@ -9,14 +9,15 @@ const TREASURY='0x'+'cd'.repeat(20);
 const EXPIRES=Math.floor(Date.now()/1000)+86400;
 const expected={asset:'LINK',stable:'USDC',address:WALLET,cap:'2500000'};
 
-test('all five EVM fee consent coins are available independently',()=>{
-  assert.deepEqual(EVM_FEE_COINS,['BNB','POL','AVAX','LINK','UNI']);
+test('all six EVM fee consent coins are available independently',()=>{
+  assert.deepEqual(EVM_FEE_COINS,['BNB','POL','AVAX','LINK','UNI','ARB']);
 });
 
 test('exact user-selected fee cap handles 6- and 18-decimal stablecoins',()=>{
   assert.equal(exactFeeCapAtomic('2.5','LINK','USDC'),'2500000');
   assert.equal(exactFeeCapAtomic('2.5','BNB','USDT'),'2500000000000000000');
   assert.equal(exactFeeCapAtomic('0.000001','UNI','USDC'),'1');
+  assert.equal(exactFeeCapAtomic('0.000001','ARB','USDT'),'1');
   assert.equal(exactFeeCapAtomic('0.000000000000000001','BNB','USDT'),'1');
   assert.equal(exactFeeCapAtomic('1000000','LINK','USDC'),'1000000000000');
 });
