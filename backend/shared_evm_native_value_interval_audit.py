@@ -304,10 +304,17 @@ async def audit_original_native_value_interval(
             client,url,"eth_getBalance",[wallet,hex(start-1)],900)
         after=await _receipt_rpc(
             client,url,"eth_getBalance",[wallet,hex(end)],901)
+        nonce_before=await _receipt_rpc(
+            client,url,"eth_getTransactionCount",[wallet,hex(start-1)],902)
+        nonce_after=await _receipt_rpc(
+            client,url,"eth_getTransactionCount",[wallet,hex(end)],903)
         gas=verify_owner_native_balance_and_gas(
             wallet=wallet,traces=events,canonical_blocks=canonical,
             receipts=receipts,start_block=start,end_block=end,
-            balance_before=before,balance_after=after)
+            balance_before=before,balance_after=after,
+            sender_nonce_before=nonce_before,sender_nonce_after=nonce_after)
+        if gas.get("archived_sender_nonce_delta_verified") is not True:
+            raise ValueError("Not all original user-sent native transactions proven")
         interval["original_gas_balance_conservation"]=gas
         interval["observed_interval_native_balance_conserved"]=(
             gas["observed_interval_native_balance_conserved"])
