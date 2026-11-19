@@ -68,6 +68,23 @@ def test_wrong_signer_or_modified_message_rejected():
             changed, owner_signature_base64=signature)
 
 
+@pytest.mark.parametrize("field,mutated", [
+    ("inbound_vault", b58(bytes([4]) * 32)),
+    ("recent_blockhash", b58(bytes([5]) * 32)),
+    ("source_amount_lamports", "1"),
+    ("source_amount_lamports", "-1"),
+    ("source_amount_lamports", "18446744073709551616"),
+    ("refund_memo", "=:ETH.USDC:0x" + "b" * 40 + "/owner"),
+    ("destination_wallet", "0x" + "b" * 40),
+])
+def test_signed_bytes_must_match_vault_amount_blockhash_and_refund(field, mutated):
+    unsigned, signature, _ = valid()
+    unsigned[field] = mutated
+    with pytest.raises(ValueError):
+        verify_original_sol_detached_signature(
+            unsigned, owner_signature_base64=signature)
+
+
 @pytest.mark.parametrize("field,value", [
     ("can_submit", True),
     ("wallet_signed", True),

@@ -84,6 +84,7 @@ def compile_original_unsigned_sol_message(
         "source_wallet": owner, "inbound_vault": vault,
         "destination_wallet": plan["destination_wallet"],
         "source_amount_lamports": plan["source_amount_lamports"],
+        "refund_memo": quote["memo"],
         "recent_blockhash": plan["recent_blockhash"],
         "last_valid_block_height": plan["last_valid_block_height"],
         "quote_expires_at": plan["quote_expires_at"],
