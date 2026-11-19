@@ -17,7 +17,7 @@ from .shared_evm_swap_receipts import _pair, _receipt_rpc
 from .multicoin_evm_balances import _RPC
 from .treasury import validate_treasury_address
 
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _TRANSFER_TOPIC=("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
@@ -181,7 +181,7 @@ async def fetch_owner_fee_transfer_proof(
             or type(tx_hash) is not str or not _HASH.fullmatch(tx_hash)):
         raise ValueError("Invalid EVM fee settlement request")
     pair=_pair(asset,stable,"BUY")
-    key=asset if asset in _RPC else "ETH_TOKENS"
+    key=asset if asset in _RPC else ("ARB_TOKENS" if asset=="ARB" else "ETH_TOKENS")
     chain,network,fallback,env=_RPC[key]
     if (chain!=pair["chain_id"] or network!=pair["network"]
             or draft.get("chain_id")!=chain):
