@@ -39,7 +39,7 @@ def setup(asset):
     return stable, proof, receipt, block
 
 
-@pytest.mark.parametrize("asset", ["BNB", "POL", "AVAX", "LINK", "UNI"])
+@pytest.mark.parametrize("asset", ["BNB", "POL", "AVAX", "LINK", "UNI", "ARB"])
 def test_original_mined_transaction_time_and_index_are_proven(asset):
     stable, proof, receipt, block = setup(asset)
     result = verified_evm_swap_block_evidence(
