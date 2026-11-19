@@ -24,6 +24,7 @@ _IDS={
     "AVAX":"avalanche-2",
     "LINK":"chainlink",
     "UNI":"uniswap",
+    "ARB":"arbitrum",
     "USDC":"usd-coin",
     "USDT":"tether",
 }
