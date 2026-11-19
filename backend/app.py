@@ -637,7 +637,7 @@ async def eth_owner_live_auto_allowance(
 
 @app.post("/api/live/evm/owner-swap-preparation/{asset}")
 async def owner_evm_swap_preparation(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
     request: EthLiveQuoteRequest,
     authorization: str | None = Header(default=None),
 ):
@@ -657,7 +657,7 @@ async def owner_evm_swap_preparation(
 
 @app.get("/api/live/evm/fifo-preview/{asset}")
 def owner_evm_fifo_preview(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only verified FIFO gross cost basis; never net USD or a fee charge."""
@@ -681,7 +681,7 @@ class EvmAutoFeeOwnerIntentRequest(BaseModel):
 
 @app.post("/api/live/evm/fee-auto-consent/{asset}/challenge")
 async def owner_evm_auto_fee_consent_challenge(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     request: EvmAutoFeeOwnerIntentRequest,
     authorization: str | None = Header(default=None),
 ):
@@ -703,7 +703,7 @@ class EvmAutoFeeConfirmIntentRequest(BaseModel):
 
 @app.post("/api/live/evm/fee-auto-consent/{asset}/confirm")
 async def owner_evm_auto_fee_consent_confirm(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     request: EvmAutoFeeConfirmIntentRequest,
     authorization: str | None = Header(default=None),
 ):
@@ -717,7 +717,7 @@ async def owner_evm_auto_fee_consent_confirm(
 
 @app.post("/api/live/evm/fee-auto-consent/{asset}/publish-policy")
 async def owner_evm_fee_auto_policy_publish(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Owner-initiated once-only Privy fee policy; signer not attached."""
@@ -728,7 +728,7 @@ async def owner_evm_fee_auto_policy_publish(
 
 @app.get("/api/live/evm/fee-auto-consent/{asset}/grant-review")
 async def owner_evm_fee_auto_grant_review(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Owner-only exact Privy fee signer offer; no wallet delegation."""
@@ -739,7 +739,7 @@ async def owner_evm_fee_auto_grant_review(
 
 @app.post("/api/live/evm/fee-auto-consent/{asset}/grant-confirm")
 async def owner_evm_fee_auto_grant_confirm(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Confirm exact remote owner addSigners fee grant, never create it."""
@@ -750,7 +750,7 @@ async def owner_evm_fee_auto_grant_confirm(
 
 @app.get("/api/live/evm/fee-auto-consent/{asset}")
 def owner_evm_auto_fee_permission_status(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Only this authenticated owner can read their own separate fee grant."""
@@ -762,7 +762,7 @@ def owner_evm_auto_fee_permission_status(
 
 @app.post("/api/live/evm/fee-auto-consent/{asset}/revoke")
 def owner_evm_auto_fee_permission_revoke(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Owner immediately revokes MiniNex local fee permission; Privy remote separate."""
@@ -774,7 +774,7 @@ def owner_evm_auto_fee_permission_revoke(
 
 @app.get("/api/live/evm/fee-payment/{asset}/{execution_id}")
 def owner_real_evm_fee_payment_status(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     execution_id: str,
     authorization: str | None = Header(default=None),
 ):
@@ -787,7 +787,7 @@ def owner_real_evm_fee_payment_status(
 
 @app.post("/api/live/evm/fee-payment/{asset}/{execution_id}/prepare")
 async def owner_prepare_signed_evm_fee_payment(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     execution_id: str,
     authorization: str | None = Header(default=None),
 ):
@@ -800,7 +800,7 @@ async def owner_prepare_signed_evm_fee_payment(
 
 @app.post("/api/live/evm/fee-payment/{asset}/{execution_id}/confirm")
 async def owner_confirm_signed_evm_fee_payment(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     execution_id: str,
     request: EvmFeePaymentConfirmRequest,
     authorization: str | None = Header(default=None),
@@ -815,7 +815,7 @@ async def owner_confirm_signed_evm_fee_payment(
 
 @app.get("/api/live/evm/auto-session/{asset}")
 def owner_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only per-coin user LIVE session, never implied by login."""
@@ -828,7 +828,7 @@ def owner_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/start")
 async def owner_start_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Only this user's explicit action after fresh remote Privy approval."""
@@ -841,7 +841,7 @@ async def owner_start_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/pause")
 def owner_pause_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Stops future per-coin sends without retrying an in-flight tx."""
@@ -854,7 +854,7 @@ def owner_pause_evm_auto_session(
 
 @app.get("/api/live/evm/policy/{asset}/grant-review")
 async def owner_evm_trading_grant_review(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only owner-signed exact Privy trading policy offer."""
@@ -865,7 +865,7 @@ async def owner_evm_trading_grant_review(
 
 @app.post("/api/live/evm/policy/{asset}/confirm-grant")
 async def owner_confirm_evm_privy_signer_grant(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read back the owner's *existing* Privy signer approval; never grant it."""
@@ -879,7 +879,7 @@ async def owner_confirm_evm_privy_signer_grant(
 
 @app.post("/api/live/evm/policy/{asset}/publish")
 async def owner_publish_evm_privy_policy(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Owner explicitly publishes signed policy; no Privy wallet delegation."""
@@ -893,7 +893,7 @@ async def owner_publish_evm_privy_policy(
 
 @app.post("/api/live/evm/policy/{asset}/prepare")
 async def owner_prepare_evm_policy(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Owner-requested local draft; no remote Privy policy or wallet grant."""
@@ -907,7 +907,7 @@ async def owner_prepare_evm_policy(
 
 @app.get("/api/live/evm/remote-grant-audit/{asset}")
 async def owner_evm_remote_grant_audit(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Re-read Privy policy and scope; never creates a wallet grant."""
@@ -922,7 +922,7 @@ async def owner_evm_remote_grant_audit(
 
 @app.get("/api/live/evm/auto-readiness/{asset}")
 async def owner_evm_auto_readiness(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Independently review owner Privy wallet, grant journal and quorum."""
@@ -936,7 +936,7 @@ async def owner_evm_auto_readiness(
 
 @app.get("/api/live/evm/permission-status/{asset}")
 def owner_evm_permission_status(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only Privy permission ledger for this authenticated owner and coin."""
@@ -949,7 +949,7 @@ def owner_evm_permission_status(
 
 @app.get("/api/live/evm/order-status/{asset}")
 def owner_evm_order_status(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -963,7 +963,7 @@ def owner_evm_order_status(
 
 @app.get("/api/live/evm/verified-fills/{asset}")
 def owner_finalized_evm_fills(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     limit: int = 30,
     authorization: str | None = Header(default=None),
 ):
@@ -976,7 +976,7 @@ def owner_finalized_evm_fills(
 
 @app.get("/api/live/evm/source-allowance/{asset}")
 async def read_owner_evm_source_allowance(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
     side: Literal["BUY","SELL"],
     stable: Literal["USDC","USDT"],
     amount: str,
@@ -994,7 +994,7 @@ async def read_owner_evm_source_allowance(
 
 @app.get("/api/live/evm/finalized-swap/{asset}/{tx_hash}")
 async def finalized_owner_evm_swap(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
     tx_hash: str,
     side: Literal["BUY","SELL"],
     stable: Literal["USDC","USDT"],
@@ -1139,7 +1139,7 @@ async def eth_live_chain_receipt(tx_hash: str,
 
 @app.get("/api/live/evm/completed-cycle/{asset}/{swap_tx_hash}")
 async def owner_verified_evm_trade_cycle(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
     swap_tx_hash: str,
     side: Literal["BUY","SELL"],
     stable: Literal["USDC","USDT"],
@@ -1396,7 +1396,7 @@ class EthConsentSignatureRequest(BaseModel):
 
 @app.post("/api/live/evm/consent/{asset}/challenge")
 async def owner_evm_consent_challenge(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """One user-initiated wallet-signable coin intent. Does NOT delegate."""
@@ -1410,7 +1410,7 @@ async def owner_evm_consent_challenge(
 
 @app.post("/api/live/evm/consent/{asset}/confirm")
 async def owner_evm_consent_confirm(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     body: EthConsentSignatureRequest,
     authorization: str | None = Header(default=None),
 ):
@@ -1425,7 +1425,7 @@ async def owner_evm_consent_confirm(
 
 @app.post("/api/live/evm/consent/{asset}/revoke")
 def owner_evm_consent_revoke(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Locally stop future coin orders; Privy remote signer revoke remains separate."""
