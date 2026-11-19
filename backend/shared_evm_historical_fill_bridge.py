@@ -23,7 +23,7 @@ from .shared_evm_native_cost_provenance import read_original_native_execution_co
 from .shared_evm_native_trace_provenance import read_original_native_conversion_trace
 from .shared_evm_swap_receipts import _pair
 
-_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI"))
+_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI", "ARB", "ARB"))
 _NATIVE = frozenset(("BNB", "POL", "AVAX"))
 _HASH = re.compile(r"^0x[0-9a-f]{64}$")
 
