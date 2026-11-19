@@ -82,7 +82,7 @@ def ledger(asset, fills):
 
 @pytest.mark.parametrize("asset,stable", [
     ("BNB", "USDT"), ("POL", "USDC"), ("AVAX", "USDC"),
-    ("LINK", "USDC"), ("UNI", "USDT"),
+    ("LINK", "USDC"), ("UNI", "USDT"), ("ARB", "USDC"),
 ])
 def test_real_buy_sell_fifo_net_includes_historical_gas(asset, stable):
     records = [
