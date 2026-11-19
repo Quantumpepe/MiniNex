@@ -11,7 +11,7 @@ DID="did:privy:owner"
 OTHER="did:privy:other"
 TX="0x"+"ab"*32
 WHEN=datetime(2026,11,17,12,0,tzinfo=timezone.utc)
-CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
+CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1,"ARB":42161}
 
 
 def row(asset,stage="SUBMITTED",stable=None,side="BUY",native=False,fee=False,paid=False):
@@ -28,7 +28,7 @@ def row(asset,stage="SUBMITTED",stable=None,side="BUY",native=False,fee=False,pa
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("stage",[
     "SENDING","SUBMITTED","RECONCILIATION_REQUIRED",
     "FINALIZED_SUCCESS","FINALIZED_REVERTED",
@@ -117,7 +117,7 @@ def test_completed_native_trade_and_fee_are_shown_only_after_verified_ledgers(as
     assert result["fee_transferred"] is False
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
 def test_erc20_sells_can_have_recorded_hwm_without_native_conversion(asset):
     actual=row(asset,stage="FINALIZED_SUCCESS",side="SELL",fee=True)
     result=status._verified_order_row(actual,asset)
@@ -139,7 +139,7 @@ def test_unproved_or_invalid_completion_flags_are_rejected(alter):
         status._verified_order_row(actual,"AVAX")
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_only_verified_owner_payment_recognized_in_real_order_history(asset):
     result=status._verified_order_row(row(
         asset,stage="FINALIZED_SUCCESS",side="SELL",
@@ -148,7 +148,7 @@ def test_only_verified_owner_payment_recognized_in_real_order_history(asset):
     assert result["fee_transferred"] is True
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_unassessed_or_fake_fee_payment_rejected(asset):
     with pytest.raises(ValueError):
         status._verified_order_row(row(
