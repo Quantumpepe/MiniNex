@@ -22,11 +22,11 @@ const fixture={
            at:'2026-11-13T10:00:00Z',total_spent:149.5}],
 };
 
-test('only nine extra coins may run server PAPER sessions, ARB remains pending',()=>{
+test('all ten extra coins including ARB have independent PAPER session controls',()=>{
   assert.deepEqual(EXTRA_REPLAY_COINS,[
-    'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI',
+    'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB',
   ]);
-  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),false);
+  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),true);
   assert.equal(EXTRA_REPLAY_COINS.includes('BTC'),false);
   assert.equal(EXTRA_REPLAY_COINS.includes('ETH'),false);
   assert.match(setup,/const selectedSettings=opened==='BTC'\|\|opened==='ETH'/);
@@ -100,7 +100,7 @@ test('ongoing PAPER lives on server with 20-second focused refresh and no market
   assert.doesNotMatch(control,/eth_sendTransaction|sendTransaction|signTransaction|privateKey|delegateWallet|wallet\.send|approve\(/);
 });
 
-test('simple DE/EN labels, mobile layout, no new home controls or ARB changes',()=>{
+test('simple DE/EN labels, mobile layout, no new home controls',()=>{
   for(const phrase of [
     "extraPaperTitle: 'Automatic simulation · PAPER'",
     "extraPaperTitle: 'Automatische Simulation · PAPER'",
