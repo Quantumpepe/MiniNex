@@ -64,13 +64,23 @@ def _read_pending_original_usd_fills(limit:int=40)->list[dict]:
                  fill=_verified_account_fill(row,row["asset"])) for row in rows]
 
 
+_OWNER_RECONCILE_PAGE_LOCK = __import__("threading").Lock()
+_OWNER_RECONCILE_PAGE_OFFSET = 0
+
+
 def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
+    """Rotate across pending owners; one old unprovable history must not starve others.
+
+    This limits a background database work page, not trades, position size,
+    retries of wallet sends or the user's chosen coin budget. The cursor
+    resets after the final page, so unresolved histories can be revisited.
+    """
+    global _OWNER_RECONCILE_PAGE_OFFSET
+    if type(limit) is not int or not 1<=limit<=500:
+        raise ValueError("Invalid passive accounting work page")
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT f.privy_did,f.asset
+    statement="""SELECT f.privy_did,f.asset
                    FROM mininex_live_evm_verified_fills f
                    JOIN mininex_live_evm_auto_broadcasts b
                      ON b.privy_did=f.privy_did AND b.asset=f.asset
@@ -82,9 +92,20 @@ def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
                      AND f.side='SELL' AND b.status='FINALIZED_SUCCESS'
                      AND e.execution_id IS NULL
                    GROUP BY f.privy_did,f.asset
-                   ORDER BY MIN(f.created_at) ASC
-                   LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY MIN(f.created_at) ASC,f.privy_did,f.asset
+                   LIMIT %s OFFSET %s"""
+    with _OWNER_RECONCILE_PAGE_LOCK:
+        offset=_OWNER_RECONCILE_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(statement,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(statement,(limit,0))
+                    rows=list(cur.fetchall())
+        _OWNER_RECONCILE_PAGE_OFFSET=offset+len(rows)
+        return rows
 
 
 async def reconcile_verified_erc20_fees_once(
