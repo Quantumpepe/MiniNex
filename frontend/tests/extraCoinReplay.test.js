@@ -30,10 +30,10 @@ const sample={
                            at:'2026-11-12T10:00:00Z',total_spent:100}],
 };
 
-test('the nine extra coins share the strategy; BTC ETH and ARB stay untouched',()=>{
+test('the ten extra coins share one strategy; BTC ETH remain separate',()=>{
   assert.deepEqual(EXTRA_REPLAY_COINS,
-    ['BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
-  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),false);
+    ['BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB']);
+  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),true);
   assert.equal(EXTRA_REPLAY_COINS.includes('ETH'),false);
   assert.equal(EXTRA_REPLAY_COINS.includes('BTC'),false);
   assert.equal(defaultReplayOption().budget,'500');
