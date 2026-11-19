@@ -182,6 +182,7 @@ def inspect_original_native_buy_destination(
             or protocol.get("protocol_inbound_observed") is not True
             or protocol.get("protocol_inbound_finalized") is not True
             or protocol.get("protocol_reports_swap_finalized") is not True
+            or protocol.get("protocol_refund_hashes",[])!=[]
             or protocol.get("destination_chain_receipts_verified") is not False
             or protocol.get("realized_pnl_verified") is not False
             or protocol.get("fee_assessed") is not False

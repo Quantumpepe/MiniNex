@@ -118,32 +118,64 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
                              or type(swap.get("completed")) is not bool):
         raise ValueError("Unverified THORChain swap stage")
     outgoing=observed.get("out_txs") or []
-    if type(outgoing) is not list:
+    if type(outgoing) is not list or len(outgoing)>128:
         raise ValueError("Malformed THORChain outbound list")
     out_ids=[]
     out_amounts=[]
+    refund_ids=[]
+    refund_amounts=[]
+    seen_hashes=set()
     for transaction in outgoing:
-        if (type(transaction) is not dict or transaction.get("chain")!=target_chain
-                or type(transaction.get("to_address")) is not str
-                or (transaction["to_address"].lower()!=original["destination_wallet"].lower()
-                    if side=="SELL" else
-                    transaction["to_address"]!=original["destination_wallet"])):
-            raise ValueError("THORChain outbound targets a different owner")
+        if type(transaction) is not dict:
+            raise ValueError("Malformed THORChain outgoing transaction")
+        chain=transaction.get("chain")
+        destination=transaction.get("to_address")
+        if type(destination) is not str:
+            raise ValueError("Unverified THORChain outbound address")
+        if (chain==target_chain
+                and (destination.lower()==original["destination_wallet"].lower()
+                     if target_chain=="ETH" else
+                     destination==original["destination_wallet"])):
+            outbound_kind="PAYOUT"
+            expected_asset=target_asset
+        elif (chain==source_chain
+                and (destination.lower()==original["source_wallet"].lower()
+                     if source_chain=="ETH" else
+                     destination==original["source_wallet"])):
+            # Protocol refunds return the ORIGINAL input asset, not a gain.
+            # The actual source-chain receipt must still be independently
+            # verified before booking a refunded position or releasing budget.
+            outbound_kind="REFUND"
+            expected_asset=source_asset
+        else:
+            raise ValueError("THORChain outbound not bound to owner")
         outputs=transaction.get("coins")
-        if (type(outputs) is not list or not outputs
-                or any(type(x) is not dict or x.get("asset")!=target_asset
+        if (type(outputs) is not list or not outputs or len(outputs)>50
+                or any(type(x) is not dict or x.get("asset")!=expected_asset
                        or type(x.get("amount")) is not str
                        or not _NUMBER.fullmatch(x["amount"])
                        for x in outputs)):
-            raise ValueError("Unexpected THORChain outbound settlement asset")
+            raise ValueError("Unknown protocol payout or refund token")
         hash_=transaction.get("id")
-        if (type(hash_) is not str or
-                not (_VALID_HEX.fullmatch(hash_) if side=="SELL" or asset=="BTC"
-                     else _valid_native_hash(asset,hash_))):
-            raise ValueError("THORChain outbound transaction id unavailable")
-        out_ids.append(hash_.lower().removeprefix("0x")
-                       if side=="SELL" or asset=="BTC" else hash_)
-        out_amounts.append(str(sum(int(output["amount"]) for output in outputs)))
+        hash_asset=("ETH" if chain=="ETH" else chain)
+        if (type(hash_) is not str or not (
+                _VALID_HEX.fullmatch(hash_)
+                if hash_asset in ("ETH","BTC") else
+                _valid_native_hash(hash_asset,hash_)
+            )):
+            raise ValueError("THORChain payout or refund hash unavailable")
+        canonical=(hash_.lower().removeprefix("0x")
+                   if chain in ("ETH","BTC") else hash_)
+        if canonical in seen_hashes:
+            raise ValueError("Duplicate THORChain outgoing transaction")
+        seen_hashes.add(canonical)
+        amount=str(sum(int(output["amount"]) for output in outputs))
+        if outbound_kind=="PAYOUT":
+            out_ids.append(canonical)
+            out_amounts.append(amount)
+        else:
+            refund_ids.append(canonical)
+            refund_amounts.append(amount)
     return {
         "mode":"THORCHAIN_ORIGINAL_TRANSACTION_READ_ONLY",
         "asset":asset,
@@ -156,6 +188,11 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
             swap is not None and swap["completed"] is True),
         "protocol_outbound_hashes":out_ids,
         "protocol_outbound_units_1e8":out_amounts,
+        "protocol_refund_hashes":refund_ids,
+        "protocol_refund_units_1e8":refund_amounts,
+        "refund_original_source_chain":source_chain,
+        "refund_independently_finalized":False,
+        "refund_requires_source_chain_receipt":bool(refund_ids),
         "side":side,
         "destination_chain_receipts_verified":False,
         "realized_pnl_verified":False,"fee_assessed":False,

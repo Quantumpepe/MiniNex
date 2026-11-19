@@ -306,3 +306,63 @@ def test_native_destination_address_is_case_sensitive(asset,original_address):
         "=:"+THOR_ASSETS[asset][0]+":"+original_address.lower()+"/"+DEST,
         THOR_ASSETS[asset][0],original_address,DEST,
         source_chain="ETH",target_chain=asset)
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_native_sell_refund_is_not_mislabeled_as_stablecoin_payout(asset):
+    original_order=original(asset)
+    observed=status(asset,True,False)
+    refund_tx={
+        "id":_native_buy_outbound(asset),"chain":asset,
+        "to_address":ADDR[asset],
+        "coins":[{"asset":THOR_ASSETS[asset][0],"amount":"95000000"}],
+    }
+    observed["out_txs"]=[refund_tx]
+    report=thor.inspect_original_thorchain_status(original_order,observed)
+    assert report["protocol_outbound_hashes"]==[]
+    assert report["protocol_refund_hashes"]
+    assert report["protocol_refund_units_1e8"]==["95000000"]
+    assert report["refund_original_source_chain"]==asset
+    assert report["refund_independently_finalized"] is False
+    assert report["destination_chain_receipts_verified"] is False
+    assert report["fee_assessed"] is False
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_native_buy_ethereum_stable_refund_is_not_native_coin_purchase(asset):
+    original_order=_native_buy_original(asset)
+    observed=_native_buy_protocol(asset)
+    observed["out_txs"]=[{
+        "id":"E"*64,"chain":"ETH","to_address":DEST,
+        "coins":[{"asset":THOR_ASSETS["USDC"][0],"amount":"180000000"}],
+    }]
+    report=thor.inspect_original_thorchain_status(original_order,observed)
+    assert report["protocol_outbound_hashes"]==[]
+    assert report["protocol_refund_hashes"]==["e"*64]
+    assert report["refund_original_source_chain"]=="ETH"
+    assert report["refund_independently_finalized"] is False
+    assert report["realized_pnl_verified"] is False
+    assert report["retry_permitted"] is False
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_forged_refund_to_different_wallet_never_counts(asset):
+    observed=status(asset,True,False)
+    observed["out_txs"]=[{
+        "id":_native_buy_outbound(asset),
+        "chain":asset,
+        "to_address":ADDR[asset]+"changed",
+        "coins":[{"asset":THOR_ASSETS[asset][0],"amount":"1"}],
+    }]
+    with pytest.raises(ValueError):
+        thor.inspect_original_thorchain_status(original(asset),observed)
+
+
+def test_duplicate_refund_and_payout_hash_cannot_be_claimed_twice():
+    row=original("BTC")
+    observed=status("BTC",True,True)
+    observed["out_txs"].append({
+        "id":"E"*64,"chain":"BTC","to_address":ADDR["BTC"],
+        "coins":[{"asset":THOR_ASSETS["BTC"][0],"amount":"1"}],
+    })
+    with pytest.raises(ValueError):
+        thor.inspect_original_thorchain_status(row,observed)
