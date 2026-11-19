@@ -21,13 +21,13 @@ import httpx
 import websockets
 
 LOGGER = logging.getLogger("mininex.extra_markets")
-EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ADA")
+EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
 GECKO_IDS = {
     "BNB": "binancecoin",
     "POL": "polygon-ecosystem-token",
     "SOL": "solana",
     "XRP": "ripple",
-    "ADA": "cardano",
+    "ARB": "arbitrum",
     "TRX": "tron",
     "AVAX": "avalanche-2",
     "LINK": "chainlink",
@@ -143,9 +143,9 @@ class ExtraMarketData:
         self._historical: dict[str, list[dict[str, float]]] = {asset: [] for asset in EXTRA_ASSETS}
         # 97 completed 15m candles provide ~24h of genuine close prices.
         # Keep this separate from the short 1m series and live WS ticks.
-        # ADA is still "In Arbeit": it gets NO long strategy feed.
+        # All ten enabled extra coins, including ARB, have historical chart data.
         self._long_historical: dict[str, list[dict[str, float]]] = {
-            asset: [] for asset in EXTRA_ASSETS if asset != "ADA"
+            asset: [] for asset in EXTRA_ASSETS
         }
         self._tasks: list[asyncio.Task] = []
         self.last_error: str | None = None
@@ -559,18 +559,16 @@ class ExtraMarketData:
                         })
                         response.raise_for_status()
                         self.ingest_candles(asset, response.json(), now=now)
-                        if asset != "ADA":
-                            # A second, low-rate public request every 5 min.
-                            # 97 x 15m completed closes cover the 24h mode
-                            # without fetching thousands of minute candles.
-                            end_long=(int(now)//900*900-1)*1000
-                            long_response=await client.get(CANDLES_URL,params={
-                                "symbol":asset+"USDT","interval":"15m",
-                                "limit":97,"endTime":end_long,
-                            })
-                            long_response.raise_for_status()
-                            self.ingest_long_candles(
-                                asset,long_response.json(),now=now)
+                        # 97 genuine 15m closes cover the 24h chart window.
+                        # ARB receives the same market data as every other coin.
+                        end_long=(int(now)//900*900-1)*1000
+                        long_response=await client.get(CANDLES_URL,params={
+                            "symbol":asset+"USDT","interval":"15m",
+                            "limit":97,"endTime":end_long,
+                        })
+                        long_response.raise_for_status()
+                        self.ingest_long_candles(
+                            asset,long_response.json(),now=now)
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:

@@ -167,7 +167,7 @@ def test_all_eleven_coins_keep_trade_costs_and_histories_independent():
     """Shared decision engine, independent holdings, all-in costs and PnL."""
     from backend.strategy_replay import REPLAY_ASSETS
 
-    assert len(REPLAY_ASSETS) == 11
+    assert len(REPLAY_ASSETS) == 12
     engine = PaperAutoEngine(PaperFeed())
     engine.portfolios = {}
     opening = {}

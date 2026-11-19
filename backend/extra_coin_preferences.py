@@ -1,6 +1,6 @@
-"""Saved, independent trading setup for the nine additional MiniNex coins.
+"""Saved, independent trading setup for the ten additional MiniNex coins.
 
-This shares the same 11-coin strategy engine as BTC/ETH but stores mode,
+This shares the same 12-coin strategy engine as BTC/ETH but stores mode,
 budget, settlement and horizon per coin and authenticated Privy user.
 Preferences are NOT positions, deposits or permission to trade.
 """
@@ -20,7 +20,7 @@ LOG = logging.getLogger("mininex.extra_coin_preferences")
 COINS = tuple(EXTRA_REPLAY_ASSETS)
 DEFAULT = {"mode": "LONG", "stable": "USDC", "horizon": "15m",
            "budget_usd": 500, "revision": 0}
-assert len(COINS) == 9 and len(set(COINS)) == 9
+assert len(COINS) == 10 and len(set(COINS)) == 10
 
 
 def _coin(asset: object) -> str:

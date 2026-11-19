@@ -26,7 +26,7 @@ def gecko_row(asset, price, at=NOW):
 
 def test_all_ten_public_prices_are_separate_and_not_tradable():
     service = ExtraMarketData(clock=lambda: NOW)
-    assert EXTRA_ASSETS == ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ADA")
+    assert EXTRA_ASSETS == ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
     for asset, price in zip(EXTRA_ASSETS, (600, 200, 2, .3, .3, 22, 13, .15, 8, .9)):
         assert service.ingest_ws(make_ws(asset, price), now=NOW)
         assert service.ingest_gecko(gecko_row(asset, price), now=NOW) == 1
@@ -134,13 +134,13 @@ def test_kraken_pairs_require_exact_market_and_us_dollar_quote():
         "BNBUSD": {"wsname": "BNB/USD", "status": "online"},
         "XDGZUSD": {"wsname": "XDG/USD", "status": "online"},
         "SOLUSDT": {"wsname": "SOL/USDT", "status": "online"},
-        "ADAUSD": {"wsname": "ADA/USD", "status": "online"},
+        "ARBUSD": {"wsname": "ARB/USD", "status": "online"},
         "DODGY": {"wsname": "DOGE/USD", "status": "cancel_only"},
         "LINKUSD": {"wsname": "LINK/USD", "status": "offline"},
         "UNKNOWNUSD": {"wsname": "UNKNOWN/USD", "status": "online"},
     }}
     assert discover_kraken_usd_pairs(data) == {
-        "BNB": "BNBUSD", "DOGE": "XDGZUSD", "ADA": "ADAUSD",
+        "BNB": "BNBUSD", "DOGE": "XDGZUSD", "ARB": "ARBUSD",
     }
     assert discover_kraken_usd_pairs({"error": ["EQuery:Unknown asset pair"],
                                       "result": data["result"]}) == {}
@@ -268,3 +268,44 @@ def test_public_market_status_contains_bounded_readonly_extra_coin_report():
     assert report["mode"] == "EXTRA_COINS_READ_ONLY"
     assert report["trading_enabled"] is False
     assert set(report["market_data_valid"]) == set(EXTRA_ASSETS)
+
+
+def test_arb_replaces_ada_with_real_usdt_and_independent_usd_reference():
+    from backend.extra_market_data import GECKO_IDS,SYMBOLS,WS_URL,EXTRA_ASSETS
+    assert "ARB" in EXTRA_ASSETS and "ADA" not in EXTRA_ASSETS
+    assert GECKO_IDS["ARB"] == "arbitrum"
+    assert "cardano" not in GECKO_IDS.values()
+    assert SYMBOLS["ARBUSDT"] == "ARB"
+    assert "arbusdt@miniTicker" in WS_URL
+    service=ExtraMarketData(clock=lambda: NOW)
+    assert "ARB" in service._long_historical
+    assert service.ingest_ws(make_ws("ARB",1.2),now=NOW)
+    assert service.snapshot(now=NOW)["ARB"]["reason"]=="REFERENCE_MISSING_OR_STALE"
+    assert service.ingest_gecko(gecko_row("ARB",1.2),now=NOW)==1
+    quote=service.snapshot(now=NOW)["ARB"]
+    assert quote["price_usdt"]==1.2
+    assert quote["market_data_valid"] is True
+    assert quote["market_data_only"] is True
+    assert quote["trading_enabled"] is False
+    assert service.ingest_ws(make_ws("ADA",0.5),now=NOW) is False
+    assert len(service.history("ARB"))==1
+    assert service.history("ARB")[0]["price_usdt"]==1.2
+    with pytest.raises(ValueError):
+        service.history("ADA")
+
+
+def test_arb_history_and_price_snapshot_http_endpoints_no_longer_return_404():
+    """Regression for the Android update: /api/market/history/ARB was 404."""
+    from fastapi.testclient import TestClient
+    from backend.app import app
+    client=TestClient(app)
+    chart=client.get("/api/market/history/ARB?limit=3600")
+    assert chart.status_code==200
+    assert chart.json()["asset"]=="ARB"
+    assert chart.json()["currency"]=="USDT"
+    assert isinstance(chart.json()["points"],list)
+    prices=client.get("/api/market/prices")
+    assert prices.status_code==200
+    assert "ARB" in prices.json()["markets"]
+    assert "ADA" not in prices.json()["markets"]
+    assert client.get("/api/market/history/ADA").status_code==404
