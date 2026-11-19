@@ -97,7 +97,8 @@ test('amounts are exact input units, not simulated USD budget',()=>{
   assert.equal(createLivePlanRequest('ETH','SELL','USDC','0.000000000000000001').body.amount,
     '0.000000000000000001');
   assert.equal(createLivePlanRequest('BTC','SELL','USDC','0.00000001').body.amount,'0.00000001');
-  assert.equal(createLivePlanRequest('SOL','SELL','USDC','0.000000001'),null);
+  assert.equal(createLivePlanRequest('SOL','SELL','USDC','0.000000001')?.amount,'0.000000001');
+  assert.equal(createLivePlanRequest('SOL','SELL','USDC','0.0000000001'),null);
   assert.equal(createLivePlanRequest('XRP','SELL','USDC','0.0000001'),null);
   assert.equal(createLivePlanRequest('ETH','BUY','USDC','0.0000001'),null);
   for(const raw of ['0','0.0','-1','NaN','1e8','01','',null,4,'10000000'.repeat(8)]){
