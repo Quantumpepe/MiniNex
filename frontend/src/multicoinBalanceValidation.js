@@ -1,11 +1,12 @@
-// Five additional REAL blockchain holdings. These are never PAPER balances
+// Six additional REAL blockchain holdings. These are never PAPER balances
 // or USD valuations; missing RPC data is shown as unavailable, not zero.
-export const EVM_BALANCE_ASSETS=Object.freeze(['BNB','POL','AVAX','LINK','UNI']);
+export const EVM_BALANCE_ASSETS=Object.freeze(['BNB','POL','AVAX','LINK','UNI','ARB']);
 export const EVM_BALANCE_NETWORKS=Object.freeze({
   BNB:'bsc-mainnet',POL:'polygon-pos-mainnet',
   AVAX:'avalanche-c-mainnet',LINK:'ethereum-mainnet',UNI:'ethereum-mainnet',
+  ARB:'arbitrum-one-mainnet',
 });
-export const EVM_BALANCE_CHAIN_IDS=Object.freeze({BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1});
+export const EVM_BALANCE_CHAIN_IDS=Object.freeze({BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,ARB:42161});
 const DECIMAL=/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$/;
 
 export function validateMulticoinBalanceResponse(data){
@@ -22,7 +23,7 @@ export function validateMulticoinBalanceResponse(data){
 
   return EVM_BALANCE_ASSETS.every(asset=>{
     const row=data.assets[asset];
-    const isToken=asset==='LINK'||asset==='UNI';
+    const isToken=asset==='LINK'||asset==='UNI'||asset==='ARB';
     return row&&row.asset===asset&&
       row.network===EVM_BALANCE_NETWORKS[asset]&&
       // Accept the previous API during rolling deployment, but reject conflicting metadata.

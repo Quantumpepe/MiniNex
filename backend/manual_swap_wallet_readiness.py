@@ -19,7 +19,6 @@ _BASE58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _TRON = re.compile(r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
 _XRP = re.compile(r"^r[A-Za-z0-9]{24,34}$")
 _DOGE = re.compile(r"^D[1-9A-HJ-NP-Za-km-z]{25,34}$")
-_ADA = re.compile(r"^addr1[02-9ac-hj-np-z]{50,140}$")
 
 # Chain-type matching is exact. EVM chains intentionally reuse the SAME
 # Ethereum wallet address, but still require independent chain permissions.
@@ -33,7 +32,7 @@ _CHAIN_RECORDS = {
     "xrpl-mainnet": ("xrpl", _XRP),
     "tron-mainnet": ("tron", _TRON),
     "dogecoin-mainnet": ("dogecoin", _DOGE),
-    "cardano-mainnet": ("cardano", _ADA),
+    "arbitrum-one-mainnet": ("ethereum", _EVM),
 }
 _RECORD_STATES = frozenset({"PRESENT", "MISSING", "AMBIGUOUS", "INVALID_FORMAT"})
 
@@ -83,7 +82,7 @@ def inspect_manual_swap_wallet_records(user: object, did: str,
         "destination": {"asset": target, "network": dst["network"],
                         "record_status": right},
         "route_class": route["route_class"],
-        "ada_in_progress": source == "ADA" or target == "ADA",
+
         "linked_wallet_records_checked": True,
         # An address in Privy's user metadata is NOT evidence of spendability.
         "ownership_proof_verified": False,

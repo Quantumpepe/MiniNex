@@ -37,7 +37,7 @@ def test_source_destination_are_independent_and_never_return_addresses():
         ("BNB", "AVAX", "PRESENT", "PRESENT"),
         ("SOL", "BTC", "PRESENT", "PRESENT"),
         ("SOL", "TRX", "PRESENT", "MISSING"),
-        ("UNI", "ADA", "PRESENT", "MISSING"),
+        ("UNI", "ARB", "PRESENT", "PRESENT"),
     ):
         result = readiness.inspect_manual_swap_wallet_records(
             account, DID, from_asset, to_asset)
@@ -45,7 +45,7 @@ def test_source_destination_are_independent_and_never_return_addresses():
         assert result["destination"]["record_status"] == target_status
         assert result["source"]["asset"] == from_asset
         assert result["destination"]["asset"] == to_asset
-        assert result["ada_in_progress"] is (from_asset == "ADA" or to_asset == "ADA")
+        assert "ada_in_progress" not in result
         assert result["ownership_proof_verified"] is False
         assert result["native_signer_verified"] is False
         assert result["network_fees_verified"] is False

@@ -1,6 +1,6 @@
 // Exact, chain-specific wallet send rules. No remote calls or signing here.
 // A listed asset is NOT automatically an enabled sender: native UTXO,
-// Solana, TRON, XRPL and Arbitrum still need independently supported signers.
+// Solana, TRON and XRPL still need independently supported signers.
 const EVM_ADDRESS=/^0x[0-9a-fA-F]{40}$/;
 const MAX_UINT256=(1n<<256n)-1n;
 const ALL=Object.freeze([
@@ -11,7 +11,8 @@ const EVM=Object.freeze({
   BNB: Object.freeze({chainId:56,decimals:18,feeSymbol:'BNB',kind:'native'}),
   POL: Object.freeze({chainId:137,decimals:18,feeSymbol:'POL',kind:'native'}),
   AVAX:Object.freeze({chainId:43114,decimals:18,feeSymbol:'AVAX',kind:'native'}),
-  ARB: Object.freeze({chainId:42161,decimals:18,feeSymbol:'ETH',kind:'native'}),
+  ARB: Object.freeze({chainId:42161,decimals:18,feeSymbol:'ETH',kind:'erc20',
+    contract:'0x912ce59144191c1204e64559fe8253a0e49e6548'}),
   LINK:Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'erc20',
     contract:'0x514910771af9ca656af840dff83e8264ecf986ca'}),
   UNI:Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'erc20',

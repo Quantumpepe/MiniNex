@@ -10,6 +10,8 @@ test('twelve coins preserve approved compact 4x3 layout order',()=>{
   assert.equal(coinBySymbol('POL').network,'polygon-pos-mainnet');
   assert.equal(coinBySymbol('DOGE').network,'dogecoin-mainnet');
   assert.equal(coinBySymbol('ARB').network,'arbitrum-one-mainnet');
+  assert.equal(coinBySymbol('ARB').token,true);
+  assert.equal(coinBySymbol('ADA'),null);
   assert.equal(coinBySymbol('LINK').token,true);
   assert.equal(coinBySymbol('UNI').token,true);
   assert.equal(coinBySymbol('USDC'),null);

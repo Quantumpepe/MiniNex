@@ -10,11 +10,12 @@ export function manualSwapQuoteRequest(from, to, amount) {
   const coin = STABLES.has(from) ? to : from;
   const stable = STABLES.has(from) ? from : to;
   const legacy = ['BTC','ETH'].includes(coin) && STABLES.has(stable);
-  // The real provider uses 1e8 precision. Native XRP/TRX/ARB and Ethereum
-  // stables have only 6 decimal places; never round any entered amount.
+  // Quote previews retain exact source precision. ARB is an 18-decimal
+  // ERC-20 on Arbitrum One, not a 6-decimal native network coin.
   const decimals = legacy
     ? (from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6)
-    : (STABLES.has(from) || ['XRP','TRX','ARB'].includes(from) ? 6 : 8);
+    : (from === 'ARB' ? 18 :
+       STABLES.has(from) || ['XRP','TRX'].includes(from) ? 6 : 8);
   if (typeof amount !== 'string' || amount.length > 48 ||
       !RE_AMOUNT.test(amount) || !/^[0-9]+$/.test(amount.replace('.','')) ||
       amount.split('.')[1]?.length > decimals || !Number.isFinite(Number(amount)) ||

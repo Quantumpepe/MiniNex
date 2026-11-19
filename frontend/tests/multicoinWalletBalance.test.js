@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
   from '../src/multicoinBalanceValidation.js';
 
-const network={BNB:'bsc-mainnet',POL:'polygon-pos-mainnet',AVAX:'avalanche-c-mainnet',LINK:'ethereum-mainnet',UNI:'ethereum-mainnet'};
+const network={BNB:'bsc-mainnet',POL:'polygon-pos-mainnet',AVAX:'avalanche-c-mainnet',LINK:'ethereum-mainnet',UNI:'ethereum-mainnet',ARB:'arbitrum-one-mainnet'};
 function fixture(){
   const assets=Object.fromEntries(EVM_BALANCE_ASSETS.map(asset=>[asset,{
     asset,network:network[asset],status:'verified',balance:'1.25',
-    native:!['LINK','UNI'].includes(asset),
+    native:!['LINK','UNI','ARB'].includes(asset),
     wallet_funds_used_for_paper:false,
   }]));
   return {
@@ -17,7 +17,7 @@ function fixture(){
   };
 }
 
-test('five actual EVM balances render per network without merging simulated accounts',()=>{
+test('six actual EVM balances render per network without merging simulated accounts',()=>{
   assert.equal(validateMulticoinBalanceResponse(fixture()),true);
   const x=fixture();
   x.assets.LINK.balance='0';

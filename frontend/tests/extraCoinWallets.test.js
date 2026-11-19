@@ -32,11 +32,12 @@ test('separate verified wallet chains cannot borrow one another\'s address',()=>
   ]},'solana'),null);
 });
 
-test('EVM-compatible BSC Polygon Avalanche use one address on distinct networks only',()=>{
+test('EVM-compatible BSC Polygon Avalanche Arbitrum use one address on distinct networks only',()=>{
   assert(validEvmAddress(evm));
   assert.equal(evmNetworkAddress('bsc-mainnet',evm),evm);
   assert.equal(evmNetworkAddress('polygon-pos-mainnet',evm),evm);
   assert.equal(evmNetworkAddress('avalanche-c-mainnet',evm),evm);
+  assert.equal(evmNetworkAddress('arbitrum-one-mainnet',evm),evm);
   assert.equal(evmNetworkAddress('solana-mainnet',evm),null);
   assert.equal(evmNetworkAddress('ethereum-mainnet',evm),null);
   for(const invalid of [null,'','0x123',sol,trx]) {
@@ -76,7 +77,7 @@ test('each coin panel displays only its own network address or remains unavailab
   for(const symbol of ['BNB','POL','SOL','TRX']) {
     assert.match(walletUI,new RegExp("asset==='"+symbol+"'"));
   }
-  assert.match(walletUI,/\['BNB','POL','AVAX','LINK','UNI'\]\.includes\(asset\)/);
+  assert.match(walletUI,/\['BNB','POL','AVAX','LINK','UNI','ARB'\]\.includes\(asset\)/);
   assert.match(walletUI,/evmNetworkAddress\(chain,address\)/);
   assert.match(walletUI,/extraWallets\.solana/);
   assert.match(walletUI,/extraWallets\.tron/);

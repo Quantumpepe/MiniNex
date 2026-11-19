@@ -29,7 +29,7 @@ def headers(monkeypatch):
 
 
 def test_exact_coin_order_native_networks_and_immutable_registry():
-    assert reg.ASSET_ORDER == ("BTC","ETH","BNB","SOL","XRP","TRX","POL","AVAX","LINK","DOGE","UNI","ADA")
+    assert reg.ASSET_ORDER == ("BTC","ETH","BNB","SOL","XRP","TRX","POL","AVAX","LINK","DOGE","UNI","ARB")
     assert tuple(row.symbol for row in reg.REGISTRY)==reg.ASSET_ORDER
     assert len(reg.BY_SYMBOL)==len(reg.ASSET_ORDER)==12
     expected={
@@ -39,7 +39,7 @@ def test_exact_coin_order_native_networks_and_immutable_registry():
         "POL":("polygon-pos-mainnet","evm",137),
         "SOL":("solana-mainnet","solana",None),
         "XRP":("xrpl-mainnet","xrpl",None),
-        "ADA":("cardano-mainnet","cardano-eutxo",None),
+        "ARB":("arbitrum-one-mainnet","evm-erc20",42161),
         "TRX":("tron-mainnet","tron",None),
         "AVAX":("avalanche-c-mainnet","evm",43114),
         "LINK":("ethereum-mainnet","evm-erc20",1),
@@ -63,8 +63,9 @@ def test_stablecoin_network_issuer_edges_do_not_get_mislabeled():
     assert "USDC" in coins["ETH"].stablecoin_candidates
     assert "USDT" in coins["ETH"].stablecoin_candidates
     assert coins["XRP"].stablecoin_candidates==("USDC",)
-    assert coins["ADA"].stablecoin_candidates==("USDCx",)
-    assert "USDCx" != "USDC"
+    assert coins["ARB"].stablecoin_candidates==("USDC","USDT")
+    assert coins["ARB"].chain_id==42161
+    assert coins["ARB"].execution_family=="evm-erc20"
     assert coins["TRX"].stablecoin_candidates==("USDT",)
     assert "USDC" not in coins["TRX"].stablecoin_candidates
     assert coins["BNB"].chain_id==56
@@ -164,8 +165,8 @@ def test_all_twelve_coin_manual_swap_route_pairs_classified_without_execution():
                 assert row["quote_asset"] == "MULTICHAIN"
                 assert row["quote_endpoint"] == "/api/wallet/swap/live-quote"
     # ERC-20 USDC/USDT currently refer to ETH holdings, not native TRON,
-    # XRPL, Bitcoin, Polygon, BSC or Cardano stablecoin balances.
-    for symbol in ("TRX", "XRP", "BTC", "DOGE", "ADA", "BNB", "POL", "AVAX", "SOL"):
+    # XRPL, Bitcoin, Polygon, BSC or Arbitrum stablecoin balances.
+    for symbol in ("TRX", "XRP", "BTC", "DOGE", "ARB", "BNB", "POL", "AVAX", "SOL"):
         for stable in STABLE_ASSETS:
             route = build_manual_swap_route(symbol, stable)
             assert route["route_class"] == "CROSS_CHAIN"
@@ -176,7 +177,7 @@ def test_all_twelve_coin_manual_swap_route_pairs_classified_without_execution():
         route = build_manual_swap_route(left, right)
         assert route["route_class"] == "SAME_CHAIN"
         assert route["source"]["network"] == route["destination"]["network"]
-    for a, b in (("DOGE", "ETH"), ("BTC", "SOL"), ("ADA", "POL"),
+    for a, b in (("DOGE", "ETH"), ("BTC", "SOL"), ("ARB", "POL"),
                  ("XRP", "TRX")):
         route = build_manual_swap_route(a, b)
         assert route["route_class"] == "CROSS_CHAIN"
