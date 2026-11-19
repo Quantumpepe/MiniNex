@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal,InvalidOperation
 import logging
+from threading import Lock
 
 import httpx
 import psycopg
@@ -26,23 +27,36 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.native_evm_sell_reconcile")
 _NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE_SELL_RECEIPT_PAGE_LOCK=Lock()
+_NATIVE_SELL_RECEIPT_PAGE_OFFSET=0
 
 
 def pending_native_sell_deposits(limit:int=20)->list[dict]:
     """Only already submitted original hashes; never retry an ambiguous POST."""
     if type(limit) is not int or not 1<=limit<=100:
         raise ValueError("Invalid native EVM SELL scan size")
+    global _NATIVE_SELL_RECEIPT_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,asset,intent_key,chain_id,tx_hash
+    query="""SELECT privy_did,asset,intent_key,chain_id,tx_hash
                    FROM mininex_live_evm_native_sell_intents
                    WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
                      AND asset IN ('BNB','POL','AVAX')
-                   ORDER BY created_at ASC LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY created_at ASC,privy_did,asset,intent_key LIMIT %s OFFSET %s"""
+    # Unfinalized original conversions must not starve newer owner receipts;
+    # scanning never authorizes or retries a wallet transaction.
+    with _NATIVE_SELL_RECEIPT_PAGE_LOCK:
+        offset=_NATIVE_SELL_RECEIPT_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(query,(limit,0))
+                    rows=list(cur.fetchall())
+        _NATIVE_SELL_RECEIPT_PAGE_OFFSET=offset+len(rows)
+    return rows
 
 
 def _finalize_native_sell_deposit_locked(
