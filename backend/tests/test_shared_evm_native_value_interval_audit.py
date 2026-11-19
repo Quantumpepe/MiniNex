@@ -176,6 +176,8 @@ def test_owner_native_value_trace_collector_paginates_and_reads_finalized_blocks
             start_balance=10*UNIT
             end_balance=11*UNIT-2*100000*10**9
             result=hex(start_balance if args[1]==hex(109) else end_balance)
+        elif method=="eth_getTransactionCount":
+            result="0x5" if args[1]==hex(109) else "0x7"
         else:raise AssertionError(method)
         return httpx.Response(200,json={
             "jsonrpc":"2.0","id":body["id"],"result":result,
@@ -191,6 +193,8 @@ def test_owner_native_value_trace_collector_paginates_and_reads_finalized_blocks
     assert result["original_gas_balance_conservation"][
         "total_verified_sender_gas_wei"]==str(2*100000*10**9)
     assert result["eligible_to_assess_five_percent_fee"] is False
+    assert result["original_gas_balance_conservation"]["archived_sender_nonce_delta_verified"] is True
+    assert len([m for m,_ in rpc if m=="eth_getTransactionCount"])==2
     assert len([m for m,_ in rpc if m=="trace_filter"])==2
     assert len([m for m,_ in rpc if m=="eth_getBlockByNumber"])==3
     assert all(a[0]["fromBlock"]=="0x6e" for m,a in rpc if m=="trace_filter")
