@@ -134,7 +134,9 @@ async def read_owner_native_value_history_readiness(
             or audit["original_gas_balance_conservation"].get(
                 "observed_interval_native_balance_conserved") is not True
             or audit["original_gas_balance_conservation"].get(
-                "five_percent_hwm_writable") is not False):
+                "five_percent_hwm_writable") is not False
+            or audit["original_gas_balance_conservation"].get(
+                "archived_sender_nonce_delta_verified") is not True):
         raise ValueError("Original complete interval native audit missing")
     return {
         "mode":"OWNER_NATIVE_VALUE_HISTORY_READ_ONLY",
@@ -149,6 +151,7 @@ async def read_owner_native_value_history_readiness(
         "observed_interval_native_balance_conserved":True,
         "observed_interval_wallet_sender_gas_wei":
             audit["original_gas_balance_conservation"]["total_verified_sender_gas_wei"],
+        "all_interval_wallet_sender_nonces_reconciled":True,
         "unaccounted_native_transfers":
             audit["unexpected_native_value_movements"],
         "full_owner_wallet_cost_basis_proven":False,
