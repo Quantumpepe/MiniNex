@@ -48,7 +48,7 @@ def event(asset,kind,pnl=None,cost=1.0):
 
 def test_all_nine_rows_are_separate_and_missing_coins_do_not_fake_profit():
     out=[report.summarize(asset,None,[],{}) for asset in EXTRA_REPLAY_ASSETS]
-    assert len(out)==9 and len(set(r["asset"] for r in out))==9
+    assert len(out)==10 and len(set(r["asset"] for r in out))==10
     assert all(r["status"]=="NOT_STARTED" and r["budget_usd"] is None and
                r["estimated_net_return_pct"] is None and r["trade_count"]==0
                for r in out)
@@ -165,7 +165,7 @@ def test_compact_authenticated_comparison_one_db_round_trip_and_one_market_snaps
     monkeypatch.setattr(report,"_prepare_rows",lambda cur,did:None)
     monkeypatch.setattr(report.psycopg,"connect",lambda *a,**k:db)
     first=report.compare("did:privy:alice",feed)
-    assert len(first["assets"])==9
+    assert len(first["assets"])==10
     assert first["assets"][0]["asset"]=="BNB"
     sol=next(r for r in first["assets"] if r["asset"]=="SOL")
     assert sol["status"]=="ACTIVE" and sol["trade_count"]==3
