@@ -17,7 +17,7 @@ KEY=run.derive_evm_strategy_signal_key(
     strategy_run_id=RUN,signal_event_id=EVENT)
 SHA="a"*64
 ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
-        "LINK":"USDC","UNI":"USDC"}
+        "LINK":"USDC","UNI":"USDC","ARB":"USDC"}
 
 
 def use_mocks(monkeypatch,*,asset="LINK",fail=False):
@@ -76,7 +76,7 @@ async def execute(asset):
             budget_revision=3,client=client)
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_five_coins_quote_once_reserve_then_send_identical_quote(monkeypatch,asset):
     actions=use_mocks(monkeypatch,asset=asset)
     assert asyncio.run(execute(asset))["state"]=="SUBMITTED"
@@ -122,7 +122,7 @@ class Cursor:
         return next(self.rows)
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_never_submitted_order_may_release_just_its_coin_budget(asset):
     cur=Cursor([
         {"privy_did":DID},None,{"state":"CANCELLED"},
@@ -225,7 +225,7 @@ def _prepared_quote(asset,side,stable,amount):
 
 @pytest.mark.parametrize("asset,stable",[
     ("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
-    ("LINK","USDC"),("UNI","USDC"),
+    ("LINK","USDC"),("UNI","USDC"),("ARB","USDC"),
 ])
 @pytest.mark.parametrize("side",["BUY","SELL"])
 def test_real_calldata_determines_budget_usd_not_strategy_guess(asset,stable,side):
