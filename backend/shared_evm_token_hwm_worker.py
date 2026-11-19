@@ -53,7 +53,7 @@ def _read_pending_original_usd_fills(limit:int=40)->list[dict]:
                    LEFT JOIN mininex_evm_immutable_fill_usd_prices n
                      ON n.privy_did=f.privy_did AND n.asset=f.asset
                     AND n.tx_hash=f.tx_hash AND n.quoted_asset='ETH'
-                   WHERE f.asset IN ('LINK','UNI')
+                   WHERE f.asset IN ('LINK','UNI','ARB')
                      AND f.created_at >= now() - INTERVAL '20 hours'
                      AND b.status='FINALIZED_SUCCESS'
                      AND (s.tx_hash IS NULL OR n.tx_hash IS NULL)
@@ -78,7 +78,7 @@ def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
                    LEFT JOIN mininex_evm_fee_events e
                      ON e.privy_did=f.privy_did AND e.asset=f.asset
                     AND e.execution_id=f.intent_key
-                   WHERE f.asset IN ('LINK','UNI')
+                   WHERE f.asset IN ('LINK','UNI','ARB')
                      AND f.side='SELL' AND b.status='FINALIZED_SUCCESS'
                      AND e.execution_id IS NULL
                    GROUP BY f.privy_did,f.asset
