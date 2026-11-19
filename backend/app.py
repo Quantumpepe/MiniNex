@@ -28,6 +28,7 @@ from .wallet_balances import get_wallet_balances
 from .multicoin_evm_balances import get_multicoin_evm_balances
 from .native_coin_balances import get_native_balances
 from .native_trade_receipts import get_owner_native_sender_receipt
+from .native_live_destination_finality import get_private_native_ethereum_destination
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
@@ -514,6 +515,21 @@ async def read_owner_finalized_native_source_receipt(
     result=await get_owner_native_sender_receipt(
         did,asset=asset,transaction_hash=transaction_hash)
     return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/settlement/{asset}/{intent_key}")
+async def read_owner_original_native_settlement(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Independent source+protocol+destination receipt; never a trading grant."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    proof=await get_private_native_ethereum_destination(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(proof,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })

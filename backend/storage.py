@@ -1058,6 +1058,12 @@ SCHEMA = (
             source_proof_sha256 ~ '^[0-9a-f]{64}$'),
         source_finalized_at TIMESTAMPTZ,
         destination_tx_hash TEXT,
+        destination_proof_sha256 TEXT CHECK (
+            destination_proof_sha256 IS NULL OR
+            destination_proof_sha256 ~ '^[0-9a-f]{64}$'),
+        destination_received_atomic NUMERIC(78,0) CHECK (
+            destination_received_atomic > 0),
+        destination_finalized_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY(privy_did,asset,intent_key),
@@ -1072,6 +1078,11 @@ SCHEMA = (
                destination_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
         CHECK (destination_tx_hash IS NULL OR
                status IN ('DESTINATION_FINALIZED','REFUNDED_VERIFIED')),
+        CHECK (status != 'DESTINATION_FINALIZED' OR (
+            destination_tx_hash IS NOT NULL AND
+            destination_proof_sha256 IS NOT NULL AND
+            destination_received_atomic IS NOT NULL AND
+            destination_finalized_at IS NOT NULL)),
         CHECK ((status IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
                            'REFUNDED_VERIFIED') AND
                 source_proof_sha256 IS NOT NULL AND

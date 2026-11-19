@@ -23,6 +23,12 @@ submit transactions or grant anything in Privy.
 - Absolutely no fabricated native transaction, position, payout or fee.
   None of these read-only proofs constitutes a completed THORChain swap.
 - No user budget, coin size, daily turnover or artificial execution caps added.
+- Native SELL payout proof now also independently validates a THORChain-linked
+  finalized Ethereum USDC/USDT Transfer to the original Privy-linked owner,
+  with canonical Ethereum block and exact atomic amount. The authenticated
+  inspection endpoint performs no writes. An internal-only conditional journal
+  finalizer can store proof digest, amount and final block. This does not
+  record realized gain, a 5% fee or a completed native BUY.
 
 ## Remaining required coding for real, automatic native LIVE
 
@@ -40,9 +46,9 @@ submit transactions or grant anything in Privy.
    swap memo or supported memoless method; Solana valid blockhash and chain
    instructions; XRP validated sequence, last ledger, Fee, DestinationTag,
    Memo and account reserve. No alternate external wallets.
-5. Verify both source and destination transactions on their own chains and
-   match THORChain execution/timeout/refund status before posting any position
-   or wallet portfolio PnL. Never equate source finality to swap completion.
+5. Native SELL source + THORChain + canonical Ethereum destination proof is
+   now independently checkable. Finish BUY destination delivery on BTC/SOL/XRP
+   and verified refund flows before posting a real position or wallet PnL. Never equate source finality to swap completion.
 6. Settle actual per-coin FIFO/net costs and user-authorized 5% high-water-mark
    fee ONLY after independently verified successful real round trips.
 7. Validate on explicitly approved mainnet wallets: BTC/SOL/XRP entry, exit,
