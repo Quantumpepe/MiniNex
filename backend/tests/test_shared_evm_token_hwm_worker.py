@@ -109,3 +109,28 @@ def test_original_usd_capture_prioritizes_newest_finalized_arb_token_fill(monkey
     assert "ORDER BY f.created_at DESC" in sql
     assert "n.quoted_asset='ETH'" in sql  # ARB pays native gas in ETH
     assert params==(40,)
+
+
+def test_unresolved_old_erc20_hwm_owner_cannot_starve_other_owners(monkeypatch):
+    """Even if the first owner lacks old prices, later accounts are examined."""
+    owners=[{"privy_did":f"did:privy:test_{i}","asset":"ARB"} for i in range(5)]
+    queries=[]
+    class Page:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,params):
+            assert "e.execution_id IS NULL" in sql
+            assert "ORDER BY MIN(f.created_at)" in sql
+            assert "LIMIT %s OFFSET %s" in sql
+            queries.append(params)
+            self.limit,self.offset=params
+        def fetchall(self):return owners[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(worker,"_OWNER_RECONCILE_PAGE_OFFSET",0)
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda db:None)
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *args,**kwargs:Page())
+    batches=[worker._read_unaccounted_token_sell_owners(limit=2)
+             for _ in range(4)]
+    assert batches==[owners[:2],owners[2:4],owners[4:],owners[:2]]
+    assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
