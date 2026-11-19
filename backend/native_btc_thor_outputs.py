@@ -16,7 +16,6 @@ import hashlib
 import json
 import re
 
-from .blockchain_preview import BTC_RE
 from .manual_swap_live_quotes import THOR_ASSETS
 
 _COINS=frozenset(("USDC","USDT"))
@@ -29,6 +28,7 @@ _P2WPKH_INPUT_VBYTES=69
 _TX_OVERHEAD_VBYTES=12
 _MIN_VAULT_SATS=10000
 _MIN_CHANGE_SATS=294
+_P2WPKH_ADDRESS=re.compile(r"^bc1q[ac-hj-np-z02-9]{38}$")
 
 
 def _parse_sats(value:object)->int:
@@ -105,8 +105,8 @@ def preview_btc_thor_original_outputs(
             or quote.get("from_network")!="bitcoin-mainnet"
             or quote.get("to_network")!="ethereum-mainnet"
             or quote.get("amount")!=amount
-            or type(owner) is not str or not BTC_RE.fullmatch(owner)
-            or type(vault) is not str or not BTC_RE.fullmatch(vault)
+            or type(owner) is not str or not _P2WPKH_ADDRESS.fullmatch(owner)
+            or type(vault) is not str or not _P2WPKH_ADDRESS.fullmatch(vault)
             or owner==vault or type(target) is not str
             or not re.fullmatch(r"0x[0-9a-fA-F]{40}",target)
             or not isinstance(expiry,datetime) or expiry.tzinfo is None

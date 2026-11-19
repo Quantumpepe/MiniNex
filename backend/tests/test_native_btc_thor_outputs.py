@@ -94,7 +94,7 @@ def test_at_80_and_81_bytes_extension_boundary():
     assert len(chunks)==2
     assert bytes.fromhex(chunks[0]["script_pubkey_hex"])==(
         b"\x6a\x4c\x50"+b"M"*79+b"^")
-    assert chunks[1]["script_pubkey_hex"]=="0014"+("4d"+"00"*19)
+    assert chunks[1]["script_pubkey_hex"]=="0014"+("4d"*2+"00"*18)
 
 
 def test_btc_extended_memo_above_protocol_vout_limit_rejected():
