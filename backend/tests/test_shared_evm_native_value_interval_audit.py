@@ -223,3 +223,43 @@ def test_trace_filter_rpc_unavailable_fails_closed_without_hwm():
     with pytest.raises(HTTPException) as e:
         asyncio.run(run())
     assert e.value.status_code==502
+
+
+def test_archive_nonce_exposes_hidden_zero_value_owner_send(monkeypatch):
+    """A complete balance equation must not hide an unreported EOA nonce."""
+    fills,traces=data("BNB")
+    asset="BNB"
+    chain=_pair(asset,"USDT","BUY")["chain_id"]
+    wrapped=_pair(asset,"USDT","SELL")["source_token"].lower()
+    async def collector(*args,**kwargs):
+        return list(traces)
+    monkeypatch.setattr(audit,"_scan_trace_filter",collector)
+    async def rpc(client,url,method,args,reqid):
+        if method=="eth_chainId":return hex(chain)
+        if method=="eth_getBlockByNumber":
+            return {"number":"0xc9"} if args[0]=="finalized" else {
+                "number":args[0],"hash":BLOCK_HASH}
+        if method=="eth_getTransactionReceipt":
+            tx=args[0]
+            return {
+                "transactionHash":tx,"from":OWNER,"to":wrapped,
+                "blockHash":BLOCK_HASH,
+                "blockNumber":hex(111 if tx==BUY_CONV else 189),
+                "transactionIndex":"0x0","status":"0x1",
+                "gasUsed":"0x186a0","effectiveGasPrice":hex(10**9),
+            }
+        if method=="eth_getBalance":
+            return hex(10*UNIT) if args[1]==hex(109) else hex(
+                11*UNIT-2*100000*10**9)
+        if method=="eth_getTransactionCount":
+            # An extra EOA transaction paid gas but was excluded from trace_filter.
+            return "0x5" if args[1]==hex(109) else "0x8"
+        raise AssertionError(method)
+    monkeypatch.setattr(audit,"_receipt_rpc",rpc)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await audit.audit_original_native_value_interval(
+                asset=asset,wallet=OWNER,fills=fills,client=client)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(run())
+    assert err.value.status_code==502
