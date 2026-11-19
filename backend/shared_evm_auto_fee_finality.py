@@ -23,7 +23,7 @@ from .storage import _db_url,_ensure_schema
 
 LOG=logging.getLogger("mininex.evm_auto_fee_finality")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _submitted_automatic_owner_fee_records(limit:int=30)->list[dict]:
