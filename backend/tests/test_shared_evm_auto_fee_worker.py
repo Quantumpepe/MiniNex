@@ -24,6 +24,8 @@ def test_verified_hwm_debt_is_processed_only_once_per_original_execution(monkeyp
          "execution_id":"sig_one123456"},
         {"privy_did":"did:privy:bob123456","asset":"UNI",
          "execution_id":"sig_two123456"},
+        {"privy_did":"did:privy:arb_owner12345","asset":"ARB",
+         "execution_id":"sig_three123456"},
     ]
     monkeypatch.setattr(worker,"_pending_owner_auto_fee_obligations",
                         lambda:original)
@@ -36,8 +38,9 @@ def test_verified_hwm_debt_is_processed_only_once_per_original_execution(monkeyp
         async with httpx.AsyncClient() as client:
             return await worker.run_owner_approved_auto_fee_batch(client=client)
     r=asyncio.run(run())
-    assert r["new_fee_sends"]==2
-    assert len(sent)==2
+    assert r["new_fee_sends"]==3
+    assert len(sent)==3
+    assert {item[1] for item in sent}=={"LINK","UNI","ARB"}
     assert r["need_owner_or_network_reconciliation"]==0
 
 
