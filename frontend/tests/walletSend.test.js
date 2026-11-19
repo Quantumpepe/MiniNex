@@ -28,6 +28,7 @@ test('12 listed coins plus Ethereum USDC/USDT; only proven EVM routes claim a si
   assert.equal(sendAssetSpec('USDT').decimals,6);
   assert.equal(sendAssetSpec('USDC').decimals,6);
   assert.match(sender,/walletSendChainPending/);
+  assert.match(panel,/\['ETH','BNB','POL','AVAX','LINK','UNI','ARB'\]/);
 });
 
 test('send amounts use exact BigInt instead of rounding user money',()=>{
