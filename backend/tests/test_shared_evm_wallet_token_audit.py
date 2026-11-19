@@ -44,7 +44,7 @@ def sample(asset):
     return fills,incoming,outgoing,log
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
 def test_source_complete_wallet_log_audit_matches_exact_fifo(asset):
     fills,inc,out,_=sample(asset)
     report=validate_owner_token_transfer_audit(
