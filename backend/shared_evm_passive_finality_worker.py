@@ -1,4 +1,4 @@
-"""Passive original Router02 EVM finality for all five MiniNex coins.
+"""Passive original Router02 EVM finality for all six additional MiniNex EVM coins.
 
 A successfully submitted real wallet transaction must become a finalized
 durable fill without requiring a new market signal or a user-active session.
@@ -18,7 +18,7 @@ from .shared_evm_order_finality import reconcile_evm_internal_order
 from .storage import _db_url,_ensure_schema
 
 LOG=logging.getLogger("mininex.evm_passive_order_finality")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def original_submitted_evm_orders(limit:int=80)->list[dict]:
@@ -35,7 +35,7 @@ def original_submitted_evm_orders(limit:int=80)->list[dict]:
                    FROM mininex_live_evm_auto_broadcasts
                    WHERE status='SUBMITTED'
                      AND tx_hash IS NOT NULL
-                     AND asset IN ('BNB','POL','AVAX','LINK','UNI')
+                     AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
                    ORDER BY created_at ASC,privy_did,asset LIMIT %s""",
                 (limit,))
             return list(cur.fetchall())
