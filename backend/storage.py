@@ -1054,6 +1054,9 @@ SCHEMA = (
                             'DESTINATION_FINALIZED','REFUNDED_VERIFIED',
                             'CANCELLED')),
         source_tx_hash TEXT,
+        source_proof_sha256 TEXT CHECK (source_proof_sha256 IS NULL OR
+            source_proof_sha256 ~ '^[0-9a-f]{64}$'),
+        source_finalized_at TIMESTAMPTZ,
         destination_tx_hash TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1068,7 +1071,13 @@ SCHEMA = (
         CHECK (destination_tx_hash IS NULL OR
                destination_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
         CHECK (destination_tx_hash IS NULL OR
-               status IN ('DESTINATION_FINALIZED','REFUNDED_VERIFIED'))
+               status IN ('DESTINATION_FINALIZED','REFUNDED_VERIFIED')),
+        CHECK ((status IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
+                           'REFUNDED_VERIFIED') AND
+                source_proof_sha256 IS NOT NULL AND
+                source_finalized_at IS NOT NULL)
+             OR status NOT IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
+                                'REFUNDED_VERIFIED'))
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_native_pending_owner_scan
        ON mininex_live_native_order_intents
