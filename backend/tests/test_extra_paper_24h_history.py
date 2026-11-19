@@ -43,7 +43,7 @@ def test_one_public_15m_series_covers_the_24h_mode_without_fake_candles():
     assert any(NOW-p["timestamp"]<=60 for p in history)
     assert svc._long_historical["SOL"][-1]["timestamp"]<NOW
     assert svc.snapshot(now=NOW)["SOL"]["trading_enabled"] is False
-    assert "ADA" not in svc._long_historical
+    assert "ARB" in svc._long_historical and "ADA" not in svc._long_historical
     coverage=_history_coverage("SOL","24h",svc)
     assert coverage["status"]=="READY"
     assert coverage["complete"] is True
@@ -112,7 +112,7 @@ def test_invalid_long_candles_do_not_replace_last_valid_history():
         svc.ingest_long_candles("BTC",original,now=NOW)
     with pytest.raises(ValueError):
         svc.ingest_long_candles("SOL",original[:7],now=NOW)
-    assert len(EXTRA_REPLAY_ASSETS)==9
+    assert len(EXTRA_REPLAY_ASSETS)==10
 
 
 def test_stale_long_candles_age_out_and_never_pretend_live_price_is_valid():
@@ -129,7 +129,7 @@ def test_stale_long_candles_age_out_and_never_pretend_live_price_is_valid():
     assert _history_coverage("AVAX","24h",svc)["status"]=="INSUFFICIENT"
 
 
-def test_paper_fetch_does_not_query_ada_15m_or_authorize_wallet(monkeypatch):
+def test_arb_receives_public_15m_history_without_wallet_authorization(monkeypatch):
     calls=[]
     class FakeResponse:
         def __init__(self,data):self.data=data
@@ -153,8 +153,8 @@ def test_paper_fetch_does_not_query_ada_15m_or_authorize_wallet(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(svc._history_loop())
     assert len(calls)==len(EXTRA_ASSETS)+len(EXTRA_REPLAY_ASSETS)
-    assert ("ADAUSDT","1m",90) in calls
-    assert not any(symbol=="ADAUSDT" and interval=="15m"
+    assert ("ARBUSDT","1m",90) in calls
+    assert any(symbol=="ARBUSDT" and interval=="15m"
                    for symbol,interval,_ in calls)
     assert {symbol for symbol,interval,_ in calls if interval=="15m"}=={
         asset+"USDT" for asset in EXTRA_REPLAY_ASSETS}
