@@ -2,10 +2,11 @@
 import copy
 from decimal import Decimal
 import pytest
+from fastapi import HTTPException
 
 from backend.shared_evm_fee_transfer_proof import (
     exact_fee_token_units,owner_fee_transfer_draft,
-    verified_owner_fee_transfer,
+    verified_owner_fee_transfer, owner_fee_treasury,
 )
 from backend.shared_evm_swap_receipts import _pair
 
@@ -14,7 +15,7 @@ TREASURY="0x"+"cd"*20
 TX="0x"+"12"*32
 BLOCK="0x"+"34"*32
 TOKENS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
-        "LINK":"USDC","UNI":"USDC"}
+        "LINK":"USDC","UNI":"USDC","ARB":"USDC"}
 TOPIC="0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 
@@ -97,4 +98,57 @@ def test_duplicate_matching_fee_transfer_logs_are_rejected():
     with pytest.raises(ValueError):
         verified_owner_fee_transfer(
             draft=draft,tx_hash=TX,transaction=tx,receipt=receipt,
+            finalized_block=finalized,mined_block=block)
+
+
+@pytest.mark.parametrize("stable,contract",[
+    ("USDC","0xaf88d065e77c8cC2239327C5EDb3A432268e5831"),
+    ("USDT","0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"),
+])
+def test_arb_fee_draft_uses_42161_stable_contract_not_eth_mainnet(stable,contract):
+    draft=owner_fee_transfer_draft(
+        asset="ARB",stable=stable,wallet=WALLET,treasury=TREASURY,
+        fee_due_usd="1.25",stable_usd="0.999")
+    assert draft["chain_id"]==42161
+    assert draft["network"]=="arbitrum-one-mainnet"
+    assert draft["token_address"]==contract.lower()
+    assert draft["decimals"]==6
+    assert draft["unsigned_transaction"]["chainId"]==42161
+    assert draft["unsigned_transaction"]["to"].lower()==contract.lower()
+    assert draft["requires_owner_privy_signature"] is True
+    assert draft["wallet_signed"] is False
+    assert draft["backend_can_autosend"] is False
+
+
+def test_arb_treasury_requires_separate_arbitrum_env_without_falling_back(monkeypatch):
+    monkeypatch.setenv("MININEX_TREASURY_WALLET",WALLET)
+    monkeypatch.delenv("MININEX_TREASURY_ARB_WALLET",raising=False)
+    with pytest.raises(HTTPException) as err:
+        owner_fee_treasury(asset="ARB",stable="USDC")
+    assert err.value.status_code==503
+    monkeypatch.setenv("MININEX_TREASURY_ARB_WALLET",TREASURY)
+    assert owner_fee_treasury(asset="ARB",stable="USDC")==TREASURY
+    assert owner_fee_treasury(asset="ARB",stable="USDT")==TREASURY
+    monkeypatch.setenv("MININEX_TREASURY_ARB_WALLET","not_an_address")
+    with pytest.raises(HTTPException) as err:
+        owner_fee_treasury(asset="ARB",stable="USDC")
+    assert err.value.status_code==503
+
+
+def test_arb_wrong_chain_or_wrong_token_payment_never_claims_success():
+    draft,tx,receipt,block,finalized=evidence("ARB")
+    assert verified_owner_fee_transfer(
+        draft=draft,tx_hash=TX,transaction=tx,receipt=receipt,
+        finalized_block=finalized,mined_block=block)["onchain_finalized"]
+    wrong=copy.deepcopy(tx)
+    wrong["to"]="0x"+"99"*20
+    with pytest.raises(ValueError):
+        verified_owner_fee_transfer(
+            draft=draft,tx_hash=TX,transaction=wrong,receipt=receipt,
+            finalized_block=finalized,mined_block=block)
+    wrong_receipt=copy.deepcopy(receipt)
+    wrong_receipt["logs"][0]["address"]="0x"+"88"*20
+    with pytest.raises(ValueError):
+        verified_owner_fee_transfer(
+            draft=draft,tx_hash=TX,transaction=tx,receipt=wrong_receipt,
             finalized_block=finalized,mined_block=block)
