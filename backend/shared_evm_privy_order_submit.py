@@ -40,7 +40,7 @@ from .shared_evm_privy_transport import (
 from .shared_evm_privy_signer import sign_privy_evm_swap_request
 
 LOG=logging.getLogger("mininex.evm_privy_order_submit")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB","ARB"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _fingerprint_prepared_quote(prepared:dict)->str:
