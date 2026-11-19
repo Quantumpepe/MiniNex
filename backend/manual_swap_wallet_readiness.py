@@ -19,7 +19,6 @@ _BASE58 = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _TRON = re.compile(r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
 _XRP = re.compile(r"^r[A-Za-z0-9]{24,34}$")
 _DOGE = re.compile(r"^D[1-9A-HJ-NP-Za-km-z]{25,34}$")
-_ADA = re.compile(r"^addr1[02-9ac-hj-np-z]{50,140}$")
 
 # Chain-type matching is exact. EVM chains intentionally reuse the SAME
 # Ethereum wallet address, but still require independent chain permissions.
