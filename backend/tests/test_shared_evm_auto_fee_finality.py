@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from backend import shared_evm_auto_fee_finality as finality
 from backend.shared_evm_fee_transfer_proof import owner_fee_transfer_draft
+from backend.shared_evm_swap_receipts import _pair
 
 DID="did:privy:owner12345"
 KEY="sig_original_123456789"
@@ -14,17 +15,18 @@ WALLET="0x"+"ab"*20
 TREASURY="0x"+"cd"*20
 
 
-def sample():
+def sample(asset="LINK"):
+    route=_pair(asset,"USDC","BUY")
     draft=owner_fee_transfer_draft(
-        asset="LINK",stable="USDC",
+        asset=asset,stable="USDC",
         wallet=WALLET,treasury=TREASURY,
         fee_due_usd="2.5",stable_usd="1")
     return dict(
-        privy_did=DID,asset="LINK",execution_id=KEY,
-        stable="USDC",chain_id=1,wallet_address=WALLET,
+        privy_did=DID,asset=asset,execution_id=KEY,
+        stable="USDC",chain_id=route["chain_id"],wallet_address=WALLET,
         treasury_wallet=TREASURY,token_address=draft["token_address"],
         amount_atomic=Decimal(draft["amount_atomic"]),tx_hash=TX,
-        payment_asset="LINK",payment_stable="USDC",payment_chain_id=1,
+        payment_asset=asset,payment_stable="USDC",payment_chain_id=route["chain_id"],
         stable_token_address=draft["token_address"],
         owner_wallet=WALLET,payment_treasury_wallet=TREASURY,
         token_amount_atomic=Decimal(draft["amount_atomic"]),
@@ -51,8 +53,10 @@ def pending(row):
         amount_atomic=row["amount_atomic"])
 
 
-def test_exact_persisted_owner_fee_recreates_original_privy_transaction():
-    source=sample()
+@pytest.mark.parametrize("asset", ["LINK", "ARB"])
+def test_exact_persisted_owner_fee_recreates_original_privy_transaction(asset):
+    source=sample(asset)
+    assert source["chain_id"]==_pair(asset,"USDC","BUY")["chain_id"]
     draft=finality.original_auto_fee_draft(source)
     assert draft["owner_wallet"]==WALLET
     assert draft["treasury_wallet"]==TREASURY
@@ -74,8 +78,9 @@ def test_foreign_fee_quote_or_unreconciled_payment_cannot_count(mutation):
         finality.original_auto_fee_draft(source)
 
 
-def test_fee_hwm_payment_and_auto_journal_update_atomically(monkeypatch):
-    source=sample()
+@pytest.mark.parametrize("asset", ["LINK", "ARB"])
+def test_fee_hwm_payment_and_auto_journal_update_atomically(monkeypatch,asset):
+    source=sample(asset)
     calls=[]
     def old_payment(*args,**kw):
         calls.append(("paid",kw))
