@@ -82,7 +82,7 @@ def test_arbitrum_wrong_settlement_and_wrong_network_are_never_signed():
         amount_in=10**6,min_out=10**18,fee=500)
     hash_="0x"+"b"*64
     pending={"hash":hash_,"from":WALLET,"to":ROUTER,
-             "chainId":42161,"value":"0x0",
+             "chainId":"0xa4b1","value":"0x0",
              "input":tx["data"],"blockHash":None,"blockNumber":None}
     proof=inspect_finalized_evm_swap(hash_,asset="ARB",stable="USDC",
         side="BUY",wallet=WALLET,chain_id="0xa4b1",
