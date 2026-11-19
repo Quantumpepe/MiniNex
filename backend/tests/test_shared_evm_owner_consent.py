@@ -17,8 +17,8 @@ OWNED={"address":WALLET,"wallet_id":"wallet_12345678","delegated":False}
 OWNER="owner_123456"
 EXEC="signer_123456"
 SETTLEMENT={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
-            "LINK":"USDC","UNI":"USDT"}
-CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
+            "LINK":"USDC","UNI":"USDT","ARB":"USDC"}
+CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1,"ARB":42161}
 
 
 class Cursor:
@@ -38,7 +38,7 @@ def begin_rows(asset):
     return [settings(asset),None,None,{"status":"PENDING"}]
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_coin_consent_intent_binds_user_wallet_network_budget_and_nonce(asset):
     cur=Cursor(begin_rows(asset))
     report=m._begin_locked(
