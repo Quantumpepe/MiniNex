@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import {validExtraPaperComparison} from './extraPaperComparisonRules.js';
+import {EXTRA_REPLAY_COINS} from './extraReplayRules.js';
 
 // Load only after the user opens the panel. A single private GET replaces
 // nine independent requests; no timers, trading controls or provider calls.
@@ -73,7 +74,7 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
     <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
       disabled={!enabled||!getAccessToken||!userId}
       aria-expanded={expanded} onClick={toggle}>
-      {t.extraCompareTitle} · 9
+      {t.extraCompareTitle} · {EXTRA_REPLAY_COINS.length}
     </button>
     {expanded&&<div className="mininex-paper-compare-body">
       

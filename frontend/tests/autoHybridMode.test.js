@@ -26,7 +26,7 @@ test('applying AUTO once preserves each asset budget and stablecoin',()=>{
       stable:index%2===0?'USDC':'USDT'},
   ]));
   const hybrid=applySharedStrategyToExtra(options,profile());
-  assert.equal(Object.keys(hybrid).length,9);
+  assert.equal(Object.keys(hybrid).length,10);
   for(const asset of EXTRA_REPLAY_COINS){
     assert.equal(hybrid[asset].mode,'AUTO');
     assert.equal(hybrid[asset].horizon,'15m');

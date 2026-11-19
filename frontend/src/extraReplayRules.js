@@ -1,6 +1,6 @@
 // Pure, testable safety/shape contract for on-demand historical paper tests.
 export const EXTRA_REPLAY_COINS=Object.freeze([
-  'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI',
+  'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB',
 ]);
 export const MODES=['LONG','SPOT_SHORT','AUTO'];
 export const HORIZONS=['5m','15m','1h','24h'];
