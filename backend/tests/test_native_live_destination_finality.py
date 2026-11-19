@@ -4,7 +4,7 @@ No private key, mainnet spend, fee assessment or live order in these tests.
 """
 from copy import deepcopy
 import asyncio
-import inspect
+import inspect as python_inspect
 
 import pytest
 from fastapi import HTTPException
@@ -301,4 +301,4 @@ def test_only_authenticated_get_can_inspect_original_native_destination():
 
 
 def inspect_source(func):
-    return inspect.getsource(func)
+    return python_inspect.getsource(func)
