@@ -17,7 +17,7 @@ export const LIVE_NETWORKS=Object.freeze({
   ARB:'arbitrum-one-mainnet',
 });
 const COIN_PRECISION=Object.freeze({
-  BTC:8,ETH:18,BNB:18,SOL:8,XRP:6,TRX:6,POL:18,
+  BTC:8,ETH:18,BNB:18,SOL:9,XRP:6,TRX:6,POL:18,
   AVAX:18,LINK:18,DOGE:8,UNI:18,ARB:18,
 });
 const LIVE_EVM_CHAINS=Object.freeze({
