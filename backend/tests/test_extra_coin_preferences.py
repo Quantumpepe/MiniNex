@@ -1,4 +1,4 @@
-"""Account-persistent nine-coin settings: independent AUTO, budget and stable."""
+"""Account-persistent ten-coin settings: independent AUTO, budget and stable."""
 import time
 
 import jwt
@@ -80,12 +80,13 @@ def signed(monkeypatch):
     return make
 
 
-def test_defaults_for_nine_coins_without_creating_sessions(db):
+def test_defaults_for_ten_coins_without_creating_sessions(db):
     value = cp.get_coin_preferences(DID)
     assert value["assets"] == list(cp.COINS)
-    assert len(value["settings"]) == 9
+    assert len(value["settings"]) == 10
     assert all(row == cp.DEFAULT for row in value["settings"].values())
     assert "ADA" not in value["settings"]
+    assert "ARB" in value["settings"]
     assert value["live_trading_enabled"] is False
     assert value["wallet_authorized"] is False
     assert not any("paper_sessions" in sql for sql, _ in db.queries)
