@@ -12,7 +12,7 @@ DID="did:privy:owner"
 WALLET="0x"+"ab"*20
 SHA="a"*64
 NOW=datetime.now(timezone.utc)
-CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
+CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1,"ARB":42161}
 
 
 class Cursor:
@@ -42,7 +42,7 @@ def rows(asset):
     ]
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset):
     cur=Cursor(rows(asset))
     result=m._start_locked(cur,did=DID,asset=asset)
