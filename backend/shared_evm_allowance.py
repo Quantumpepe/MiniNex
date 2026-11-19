@@ -69,6 +69,8 @@ async def check_evm_source_allowance(
     router=pair["router"]
     if asset in _RPC:
         chain,network,fallback,env=_RPC[asset]
+    elif asset=="ARB":
+        chain,network,fallback,env=_RPC["ARB_TOKENS"]
     else:
         chain,network,fallback,env=_RPC["ETH_TOKENS"]
     if (chain!=pair["chain_id"] or network!=pair["network"]):
