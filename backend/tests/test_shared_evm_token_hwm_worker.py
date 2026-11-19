@@ -59,3 +59,29 @@ def test_worker_is_wired_into_existing_evm_cycle_without_privy_fee_signer():
     source=inspect.getsource(shared_evm_live_worker.SharedEvmLiveWorker)
     assert "reconcile_verified_erc20_fees_once(client=client)" in source
     assert "submit_owner_treasury_payment" not in source
+
+
+def test_arb_uses_the_same_verified_hwm_worker_without_fee_send(monkeypatch):
+    """ARB is an ERC20 settlement, not a native wrap/unwrap fee shortcut."""
+    events=[]
+    monkeypatch.setattr(worker,"_read_pending_original_usd_fills",lambda:[
+        {"did":"did:privy:arb_owner","fill":{"asset":"ARB","tx_hash":"0x"+"cd"*32}},
+    ])
+    monkeypatch.setattr(worker,"_read_unaccounted_token_sell_owners",lambda:[
+        {"privy_did":"did:privy:arb_owner","asset":"ARB"}])
+    async def priced(**kwargs):
+        events.append(("rate",kwargs["row"]["asset"]))
+        assert kwargs["durable_rates"] is True
+        return {"historic_usd_priced":True}
+    async def account(**kwargs):
+        events.append(("fifo",kwargs["asset"]))
+        return {"mode":"HWM_ACCOUNTED_VERIFIED_ERC20_SELLS"}
+    monkeypatch.setattr(worker,"independently_price_stored_evm_fill",priced)
+    monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",account)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await worker.reconcile_verified_erc20_fees_once(client=client)
+    result=asyncio.run(run())
+    assert events==[("rate","ARB"),("fifo","ARB")]
+    assert result["token_accounts_reconciled"]==1
+    assert result["wallet_transactions_sent"]==0
