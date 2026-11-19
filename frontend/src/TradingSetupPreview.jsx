@@ -80,7 +80,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
     return()=>{active=false;};
   },[enabled,getAccessToken]);
 
-  // All nine additional coins persist independently, as BTC and ETH do.
+  // All ten additional coins persist independently, including ARB.
   useEffect(()=>{
     let active=true;
     setSavedExtra(null);
@@ -248,7 +248,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : paperAvailable ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
-        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]}
+        t={t} getAccessToken={getAccessToken} options={replayOptions[opened]||defaultReplayOption()}
         onChange={changeReplay} onSavePreference={saveExtra}
         preferenceStatus={extraSettingsStatus}
         preferenceSaved={savedExtra?.[opened]||null}

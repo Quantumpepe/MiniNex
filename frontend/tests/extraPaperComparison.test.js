@@ -46,14 +46,14 @@ const base={
   assets:rows,
 };
 
-test('comparison is exactly the nine approved coins, not BTC, ETH or ARB',()=>{
-  assert.equal(rows.length,9);
+test('comparison is exactly ten additional coins including ARB, not BTC or ETH',()=>{
+  assert.equal(rows.length,10);
   assert.deepEqual(rows.map(r=>r.asset),[
-    'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
+    'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB']);
   assert.equal(validExtraPaperComparison(base),true);
-  assert.equal(validExtraPaperComparison({...base,assets:rows.slice(0,8)}),false);
+  assert.equal(validExtraPaperComparison({...base,assets:rows.slice(0,9)}),false);
   assert.equal(validExtraPaperComparison({
-    ...base,assets:[...rows.slice(0,8),defaultRow('ARB')],
+    ...base,assets:[...rows.slice(0,9),defaultRow('ADA')],
   }),false);
   assert.equal(validExtraPaperComparison({
     ...base,assets:[...rows.slice(1),rows[0]],
