@@ -52,6 +52,7 @@ def audit(asset):
             "wallet_address":OWNER,
             "observed_interval_native_balance_conserved":True,
             "total_verified_sender_gas_wei":"200000000000000",
+            "archived_sender_nonce_delta_verified":True,
             "five_percent_hwm_writable":False,
         },
     }
@@ -91,6 +92,7 @@ def test_native_history_reads_full_original_wallet_and_stays_fee_blocked(
     assert result["original_finalized_fill_count"]==2
     assert result["all_original_conversion_trace_calls_verified"] is True
     assert result["external_value_free_within_observed_interval"] is True
+    assert result["all_interval_wallet_sender_nonces_reconciled"] is True
     assert result["fee_assessment_eligible"] is False
     assert result["full_owner_wallet_cost_basis_proven"] is False
     assert result["fee_transferred"] is False
@@ -165,6 +167,8 @@ def test_original_native_unverified_history_fails_before_wallet_audit(
         observed_interval_native_balance_conserved=False),
     lambda a:a["original_gas_balance_conservation"].update(
         five_percent_hwm_writable=True),
+    lambda a:a["original_gas_balance_conservation"].update(
+        archived_sender_nonce_delta_verified=False),
 ])
 def test_native_readiness_never_accepts_fee_eligible_or_fake_interval(
     monkeypatch,tamper,
