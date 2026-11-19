@@ -262,3 +262,46 @@ def test_historical_usd_original_trade_proof_is_immutable_on_real_postgres():
             value=cur.fetchone()
             assert str(value[0])=="1.000000000000000001"
             assert value[1:]==(block_hash,1800000)
+
+
+@pytest.mark.skipif(not _ci_dsn(),reason="Only ephemeral CI PostgreSQL may run")
+def test_legacy_twelve_coin_schema_migration_persists_real_arb_preferences():
+    """An already-created 9-extra-coin database must accept ARB after upgrade.
+
+    Real network permissions or onchain trades are never used.
+    """
+    did="did:privy:arb_migration_"+uuid.uuid4().hex
+    with psycopg.connect(_ci_dsn(),connect_timeout=6) as conn:
+        with conn.cursor() as cur:
+            # Schema statements are designed to be safely repeated on startup.
+            for sql in SCHEMA:
+                cur.execute(sql)
+            cur.execute("INSERT INTO mininex_accounts(privy_did) VALUES (%s)",(did,))
+            cur.execute(
+                """INSERT INTO mininex_extra_coin_preferences
+                   (privy_did,asset,budget_usd,mode,stable,horizon)
+                   VALUES (%s,'ARB',12500,'AUTO','USDC','1h')""",(did,))
+            cur.execute(
+                """INSERT INTO mininex_extra_paper_sessions
+                   (privy_did,asset,settlement,strategy_mode,horizon,initial_demo_cash)
+                   VALUES (%s,'ARB','USDC','LONG','1h',12500)""",(did,))
+            cur.execute(
+                """SELECT budget_usd,mode FROM mininex_extra_coin_preferences
+                   WHERE privy_did=%s AND asset='ARB'""",(did,))
+            assert cur.fetchone()==(12500,"AUTO")
+            cur.execute(
+                """SELECT initial_demo_cash FROM mininex_extra_paper_sessions
+                   WHERE privy_did=%s AND asset='ARB'""",(did,))
+            assert cur.fetchone()[0]==12500
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with conn.transaction():
+                    cur.execute(
+                        """INSERT INTO mininex_extra_coin_preferences
+                           (privy_did,asset) VALUES (%s,'ADA')""",(did,))
+            # Existing ARB records survive a second migration pass unchanged.
+            for sql in SCHEMA:
+                cur.execute(sql)
+            cur.execute(
+                """SELECT COUNT(*) FROM mininex_extra_coin_preferences
+                   WHERE privy_did=%s AND asset='ARB'""",(did,))
+            assert cur.fetchone()[0]==1
