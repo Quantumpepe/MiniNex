@@ -222,3 +222,27 @@ def test_original_refund_cannot_be_recast_as_native_sell_success():
     with pytest.raises(HTTPException):
         m._persist_original_native_sell_refund_locked(
             Cursor([]),original=original_row,verified=proof)
+
+def test_original_sell_refund_endpoint_is_authenticated_get_only(monkeypatch):
+    import inspect
+    from fastapi.testclient import TestClient
+    from backend import app as api
+    observed=[]
+    async def report(did,*,asset,intent_key):
+        observed.append((did,asset,intent_key))
+        return {"mode":"ORIGINAL_NATIVE_SELL_REFUND_CHAIN_FINALITY",
+                "refund_independently_finalized":True,"fee_assessed":False}
+    monkeypatch.setattr(api,"get_private_original_native_sell_refund",report)
+    monkeypatch.setattr(api,"verify_privy_bearer",
+                        lambda authorization:{"user_id":DID} if authorization=="Bearer good" else (_ for _ in ()).throw(HTTPException(401,"Invalid login")))
+    path="/api/live/native/sell-refund/BTC/native_"+"a"*64
+    client=TestClient(api.app)
+    assert client.get(path).status_code==401
+    assert client.post(path,headers={"Authorization":"Bearer good"}).status_code==405
+    response=client.get(path,headers={"Authorization":"Bearer good"})
+    assert response.status_code==200
+    assert response.headers["cache-control"]=="private, no-store"
+    assert observed==[(DID,"BTC","native_"+"a"*64)]
+    endpoint=next(route for route in api.app.routes
+                  if route.path=="/api/live/native/sell-refund/{asset}/{intent_key}")
+    assert "verify_privy_bearer" in inspect.getsource(endpoint.endpoint)

@@ -30,6 +30,7 @@ from .native_coin_balances import get_native_balances
 from .native_trade_receipts import get_owner_native_sender_receipt
 from .native_live_destination_finality import get_private_native_ethereum_destination
 from .native_live_buy_destination import get_private_original_native_buy_destination
+from .native_live_sell_refund import get_private_original_native_sell_refund
 from .native_live_eth_buy_source import get_original_eth_buy_source
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
@@ -560,6 +561,21 @@ async def read_owner_original_native_buy_settlement(
     """Owner-only destination-chain BUY readback; never a signing endpoint."""
     did=verify_privy_bearer(authorization)["user_id"]
     proof=await get_private_original_native_buy_destination(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(proof,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/sell-refund/{asset}/{intent_key}")
+async def read_owner_original_native_sell_refund(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Original chain refund readback; never a swap-fill or fee record."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    proof=await get_private_original_native_sell_refund(
         did,asset=asset,intent_key=intent_key)
     return JSONResponse(proof,headers={
         "Cache-Control":"private, no-store",
