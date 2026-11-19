@@ -288,8 +288,11 @@ class SharedEvmLiveWorker:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                # A failed ACTIVE-session query must not strand transactions
+                # already sent by Privy. Receipt finality and HWM readbacks
+                # operate independently of the current trading session.
                 LOG.exception("LIVE EVM owner-session scan unavailable")
-                continue
+                sessions=[]
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
                 try:
