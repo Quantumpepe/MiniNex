@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 from .storage import _db_url,_ensure_schema,_safe_did
 from .native_live_order_journal import _valid_source_hash
 from .native_thor_swap_quote import _exact_owner_wallets
+from .native_live_eth_buy_source import get_original_eth_buy_source
 from .privy_wallet_verification import fetch_privy_user
 from .native_trade_receipts import get_owner_native_sender_receipt
 from .live_btc_receipts import check_native_btc_transaction
@@ -144,6 +145,19 @@ def _persist_source_finality_locked(
     cur,*,original:dict,verified:dict,
 )->str:
     """One linearized transition; original chain hash never changes."""
+    side=original.get("side") if type(original) is dict else None
+    asset=original.get("asset") if type(original) is dict else None
+    if side not in ("SELL","BUY") or asset not in _CHAIN:
+        raise HTTPException(409,"Wrong original native source side")
+    if side=="BUY" and (
+            type(verified) is not dict
+            or verified.get("mode")!="OWNER_ORIGINAL_ETH_BUY_SOURCE_FINALITY"
+            or verified.get("side")!="BUY"
+            or verified.get("trusted_thorchain_deposit_verified") is not True
+            or verified.get("destination_wallet")!=original.get("destination_wallet")
+            or verified.get("source_stable")!=original.get("stable")
+            or verified.get("source_stable_atomic") is None):
+        raise HTTPException(409,"Original ETH BUY source not verified")
     if (type(original) is not dict or type(verified) is not dict
             or verified.get("source_chain_finalized") is not True
             or verified.get("destination_settlement_finalized") is not False
@@ -171,8 +185,8 @@ def _persist_source_finality_locked(
            FOR UPDATE""",(did,asset,key))
     row=cur.fetchone()
     if (type(row) is not dict or row.get("status")!="SUBMITTED"
-            or row.get("side")!="SELL"
-            or row.get("chain")!=_CHAIN.get(asset)
+            or row.get("side")!=side
+            or row.get("chain")!=("ethereum-mainnet" if side=="BUY" else _CHAIN.get(asset))
             or row.get("source_wallet")!=original.get("source_wallet")
             or row.get("source_tx_hash")!=original.get("source_tx_hash")
             or row.get("payload_sha256")!=original.get("payload_sha256")
@@ -231,4 +245,65 @@ async def reconcile_original_native_source_once(limit:int=32)->dict:
         "destination_settlements_confirmed":0,
         "realized_profit_assessed":False,
         "fees_paid":False,"new_transactions_sent":0,
+    }
+
+
+# Separate BUY readback work scan; does not change legacy SELL pagination.
+_ETH_BUY_PAGE_OFFSET=0
+
+
+def _pending_original_eth_buy_submissions(limit:int=32)->list[dict]:
+    global _ETH_BUY_PAGE_OFFSET
+    if type(limit) is not int or not 0<limit<=256:
+        raise ValueError("Invalid native BUY work page")
+    db=_db_url()
+    _ensure_schema(db)
+    query="""SELECT privy_did,asset,intent_key,payload_sha256,
+                    side,stable,chain,input_amount,source_wallet,
+                    destination_wallet,source_tx_hash,status
+             FROM mininex_live_native_order_intents
+             WHERE status='SUBMITTED' AND side='BUY'
+               AND asset IN ('BTC','SOL','XRP')
+               AND source_tx_hash IS NOT NULL
+             ORDER BY created_at ASC,privy_did,asset,intent_key
+             LIMIT %s OFFSET %s"""
+    with _FINALITY_PAGE_LOCK:
+        offset=_ETH_BUY_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(query,(limit,0))
+                    rows=list(cur.fetchall())
+        _ETH_BUY_PAGE_OFFSET=offset+len(rows)
+    return rows
+
+
+async def reconcile_original_eth_buy_sources_once(limit:int=32)->dict:
+    """Passive original ETH-to-native BUY receipts. No send, fee or retry."""
+    rows=_pending_original_eth_buy_submissions(limit)
+    verified_count=unverified=0
+    for original in rows:
+        try:
+            did=_safe_did(original["privy_did"])
+            proof=await get_original_eth_buy_source(
+                did,asset=original["asset"],intent_key=original["intent_key"])
+            db=_db_url()
+            _ensure_schema(db)
+            with psycopg.connect(db,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    _persist_source_finality_locked(
+                        cur,original=original,verified=proof)
+            verified_count+=1
+        except (HTTPException,ValueError,TypeError,KeyError,psycopg.Error):
+            unverified+=1
+    return {
+        "mode":"NATIVE_ETH_BUY_SOURCE_READ_ONLY_RECONCILIATION",
+        "scanned":len(rows),"verified_eth_source":verified_count,
+        "unverified_or_unavailable":unverified,
+        "destination_settlements_confirmed":0,
+        "realized_profit_assessed":False,"fees_paid":False,
+        "new_transactions_sent":0,
     }

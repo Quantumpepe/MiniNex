@@ -30,6 +30,7 @@ from .native_coin_balances import get_native_balances
 from .native_trade_receipts import get_owner_native_sender_receipt
 from .native_live_destination_finality import get_private_native_ethereum_destination
 from .native_live_buy_destination import get_private_original_native_buy_destination
+from .native_live_eth_buy_source import get_original_eth_buy_source
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
@@ -531,6 +532,21 @@ async def read_owner_original_native_settlement(
     proof=await get_private_native_ethereum_destination(
         did,asset=asset,intent_key=intent_key)
     return JSONResponse(proof,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/buy-source/{asset}/{intent_key}")
+async def read_owner_original_native_eth_buy_source(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only proof of original Ethereum THORChain stablecoin funding."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await get_original_eth_buy_source(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(report,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
