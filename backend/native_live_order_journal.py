@@ -213,13 +213,22 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
     if cur.fetchone()!={"privy_did":did}:
         raise HTTPException(409,"Native owner not durably verified")
     cur.execute(
-        """SELECT chain,source_wallet,quote_expires_at,status,payload_sha256
+        """SELECT chain,source_wallet,quote_expires_at,status,payload_sha256,
+                  owner_consent_sha256,privy_grant_sha256,budget_revision
            FROM mininex_live_native_order_intents
            WHERE privy_did=%s AND asset=%s AND intent_key=%s
            FOR UPDATE""",(did,asset,key))
     original=cur.fetchone()
     if (type(original) is not dict or original.get("status")!="PREPARED"
-            or original.get("payload_sha256")!=digest):
+            or original.get("payload_sha256")!=digest
+            or original.get("owner_consent_sha256")!=
+               permission_audit.get("owner_consent_sha256")
+            or original.get("privy_grant_sha256")!=
+               permission_audit.get("privy_grant_sha256")
+            or original.get("budget_revision")!=
+               permission_audit.get("budget_revision")
+            or original.get("source_wallet")!=
+               permission_audit.get("source_wallet")):
         raise HTTPException(409,"Native original send already claimed or changed")
     cur.execute(
         """SELECT COUNT(*) AS pending
