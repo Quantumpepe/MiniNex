@@ -61,7 +61,7 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
     the same Privy account nonce. Different chains need not block each other.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI")
+            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI","ARB")
             or type(identity.get("wallet_address")) is not str
             or not _ADDR.fullmatch(identity["wallet_address"])
             or type(identity.get("request_digest")) is not str
@@ -208,7 +208,7 @@ def _claim_authorized_evm_order_locked(
     been freshly verified by the caller before entering this transaction.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI")
+            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI","ARB")
             or type(quote_sha256) is not str
             or not _SHA.fullmatch(quote_sha256)
             or type(budget_revision) is not int or budget_revision<1):
@@ -374,7 +374,7 @@ def record_internal_authorized_evm_send_result(
     """Internal approved executor only, never a public HTTP writer."""
     did=_safe_did(did)
     key=valid_order_key(intent_key)
-    if (asset not in ("BNB","POL","AVAX","LINK","UNI")
+    if (asset not in ("BNB","POL","AVAX","LINK","UNI","ARB")
             or type(digest) is not str or not _SHA.fullmatch(digest)
             or tx_hash is not None and (
                 type(tx_hash) is not str or not _HASH.fullmatch(tx_hash))):
