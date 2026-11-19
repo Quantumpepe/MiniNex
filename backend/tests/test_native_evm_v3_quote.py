@@ -61,7 +61,8 @@ def evm_chain(monkeypatch):
         route=next(r for r in evm.CHAINS.values()
                    if evm._RPC[{"bsc-mainnet":"BNB",
                                "polygon-pos-mainnet":"POL",
-                               "avalanche-c-mainnet":"AVAX"}[r.network]][2]==url)
+                               "avalanche-c-mainnet":"AVAX",
+                               "arbitrum-one-mainnet":"ARB_TOKENS"}[r.network]][2]==url)
         if method=="eth_chainId":
             return hex(route.chain_id)
         if method=="eth_getCode":
