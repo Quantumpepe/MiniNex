@@ -26,7 +26,7 @@ from .shared_evm_trade_policy_roles import require_coin_trade_policy_roles as _r
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
 LOG=logging.getLogger("mininex.evm_signed_intent")
-_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _TTL=300
 
 
