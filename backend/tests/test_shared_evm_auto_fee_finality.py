@@ -119,3 +119,29 @@ def test_fee_finality_alone_does_not_use_wallet_signer():
     src=inspect.getsource(finality)
     assert "post_claimed_privy_evm_rpc" not in src
     assert "sign_privy_rpc_payload" not in src
+
+
+def test_stale_pending_treasury_receipts_cannot_hide_new_paid_arb_fees(monkeypatch):
+    """The one-shot receipt verifier traverses every work page without resending."""
+    records=[dict(sample("ARB"),execution_id=f"sig_original_{i:08d}")
+             for i in range(5)]
+    seen=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,query,args):
+            assert "a.status='SUBMITTED'" in query
+            assert "a.tx_hash IS NOT NULL" in query
+            assert "LIMIT %s OFFSET %s" in query
+            self.limit,self.offset=args
+            seen.append(args)
+        def fetchall(self):return records[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(finality,"_AUTO_FEE_FINALITY_OFFSET",0)
+    monkeypatch.setattr(finality,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(finality,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
+    pages=[finality._submitted_automatic_owner_fee_records(limit=2)
+           for _ in range(4)]
+    assert pages==[records[:2],records[2:4],records[4:],records[:2]]
+    assert seen==[(2,0),(2,2),(2,4),(2,5),(2,0)]
