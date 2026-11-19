@@ -212,7 +212,7 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
             raise HTTPException(502,"Invalid minimum provider output")
 
     return {
-        "mode":"UNIFIED_TWELVE_COIN_TRADE_PLAN",
+        "mode":"UNIFIED_ELEVEN_COIN_TRADE_PLAN",
         **request, **result, **_DRY_RUN_ONLY,
         "route_plan_only":True,
         "note":"Real quote; no wallet signature, order submission, or exchange fill.",
