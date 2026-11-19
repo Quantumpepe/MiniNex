@@ -9,7 +9,7 @@ import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
 
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
-// Native BTC/SOL/XRP/TRX/DOGE/ADA sending is not claimed supported here.
+// Native BTC/SOL/XRP/TRX/DOGE sending is not claimed supported here.
 export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoin=false}) {
   const {wallets}=useWallets();
   const [open,setOpen]=useState(false);
@@ -33,7 +33,8 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
   const networkLabel=spec?.chainId===1?'Ethereum Mainnet':
     spec?.chainId===56?'BNB Smart Chain':
     spec?.chainId===137?'Polygon PoS':
-    spec?.chainId===43114?'Avalanche C-Chain':'—';
+    spec?.chainId===43114?'Avalanche C-Chain':
+    spec?.chainId===42161?'Arbitrum One':'—';
 
   const clearReview=()=>{
     receiptAttempts.current=0;
@@ -249,7 +250,8 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
   const explorer=review?.chainId===1?'https://etherscan.io/tx/':
     review?.chainId===56?'https://bscscan.com/tx/':
     review?.chainId===137?'https://polygonscan.com/tx/':
-    review?.chainId===43114?'https://snowtrace.io/tx/':null;
+    review?.chainId===43114?'https://snowtrace.io/tx/':
+    review?.chainId===42161?'https://arbiscan.io/tx/':null;
 
   return <section className="mininex-wallet-send">
     <button type="button" className="privy-wallet-action mininex-swap-open"
@@ -291,7 +293,7 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
         </div>
       </form>
       {!spec&&<p role="status" className="privy-wallet-description">
-        {coin==='ADA'?t.walletSwapAdaPending:t.walletSendChainPending}
+        {t.walletSendChainPending}
       </p>}
       {error&&<p role="alert" className="privy-wallet-description">{error}</p>}
       {review&&phase==='ready'&&<div className="mininex-swap-quote" role="status">
