@@ -47,18 +47,19 @@ def test_exact_networks_contracts_decimals_and_read_only_calls(rpc):
     seen, _ = rpc
     result = asyncio.run(m.get_multicoin_evm_balances(DID))
     assert {key: row[0] for key, row in m._RPC.items()} == {
-        'BNB':56,'POL':137,'AVAX':43114,'ETH_TOKENS':1}
+        'BNB':56,'POL':137,'AVAX':43114,'ETH_TOKENS':1,'ARB_TOKENS':42161}
     assert {k:v.lower() for k,v in m._ETH_TOKENS.items()} == {
         'LINK':'0x514910771af9ca656af840dff83e8264ecf986ca',
         'UNI':'0x1f9840a85d5af5bf1d1762f925bddadc4201f984'}
-    assert result['asset_order'] == ['BNB','POL','AVAX','LINK','UNI']
+    assert result['asset_order'] == ['BNB','POL','AVAX','LINK','UNI','ARB']
     assert result['real_trading_enabled'] is result['execution_available'] is False
     assert result['wallet_funds_used_for_paper'] is False
     for row in result['assets'].values():
         assert row['balance'] == '1.000000000000000123'
         assert row['decimals'] == 18
         assert row['status'] == 'verified'
-    assert len(seen) == 9
+    assert len(seen) == 11
+    assert m._ARB_TOKENS == {'ARB':'0x912CE59144191C1204E64559FE8253a0e49E6548'}
     assert {body['method'] for _, body in seen} == {'eth_chainId','eth_getBalance','eth_call'}
     for _, body in seen:
         if body['method'] == 'eth_getBalance':
@@ -79,7 +80,7 @@ def test_bad_chain_isolated_from_other_chains(rpc, bad):
     assets = asyncio.run(m.get_multicoin_evm_balances(DID))['assets']
     assert assets['BNB']['status'] == 'unavailable'
     assert assets['BNB']['balance'] is None
-    assert all(assets[a]['status']=='verified' for a in ('POL','AVAX','LINK','UNI'))
+    assert all(assets[a]['status']=='verified' for a in ('POL','AVAX','LINK','UNI','ARB'))
     assert not any(url.rstrip('/')==m._RPC['BNB'][2] and b['method']=='eth_getBalance' for url,b in seen)
 
 
@@ -92,6 +93,7 @@ def test_bad_token_does_not_hide_other_token_and_zero_is_real(rpc):
     assert assets['LINK']['status'] == 'unavailable'
     assert assets['UNI']['balance'] == '0'
     assert assets['UNI']['status'] == 'verified'
+    assert assets['ARB']['status'] == 'verified'
 
 
 @pytest.mark.parametrize('user',[record(eth=None), {'id':'did:privy:other','linked_accounts':[]}])
