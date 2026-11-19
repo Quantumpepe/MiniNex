@@ -170,7 +170,7 @@ def test_compact_authenticated_comparison_one_db_round_trip_and_one_market_snaps
     sol=next(r for r in first["assets"] if r["asset"]=="SOL")
     assert sol["status"]=="ACTIVE" and sol["trade_count"]==3
     assert sol["recent_closed_sells"]==1
-    assert sum(r["status"]=="NOT_STARTED" for r in first["assets"])==8
+    assert sum(r["status"]=="NOT_STARTED" for r in first["assets"])==9
     assert feed.requests==1
     assert len(db.calls)==2
     assert all("privy_did=%s" in q for q in db.calls)
