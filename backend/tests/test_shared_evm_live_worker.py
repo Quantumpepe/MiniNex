@@ -347,3 +347,36 @@ def test_native_sell_existing_wrapped_balance_requires_original_deposit_proof(
     assert result["reason"]=="ORIGINAL_NATIVE_SELL_CYCLE_REQUIRED"
     assert not any(isinstance(action,tuple) and
                    action[0]=="original_single_execution" for action in actions)
+
+
+def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeypatch):
+    """Passive finalized original swaps/fees are not gated by ACTIVE session scans."""
+    calls=[]
+    monkeypatch.setattr(worker,"evm_auto_worker_enabled",lambda:True)
+    def unavailable(*args,**kwargs):
+        raise ValueError("Active session database query temporarily unavailable")
+    monkeypatch.setattr(worker,"owner_started_evm_sessions",unavailable)
+    count=0
+    async def one_cycle(seconds):
+        nonlocal count
+        count+=1
+        if count>1:raise asyncio.CancelledError()
+    monkeypatch.setattr(worker.asyncio,"sleep",one_cycle)
+    async def swaps():calls.append("swaps")
+    async def native_buy(*,client):calls.append("native_buy")
+    async def native_sell(*,client):calls.append("native_sell")
+    async def historical(*,client):calls.append("historical")
+    async def treasury_finality():calls.append("treasury_finality")
+    async def fee_batch(*,client):calls.append("fee_batch")
+    monkeypatch.setattr(worker,"reconcile_submitted_evm_swaps_once",swaps)
+    monkeypatch.setattr(worker,"reconcile_native_buy_cycle_once",native_buy)
+    monkeypatch.setattr(worker,"reconcile_native_sell_once",native_sell)
+    monkeypatch.setattr(worker,"reconcile_verified_erc20_fees_once",historical)
+    monkeypatch.setattr(worker,"reconcile_auto_fee_receipts_once",treasury_finality)
+    monkeypatch.setattr(worker,"run_owner_approved_auto_fee_batch",fee_batch)
+    async def run():
+        await worker.SharedEvmLiveWorker(market=object())._run()
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
+    assert calls==["swaps","native_buy","native_sell","historical",
+                   "treasury_finality","fee_batch"]
