@@ -380,3 +380,12 @@ def test_native_buy_denies_forged_payout_duplicate_or_fee_claim(change):
     with pytest.raises((ValueError,HTTPException)):
         buy._persist_original_native_buy_locked(cur,original=row,verified=proof)
     assert cur.queries==[]
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_partial_original_refund_cannot_claim_full_native_buy(asset):
+    proof=protocol(asset)
+    proof["protocol_refund_hashes"]=["e"*64]
+    with pytest.raises(ValueError):
+        buy.inspect_original_native_buy_destination(
+            original(asset),proof,native(asset))

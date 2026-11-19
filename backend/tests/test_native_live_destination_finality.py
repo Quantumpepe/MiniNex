@@ -302,3 +302,12 @@ def test_only_authenticated_get_can_inspect_original_native_destination():
 
 def inspect_source(func):
     return python_inspect.getsource(func)
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_partial_native_refund_prevents_claiming_full_sell_settlement(asset):
+    def add_refund(row,proto,receipt,finalized,block):
+        proto["protocol_refund_hashes"]=["a"*64]
+        proto["protocol_refund_units_1e8"]=["1000000"]
+    with pytest.raises(ValueError):
+        inspect(asset,changes=add_refund)
