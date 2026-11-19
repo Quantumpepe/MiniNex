@@ -380,3 +380,34 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
         asyncio.run(run())
     assert calls==["swaps","native_buy","native_sell","historical",
                    "treasury_finality","fee_batch"]
+
+
+def test_shared_live_session_scan_rotates_across_all_six_evm_assets(monkeypatch):
+    """A stable first page of LIVE wallets must not starve newer coin sessions."""
+    all_sessions=[session(asset) for asset in
+                  ("BNB","POL","AVAX","LINK","UNI","ARB")]
+    queries=[]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,params):
+            self.size,self.offset=params
+            queries.append((sql,params))
+        def fetchall(self):return all_sessions[self.offset:self.offset+self.size]
+    class Connection:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kw):return Cursor()
+    monkeypatch.setattr(worker,"evm_auto_worker_enabled",lambda:True)
+    monkeypatch.setattr(worker,"_EVM_SESSION_PAGE_OFFSET",0)
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgres://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *args,**kwargs:Connection())
+    pages=[worker.owner_started_evm_sessions(limit=2) for _ in range(4)]
+    assert pages==[all_sessions[:2],all_sessions[2:4],all_sessions[4:6],
+                   all_sessions[:2]]
+    assert [args for sql,args in queries]==[
+        (2,0),(2,2),(2,4),(2,6),(2,0)]
+    assert all("g.status='GRANT_VERIFIED'" in sql for sql,args in queries)
+    assert all("p.revision=s.budget_revision" in sql for sql,args in queries)
+    assert all("LIMIT %s OFFSET %s" in sql for sql,args in queries)
