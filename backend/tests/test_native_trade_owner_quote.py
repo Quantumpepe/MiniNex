@@ -49,7 +49,7 @@ def sources(monkeypatch):
     ("SOL","SELL","USDC","1.25"),
     ("SOL","BUY","USDT","110"),
     ("XRP","SELL","USDC","30"),
-    ("XRP","BUY","USDT","75"),
+    ("XRP","BUY","USDC","75"),
 ])
 def test_owner_bound_live_quote_verifies_actual_source_and_stable_wallet(
     sources,asset,side,stable,amount,
@@ -70,6 +70,13 @@ def test_owner_bound_live_quote_verifies_actual_source_and_stable_wallet(
     assert result["network_fee_and_xrpl_reserve_spendability_verified"] is False
     assert result["funds_transferred"] is False
     assert result["can_submit"] is False
+
+
+def test_xrp_ticker_does_not_authorize_wrong_network_stablecoin(sources):
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(quote.quote_owner_native_trade(
+            DID,asset="XRP",side="BUY",stable="USDT",amount="10"))
+    assert err.value.status_code==422 and sources==[]
 
 
 def test_missing_sol_wallet_cannot_use_eth_funds_as_sol(monkeypatch,sources):

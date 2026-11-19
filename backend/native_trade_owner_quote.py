@@ -43,7 +43,8 @@ async def quote_owner_native_trade(
     Full spendability (gas, account reserves, venue refunds) is NOT inferred.
     """
     did=_safe_did(did)
-    if asset not in _ASSETS or side not in ("BUY","SELL") or stable not in _STABLES:
+    if (asset not in _ASSETS or side not in ("BUY","SELL")
+            or stable not in _STABLES or (asset=="XRP" and stable!="USDC")):
         raise HTTPException(422,"Unsupported native trade request")
     try:
         requested=_positive_decimal(amount)
@@ -56,7 +57,8 @@ async def quote_owner_native_trade(
     eth=await get_wallet_balances(did)
     owned=native.get("assets",{}).get(asset)
     wallet=eth.get("wallets",{})
-    if (type(owned) is not dict or owned.get("status")!="verified"
+    if (native.get("wallet_ownership_verified") is not True
+            or type(owned) is not dict or owned.get("status")!="verified"
             or owned.get("network")!=("solana-mainnet" if asset=="SOL" else "xrpl-mainnet")
             or not wallet.get("ETH")
             or eth.get("wallet_ownership_verified") is not True):

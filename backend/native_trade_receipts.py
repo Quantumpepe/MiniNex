@@ -48,7 +48,7 @@ def inspect_finalized_solana_sender(
     tx=result.get("transaction")
     meta=result.get("meta")
     if (type(tx) is not dict or type(meta) is not dict
-            or meta.get("err") is not None
+            or "err" not in meta or meta.get("err") is not None
             or type(tx.get("signatures")) is not list
             or signature not in tx["signatures"]):
         raise ValueError("Solana transaction identity or success not proven")
