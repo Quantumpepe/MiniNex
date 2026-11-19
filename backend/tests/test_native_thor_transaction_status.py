@@ -296,9 +296,13 @@ def test_eth_original_refund_cannot_be_diverted_from_buyer(asset):
         thor.inspect_original_thorchain_status(row,observed)
 
 
-def test_native_destination_address_is_case_sensitive():
-    original_address=ADDR["SOL"]
+@pytest.mark.parametrize("asset,original_address",[
+    ("SOL","So11111111111111111111111111111111111111112"),
+    ("XRP","rUXNYWZCkEVHo86EnnoGmkEagqTfaKJ8s"),
+])
+def test_native_destination_address_is_case_sensitive(asset,original_address):
+    assert original_address.lower()!=original_address
     assert not thor._valid_memo_destination(
-        "=:SOL.SOL:"+original_address.lower()+"/"+DEST,
-        "SOL.SOL",original_address,DEST,
-        source_chain="ETH",target_chain="SOL")
+        "=:"+THOR_ASSETS[asset][0]+":"+original_address.lower()+"/"+DEST,
+        THOR_ASSETS[asset][0],original_address,DEST,
+        source_chain="ETH",target_chain=asset)
