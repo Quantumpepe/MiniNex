@@ -28,7 +28,7 @@ from .eth_privy_user_grant import _fetch_policy
 from .shared_evm_trade_policy_roles import check_coin_trade_backend_quorum as check_privy_backend_quorum
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 
 
