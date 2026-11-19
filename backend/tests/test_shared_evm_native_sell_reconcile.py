@@ -166,3 +166,29 @@ def test_receipt_pending_never_creates_second_native_deposit(monkeypatch,asset):
             "privy_did":DID,"asset":asset,
             "intent_key":KEY,"chain_id":p["chain_id"],"tx_hash":HASH})
     assert asyncio.run(go())=="AWAITING_FINALITY"
+
+
+def test_original_sell_deposit_receipts_rotate_across_all_users(monkeypatch):
+    """An older pending native conversion must not starve another coin."""
+    records=[{"privy_did":f"did:privy:owner_{i}","asset":asset,
+              "intent_key":f"sig_abcdef123456{i}"} for i,asset in
+             enumerate(["BNB","POL","AVAX","BNB","POL"])]
+    requests=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,query,args):
+            assert "mininex_live_evm_native_sell_intents" in query
+            assert "status='SUBMITTED' AND tx_hash IS NOT NULL" in query
+            assert "LIMIT %s OFFSET %s" in query
+            self.size,self.offset=args
+            requests.append(args)
+        def fetchall(self):return records[self.offset:self.offset+self.size]
+    monkeypatch.setattr(rec,"_NATIVE_SELL_RECEIPT_PAGE_OFFSET",0)
+    monkeypatch.setattr(rec,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(rec,"_ensure_schema",lambda db:None)
+    monkeypatch.setattr(rec.psycopg,"connect",lambda *args,**kwargs:DB())
+    batches=[rec.pending_native_sell_deposits(limit=2) for _ in range(4)]
+    assert batches==[records[:2],records[2:4],records[4:],records[:2]]
+    assert requests==[(2,0),(2,2),(2,4),(2,5),(2,0)]
