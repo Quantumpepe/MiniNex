@@ -7,10 +7,10 @@ function sample(){
     real_trading_enabled:false,execution_available:false,wallet_funds_used_for_paper:false,
     asset_order:EVM_BALANCE_ASSETS,
     assets:Object.fromEntries(EVM_BALANCE_ASSETS.map(asset=>
-      [asset,{asset,chain_id:EVM_BALANCE_CHAIN_IDS[asset],network:EVM_BALANCE_NETWORKS[asset],decimals:18,native:!['LINK','UNI'].includes(asset),
+      [asset,{asset,chain_id:EVM_BALANCE_CHAIN_IDS[asset],network:EVM_BALANCE_NETWORKS[asset],decimals:18,native:!['LINK','UNI','ARB'].includes(asset),
         wallet_funds_used_for_paper:false,status:'verified',balance:'1.000000000000000001'}]))};
 }
-test('five additional holdings preserve exact units and partial availability',()=>{
+test('six additional holdings preserve exact units and partial availability',()=>{
   const data=sample();
   assert.equal(validateMulticoinBalanceResponse(data),true);
   data.assets.LINK.balance='0';
@@ -22,7 +22,8 @@ test('five additional holdings preserve exact units and partial availability',()
 test('incorrect networks, units and fabricated availability are rejected',()=>{
   for(const change of [
     d=>{d.assets.POL.chain_id=1;},d=>{d.assets.AVAX.network='avalanche-x-mainnet';},
-    d=>{d.assets.LINK.decimals=6;},d=>{d.assets.UNI.native=true;},
+    d=>{d.assets.ARB.chain_id=1;},d=>{d.assets.ARB.network='ethereum-mainnet';},
+    d=>{d.assets.LINK.decimals=6;},d=>{d.assets.UNI.native=true;},d=>{d.assets.ARB.native=true;},
     d=>{d.assets.BNB.balance=1;},d=>{d.assets.BNB.balance='1e18';},
     d=>{d.assets.BNB.balance='-1';},d=>{d.assets.BNB.balance='0.0000000000000000001';},
     d=>{d.assets.POL.status='unavailable';},d=>{delete d.assets.UNI;},
