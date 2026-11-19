@@ -48,7 +48,14 @@ def _pair(asset: str, stable: str, side: str) -> dict:
         stable_decimals = 6
         fee_levels=(500,3000)
     else:
-        item=_route(asset,stable)
+        # Preserve the caller contract: unsupported settlements reject as
+        # ValueError, never an HTTP status leaking into FIFO or audit logic.
+        try:
+            item=_route(asset,stable)
+        except HTTPException as exc:
+            if exc.status_code not in (404,422):
+                raise
+            raise ValueError("Unsupported on-chain settlement") from None
         if (stable!=item.stable or item.chain_id!=chain
                 or item.network!=network):
             raise ValueError("Unsupported on-chain settlement")
