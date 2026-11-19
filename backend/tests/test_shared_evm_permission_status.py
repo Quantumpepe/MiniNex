@@ -13,7 +13,7 @@ from backend.storage import SCHEMA
 NOW=datetime(2026,11,17,13,tzinfo=timezone.utc)
 DID="did:privy:test"
 SHA="a"*64
-CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}
+CHAIN={"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1,"ARB":42161}
 
 
 def stored(asset="BNB",state="GRANT_VERIFIED"):
@@ -32,7 +32,7 @@ def stored(asset="BNB",state="GRANT_VERIFIED"):
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_each_coin_needs_independent_privy_permission_record(asset):
     r=assess_evm_permission_record(stored(asset),asset=asset,now=NOW)
     assert r["asset"]==asset

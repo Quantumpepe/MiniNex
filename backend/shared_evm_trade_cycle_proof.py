@@ -1,7 +1,7 @@
 """One verified native EVM trade-cycle proof from separately finalized chain legs.
 
 ETH/BNB/POL/AVAX need a SwapRouter02 ERC20 swap AND a different native
-WETH9-style conversion transaction. LINK/UNI need only an ERC20 swap.
+WETH9-style conversion transaction. LINK/UNI/ARB need only an ERC20 swap.
 Actual on-chain ordering, quantities, network, owner and side are required.
 This does not make or broadcast orders, book a position, or assess fees.
 """
@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from .shared_evm_swap_receipts import _pair
 
 _NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
-_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI"))
+_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _amount(value:object)->Decimal:

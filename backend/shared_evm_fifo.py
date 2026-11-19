@@ -1,4 +1,4 @@
-"""Shared conservative FIFO cost-basis preview across all six EVM assets.
+"""Shared conservative FIFO cost-basis preview across all seven EVM assets.
 
 Uses only independently finalized Router02 swap legs, and NEVER treats
 stablecoin-denominated gross spread as USD net profit. Actual native gas
@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from .shared_evm_swap_receipts import _pair
 
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _units(value: object, *, allow_zero: bool=False) -> Decimal:
