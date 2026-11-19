@@ -126,7 +126,8 @@ def test_invalid_erc20_response_is_unavailable_not_zero(monkeypatch, rpc_client)
     assert result["assets"]["LINK"]["status"] == "unavailable"
     assert result["assets"]["LINK"]["balance"] is None
     assert result["assets"]["UNI"]["balance"] == "9"
-    assert result["assets"]["ARB"]["balance"] == "7"
+    assert result["assets"]["ARB"]["status"] == "unavailable"
+    assert result["assets"]["ARB"]["balance"] is None
 
 
 def test_wrong_or_external_owner_cannot_read_a_third_party_balance(monkeypatch):
