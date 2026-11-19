@@ -18,7 +18,7 @@ from .shared_evm_swap_receipts import _pair
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _KEY=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{7,95}$")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
 _COST_FIELDS=(
     "fifo_acquisition_cost_usd",
     "allocated_buy_network_gas_usd",
