@@ -289,3 +289,94 @@ def test_native_buy_source_must_precede_destination_read():
     with pytest.raises(HTTPException) as e:
         buy._read_original_buy_locked(C(),did=DID,asset="BTC",key=original("BTC")["intent_key"])
     assert e.value.status_code==409
+
+
+class BuyFinalizeCursor:
+    def __init__(self,row):
+        self.rows=iter([row,{"status":"DESTINATION_FINALIZED"}])
+        self.queries=[]
+    def execute(self,sql,args):
+        self.queries.append((sql,args))
+    def fetchone(self):
+        return next(self.rows)
+
+
+def _persisted_native_buy_row(row):
+    return {
+        "status":"SOURCE_FINALIZED","side":"BUY","stable":row["stable"],
+        "source_tx_hash":row["source_tx_hash"],
+        "payload_sha256":row["payload_sha256"],
+        "source_proof_sha256":row["source_proof_sha256"],
+        "source_wallet":row["source_wallet"],
+        "destination_wallet":row["destination_wallet"],
+        "destination_tx_hash":None,
+        "destination_proof_sha256":None,
+    }
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_exact_original_native_buy_is_durably_closed_once(asset):
+    row=original(asset)
+    proof=buy.inspect_original_native_buy_destination(row,protocol(asset),native(asset))
+    cur=BuyFinalizeCursor(_persisted_native_buy_row(row))
+    result=buy._persist_original_native_buy_locked(
+        cur,original=row,verified=proof)
+    assert result=="DESTINATION_FINALIZED"
+    assert len(cur.queries)==2
+    statement,args=cur.queries[1]
+    assert "status='DESTINATION_FINALIZED'" in statement
+    assert "side='BUY'" in statement
+    assert "status='SOURCE_FINALIZED'" in statement
+    assert "destination_proof_sha256 IS NULL" in statement
+    assert args[:3]==(
+        proof["destination_tx_hash"],
+        proof["destination_proof_sha256"],
+        proof["destination_received_atomic"],
+    )
+    assert args[3:6]==(DID,asset,row["intent_key"])
+    assert args[6:]==(row["source_tx_hash"],row["source_proof_sha256"])
+
+
+@pytest.mark.parametrize("alter",[
+    lambda r:r.update(status="DESTINATION_FINALIZED"),
+    lambda r:r.update(side="SELL"),
+    lambda r:r.update(source_tx_hash="0x"+"0"*64),
+    lambda r:r.update(source_proof_sha256="f"*64),
+    lambda r:r.update(source_wallet="0x"+"0"*40),
+    lambda r:r.update(destination_wallet="0x"+"0"*40),
+    lambda r:r.update(destination_tx_hash="a"*64),
+    lambda r:r.update(destination_proof_sha256="d"*64),
+])
+def test_native_buy_immutable_journal_rejects_changed_or_settled_row(alter):
+    row=original("BTC")
+    proof=buy.inspect_original_native_buy_destination(row,protocol("BTC"),native("BTC"))
+    saved=_persisted_native_buy_row(row)
+    alter(saved)
+    cur=BuyFinalizeCursor(saved)
+    with pytest.raises(HTTPException):
+        buy._persist_original_native_buy_locked(cur,original=row,verified=proof)
+    assert len(cur.queries)==1
+
+
+@pytest.mark.parametrize("change",[
+    {"native_buy_settlement_complete":False},
+    {"native_sell_settlement_complete":True},
+    {"source_tx_hash":"0x"+"f"*64},
+    {"original_source_proof_sha256":"f"*64},
+    {"destination_wallet_original":False},
+    {"destination_received_atomic":"0"},
+    {"destination_received_amount":"9999"},
+    {"destination_proof_sha256":None},
+    {"fee_assessed":True},
+    {"trading_profit_verified":True},
+    {"new_transactions_sent":1},
+    {"retry_permitted":True},
+])
+def test_native_buy_denies_forged_payout_duplicate_or_fee_claim(change):
+    row=original("SOL")
+    proof=buy.inspect_original_native_buy_destination(row,protocol("SOL"),native("SOL"))
+    proof.update(change)
+    cur=BuyFinalizeCursor(_persisted_native_buy_row(row))
+    with pytest.raises((ValueError,HTTPException)):
+        buy._persist_original_native_buy_locked(cur,original=row,verified=proof)
+    assert cur.queries==[]

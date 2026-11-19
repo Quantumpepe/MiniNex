@@ -319,3 +319,87 @@ async def get_private_original_native_buy_destination(
     except (ValueError,TypeError,KeyError,OverflowError):
         raise HTTPException(
             503,"Original native BUY payout not independently finalized") from None
+
+
+def _persist_original_native_buy_locked(
+    cur,*,original:dict,verified:dict,
+)->str:
+    """Persist BUY only after exact source, original THOR and native proof.
+
+    This is an internal-only compare-and-swap operation. A BUY creates a
+    verified cost/quantity basis, never realized profit or a 5% fee.
+    """
+    if (type(original) is not dict or type(verified) is not dict
+            or original.get("asset") not in _ASSETS
+            or original.get("side")!="BUY"
+            or original.get("status")!="SOURCE_FINALIZED"
+            or verified.get("mode")!="OWNER_NATIVE_BUY_DESTINATION_FINALITY"
+            or verified.get("asset")!=original["asset"]
+            or verified.get("side")!="BUY"
+            or verified.get("intent_key")!=original.get("intent_key")
+            or verified.get("original_order_sha256")!=original.get("payload_sha256")
+            or verified.get("original_source_proof_sha256")!=original.get("source_proof_sha256")
+            or verified.get("source_tx_hash")!=original.get("source_tx_hash")
+            or verified.get("destination_wallet_original") is not True
+            or verified.get("native_buy_settlement_complete") is not True
+            or verified.get("native_sell_settlement_complete") is not False
+            or verified.get("trading_profit_verified") is not False
+            or verified.get("fee_assessed") is not False
+            or verified.get("retry_permitted") is not False
+            or verified.get("new_transactions_sent")!=0
+            or verified.get("can_submit") is not False):
+        raise HTTPException(409,"Native BUY payout is not proven for original owner")
+    did=_safe_did(original["privy_did"])
+    asset=original["asset"]
+    key=original["intent_key"]
+    tx=verified.get("destination_tx_hash")
+    digest=verified.get("destination_proof_sha256")
+    atomic=verified.get("destination_received_atomic")
+    amount=verified.get("destination_received_amount")
+    tx_is_valid=(type(tx) is str and
+                 (_BTC_HASH.fullmatch(tx) if asset=="BTC"
+                  else _valid_native_hash(asset,tx)))
+    if (not tx_is_valid
+            or type(digest) is not str or not _SHA.fullmatch(digest)
+            or type(atomic) is not str or not _DECIMAL.fullmatch(atomic)
+            or type(amount) is not str):
+        raise ValueError("Cannot durably persist unverified native BUY credit")
+    divisor=Decimal(10**(8 if asset=="BTC" else 9 if asset=="SOL" else 6))
+    if amount!=format(Decimal(atomic)/divisor,"f"):
+        raise ValueError("Native BUY atomic credit does not equal reported quantity")
+    cur.execute(
+        """SELECT status,side,stable,source_tx_hash,payload_sha256,
+                  source_proof_sha256,source_wallet,destination_wallet,
+                  destination_tx_hash,destination_proof_sha256
+           FROM mininex_live_native_order_intents
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+           FOR UPDATE""",(did,asset,key))
+    row=cur.fetchone()
+    if (type(row) is not dict or row.get("status")!="SOURCE_FINALIZED"
+            or row.get("side")!="BUY"
+            or row.get("stable")!=original.get("stable")
+            or row.get("source_tx_hash")!=original["source_tx_hash"]
+            or row.get("payload_sha256")!=original["payload_sha256"]
+            or row.get("source_proof_sha256")!=original["source_proof_sha256"]
+            or row.get("source_wallet")!=original["source_wallet"]
+            or row.get("destination_wallet")!=original["destination_wallet"]
+            or row.get("destination_tx_hash") is not None
+            or row.get("destination_proof_sha256") is not None):
+        raise HTTPException(409,"Native BUY order changed or was already completed")
+    cur.execute(
+        """UPDATE mininex_live_native_order_intents
+           SET status='DESTINATION_FINALIZED',destination_tx_hash=%s,
+               destination_proof_sha256=%s,destination_received_atomic=%s,
+               destination_finalized_at=now(),updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND side='BUY' AND status='SOURCE_FINALIZED'
+             AND source_tx_hash=%s AND source_proof_sha256=%s
+             AND destination_proof_sha256 IS NULL
+           RETURNING status""",
+        (tx,digest,atomic,did,asset,key,
+         original["source_tx_hash"],original["source_proof_sha256"]))
+    saved=cur.fetchone()
+    if (type(saved) is not dict
+            or saved.get("status")!="DESTINATION_FINALIZED"):
+        raise HTTPException(409,"Native BUY original finalization lost concurrency race")
+    return "DESTINATION_FINALIZED"
