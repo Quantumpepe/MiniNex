@@ -24,7 +24,7 @@ from .shared_evm_swap_receipts import _pair, _receipt_rpc
 _HASH = re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
 _TRANSFER_TOPIC = ("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
-_ASSETS = frozenset(("LINK", "UNI"))
+_ASSETS = frozenset(("LINK", "UNI", "ARB"))
 _WINDOW_BLOCKS = 1500  # RPC query window, NOT a trade/day/capital limit
 
 
@@ -174,7 +174,7 @@ async def audit_owner_erc20_token_inventory(
     if any(type(p) is not int or p <= 1 for p in positions):
         raise ValueError("Cannot identify original wallet history period")
     start,end = min(positions),max(positions)
-    chain,network,fallback,env = _RPC["ETH_TOKENS"]
+    chain,network,fallback,env = _RPC["ARB_TOKENS" if asset=="ARB" else "ETH_TOKENS"]
     route = _pair(asset,"USDC","BUY")
     if chain != route["chain_id"] or network != route["network"]:
         raise ValueError("Configured token audit network differs")
