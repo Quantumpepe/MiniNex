@@ -16,7 +16,7 @@ from fastapi import HTTPException
 
 # BTC/ETH remain the only PAPER engines; all real execution is still disabled.
 ASSET_ORDER = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
-               "AVAX", "LINK", "DOGE", "UNI", "ADA")
+               "AVAX", "LINK", "DOGE", "UNI", "ARB")
 
 # All capabilities listed as "candidate" here need real venue, issuer,
 # address and decimals verification before any coin is eligible to trade.
@@ -79,11 +79,11 @@ _REGISTRY_UNSORTED = (
         " DEX offer quality and ledger finality",
     ),
     CoinNetwork(
-        "ADA", "Cardano", "cardano-mainnet", "cardano-eutxo", None,
-        "Dedicated Cardano wallet and reviewed automation signing mechanism",
-        ("USDCx",), "bridge-or-local-token-validation-required",
-        "USDCx is Cardano's USDC-backed asset, NOT native Circle USDC;"
-        " token policy, local DEX, UTXO fees and bridging need independent checks",
+        "ARB", "Arbitrum", "arbitrum-one-mainnet", "evm-erc20", 42161,
+        "Privy EVM wallet on Arbitrum One; ARB is an ERC-20 token, ETH pays network gas",
+        ("USDC", "USDT"), "same-chain-token-validation-required",
+        "ARB contract 0x912CE59144191C1204E64559FE8253a0e49E6548 "
+        "(18 decimals); validate router, ETH gas, slippage and settlement before any swap",
     ),
     CoinNetwork(
         "AVAX", "Avalanche", "avalanche-c-mainnet", "evm", 43114,

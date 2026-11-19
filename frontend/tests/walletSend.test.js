@@ -15,19 +15,20 @@ const labels=read('../src/i18n.js');
 
 test('12 listed coins plus Ethereum USDC/USDT; only proven EVM routes claim a signer',()=>{
   assert.deepEqual(SEND_ASSETS,['BTC','ETH','BNB','SOL','XRP','TRX','POL',
-    'AVAX','LINK','DOGE','UNI','ADA','USDC','USDT']);
+    'AVAX','LINK','DOGE','UNI','ARB','USDC','USDT']);
   assert.deepEqual(Object.keys(SEND_EVM).sort(),
-    ['ETH','BNB','POL','AVAX','LINK','UNI','USDC','USDT'].sort());
-  for(const symbol of ['BTC','SOL','XRP','TRX','DOGE','ADA'])assert.equal(sendAssetSpec(symbol),null);
+    ['ETH','BNB','POL','AVAX','LINK','UNI','ARB','USDC','USDT'].sort());
+  for(const symbol of ['BTC','SOL','XRP','TRX','DOGE'])assert.equal(sendAssetSpec(symbol),null);
   assert.equal(sendAssetSpec('ETH').chainId,1);
   assert.equal(sendAssetSpec('BNB').chainId,56);
   assert.equal(sendAssetSpec('POL').chainId,137);
   assert.equal(sendAssetSpec('AVAX').chainId,43114);
+  assert.equal(sendAssetSpec('ARB').chainId,42161);
   assert.equal(sendAssetSpec('LINK').chainId,1);
   assert.equal(sendAssetSpec('USDT').decimals,6);
   assert.equal(sendAssetSpec('USDC').decimals,6);
-  assert.match(sender,/coin==='ADA'\?t\.walletSwapAdaPending/);
   assert.match(sender,/walletSendChainPending/);
+  assert.match(panel,/\['ETH','BNB','POL','AVAX','LINK','UNI','ARB'\]/);
 });
 
 test('send amounts use exact BigInt instead of rounding user money',()=>{
@@ -69,7 +70,7 @@ test('native transfers and allowlisted ERC-20 transfer calldata are exact',()=>{
   for(const bad of ['0x01','0x','0X01','1','0xgg',1,null]){
     assert.throws(()=>readRpcQuantity(bad));
   }
-  for(const asset of ['USDC','USDT','UNI','LINK']){
+  for(const asset of ['USDC','USDT','UNI','LINK','ARB']){
     const tx=buildEvmSendTransaction(asset,from,to,12345n);
     assert.equal(tx.to,sendAssetSpec(asset).contract);
     assert.equal(tx.from,from);
@@ -255,10 +256,64 @@ test('gas fee overflow and absurd gas limits cannot be quoted',()=>{
 test('send recipient hints follow native address families, never mislabel all as EVM',()=>{
   for(const [coin,hint] of Object.entries({
     BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
-    DOGE:'D…',ADA:'addr1…',ETH:'0x…',BNB:'0x…',
+    DOGE:'D…',ARB:'0x…',ETH:'0x…',BNB:'0x…',
     POL:'0x…',AVAX:'0x…',LINK:'0x…',UNI:'0x…',
     USDC:'0x…',USDT:'0x…',
   }))assert.equal(sendAddressPlaceholder(coin),hint);
   assert.match(sender,/placeholder=\{sendAddressPlaceholder\(coin\)\}/);
   assert.match(sender,/disabled=\{busy\|\|sending.current\|\|!spec\}/);
+});
+
+
+test('ARB means 18-decimal ERC-20 on Arbitrum One, never a native ETH send',()=>{
+  const spec=sendAssetSpec('ARB');
+  const owner='0x'+'a'.repeat(40),receiver='0x'+'b'.repeat(40);
+  assert.equal(spec.chainId,42161);
+  assert.equal(spec.kind,'erc20');
+  assert.equal(spec.decimals,18);
+  assert.equal(spec.feeSymbol,'ETH');
+  assert.equal(spec.contract,'0x912ce59144191c1204e64559fe8253a0e49e6548');
+  const tx=buildEvmSendTransaction('ARB',owner,receiver,10n**18n);
+  assert.equal(tx.from,owner);
+  assert.equal(tx.to,spec.contract);
+  assert.equal(tx.value,'0x0');
+  assert.equal(tx.data,'0xa9059cbb'+receiver.slice(2).padStart(64,'0')+
+    (10n**18n).toString(16).padStart(64,'0'));
+  const plan=reviewEvmSend({
+    symbol:'ARB',from:owner,to:receiver,amount:'1',
+    gasLimit:80000n,gasPrice:100000000n,
+    nativeBalance:10n**17n,tokenBalance:2n*10n**18n,
+    now:1800000000000,
+  });
+  assert.ok(plan);
+  assert.equal(plan.chainId,42161);
+  assert.equal(plan.feeSymbol,'ETH');
+  assert.equal(plan.transaction.value,'0x0');
+  assert.equal(reviewEvmSend({
+    symbol:'ARB',from:owner,to:receiver,amount:'1',
+    gasLimit:80000n,gasPrice:100000000n,
+    nativeBalance:0n,tokenBalance:2n*10n**18n,
+    now:1800000000000,
+  }),null);
+  assert.equal(reviewEvmSend({
+    symbol:'ARB',from:owner,to:receiver,amount:'1',
+    gasLimit:80000n,gasPrice:100000000n,
+    nativeBalance:10n**17n,tokenBalance:0n,
+    now:1800000000000,
+  }),null);
+  const txHash='0x'+'c'.repeat(64);
+  const event='0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const receipt={transactionHash:txHash,from:owner,to:spec.contract,status:'0x1',
+    logs:[{address:spec.contract,topics:[
+      event,'0x'+owner.slice(2).padStart(64,'0'),
+      '0x'+receiver.slice(2).padStart(64,'0')],
+      data:'0x'+plan.amountUnits.toString(16).padStart(64,'0')}]};
+  assert.equal(verifiedSendReceipt(plan,receipt),true);
+  assert.equal(verifiedSendReceipt(plan,{...receipt,logs:[]}),false);
+  assert.equal(verifiedSendTransaction(plan,{
+    hash:txHash,from:owner,to:spec.contract,value:'0x0',
+    input:tx.data,
+  },txHash),true);
+  assert.match(sender,/spec\?\.chainId===42161\?'Arbitrum One'/);
+  assert.match(sender,/review\?\.chainId===42161\?'https:\/\/arbiscan\.io\/tx\/'/);
 });

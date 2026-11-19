@@ -1,6 +1,6 @@
 """AUTO = existing LONG + DCA and defensive owned-coin spot exits.
 
-One hybrid mode across 11 coins; no leverage, real order or cross-coin capital.
+One hybrid mode across 12 coins; no leverage, real order or cross-coin capital.
 """
 import pytest
 from backend.auto_engine import PaperAutoEngine, PaperPortfolio
@@ -52,7 +52,7 @@ def portfolio(asset, mode="AUTO", *, entry=160.0, peak=200.9):
 
 def test_mode_supported_in_api_replay_preferences_and_real_database_upgrade():
     assert "AUTO" in USER_MODES and "AUTO" in REPLAY_MODES
-    assert len(COINS) == 11 and "ADA" not in COINS
+    assert len(COINS) == 12 and "ARB" in COINS and "ADA" not in COINS
     assert api.SharedStrategyProfileRequest(
         mode="AUTO", horizon="15m", expected_revision=0).mode == "AUTO"
     assert api.ExtraPaperStartRequest(

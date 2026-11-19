@@ -116,6 +116,7 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
       BNB:evmBalances?.BNB||null,POL:evmBalances?.POL||null,
       AVAX:evmBalances?.AVAX||null,LINK:evmBalances?.LINK||null,
       UNI:evmBalances?.UNI||null,
+      ARB:evmBalances?.ARB||null,
       SOL:nativeBalances?.SOL||null,XRP:nativeBalances?.XRP||null,
       TRX:nativeBalances?.TRX||null,DOGE:nativeBalances?.DOGE||null,
     });

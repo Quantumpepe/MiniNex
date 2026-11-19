@@ -1,6 +1,6 @@
-"""One shared MiniNex strategy decision path for all 11 active spot coins.
+"""One shared MiniNex strategy decision path for all 12 active spot coins.
 
-BTC, ETH and the nine extra-coin sessions call this exact engine with their
+BTC, ETH and the ten extra-coin sessions call this exact engine with their
 OWN restored portfolio, budget, history and settlement asset. No changes to
 wallets, no synthetic fills beyond the existing PAPER engine, no LIVE orders.
 Future trading adapters must consume independently verified order intents,
@@ -17,7 +17,7 @@ from .strategy_replay import REPLAY_ASSETS, WINDOWS
 
 COINS = tuple(REPLAY_ASSETS)
 assert COINS == ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
-                 "AVAX", "LINK", "DOGE", "UNI")
+                 "AVAX", "LINK", "DOGE", "UNI", "ARB")
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ def evaluate_coin_strategy(
 def exit_coin_to_stable(
     asset: str, portfolio: PaperPortfolio, market: Any, at: float,
 ) -> bool:
-    """A single shared pause-to-stable PAPER conversion for all 11 coins.
+    """A single shared pause-to-stable PAPER conversion for all 12 coins.
 
     False means the account is already paused but the simulated conversion
     still requires a valid current market price; a future tick can retry it.

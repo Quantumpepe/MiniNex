@@ -2,7 +2,7 @@
 
 This is a practical wallet integration, not a PAPER valuation. BNB, POL and
 AVAX use the verified user's existing Privy EVM address on their own networks;
-LINK and UNI are Ethereum ERC-20 assets. Only fixed, chain-verified public
+LINK/UNI are Ethereum ERC-20 assets; ARB is an Arbitrum One ERC-20. Only fixed, chain-verified public
 RPC reads occur. No wallet approval, private key or transaction is needed.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import verified_addresses, _rpc_quantity, _units, WEI
 from .shared_evm_execution import chain_for_asset
+from .live_asset_registry import get_asset
 from .storage import _safe_did
 
 _ADDR = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -25,13 +26,16 @@ _RPC = {
     "POL": (137, "polygon-pos-mainnet", "https://polygon-bor-rpc.publicnode.com", "MININEX_POLYGON_RPC_URL"),
     "AVAX": (43114, "avalanche-c-mainnet", "https://avalanche-c-chain-rpc.publicnode.com", "MININEX_AVALANCHE_RPC_URL"),
     "ETH_TOKENS": (1, "ethereum-mainnet", "https://ethereum-rpc.publicnode.com", "MININEX_ETH_RPC_URL"),
+    "ARB_TOKENS": (42161, "arbitrum-one-mainnet", "https://arb1.arbitrum.io/rpc", "MININEX_ARBITRUM_RPC_URL"),
 }
 _ETH_TOKENS = {
     "LINK": "0x514910771AF9CA656AF840DFF83E8264ECF986CA",
     "UNI": "0x1f9840a85d5af5bf1d1762f925bddadc4201f984",
 }
-ORDER = ("BNB", "POL", "AVAX", "LINK", "UNI")
-# Native EVM units and these two specific Ethereum contracts all use 18 decimals.
+_ARB_TOKENS = {"ARB": "0x912CE59144191C1204E64559FE8253a0e49E6548"}
+_TOKEN_GROUPS = {"ETH_TOKENS": _ETH_TOKENS, "ARB_TOKENS": _ARB_TOKENS}
+ORDER = ("BNB", "POL", "AVAX", "LINK", "UNI", "ARB")
+# Native EVM units and the allowlisted ERC-20 contracts use 18 decimals.
 DECIMALS = {asset: 18 for asset in ORDER}
 
 
@@ -50,11 +54,12 @@ async def _rpc(client: httpx.AsyncClient, url: str, method: str, params: list, r
 
 
 def _entry(asset: str, status: str, balance: str | None = None) -> dict:
-    network = _RPC[asset if asset in _RPC else "ETH_TOKENS"][1]
+    rpc_key = asset if asset in _RPC else ("ARB_TOKENS" if asset == "ARB" else "ETH_TOKENS")
+    network = _RPC[rpc_key][1]
     return {
         "asset": asset, "network": network, "status": status,
-        "balance": balance, "native": asset not in _ETH_TOKENS,
-        "chain_id": _RPC[asset if asset in _RPC else "ETH_TOKENS"][0],
+        "balance": balance, "native": asset not in _ETH_TOKENS and asset not in _ARB_TOKENS,
+        "chain_id": _RPC[rpc_key][0],
         "decimals": DECIMALS[asset],
         "wallet_funds_used_for_paper": False,
     }
@@ -64,8 +69,10 @@ async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict
     chain_id, _, fallback, env_name = _RPC[name]
     # The wallet reader and the real transaction encoder MUST agree on
     # chain IDs. Fail closed rather than showing a misleading spendable coin.
-    assets = ("LINK", "UNI") if name == "ETH_TOKENS" else (name,)
-    if any(chain_for_asset(asset)[0] != chain_id for asset in assets):
+    assets = tuple(_TOKEN_GROUPS[name]) if name in _TOKEN_GROUPS else (name,)
+    # ARB balance reading is deliberately independent of LIVE execution routing.
+    if any((get_asset(asset).chain_id if asset == "ARB" else chain_for_asset(asset)[0]) != chain_id
+           for asset in assets):
         raise ValueError("EVM balance and execution chain registry disagree")
     url = os.getenv(env_name, "").strip() or fallback
     # RPC URL is controlled exclusively by the operator, never by a user.
@@ -73,13 +80,13 @@ async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict
         raise ValueError("HTTPS mainnet RPC configuration required")
     if await _rpc(client, url, "eth_chainId", [], 1) != chain_id:
         raise ValueError("Unexpected RPC chain ID")
-    if name != "ETH_TOKENS":
+    if name not in _TOKEN_GROUPS:
         wei = await _rpc(client, url, "eth_getBalance", [wallet, "latest"], 2)
         return {name: _entry(name, "verified", _units(wei, WEI))}
 
     selector = "0x70a08231" + ("0" * 24) + wallet[2:].lower()
     results = {}
-    for i, (asset, contract) in enumerate(_ETH_TOKENS.items(), start=3):
+    for i, (asset, contract) in enumerate(_TOKEN_GROUPS[name].items(), start=3):
         try:
             atomic = await _rpc(
                 client, url, "eth_call",
@@ -92,7 +99,7 @@ async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict
 
 
 async def get_multicoin_evm_balances(did: str) -> dict:
-    """Independently read five REAL on-chain holdings belonging to this DID.
+    """Independently read six REAL on-chain holdings belonging to this DID.
 
     Missing provider data remains unavailable, never a fabricated zero. The
     user must already have a unique linked Privy ETH wallet; EVM-compatible

@@ -30,6 +30,8 @@ test('each opened coin shows only its own public address or a no-deposit warning
   assert.match(wallet,/if\(asset==='ETH'\)/);
   assert.match(wallet,/network="BTC"/);
   assert.match(wallet,/network="ETH"/);
+  assert.match(wallet,/Arbitrum One \(ARB ERC-20\)/);
+  assert.match(wallet,/asset==='ARB'\?'arbitrum-one-mainnet'/);
   assert.match(wallet,/t\.coinAddressPending/);
   assert.match(strings,/coinAddressPending: 'Wallet-Adresse noch nicht verfügbar/);
   assert.match(strings,/coinAddressPending: 'Wallet address not available yet/);

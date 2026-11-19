@@ -1,6 +1,6 @@
 """One account-owned strategy template reused by every MiniNex trading coin.
 
-Change the shared strategy MODE/HORIZON once. All eleven coins inherit it
+Change the shared strategy MODE/HORIZON once. All twelve coins inherit it
 when a new session is configured; independent budgets, holdings, stablecoin
 selection, trade history and running sessions are never reset or shared.
 BTC/ETH legacy saved preferences are synchronized in the same DB transaction.
@@ -21,9 +21,9 @@ from .trade_preferences import (
 )
 
 LOG = logging.getLogger("mininex.unified_strategy_profile")
-TRADING_ASSETS = tuple(symbol for symbol in ASSET_ORDER if symbol != "ADA")
+TRADING_ASSETS = ASSET_ORDER  # all 12 coins including ARB
 CORE_ASSETS = ("BTC", "ETH")
-assert len(TRADING_ASSETS) == 11 and TRADING_ASSETS[:2] == CORE_ASSETS
+assert len(TRADING_ASSETS) == 12 and TRADING_ASSETS[:2] == CORE_ASSETS
 
 
 def _profile(cur, did: str) -> dict:
@@ -42,7 +42,6 @@ def _profile(cur, did: str) -> dict:
         "horizon": row["horizon"],
         "revision": row["revision"],
         "assets": list(TRADING_ASSETS),
-        "ada_in_progress": True,
         "independent_budgets_preserved": True,
         "existing_sessions_unchanged": True,
         "wallet_authorized": False,

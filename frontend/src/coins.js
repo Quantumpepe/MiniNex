@@ -1,6 +1,7 @@
 // Twelve approved MiniNex display assets. Only BTC/ETH have PAPER settings.
 // Showing a coin never authorizes deposits, wallet transfers or live trades.
-// LINK/UNI are ERC-20 tokens on Ethereum, not separate native networks.
+// LINK/UNI are Ethereum ERC-20s; ARB is an ERC-20 on Arbitrum One.
+// ARB (Arbitrum) replaces previous ADA (Cardano) — EVM-compatible, Privy-ready.
 export const COINS=Object.freeze([
   Object.freeze({symbol:'BTC',name:'Bitcoin',glyph:'₿',network:'bitcoin-mainnet',paperSettingsReady:true}),
   Object.freeze({symbol:'ETH',name:'Ethereum',glyph:'Ξ',network:'ethereum-mainnet',paperSettingsReady:true}),
@@ -13,7 +14,7 @@ export const COINS=Object.freeze([
   Object.freeze({symbol:'LINK',name:'Chainlink',glyph:'⬡',network:'ethereum-mainnet',paperSettingsReady:false,token:true}),
   Object.freeze({symbol:'DOGE',name:'Dogecoin',glyph:'Ð',network:'dogecoin-mainnet',paperSettingsReady:false}),
   Object.freeze({symbol:'UNI',name:'Uniswap',glyph:'🦄',network:'ethereum-mainnet',paperSettingsReady:false,token:true}),
-  Object.freeze({symbol:'ADA',name:'Cardano',glyph:'₳',network:'cardano-mainnet',paperSettingsReady:false,inProgress:true}),
+  Object.freeze({symbol:'ARB',name:'Arbitrum',glyph:'◆',network:'arbitrum-one-mainnet',paperSettingsReady:false,token:true}),
 ]);
 
 export function coinBySymbol(symbol) {

@@ -157,7 +157,7 @@ def test_extra_paper_schema_is_separate_and_per_account_coin():
     assert "asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH'))" in sql
     assert "mininex_live_order_intents" in sql
     assert "FOR UPDATE" in extra_paper._row.__code__.co_consts
-    assert len(EXTRA_REPLAY_ASSETS)==9
+    assert len(EXTRA_REPLAY_ASSETS)==10
 
 
 @pytest.mark.parametrize("coin",EXTRA_REPLAY_ASSETS)

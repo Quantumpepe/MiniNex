@@ -38,7 +38,7 @@ test('all twelve coins can request real venue quotes; ETH/BTC keep dedicated rou
     coin:'BTC',from:'USDT',to:'BTC',
   });
   for(const [from,to,amount] of [
-    ['ETH','BTC','2'],['LINK','USDC','10'],['ADA','USDC','20'],
+    ['ETH','BTC','2'],['LINK','USDC','10'],['ARB','USDC','20'],
     ['DOGE','USDT','100'],['USDC','USDT','1'],
     ['SOL','XRP','5'],['POL','AVAX','1'],['UNI','BNB','3'],
   ]) assert.deepEqual(manualSwapQuoteRequest(from,to,amount),{
@@ -47,7 +47,8 @@ test('all twelve coins can request real venue quotes; ETH/BTC keep dedicated rou
   });
   assert.equal(manualSwapQuoteRequest('BTC','BTC','1'),null);
   assert.equal(manualSwapQuoteRequest('USDC','USDT','0.1234567'),null);
-  assert.equal(manualSwapQuoteRequest('ADA','USDC','0.0000001'),null);
+  assert.equal(manualSwapQuoteRequest('ARB','USDC','0.000000000000000001')?.coin,'MULTICHAIN');
+  assert.equal(manualSwapQuoteRequest('ARB','USDC','0.0000000000000000001'),null);
   assert.equal(manualSwapQuoteRequest('SOL','BTC','0.123456789'),null);
 });
 
@@ -291,7 +292,7 @@ test('all twelve coins and ETH stables validate exact route classification only'
     SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet',
     POL:'polygon-pos-mainnet',AVAX:'avalanche-c-mainnet',
     LINK:'ethereum-mainnet',DOGE:'dogecoin-mainnet',
-    UNI:'ethereum-mainnet',ADA:'cardano-mainnet',
+    UNI:'ethereum-mainnet',ARB:'arbitrum-one-mainnet',
     USDC:'ethereum-mainnet',USDT:'ethereum-mainnet',
   };
   for(const from of symbols)for(const to of symbols) {
@@ -437,7 +438,7 @@ test('privy wallet record readiness is independent, authenticated and never an e
     source:{asset:'SOL',network:'solana-mainnet',record_status:'PRESENT'},
     destination:{asset:'USDT',network:'ethereum-mainnet',record_status:'MISSING'},
     route_class:'CROSS_CHAIN',
-    ada_in_progress:false,
+    
     linked_wallet_records_checked:true,
     ownership_proof_verified:false,
     native_signer_verified:false,
@@ -459,7 +460,7 @@ test('privy wallet record readiness is independent, authenticated and never an e
     {destination:{...good.destination,record_status:'PRESENT',address:'0xsecret'}},
     {destination:{...good.destination,asset:'USDC'}},
     {route_class:'SAME_CHAIN'},
-    {ada_in_progress:true},
+    
     {memo:'=:BTC'},{address:'0x'+'a'.repeat(40)},
   ]) assert.equal(validManualSwapWalletReadiness({...good,...change},'SOL','USDT'),false,
       JSON.stringify(change));
@@ -469,9 +470,9 @@ test('privy wallet record readiness is independent, authenticated and never an e
     route_class:'SAME_CHAIN',
   },'ETH','LINK'),true);
   assert.equal(validManualSwapWalletReadiness({
-    ...good,source:{asset:'ADA',network:'cardano-mainnet',record_status:'MISSING'},
+    ...good,source:{asset:'ARB',network:'arbitrum-one-mainnet',record_status:'MISSING'},
     ada_in_progress:true,
-  },'ADA','USDT'),true);
+  },'ARB','USDT'),true);
 });
 
 test('manual quote UI is compact and preserves 12 coins without diagnostic buttons',()=>{

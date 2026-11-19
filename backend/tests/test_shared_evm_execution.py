@@ -39,7 +39,7 @@ def test_all_six_evm_assets_reuse_identical_transaction_engine(asset,chain,netwo
     assert payload["params"]["transaction"]["to"]==ROUTER
 
 
-@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX","DOGE","ADA"])
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX","DOGE"])
 def test_non_evm_coins_never_enter_evm_dispatch(asset):
     with pytest.raises(ValueError):
         chain_for_asset(asset)

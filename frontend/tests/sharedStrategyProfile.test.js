@@ -8,13 +8,13 @@ const profile=()=>({
   mode:'SHARED_STRATEGY_PREFERENCES',
   strategy_mode:'SPOT_SHORT',horizon:'1h',revision:3,
   assets:[...SHARED_STRATEGY_COINS],
-  ada_in_progress:true,independent_budgets_preserved:true,
+  independent_budgets_preserved:true,
   existing_sessions_unchanged:true,wallet_authorized:false,
   real_trading_enabled:false,
 });
-test('global strategy applies to exactly eleven coins, ADA stays In Arbeit',()=>{
-  assert.equal(SHARED_STRATEGY_COINS.length,11);
-  assert.equal(SHARED_STRATEGY_COINS.includes('ADA'),false);
+test('global strategy applies to all twelve coins',()=>{
+  assert.equal(SHARED_STRATEGY_COINS.length,12);
+  assert.equal(SHARED_STRATEGY_COINS.includes('ARB'),true);
   assert.equal(validSharedStrategyProfile(profile()),true);
 });
 test('common mode and horizon never overwrite isolated coin budgets or settlement',()=>{

@@ -185,19 +185,16 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     user,ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored');
   const verifiedAccount = ready&&authenticated&&identityStatus==='verified'&&databaseStatus==='stored';
   const xrpWallet = useXrplWallet(user,verifiedAccount);
-  const [verifiedXrpAda,setVerifiedXrpAda] = useState({userId:null,XRP:null,ADA:null});
+  const [verifiedXrp,setVerifiedXrp] = useState({userId:null,XRP:null});
   useEffect(()=>{
     let active=true;
-    setVerifiedXrpAda({userId:null,XRP:null,ADA:null});
+    setVerifiedXrp({userId:null,XRP:null});
     if(!verifiedAccount||!user?.id)return()=>{active=false;};
     const expectedId=user.id;
-    Promise.all([
-      linkedVerifiedNativeAddress(user,'xrpl'),
-      linkedVerifiedNativeAddress(user,'cardano'),
-    ]).then(([XRP,ADA])=>{
-      if(active)setVerifiedXrpAda({userId:expectedId,XRP,ADA});
+    linkedVerifiedNativeAddress(user,'xrpl').then(XRP=>{
+      if(active)setVerifiedXrp({userId:expectedId,XRP});
     }).catch(()=>{
-      if(active)setVerifiedXrpAda({userId:expectedId,XRP:null,ADA:null});
+      if(active)setVerifiedXrp({userId:expectedId,XRP:null});
     });
     return()=>{active=false;};
   },[verifiedAccount,user?.id,user?.linkedAccounts]);
@@ -381,12 +378,14 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
     </div>;
 
-    if(['BNB','POL','AVAX','LINK','UNI'].includes(asset)){
+    if(['BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset)){
       const network=asset==='BNB'?'BNB Smart Chain':
         asset==='POL'?'Polygon PoS':asset==='AVAX'?'Avalanche C-Chain':
+        asset==='ARB'?'Arbitrum One (ARB ERC-20)':
         asset==='LINK'?'Chainlink (Ethereum ERC-20)':'Uniswap (Ethereum ERC-20)';
       const chain=asset==='BNB'?'bsc-mainnet':
-        asset==='POL'?'polygon-pos-mainnet':'avalanche-c-mainnet';
+        asset==='POL'?'polygon-pos-mainnet':
+        asset==='ARB'?'arbitrum-one-mainnet':'avalanche-c-mainnet';
       const evmAddress=(asset==='LINK'||asset==='UNI')
         ? (validEvmAddress(address)?address:null)
         : evmNetworkAddress(chain,address);
@@ -432,19 +431,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
             onClick={xrpWallet.retry}>{t.coinWalletRetry}</button>}
       </div>;
     }
-    // Cardano remains "In Arbeit". No fabricated address or wallet creation.
-    if(asset==='ADA'){
-      const nativeAddress=verifiedAccount&&verifiedXrpAda.userId===user?.id
-        ? verifiedXrpAda.ADA : null;
-      return <div className="mininex-coin-wallet-address" role="group"
-        aria-label={asset+' '+t.privyFullAddress}>
-        {nativeAddress
-          ? <CopyWalletAddress address={nativeAddress} network="Cardano" t={t}/>
-          : <div role="status" className="privy-wallet-description">
-              {t.coinAddressPending}
-            </div>}
-      </div>;
-    }
     if(asset==='DOGE'){
       return <ReadOnlyDogecoinWallet user={user} enabled={verifiedAccount} t={t}/>;
     }
@@ -471,10 +457,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     {asset==='BTC'&&<BtcSendEntry key={'btc-send-'+user?.id}
       t={t} lang={lang} userId={user?.id}
       wallet={btcWallet.wallet} enabled={verifiedAccount}/>}
-    {['ETH','BNB','POL','AVAX','LINK','UNI'].includes(asset)&&
+    {['ETH','BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset)&&
       <WalletSend key={'send-'+asset} initialCoin={asset} lockedCoin
         t={t} enabled={verifiedAccount} userId={user?.id}/>}
-    {!['ADA'].includes(asset)&&
+    {
       <ManualSwapPreview key={'swap-'+asset} initialCoin={asset} lockedCoin
         t={t} lang={lang} getAccessToken={getAccessToken}
         enabled={verifiedAccount} userId={user?.id}/>}

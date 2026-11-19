@@ -28,10 +28,10 @@ const base={
   ],
 };
 
-test('all eleven ready paper coins can appear in one home list, not ADA',()=>{
+test('all eleven ready paper coins can appear in one home list, not ARB',()=>{
   assert.deepEqual([...HOME_PAPER_COINS],[
     'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
-  assert.equal(HOME_PAPER_COINS.includes('ADA'),false);
+  assert.equal(HOME_PAPER_COINS.includes('ARB'),false);
   assert.equal(validHomePaperFeed(base),true);
   for(const symbol of HOME_PAPER_COINS){
     assert.equal(validHomePaperFeed({...base,trades:[
@@ -50,11 +50,11 @@ test('only account-owned PAPER fields, strict newest-first timestamps and unique
     {sort:'OLDEST_FIRST'},
     {selected_asset:'ETH'},
     {selected_asset:'SOL'},
-    {selected_asset:'ADA'},
+    {selected_asset:'ARB'},
     {selected_asset:undefined},
-    {assets:[...HOME_PAPER_COINS,'ADA']},
+    {assets:[...HOME_PAPER_COINS,'ARB']},
     {assets:[...HOME_PAPER_COINS].reverse()},
-    {trades:[a('ADA',1,'2026-11-13T18:15:00Z')]},
+    {trades:[a('ARB',1,'2026-11-13T18:15:00Z')]},
     {trades:[a('BTC',1,'2026-11-13T18:15:00Z'),a('BTC',1,'2026-11-13T18:10:00Z')]},
     {trades:base.trades.slice().reverse()},
     {trades:[{...base.trades[0],real_trade:true}]},
@@ -143,7 +143,7 @@ test('default history is selected coin only; ALL is voluntary',()=>{
   assert.equal(validHomePaperFeed(selected,'ALL'),false);
   assert.equal(validHomePaperFeed({...selected,trades:base.trades},'BTC'),false);
   assert.equal(validHomePaperFeed({...base,selected_asset:'ALL'},'ALL'),true);
-  assert.equal(validHomePaperFeed(base,'ADA'),false);
+  assert.equal(validHomePaperFeed(base,'ARB'),false);
   assert.match(app,/const \[showAllPaperHistory,setShowAllPaperHistory\]=useState\(false\)/);
   assert.match(app,/const homePaperScope=showAllPaperHistory\?'ALL':asset/);
   assert.match(app,/setShowAllPaperHistory\(false\);setAsset\(symbol\)/);

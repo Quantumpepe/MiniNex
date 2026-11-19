@@ -18,11 +18,11 @@ from .extra_market_data import EXTRA_ASSETS
 WINDOWS = {"5m":300.0,"15m":900.0,"1h":3600.0,"24h":86400.0}
 MODES = ("LONG","SPOT_SHORT","AUTO")
 MAX_POINTS = 3600
-# ADA remains IN ARBEIT. Other assets borrow the proven BTC/ETH strategy only
-# for independent, on-demand PAPER replay -- never for live/automatic orders.
-EXTRA_REPLAY_ASSETS = tuple(asset for asset in EXTRA_ASSETS if asset != 'ADA')
+# All ten extra coins (including ARB replacing ADA) may use isolated,
+# read-only historical replay, never LIVE execution or actual wallet funds.
+EXTRA_REPLAY_ASSETS = tuple(EXTRA_ASSETS)
 REPLAY_ASSETS = ('BTC', 'ETH') + EXTRA_REPLAY_ASSETS
-assert len(EXTRA_REPLAY_ASSETS) == 9
+assert len(EXTRA_REPLAY_ASSETS) == 10
 
 
 class _PastOnlyMarket:

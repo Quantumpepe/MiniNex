@@ -26,7 +26,11 @@ from .manual_swap_live_quotes import get_native_swap_quote
 from .storage import _safe_did
 from .strategy_replay import REPLAY_ASSETS
 
-TRADE_COINS = tuple(REPLAY_ASSETS)
+
+# Market-data/replay enablement is not equivalent to a verified EVM trade
+# adapter. ARB has an independently verified wallet reader, but no
+# execution/quote family in shared_evm_execution yet.
+TRADE_COINS = tuple(asset for asset in REPLAY_ASSETS if asset != "ARB")
 _MONEY = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 _DRY_RUN_ONLY = {
     "real_order_created": False,

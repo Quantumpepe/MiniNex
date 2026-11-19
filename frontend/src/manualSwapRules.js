@@ -1,6 +1,6 @@
 // Input gate for manual swap quote PREVIEWS only. No wallet operations.
 export const MANUAL_SWAP_ASSETS = Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ADA','USDC','USDT',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB','USDC','USDT',
 ]);
 const STABLES = new Set(['USDC','USDT']);
 const RE_AMOUNT = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
@@ -10,11 +10,12 @@ export function manualSwapQuoteRequest(from, to, amount) {
   const coin = STABLES.has(from) ? to : from;
   const stable = STABLES.has(from) ? from : to;
   const legacy = ['BTC','ETH'].includes(coin) && STABLES.has(stable);
-  // The real provider uses 1e8 precision. Native XRP/TRX/ADA and Ethereum
-  // stables have only 6 decimal places; never round any entered amount.
+  // Quote previews retain exact source precision. ARB is an 18-decimal
+  // ERC-20 on Arbitrum One, not a 6-decimal native network coin.
   const decimals = legacy
     ? (from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6)
-    : (STABLES.has(from) || ['XRP','TRX','ADA'].includes(from) ? 6 : 8);
+    : (from === 'ARB' ? 18 :
+       STABLES.has(from) || ['XRP','TRX'].includes(from) ? 6 : 8);
   if (typeof amount !== 'string' || amount.length > 48 ||
       !RE_AMOUNT.test(amount) || !/^[0-9]+$/.test(amount.replace('.','')) ||
       amount.split('.')[1]?.length > decimals || !Number.isFinite(Number(amount)) ||
@@ -127,7 +128,6 @@ export function validManualSwapWalletReadiness(data, from, to) {
     states.includes(data.source.record_status) &&
     states.includes(data.destination.record_status) &&
     data.route_class===(src===dst?'SAME_CHAIN':'CROSS_CHAIN') &&
-    data.ada_in_progress===(from==='ADA'||to==='ADA') &&
     data.linked_wallet_records_checked===true &&
     data.ownership_proof_verified===false &&
     data.native_signer_verified===false &&
