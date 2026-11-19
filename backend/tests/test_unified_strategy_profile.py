@@ -1,4 +1,4 @@
-"""One mode/horizon save is shared by all eleven MiniNex trading coins."""
+"""One mode/horizon save is shared by all twelve MiniNex trading coins."""
 import time
 
 import jwt
@@ -73,10 +73,10 @@ def fake_database(monkeypatch):
 def test_profile_covers_every_coin_without_ada_and_preserves_independent_capital(monkeypatch):
     c = fake_database(monkeypatch)
     state = profile.get_strategy_profile(DID)
-    assert len(state["assets"]) == 11
+    assert len(state["assets"]) == 12
     assert state["assets"] == ["BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
-                               "AVAX", "LINK", "DOGE", "UNI"]
-    assert state["ada_in_progress"] is True
+                               "AVAX", "LINK", "DOGE", "UNI", "ARB"]
+    assert "ada_in_progress" not in state
     assert state["independent_budgets_preserved"] is True
     assert state["existing_sessions_unchanged"] is True
     assert state["real_trading_enabled"] is False
