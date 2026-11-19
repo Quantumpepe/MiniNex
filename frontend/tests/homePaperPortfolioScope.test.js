@@ -49,20 +49,20 @@ test('selecting BTC, ETH, SOL or XRP shows only that coin capital by default',()
   assert.equal(sol.assetCount,1);
   assert.equal(xrp.equity,545);
   assert.equal(xrp.assetCount,1);
-  assert.equal(summarizeHomePaperPortfolio(c,e,'ARB'),null);
+  assert.equal(summarizeHomePaperPortfolio(c,e,'ARB').equity,545);
 });
 
-test('ALL sums independent started sessions but only after an explicit toggle',()=>{
+test('ALL sums all twelve independent started sessions regardless of selected coin',()=>{
   const c={BTC:core('BTC',520,500),ETH:core('ETH',460,450)};
   const e=report();
   const all=summarizeHomePaperPortfolio(c,e,'ALL');
-  assert.equal(all.assetCount,11);
-  assert.equal(all.startingCapital,950+9*500);
-  assert.equal(all.equity,520+460+9*545);
+  assert.equal(all.assetCount,12);
+  assert.equal(all.startingCapital,950+10*500);
+  assert.equal(all.equity,520+460+10*545);
   assert.equal(all.pnl,all.equity-all.startingCapital);
   assert.equal(all.scope,'ALL');
   assert.equal(all.mode,'PAPER');
-  assert.equal(all.runningAssets,11);
+  assert.equal(all.runningAssets,12);
   assert.equal(summarizeHomePaperPortfolio(c,null,'BTC').equity,520);
   assert.equal(summarizeHomePaperPortfolio(c,null,'ALL'),null);
 });
@@ -81,9 +81,9 @@ test('unstarted coin gets NO fabricated capital and does not consume global budg
   assert.equal(summarizeHomePaperPortfolio(c,e,'BTC'),null);
   assert.equal(summarizeHomePaperPortfolio(c,e,'SOL'),null);
   const total=summarizeHomePaperPortfolio(c,e,'ALL');
-  assert.equal(total.assetCount,9);
-  assert.equal(total.startingCapital,500+8*500);
-  assert.equal(total.equity,480+8*545);
+  assert.equal(total.assetCount,11);
+  assert.equal(total.startingCapital,500+9*500);
+  assert.equal(total.equity,480+9*545);
 });
 
 test('no verified sell quote means start capital but NO fake equity or PnL',()=>{
@@ -96,7 +96,7 @@ test('no verified sell quote means start capital but NO fake equity or PnL',()=>
   assert.equal(btc.pnl,null);
   assert.equal(btc.pnlPct,null);
   const all=summarizeHomePaperPortfolio(c,e,'ALL');
-  assert.equal(all.startingCapital,5500);
+  assert.equal(all.startingCapital,6000);
   assert.equal(all.valuationAvailable,false);
   assert.equal(all.equity,null);
   assert.equal(all.pnl,null);
@@ -156,4 +156,37 @@ test('independent PAPER cutover leaves LIVE wallet tools and coin settings visib
   assert.match(wallet,/<ManualSwapPreview/);
   assert.match(wallet,/<WalletBalances/);
   assert.doesNotMatch(mobile,/LIVE —/);
+});
+
+
+test('backend ten-extra-coin response including ARB restores 12-coin total without selection filter',()=>{
+  assert.deepEqual(HOME_PAPER_PORTFOLIO_COINS,[
+    'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB',
+  ]);
+  const e=report();
+  assert.equal(e.assets.length,10);
+  const result=summarizeHomePaperPortfolio({
+    BTC:core('BTC',520,500),ETH:core('ETH',515,500),
+  },e,'ALL');
+  assert.equal(result.assetCount,12);
+  assert.equal(result.equity,520+515+10*545);
+  assert.equal(result.startingCapital,6000);
+  assert.equal(result.valuationAvailable,true);
+  assert.equal(result.pnl,result.equity-6000);
+  const noArb={...e,assets:e.assets.filter(row=>row.asset!=='ARB')};
+  assert.equal(summarizeHomePaperPortfolio({},noArb,'ALL'),null);
+  assert.equal(summarizeHomePaperPortfolio({},e,'ARB').equity,545);
+});
+
+test('owner-defined budgets above 5000 remain visible in aggregated capital',()=>{
+  const e=report();
+  e.assets=e.assets.map(row=>row.asset==='ARB'?extra('ARB',10123,10000):row);
+  const result=summarizeHomePaperPortfolio({
+    BTC:{status:'NOT_STARTED',paper_only:true,real_trading_enabled:false,wallet_funds_used:false},
+    ETH:{status:'NOT_STARTED',paper_only:true,real_trading_enabled:false,wallet_funds_used:false},
+  },e,'ALL');
+  assert.equal(result.assetCount,10);
+  assert.equal(result.startingCapital,9*500+10000);
+  assert.equal(result.equity,9*545+10123);
+  assert.equal(result.valuationAvailable,true);
 });
