@@ -85,5 +85,5 @@ test('selecting ARB always has independent form defaults, preventing wallet blac
   const withoutArb=structuredClone(saved);
   delete withoutArb.settings.ARB;
   assert.equal(validSavedExtraCoinPreferences(withoutArb),false);
-  assert.match(settingsUI,/options=\\{replayOptions\\[opened\\]\\|\\|defaultReplayOption\\(\\)\\}/);
+  assert.match(settingsUI,/options=\{replayOptions\[opened\]\|\|defaultReplayOption\(\)\}/);
 });
