@@ -42,7 +42,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
 _INTERVAL_SECONDS=30
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _NATIVE=frozenset(("BNB","POL","AVAX"))
 
 
@@ -87,7 +87,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                    JOIN mininex_live_evm_owner_permissions g
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    WHERE s.status='ACTIVE'
-                     AND s.asset IN ('BNB','POL','AVAX','LINK','UNI')
+                     AND s.asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND p.revision=s.budget_revision
                      AND p.stable=s.stable
