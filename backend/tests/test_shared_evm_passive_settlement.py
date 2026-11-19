@@ -74,7 +74,7 @@ def test_completed_pending_and_bad_rows_are_separately_counted(monkeypatch):
         "finalized":2,"pending":1,"errors":3,
         "new_transactions_sent":0,
     }
-    assert [c["asset"] for c in calls]==["BNB","AVAX","LINK","UNI"]
+    assert [c["asset"] for c in calls]==["BNB","AVAX","LINK","UNI","ARB"]
 
 
 def test_no_background_ability_to_resend_unknown_or_uncertain_claim():
