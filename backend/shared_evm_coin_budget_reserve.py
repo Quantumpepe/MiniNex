@@ -22,7 +22,7 @@ from .shared_evm_swap_receipts import _pair
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
