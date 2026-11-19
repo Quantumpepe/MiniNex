@@ -1,7 +1,7 @@
 """Real THORChain public liquidity quotes for all twelve MiniNex assets.
 
 No paper prices, deposit addresses, memos, signatures, balances or transfers.
-Providers may not have active ADA/UNI/other pools; in that case return 503.
+Providers may not have active ARB/UNI/other pools; in that case return 503.
 """
 import asyncio
 import json
@@ -40,7 +40,7 @@ def test_all_twelve_native_assets_and_ethereum_stables_exactly_mapped():
         "BTC": "BTC.BTC", "ETH": "ETH.ETH", "BNB": "BSC.BNB",
         "SOL": "SOL.SOL", "XRP": "XRP.XRP", "TRX": "TRON.TRX",
         "POL": "POL.POL", "AVAX": "AVAX.AVAX", "DOGE": "DOGE.DOGE",
-        "ADA": "ADA.ADA",
+        "ARB": "ARB.ARB",
     }
     for sym, ident in expected.items():
         assert mq.THOR_ASSETS[sym][0] == ident
@@ -60,7 +60,7 @@ def test_all_twelve_native_assets_and_ethereum_stables_exactly_mapped():
     ("BTC","USDC","0"), ("DOGE","USDC","1e2"),
     ("ETH","SOL","0.000000001"),
     ("USDT","SOL","0.0000001"),
-    ("ADA","USDC","0.0000001"),
+    ("ARB","USDC","0.0000000000000000001"),
     ("LINK","UNI","-10"),
     ("LINK","UNI","01"),
     ("LINK","UNI","100000000000"),
@@ -161,7 +161,7 @@ def headers(monkeypatch):
 def test_quote_http_requires_real_privy_auth_for_real_provider_market_data(monkeypatch,headers):
     client=TestClient(api.app)
     path="/api/wallet/swap/live-quote"
-    body={"source":"ADA","target":"ETH","amount":"5"}
+    body={"source":"ARB","target":"ETH","amount":"5"}
     assert client.post(path,json=body).status_code==401
     assert client.get(path,headers=headers).status_code==405
     for bad in [
@@ -172,7 +172,7 @@ def test_quote_http_requires_real_privy_auth_for_real_provider_market_data(monke
     ]:
         assert client.post(path,headers=headers,json=bad).status_code==422
     async def mocked(src,dst,qty):
-        assert (src,dst,qty)==("ADA","ETH","5")
+        assert (src,dst,qty)==("ARB","ETH","5")
         return {
             "mode":"NATIVE_MULTICHAIN_REAL_MARKET_QUOTE_ONLY",
             "can_submit":False,"execution_enabled":False,
