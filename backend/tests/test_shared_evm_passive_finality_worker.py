@@ -17,7 +17,7 @@ def order(asset,side="BUY"):
                 intent_key=KEY,tx_hash=TX,wallet_address=WALLET)
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_real_owner_submitted_order_per_chain_is_eligible_for_passive_finality(asset):
     r=worker.validate_original_submitted_swap_record(order(asset))
     assert r["tx_hash"]==TX
@@ -39,7 +39,7 @@ def test_only_original_immutable_db_send_record_is_reconciled(mutation):
 
 
 def test_worker_joins_submitted_and_finalizes_without_resend(monkeypatch):
-    pending=[order("BNB"),order("LINK"),order("UNI")]
+    pending=[order("BNB"),order("LINK"),order("UNI"),order("ARB")]
     monkeypatch.setattr(worker,"original_submitted_evm_orders",lambda:pending)
     called=[]
     async def settle(**kw):
@@ -49,10 +49,10 @@ def test_worker_joins_submitted_and_finalizes_without_resend(monkeypatch):
     monkeypatch.setattr(worker,"reconcile_evm_internal_order",settle)
     result=asyncio.run(worker.reconcile_submitted_evm_swaps_once())
     assert result=={
-        "submitted_checked":3,"finalized_swaps":2,
+        "submitted_checked":4,"finalized_swaps":3,
         "awaiting_finality":1,"unresolved":0,
         "wallet_transactions_sent":0}
-    assert {x["asset"] for x in called}=={"BNB","LINK","UNI"}
+    assert {x["asset"] for x in called}=={"BNB","LINK","UNI","ARB"}
 
 
 def test_live_worker_executes_receipt_finality_before_native_completion():
@@ -63,3 +63,22 @@ def test_live_worker_executes_receipt_finality_before_native_completion():
         "reconcile_native_buy_cycle_once(client=client)")
     assert source.index("reconcile_native_sell_once(client=client)")<source.index(
         "reconcile_verified_erc20_fees_once(client=client)")
+
+
+def test_original_db_receipt_scan_includes_arbitrum_submissions(monkeypatch):
+    sql_queries=[]
+    class Session:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,params):sql_queries.append((sql,params))
+        def fetchall(self):return [order("ARB",side="SELL")]
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *a,**kw:Session())
+    found=worker.original_submitted_evm_orders(limit=10)
+    assert len(found)==1 and found[0]["asset"]=="ARB"
+    assert "'ARB'" in sql_queries[0][0]
+    assert "status='SUBMITTED'" in sql_queries[0][0]
+    assert "tx_hash IS NOT NULL" in sql_queries[0][0]
+    assert sql_queries[0][1]==(10,)
