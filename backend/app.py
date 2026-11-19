@@ -529,7 +529,7 @@ async def unified_real_market_trade_plan(
     asset: str, request: UnifiedLiveTradeRequest,
     authorization: str | None = Header(default=None),
 ):
-    """Real quote route for all eleven coins; never signs or moves funds."""
+    """Owner-bound read-only quote route for all twelve coins; never sends funds."""
     did=verify_privy_bearer(authorization)["user_id"]
     result=await get_unified_trade_plan(
         did,asset=asset,side=request.side,stable=request.stable,
