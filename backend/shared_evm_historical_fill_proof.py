@@ -20,7 +20,7 @@ from .shared_evm_swap_receipts import _pair, _receipt_rpc, check_user_evm_swap
 
 _HASH = re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
-_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI", "ARB", "ARB"))
+_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI", "ARB"))
 
 
 def verified_evm_swap_block_evidence(
