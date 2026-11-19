@@ -27,6 +27,7 @@ from .verified_sync import synchronize_one_page
 from .wallet_balances import get_wallet_balances
 from .multicoin_evm_balances import get_multicoin_evm_balances
 from .native_coin_balances import get_native_balances
+from .native_trade_receipts import get_owner_native_sender_receipt
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
@@ -498,6 +499,21 @@ async def authenticated_native_balances(
     """Verified real SOL/XRP/TRX wallet holdings from their own networks."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(await get_native_balances(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/source-receipt/{asset}/{transaction_hash}")
+async def read_owner_finalized_native_source_receipt(
+    asset: Literal["SOL","XRP"], transaction_hash: str,
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated source-chain observation, never claimed as swap payout."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await get_owner_native_sender_receipt(
+        did,asset=asset,transaction_hash=transaction_hash)
+    return JSONResponse(result,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
