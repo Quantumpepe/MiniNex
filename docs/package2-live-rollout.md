@@ -144,3 +144,42 @@ Never manually override this to charge 5% on native trades.
 
 This branch still requires independent Privy signer grants and a controlled
 Render/Android rollout; no release or real money movement has happened here.
+
+
+## 19 November 2026 – Backend reliability continuation (Paket 2)
+
+New code on the existing **open PR #194**, not the deployed `main` branch:
+
+- Passive Router02 swap finality, original native BUY/SELL deposit/withdraw
+  receipts, native downstream swap/cycle recovery and original 5%-Treasury
+  receipt finality use **rotating bounded work pages**. Previously each
+  20/30/80-row oldest-first query could reselect the same pending records
+  and starve valid newer ones. This change does NOT add user/order/capital
+  limits and does NOT retry an uncertain wallet transaction.
+- The shared EVM worker rotates the ACTIVE-session scan across all BNB,
+  POL, AVAX, LINK, UNI and ARB owner sessions. Even if the session query
+  fails temporarily, already submitted blockchain transactions still
+  receive passive finality and HWM readback in that worker cycle.
+- The 5%-HWM obligation selector also rotates across owners. A failed
+  Privy-policy availability check cannot monopolize the backend fee queue.
+  All sends remain behind the original database one-shot claim and exact
+  separate owner-approved wallet/fee policy. Disabled means **no sends**.
+- Native BNB/POL/AVAX archived historical custody now also reads
+  `eth_getTransactionCount` for the wallet at **start_block - 1** and at
+  **end_block**, matching the nonce difference to every trace-filtered
+  owner-originated EOA transaction/receipt. This catches a missing zero-
+  value gas-paying send that native balance arithmetic alone might miss.
+  Absent/inconsistent archival nonces fail the optional historical audit,
+  never trading execution. The native audit remains **READ ONLY**, and
+  pre-existing asset cost basis / wallet lifetime still prevent automatic
+  native 5%-HWM fee assessment.
+- Added regression tests for work-page fairness, original receipt uniqueness,
+  missing archival sender nonces, session-scan failures and no fee send/retry.
+  Confirm CI for the current HEAD before describing the branch as tested.
+
+**Render service verified:** TBP-AI workspace, `mininex-backend` service,
+`main` branch with auto-deploy enabled. PR #194 is not deployed to this
+service. No manual Render trigger should be used to deploy PR code while
+`main` remains unchanged; merging a tested PR would itself trigger the
+configured auto-deploy. Preserve all current environment variables and
+require the respective owner Privy grants before any real live execution.
