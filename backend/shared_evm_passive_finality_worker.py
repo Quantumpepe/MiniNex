@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from threading import Lock
 
 import psycopg
 from fastapi import HTTPException
@@ -19,26 +20,39 @@ from .storage import _db_url,_ensure_schema
 
 LOG=logging.getLogger("mininex.evm_passive_order_finality")
 _ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_FINALITY_PAGE_LOCK=Lock()
+_FINALITY_PAGE_OFFSET=0
 
 
 def original_submitted_evm_orders(limit:int=80)->list[dict]:
     """Bounded RPC work page only; never a trading-order or daily limit."""
     if type(limit) is not int or not 1<=limit<=500:
         raise ValueError("Invalid finality scan batch")
+    global _FINALITY_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,asset,chain_id,intent_key,tx_hash,
+    sql="""SELECT privy_did,asset,chain_id,intent_key,tx_hash,
                           stable,side,wallet_address
                    FROM mininex_live_evm_auto_broadcasts
                    WHERE status='SUBMITTED'
                      AND tx_hash IS NOT NULL
                      AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
-                   ORDER BY created_at ASC,privy_did,asset LIMIT %s""",
-                (limit,))
-            return list(cur.fetchall())
+                   ORDER BY created_at ASC,privy_did,asset,intent_key
+                   LIMIT %s OFFSET %s"""
+    # A long-pending receipt cannot prevent later completed transactions
+    # from being checked. This only paginates chain reads; it never resends.
+    with _FINALITY_PAGE_LOCK:
+        offset=_FINALITY_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    rows=list(cur.fetchall())
+        _FINALITY_PAGE_OFFSET=offset+len(rows)
+    return rows
 
 
 def validate_original_submitted_swap_record(row:object)->dict:
