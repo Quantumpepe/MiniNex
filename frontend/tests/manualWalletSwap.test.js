@@ -47,7 +47,8 @@ test('all twelve coins can request real venue quotes; ETH/BTC keep dedicated rou
   });
   assert.equal(manualSwapQuoteRequest('BTC','BTC','1'),null);
   assert.equal(manualSwapQuoteRequest('USDC','USDT','0.1234567'),null);
-  assert.equal(manualSwapQuoteRequest('ARB','USDC','0.0000001'),null);
+  assert.equal(manualSwapQuoteRequest('ARB','USDC','0.000000000000000001')?.coin,'MULTICHAIN');
+  assert.equal(manualSwapQuoteRequest('ARB','USDC','0.0000000000000000001'),null);
   assert.equal(manualSwapQuoteRequest('SOL','BTC','0.123456789'),null);
 });
 
