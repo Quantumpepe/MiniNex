@@ -81,4 +81,26 @@ def test_original_db_receipt_scan_includes_arbitrum_submissions(monkeypatch):
     assert "'ARB'" in sql_queries[0][0]
     assert "status='SUBMITTED'" in sql_queries[0][0]
     assert "tx_hash IS NOT NULL" in sql_queries[0][0]
-    assert sql_queries[0][1]==(10,)
+    assert sql_queries[0][1]==(10,0)
+
+
+def test_old_unmined_submissions_do_not_starve_newer_arb_receipts(monkeypatch):
+    rows=[order(coin) for coin in ("BNB","POL","AVAX","LINK","UNI","ARB")]
+    params_seen=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kw):return self
+        def execute(self,sql,params):
+            self.limit,self.offset=params
+            params_seen.append(params)
+            assert "tx_hash IS NOT NULL" in sql
+            assert "ORDER BY created_at ASC" in sql
+        def fetchall(self):return rows[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(worker,"_FINALITY_PAGE_OFFSET",0)
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda db:None)
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *args,**kwargs:DB())
+    pages=[worker.original_submitted_evm_orders(limit=2) for _ in range(4)]
+    assert pages==[rows[:2],rows[2:4],rows[4:6],rows[:2]]
+    assert params_seen==[(2,0),(2,2),(2,4),(2,6),(2,0)]
