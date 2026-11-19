@@ -18,7 +18,7 @@ from .eth_user_consent import _require_policy_roles
 from .eth_privy_remote_quorum import check_privy_backend_quorum
 
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
-_ASSETS=("BNB","POL","AVAX","LINK","UNI")
+_ASSETS=("BNB","POL","AVAX","LINK","UNI","ARB")
 
 
 def _fee_env_name(asset:str)->str:
