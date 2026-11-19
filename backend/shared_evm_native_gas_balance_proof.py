@@ -30,6 +30,7 @@ def _atomic(value:object)->int:
 def verify_owner_native_balance_and_gas(
     *,wallet:str,traces:object,canonical_blocks:object,receipts:object,
     start_block:int,end_block:int,balance_before:object,balance_after:object,
+    sender_nonce_before:object|None=None,sender_nonce_after:object|None=None,
 )->dict:
     """Prove balance delta from every observed native value and sender gas."""
     if (type(wallet) is not str or _ADDRESS.fullmatch(wallet) is None
@@ -88,6 +89,18 @@ def verify_owner_native_balance_and_gas(
             value_in+=amount
     if not roots or set(receipts)!=set(roots):
         raise ValueError("Original owner root transaction gas receipts missing")
+    # A balance delta alone could accidentally match even when an outgoing
+    # zero-value EOA transaction is missing from the trace provider. The
+    # independently archived nonce difference counts *every* owner send.
+    nonce_complete=False
+    if sender_nonce_before is not None or sender_nonce_after is not None:
+        if sender_nonce_before is None or sender_nonce_after is None:
+            raise ValueError("Both archived wallet nonces are required")
+        before_nonce=_atomic(sender_nonce_before)
+        after_nonce=_atomic(sender_nonce_after)
+        if after_nonce<before_nonce or after_nonce-before_nonce!=len(roots):
+            raise ValueError("Archive trace omits owner-sent transactions")
+        nonce_complete=True
     gas_total=0
     for tx,(root,source,dest) in roots.items():
         receipt=receipts.get(tx)
@@ -120,6 +133,8 @@ def verify_owner_native_balance_and_gas(
         "total_observed_native_out_wei":str(value_out),
         "total_verified_sender_gas_wei":str(gas_total),
         "observed_wallet_sender_transaction_count":len(roots),
+        "archived_sender_nonce_delta_verified":nonce_complete,
+        "all_sender_transactions_in_observed_interval_reconciled":nonce_complete,
         "observed_interval_native_balance_conserved":True,
         "original_gas_receipts_verified":True,
         "wallet_lifetime_and_acquisition_basis_proven":False,
