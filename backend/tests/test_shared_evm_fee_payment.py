@@ -13,7 +13,7 @@ TX="0x"+"cd"*32
 WALLET="0x"+"ab"*20
 TREASURY="0x"+"ef"*20
 ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
-        "LINK":"USDC","UNI":"USDC"}
+        "LINK":"USDC","UNI":"USDC","ARB":"USDC"}
 
 
 def source(asset):
