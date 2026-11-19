@@ -1,18 +1,18 @@
 # MiniNex Paket 2 — LIVE rollout / operator dependency
 
-**Status (17 Nov 2026): GitHub PR #194 is a development branch. Not deployed.**
+**Status (19 Nov 2026): GitHub PR #194 is a development branch. Not deployed.**
 This document is not an instruction to auto-merge, transfer money, or grant
 Privy access. Rollout requires the wallet owner's explicit approval.
 
 ## What has been coded
 
-- Owner-only five-asset EVM trader consent and per-coin LIVE session UI;
+- Owner-only six-asset EVM trader consent and per-coin LIVE session UI;
   signed EIP-191 owner intent, server-built exact Privy policy, owner-approved
   `addSigners`, checked remote signer, explicit LIVE start and pause.
 - Separate bilingual fee consent flow for the exact 5%-of-realized-net-profit
   High-Water-Mark fee, once-only USD/USDC/USDT obligation journal, and
   guarded auto-fee sender with on-chain settlement reconciliation.
-- Complete historical LINK/UNI ERC20 transfer audit and FIFO HWM accounting
+- Complete historical LINK/UNI/ARB ERC20 transfer audit and FIFO HWM accounting
   for fully proved trade histories. Historical prices older than supported
   provider coverage and full native BNB/POL/AVAX custody remain incomplete.
 - Trading and fee policies never share a signer ID: Privy only supports one
@@ -22,7 +22,7 @@ Privy access. Rollout requires the wallet owner's explicit approval.
 ## Owner-required Privy identifiers — **never** put secrets in GitHub
 
 Retain the current ETH signer quorum `MININEX_PRIVY_ETH_SIGNER_ID` and
-`MININEX_PRIVY_ETH_POLICY_OWNER_ID` unchanged. Each of these **ten**
+`MININEX_PRIVY_ETH_POLICY_OWNER_ID` unchanged. Each of these **twelve**
 additional EVM policy scopes requires a separate registered Privy signer
 quorum ID, distinct from the ETH signer, from the policy owner, and from
 all other fee/trade signer IDs:
@@ -34,6 +34,7 @@ all other fee/trade signer IDs:
 | AVAX | `MININEX_PRIVY_EVM_AVAX_TRADE_SIGNER_ID` | `MININEX_PRIVY_EVM_AVAX_FEE_SIGNER_ID` |
 | LINK | `MININEX_PRIVY_EVM_LINK_TRADE_SIGNER_ID` | `MININEX_PRIVY_EVM_LINK_FEE_SIGNER_ID` |
 | UNI | `MININEX_PRIVY_EVM_UNI_TRADE_SIGNER_ID` | `MININEX_PRIVY_EVM_UNI_FEE_SIGNER_ID` |
+| ARB | `MININEX_PRIVY_EVM_ARB_TRADE_SIGNER_ID` | `MININEX_PRIVY_EVM_ARB_FEE_SIGNER_ID` |
 
 This is a **provider limitation**, not an order/day trading or budget limit.
 The existing pinned P-256 public authentication member may be reused only
@@ -45,8 +46,18 @@ Treasury wallets must be configured independently and verified on the
 correct chain: `MININEX_TREASURY_WALLET` (ETH network for LINK/UNI),
 `MININEX_TREASURY_BNB_WALLET`,
 `MININEX_TREASURY_POL_WALLET`,
-`MININEX_TREASURY_AVAX_WALLET`.
+`MININEX_TREASURY_AVAX_WALLET`,
+`MININEX_TREASURY_ARB_WALLET` (Arbitrum One, chain 42161).
 Do not copy a treasury address or policy from a different chain by default.
+
+Arbitrum One is an ERC-20 network for ARB: use `MININEX_ARBITRUM_RPC_URL`
+for token/receipt verification; Arbitrum ETH pays gas. ARB contract:
+`0x912CE59144191C1204E64559FE8253a0e49E6548` (18 decimals),
+Circle native USDC `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`
+(6 decimals), Arbitrum USDT0 `0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9`
+(6 decimals). No wrapped/native ARB deposit/withdrawal should be assumed.
+Do not enable any newly installed EVM auto-trader or auto-fee worker until
+independent owner-specific Privy permissions and treasury details are verified.
 
 ## Deployment and proof sequence
 
@@ -79,7 +90,7 @@ Do not copy a treasury address or policy from a different chain by default.
 8. BNB/POL/AVAX native wallet and historical external-transfer custody
    is **not** fully reconciled for automatic HWM fee assessment. No profit
    fee may be automatically assessed on those assets until that evidence
-   is complete. LINK/UNI code/CI is not an on-chain live verification.
+   is complete. LINK/UNI/ARB code/CI is not an on-chain live verification.
 
 **Never classify:** CI as Render deployment; an EIP-191 signature as a
 Privy signer grant; an ACTIVE server session as a completed blockchain
