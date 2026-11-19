@@ -24,7 +24,7 @@ def route(asset,side="SELL",stable="USDC",amount="1",now=1803000000):
     quote={
         "inbound_address":"0x"+"b"*40 if side=="BUY" else native,
         "expiry":now+120,
-        "memo":"=:"+THOR_ASSETS[dst][0]+":"+target+":0/1/0",
+        "memo":"=:"+THOR_ASSETS[dst][0]+":"+target+"/"+(ETH if side=="BUY" else native)+":0/1/0",
         "expected_amount_out":"123456700",
         "recommended_min_amount_in":"10000000",
         "fees":{"total":"12345","outbound":"10000","liquidity":"2345"},
@@ -57,7 +57,7 @@ def test_destination_bound_native_sell_uses_actual_owner_and_active_vault(asset)
     assert result["privy_native_signer_verified"] is False
     assert result["source_transaction_sent"] is False
     assert result["can_submit"] is False
-    assert result["refund_path_verified"] is False
+    assert result["refund_path_verified"] is True
 
 
 @pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
@@ -84,6 +84,8 @@ def test_destination_bound_native_buy_identifies_eth_erc20_router_requirement(as
     lambda q,ins:ins[0].update(chain_trading_paused=True),
     lambda q,ins:q.update(memo="=:BTC.BTC:bc1qrqbad:0/1/0"),
     lambda q,ins:q.update(memo=q["memo"].replace(ETH,"0x"+"b"*40)),
+    lambda q,ins:q.update(memo=q["memo"].replace("/"+SOL,"/xrp_fake_source")),
+    lambda q,ins:q.update(memo=q["memo"].replace("/"+SOL,"")),
     lambda q,ins:q.update(expiry=1803000000),
     lambda q,ins:q.update(expiry=1803001000),
     lambda q,ins:q.update(expected_amount_out="0"),
@@ -161,7 +163,7 @@ def test_private_thornode_quote_checks_real_owner_destination_before_rpc(monkeyp
     quote={
         "inbound_address":BTC,
         "expiry":now+120,
-        "memo":"=:"+THOR_ASSETS["USDC"][0]+":"+ETH+":0/1/0",
+        "memo":"=:"+THOR_ASSETS["USDC"][0]+":"+ETH+"/"+BTC+":0/1/0",
         "expected_amount_out":"120000000",
         "recommended_min_amount_in":"10000000",
         "fees":{"total":"10000"},
@@ -209,6 +211,7 @@ def test_private_thornode_quote_checks_real_owner_destination_before_rpc(monkeyp
     assert result["can_submit"] is False
     assert len(calls)==2
     assert calls[0][1]["params"]["destination"]==ETH
+    assert calls[0][1]["params"]["refund_address"]==BTC
     assert calls[0][1]["params"]["from_asset"]=="BTC.BTC"
     assert calls[0][1]["params"]["amount"]=="100000000"
     assert calls[1][0].endswith("/inbound_addresses")

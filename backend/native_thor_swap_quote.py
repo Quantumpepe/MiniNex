@@ -132,10 +132,16 @@ def validate_thornode_route_terms(
             or any(c in memo for c in "\r\n\x00")):
         raise ValueError("Unsupported original THORChain swap memo")
     parts=memo.split(":")
+    refund_owner=eth_owner if side=="BUY" else native_owner
+    fields=parts[2].split("/") if len(parts)>=3 else []
+    target_matches=(fields[0]==target if side=="BUY" else
+                    fields[0].lower()==target.lower()) if len(fields)==2 else False
+    refund_matches=(fields[1].lower()==refund_owner.lower() if side=="BUY"
+                    else fields[1]==refund_owner) if len(fields)==2 else False
     if (len(parts)<3 or parts[0].upper() not in ("=","SWAP","S")
             or parts[1].upper()!=to_coin.upper()
-            or parts[2].split("/")[0].lower()!=target.lower()):
-        raise ValueError("Wrong destination wallet or token in THORChain memo")
+            or not target_matches or not refund_matches):
+        raise ValueError("Wrong user destination or original source refund in THORChain memo")
     if side=="SELL" and asset=="BTC" and len(memo.encode("utf-8"))>80:
         # Extended multi-output OP_RETURN requires its own verified encoder.
         # Do not misrepresent a longer memo as a standard BTC transaction.
@@ -159,7 +165,7 @@ def validate_thornode_route_terms(
         "original_vault_verified":True,
         "required_chain_memo_verified":True,
         "exact_venue_fees_verified":True,
-        "refund_path_verified":False,
+        "refund_path_verified":True,
         "needs_extended_btc_memo":memo_needs_extension,
         "needs_erc20_router":side=="BUY",
         "transaction_encoding_verified":False,
@@ -194,8 +200,10 @@ async def get_private_native_thornode_terms(
     except ValueError:
         raise HTTPException(409,"Original source balance insufficient or unverified") from None
     destination=native_owner if side=="BUY" else eth_owner
+    refund_owner=eth_owner if side=="BUY" else native_owner
     params={"from_asset":from_coin,"to_asset":to_coin,
-            "amount":units,"destination":destination}
+            "amount":units,"destination":destination,
+            "refund_address":refund_owner}
     try:
         async with httpx.AsyncClient(
                 timeout=httpx.Timeout(9),follow_redirects=False) as client:

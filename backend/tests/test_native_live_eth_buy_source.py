@@ -62,7 +62,7 @@ def topic(address):
 
 def fixture(asset="BTC",stable="USDC"):
     destination=NATIVE[asset]
-    memo="=:"+THOR_ASSETS[asset][0]+":"+destination+":0/1/0"
+    memo="=:"+THOR_ASSETS[asset][0]+":"+destination+"/"+OWNER+":0/1/0"
     token=STABLES[stable]
     body=(address_word(VAULT)+address_word(token)+word(_AMOUNT)
           +dynamic_memo(memo,160)+word(2000000000))
@@ -201,7 +201,7 @@ def test_abi_selector_and_stable_amount_are_byte_exact():
     assert deposit["vault"]==VAULT
     assert deposit["token"]==STABLES["USDC"].lower()
     assert deposit["atomic"]==_AMOUNT
-    assert deposit["memo"].startswith("=:SOL.SOL:"+NATIVE["SOL"])
+    assert deposit["memo"].startswith("=:SOL.SOL:"+NATIVE["SOL"]+"/"+OWNER)
     assert deposit["expiry"]==2000000000
 
 

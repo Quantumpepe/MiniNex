@@ -174,10 +174,13 @@ def inspect_original_eth_buy_source(
         raise ValueError("ETH original source not in canonical finalized block")
     deposit=_read_deposit_call(transaction.get("input"))
     parts=deposit["memo"].split(":")
+    destinations=parts[2].split("/") if len(parts)>=3 else []
     if (deposit["token"]!=STABLES[original["stable"]].lower()
             or len(parts)<3 or parts[0].upper() not in ("=","S","SWAP")
             or parts[1].upper()!=THOR_ASSETS[asset][0].upper()
-            or parts[2].split("/")[0]!=native_owner
+            or len(destinations)!=2
+            or destinations[0]!=native_owner
+            or destinations[1].lower()!=owner
             or deposit["expiry"]<_num(block.get("timestamp"))):
         raise ValueError("Original ETH stable, target, or deadline mismatch")
     try:
