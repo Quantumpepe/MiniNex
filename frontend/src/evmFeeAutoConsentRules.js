@@ -1,8 +1,8 @@
 // Exact, user-selected fee transfer cap. Never round up a value silently.
-const NETWORKS = Object.freeze({BNB:56, POL:137, AVAX:43114, LINK:1, UNI:1});
+const NETWORKS = Object.freeze({BNB:56, POL:137, AVAX:43114, LINK:1, UNI:1, ARB:42161});
 const STABLES = Object.freeze({
   BNB:['USDT'], POL:['USDC'], AVAX:['USDC'],
-  LINK:['USDC','USDT'], UNI:['USDC','USDT'],
+  LINK:['USDC','USDT'], UNI:['USDC','USDT'], ARB:['USDC','USDT'],
 });
 const ETH_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const ID = /^[A-Za-z0-9_-]{6,160}$/;
