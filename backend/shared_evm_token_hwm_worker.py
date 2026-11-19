@@ -1,7 +1,7 @@
 """Passive owner-token historical price capture and exact 5% HWM worker.
 
 No PAPER prices, no client-supplied net, no automatic transaction sender.
-The worker stores prices near original finalized LINK/UNI BUY/SELL blocks,
+The worker stores prices near original finalized LINK/UNI/ARB BUY/SELL blocks,
 then runs whole-custody FIFO proof before recording realized SELL deltas
 on the existing idempotent High-Water-Mark accounting ledger. User fee
 payment/signing remains a completely separate permission and action.
@@ -57,7 +57,7 @@ def _read_pending_original_usd_fills(limit:int=40)->list[dict]:
                      AND f.created_at >= now() - INTERVAL '20 hours'
                      AND b.status='FINALIZED_SUCCESS'
                      AND (s.tx_hash IS NULL OR n.tx_hash IS NULL)
-                   ORDER BY f.created_at ASC,f.privy_did ASC
+                   ORDER BY f.created_at DESC,f.privy_did ASC,f.asset ASC,f.tx_hash ASC
                    LIMIT %s""",(limit,))
             rows=list(cur.fetchall())
     return [dict(did=row["privy_did"],
