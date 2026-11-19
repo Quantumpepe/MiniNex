@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from threading import Lock
 
 import httpx
 import psycopg
@@ -22,6 +23,11 @@ from .storage import _db_url,_ensure_schema
 
 LOG=logging.getLogger("mininex.evm_verified_auto_fees")
 
+# A database work-page cursor, not a trading limit or retry authorization.
+# Every send must still pass the original atomic one-shot claim.
+_PENDING_FEE_SCAN_LOCK=Lock()
+_PENDING_FEE_SCAN_OFFSET=0
+
 
 def _pending_owner_auto_fee_obligations(limit:int=25)->list[dict]:
     """Work page, never arbitrary per-owner/day fee or trading throttle."""
@@ -29,11 +35,9 @@ def _pending_owner_auto_fee_obligations(limit:int=25)->list[dict]:
         raise ValueError("Invalid transient fee processing batch")
     if not automatic_fee_transfer_worker_enabled():
         return []
+    global _PENDING_FEE_SCAN_OFFSET
     db=_db_url();_ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT o.privy_did,o.asset,o.execution_id
+    query="""SELECT o.privy_did,o.asset,o.execution_id
                    FROM mininex_evm_fee_obligations o
                    JOIN mininex_evm_fee_events e
                      ON e.privy_did=o.privy_did AND e.asset=o.asset
@@ -65,9 +69,24 @@ def _pending_owner_auto_fee_obligations(limit:int=25)->list[dict]:
                      AND g.policy_id IS NOT NULL
                      AND g.remote_policy_sha256=g.policy_sha256
                      AND p.execution_id IS NULL AND a.execution_id IS NULL
-                   ORDER BY o.created_at ASC,o.privy_did,o.asset
-                   LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY o.created_at ASC,o.privy_did,o.asset,o.execution_id
+                   LIMIT %s OFFSET %s"""
+    # Missing remote Privy grants or unavailable networks can keep a row
+    # pending. Cycle through all eligible owners instead of retrying only
+    # the oldest page forever; the permanent SENDING journal still forbids
+    # another wallet transaction for an already-claimed original fee.
+    with _PENDING_FEE_SCAN_LOCK:
+        offset=_PENDING_FEE_SCAN_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(query,(limit,0))
+                    rows=list(cur.fetchall())
+        _PENDING_FEE_SCAN_OFFSET=offset+len(rows)
+    return rows
 
 
 async def run_owner_approved_auto_fee_batch(
