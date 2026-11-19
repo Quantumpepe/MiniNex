@@ -13,7 +13,7 @@ from backend.shared_evm_swap_receipts import _pair
 DID="did:privy:owner"
 START=datetime(2026,11,17,16,10,23,34210,tzinfo=timezone.utc)
 ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
-        "LINK":"USDC","UNI":"USDC"}
+        "LINK":"USDC","UNI":"USDC","ARB":"USDC"}
 
 
 def session(asset="LINK"):
@@ -51,7 +51,7 @@ def rates(asset,stable):
             for k,v in ((asset,8.0),(stable,1.0))}
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_worker_requires_exact_opt_in_and_database(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.setenv("DATABASE_URL","postgres://test.invalid")
@@ -64,7 +64,7 @@ def test_worker_requires_exact_opt_in_and_database(monkeypatch,asset):
     assert worker._trusted_live_session(session(asset))["asset"]==asset
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
 def test_buy_can_use_full_user_budget_without_system_trade_caps(asset):
     proof=evidence(asset,"BUY",source="5000",allowance="5000")
     got=worker.exact_user_coin_live_amount(
@@ -74,7 +74,7 @@ def test_buy_can_use_full_user_budget_without_system_trade_caps(asset):
     assert Decimal(got)==2000
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
 def test_appreciated_position_can_sell_all_owned_approved_tokens(asset):
     proof=evidence(asset,"SELL",source="2500",allowance="2400")
     got=worker.exact_user_coin_live_amount(
@@ -130,7 +130,7 @@ def use_tick_mocks(monkeypatch,asset="LINK",action="BUY"):
     return actions
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
 @pytest.mark.parametrize("action",["BUY","SELL"])
 def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
     monkeypatch,asset,action
@@ -207,7 +207,7 @@ def test_worker_is_wired_to_lifespan_and_disabled_by_default(monkeypatch):
     assert evm_auto_live._task is None
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI"])
+@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
 def test_existing_verified_coin_position_is_deducted_from_buying_budget(asset):
     proof=evidence(asset,"BUY",source="10000",
                    allowance="10000",destination="150")
