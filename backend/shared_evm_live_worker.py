@@ -17,6 +17,7 @@ from decimal import Decimal,ROUND_DOWN
 import logging
 import os
 import time
+from threading import Lock
 
 import httpx
 import psycopg
@@ -45,6 +46,11 @@ _INTERVAL_SECONDS=30
 _ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _NATIVE=frozenset(("BNB","POL","AVAX"))
 
+# Rotate the worker query across all owner-activated sessions. This is a
+# database work page only; it never restricts trading volumes or active users.
+_EVM_SESSION_PAGE_LOCK=Lock()
+_EVM_SESSION_PAGE_OFFSET=0
+
 
 def evm_auto_worker_enabled()->bool:
     return (
@@ -64,12 +70,10 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
         return []
     if type(limit) is not int or not 1<=limit<=100:
         raise ValueError("Invalid EVM session scan page")
+    global _EVM_SESSION_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT s.privy_did,s.asset,s.stable,s.chain_id,
+    sql="""SELECT s.privy_did,s.asset,s.stable,s.chain_id,
                           s.budget_revision,s.started_by_owner_at,
                           p.budget_usd,p.mode,p.horizon,
                           COALESCE((
@@ -96,8 +100,19 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                      AND g.expires_at>now()
                      AND g.budget_revision=s.budget_revision
                    ORDER BY s.updated_at ASC,s.privy_did,s.asset
-                   LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   LIMIT %s OFFSET %s"""
+    with _EVM_SESSION_PAGE_LOCK:
+        offset=_EVM_SESSION_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _EVM_SESSION_PAGE_OFFSET=offset+len(page)
+    return page
 
 
 def _trusted_live_session(row:dict)->dict:
