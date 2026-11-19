@@ -36,7 +36,7 @@ def pinned(asset):
         sort_keys=True,separators=(",",":")).encode()).hexdigest()
     return {
         "asset":asset,"stable":stable,
-        "chain_id":{"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1}[asset],
+        "chain_id":{"BNB":56,"POL":137,"AVAX":43114,"LINK":1,"UNI":1,"ARB":42161}[asset],
         "owner_id":OWNER,"signer_id":SIGNER,
         "wallet_id":WALLET_ID,"wallet_address":WALLET,
         "candidate_json":candidate,"policy_sha256":digest,
