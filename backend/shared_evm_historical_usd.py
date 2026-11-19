@@ -18,7 +18,7 @@ from fastapi import HTTPException
 _IDS={
     "ETH":"ethereum","BNB":"binancecoin",
     "POL":"polygon-ecosystem-token","AVAX":"avalanche-2",
-    "LINK":"chainlink","UNI":"uniswap",
+    "LINK":"chainlink","UNI":"uniswap","ARB":"arbitrum",
     "USDC":"usd-coin","USDT":"tether",
 }
 LOG=logging.getLogger("mininex.real_historical_usd")
