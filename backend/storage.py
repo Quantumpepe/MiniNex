@@ -522,7 +522,7 @@ SCHEMA = (
         status TEXT NOT NULL DEFAULT 'ACTIVE'
             CHECK (status IN ('ACTIVE','PAUSED')),
         settlement TEXT NOT NULL CHECK (settlement IN ('USDC','USDT')),
-        strategy_mode TEXT NOT NULL CHECK (strategy_mode IN ('LONG','SPOT_SHORT')),
+        strategy_mode TEXT NOT NULL CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO')),
         horizon TEXT NOT NULL CHECK (horizon IN ('5m','15m','1h','24h')),
         initial_demo_cash NUMERIC(28,8) NOT NULL
             CHECK (initial_demo_cash > 0),
@@ -920,6 +920,14 @@ SCHEMA = (
        ADD CONSTRAINT mininex_extra_paper_sessions_asset_check
        CHECK (asset IN
          ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
+    # The common per-coin AUTO strategy exists in application code; repair the
+    # historic SQL check so independently selected AUTO settings can persist.
+    """ALTER TABLE mininex_extra_paper_sessions
+       DROP CONSTRAINT IF EXISTS
+       mininex_extra_paper_sessions_strategy_mode_check""",
+    """ALTER TABLE mininex_extra_paper_sessions
+       ADD CONSTRAINT mininex_extra_paper_sessions_strategy_mode_check
+       CHECK (strategy_mode IN ('LONG','SPOT_SHORT','AUTO'))""",
     """DO $migration$
     DECLARE item RECORD;
     BEGIN
