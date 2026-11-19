@@ -27,6 +27,10 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.native_evm_sell_reconcile")
 _NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE_SELL_CYCLE_PAGE_LOCK=Lock()
+_NATIVE_SELL_CYCLE_PAGE_OFFSET=0
+_NATIVE_SELL_SWAP_PAGE_LOCK=Lock()
+_NATIVE_SELL_SWAP_PAGE_OFFSET=0
 _NATIVE_SELL_RECEIPT_PAGE_LOCK=Lock()
 _NATIVE_SELL_RECEIPT_PAGE_OFFSET=0
 
@@ -140,12 +144,10 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
     Respect that pause, and only continue when consent and policy are
     independently reverified by the downstream once-only order claim.
     """
+    global _NATIVE_SELL_SWAP_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT n.privy_did,n.asset,n.intent_key,n.strategy_run_id,
+    query="""SELECT n.privy_did,n.asset,n.intent_key,n.strategy_run_id,
                           n.signal_event_id,n.stable,n.chain_id,
                           n.budget_revision,n.amount_wei
                    FROM mininex_live_evm_native_sell_intents n
@@ -161,18 +163,29 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
                      AND s.stable=n.stable AND s.chain_id=n.chain_id
                      AND s.wallet_address=n.wallet_address
                      AND b.intent_key IS NULL
-                   ORDER BY n.updated_at ASC LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY n.updated_at ASC,n.privy_did,n.asset,n.intent_key LIMIT %s OFFSET %s"""
+    # Rotate across all owner-approved native steps; a stalled older receipt
+    # or unresolved downstream operation must not starve newer owners.
+    with _NATIVE_SELL_SWAP_PAGE_LOCK:
+        selected=_NATIVE_SELL_SWAP_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,selected))
+                items=list(cur.fetchall())
+                if not items and selected:
+                    selected=0
+                    cur.execute(query,(limit,0))
+                    items=list(cur.fetchall())
+        _NATIVE_SELL_SWAP_PAGE_OFFSET=selected+len(items)
+    return items
 
 
 def original_native_sells_needing_cycle(limit:int=20)->list[dict]:
     """Join both originally recorded hashes; require finalized swap fill."""
+    global _NATIVE_SELL_CYCLE_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT b.privy_did,b.asset,b.intent_key,
+    query="""SELECT b.privy_did,b.asset,b.intent_key,
                           b.tx_hash AS swap_tx_hash,
                           n.tx_hash AS native_tx_hash,b.side,b.stable
                    FROM mininex_live_evm_auto_broadcasts b
@@ -193,8 +206,21 @@ def original_native_sells_needing_cycle(limit:int=20)->list[dict]:
                      AND n.status='FINALIZED_SUCCESS' AND f.side='SELL'
                      AND r.state='RECONCILIATION_REQUIRED'
                      AND c.intent_key IS NULL
-                   ORDER BY b.updated_at ASC LIMIT %s""",(limit,))
-            return list(cur.fetchall())
+                   ORDER BY b.updated_at ASC,b.privy_did,b.asset,b.intent_key LIMIT %s OFFSET %s"""
+    # Rotate across all owner-approved native steps; a stalled older receipt
+    # or unresolved downstream operation must not starve newer owners.
+    with _NATIVE_SELL_CYCLE_PAGE_LOCK:
+        selected=_NATIVE_SELL_CYCLE_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query,(limit,selected))
+                items=list(cur.fetchall())
+                if not items and selected:
+                    selected=0
+                    cur.execute(query,(limit,0))
+                    items=list(cur.fetchall())
+        _NATIVE_SELL_CYCLE_PAGE_OFFSET=selected+len(items)
+    return items
 
 
 def _exact_wrapped_sell_amount(row:dict)->str:
