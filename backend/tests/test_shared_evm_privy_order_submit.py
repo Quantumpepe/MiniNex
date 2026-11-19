@@ -125,7 +125,7 @@ async def submit(asset,stable):
             amount="100",budget_revision=5,client=client)
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_five_coins_only_one_post_after_persisted_claim(monkeypatch,asset):
     called,prepared,stable=mocks(monkeypatch,asset=asset)
     result=asyncio.run(submit(asset,stable))
