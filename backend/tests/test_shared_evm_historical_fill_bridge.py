@@ -29,7 +29,7 @@ def evidence(asset):
     return row, proof
 
 
-@pytest.mark.parametrize("asset", ["BNB", "POL", "AVAX", "LINK", "UNI"])
+@pytest.mark.parametrize("asset", ["BNB", "POL", "AVAX", "LINK", "UNI", "ARB"])
 def test_owner_fill_is_anchored_to_original_finalized_execution(asset):
     row, proof = evidence(asset)
     result = join_owner_persisted_evm_fill(row,proof)
