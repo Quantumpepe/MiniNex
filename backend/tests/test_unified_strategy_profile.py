@@ -138,7 +138,7 @@ def test_shared_profile_route_needs_login_and_only_uses_authenticated_identity(m
     result = {
         "mode": "SHARED_STRATEGY_PREFERENCES", "strategy_mode": "LONG",
         "horizon": "15m", "revision": 0, "assets": list(profile.TRADING_ASSETS),
-        "ada_in_progress": True, "independent_budgets_preserved": True,
+ "independent_budgets_preserved": True,
         "existing_sessions_unchanged": True, "wallet_authorized": False,
         "real_trading_enabled": False,
     }
