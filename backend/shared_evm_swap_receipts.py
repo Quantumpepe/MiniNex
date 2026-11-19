@@ -25,7 +25,7 @@ from .eth_swaprouter02_preflight import (
 from .live_eth_quotes import STABLES
 from .live_eth_receipts import _num
 from .multicoin_evm_balances import _ETH_TOKENS, _RPC
-from .native_evm_v3_quote import CHAINS
+from .native_evm_v3_quote import CHAINS,_route
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import verified_addresses
 from .shared_evm_execution import chain_for_asset
@@ -48,7 +48,7 @@ def _pair(asset: str, stable: str, side: str) -> dict:
         stable_decimals = 6
         fee_levels=(500,3000)
     else:
-        item=CHAINS[asset]
+        item=_route(asset,stable)
         if (stable!=item.stable or item.chain_id!=chain
                 or item.network!=network):
             raise ValueError("Unsupported on-chain settlement")
@@ -222,7 +222,8 @@ async def check_user_evm_swap(
     except (ValueError,KeyError,TypeError):
         raise HTTPException(503,"Verified Privy wallet required") from None
     if asset in CHAINS:
-        chain,network,fallback,env=_RPC[asset]
+        chain,network,fallback,env=_RPC[
+            "ARB_TOKENS" if asset=="ARB" else asset]
     else:
         chain,network,fallback,env=_RPC["ETH_TOKENS"]
     if chain!=pair["chain_id"] or network!=pair["network"]:
