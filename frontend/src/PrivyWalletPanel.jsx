@@ -376,12 +376,14 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
     </div>;
 
-    if(['BNB','POL','AVAX','LINK','UNI'].includes(asset)){
+    if(['BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset)){
       const network=asset==='BNB'?'BNB Smart Chain':
         asset==='POL'?'Polygon PoS':asset==='AVAX'?'Avalanche C-Chain':
+        asset==='ARB'?'Arbitrum One (ARB ERC-20)':
         asset==='LINK'?'Chainlink (Ethereum ERC-20)':'Uniswap (Ethereum ERC-20)';
       const chain=asset==='BNB'?'bsc-mainnet':
-        asset==='POL'?'polygon-pos-mainnet':'avalanche-c-mainnet';
+        asset==='POL'?'polygon-pos-mainnet':
+        asset==='ARB'?'arbitrum-one-mainnet':'avalanche-c-mainnet';
       const evmAddress=(asset==='LINK'||asset==='UNI')
         ? (validEvmAddress(address)?address:null)
         : evmNetworkAddress(chain,address);
@@ -453,7 +455,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     {asset==='BTC'&&<BtcSendEntry key={'btc-send-'+user?.id}
       t={t} lang={lang} userId={user?.id}
       wallet={btcWallet.wallet} enabled={verifiedAccount}/>}
-    {['ETH','BNB','POL','AVAX','LINK','UNI'].includes(asset)&&
+    {['ETH','BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset)&&
       <WalletSend key={'send-'+asset} initialCoin={asset} lockedCoin
         t={t} enabled={verifiedAccount} userId={user?.id}/>}
     {
