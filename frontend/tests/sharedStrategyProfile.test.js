@@ -23,7 +23,7 @@ test('common mode and horizon never overwrite isolated coin budgets or settlemen
           stable:i%2?'USDT':'USDC'},
   ]));
   const changed=applySharedStrategyToExtra(options,profile());
-  assert.equal(Object.keys(changed).length,9);
+  assert.equal(Object.keys(changed).length,10);
   for(const coin of EXTRA_REPLAY_COINS){
     assert.equal(changed[coin].budget,options[coin].budget);
     assert.equal(changed[coin].stable,options[coin].stable);
