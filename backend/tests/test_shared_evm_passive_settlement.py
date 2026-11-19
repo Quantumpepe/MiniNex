@@ -17,11 +17,11 @@ def pending(asset="BNB",side="BUY",stable=None):
         "tx_hash":TX,"side":side,
         "stable":stable or ("USDT" if asset=="BNB" else "USDC"),
         "chain_id":{"BNB":56,"POL":137,"AVAX":43114,
-                    "LINK":1,"UNI":1}[asset],
+                    "LINK":1,"UNI":1,"ARB":42161}[asset],
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_valid_network_specific_journal_row(asset):
     assert m._valid_pending_row(pending(asset)) is True
 
@@ -55,7 +55,7 @@ def test_completed_pending_and_bad_rows_are_separately_counted(monkeypatch):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     rows=[pending("BNB"),pending("AVAX"),pending("LINK"),
-          {**pending("POL"),"chain_id":56},pending("UNI")]
+          {**pending("POL"),"chain_id":56},pending("UNI"),pending("ARB")]
     monkeypatch.setattr(m,"_pending_submitted",lambda limit:rows)
     calls=[]
     async def observed(**kwargs):
@@ -70,8 +70,8 @@ def test_completed_pending_and_bad_rows_are_separately_counted(monkeypatch):
     monkeypatch.setattr(m,"reconcile_evm_internal_order",observed)
     result=asyncio.run(m.reconcile_submitted_evm_once(limit=10))
     assert result=={
-        "worker_enabled":True,"scanned":5,
-        "finalized":2,"pending":1,"errors":2,
+        "worker_enabled":True,"scanned":6,
+        "finalized":2,"pending":1,"errors":3,
         "new_transactions_sent":0,
     }
     assert [c["asset"] for c in calls]==["BNB","AVAX","LINK","UNI"]
