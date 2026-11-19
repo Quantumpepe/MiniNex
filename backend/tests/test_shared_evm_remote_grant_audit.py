@@ -49,7 +49,7 @@ def pinned(asset):
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_all_five_can_regenerate_the_exact_pinned_allowed_privy_rules(asset):
     p=pinned(asset)
     assert validate_pinned_evm_policy(p,asset=asset,now=NOW)==p["candidate_json"]
