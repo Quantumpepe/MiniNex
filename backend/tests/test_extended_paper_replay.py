@@ -1,4 +1,4 @@
-"""Nine independent extension-coin backtests reusing the BTC/ETH spot logic.
+"""Ten independent extension-coin backtests reusing the BTC/ETH spot logic.
 
 No user DB, live order, key, native token approval or transfer is involved.
 """
@@ -26,16 +26,16 @@ def observations(count=115, step=60.0, start=100.0):
     ]
 
 
-def test_replay_coin_roster_keeps_ada_in_progress_and_btc_eth_original():
+def test_replay_coin_roster_uses_arb_instead_of_ada_and_btc_eth_original():
     assert REPLAY_ASSETS[:2] == ("BTC", "ETH")
-    assert EXTRA_REPLAY_ASSETS == tuple(a for a in EXTRA_ASSETS if a != "ADA")
-    assert len(EXTRA_REPLAY_ASSETS) == 9
-    assert "ADA" not in REPLAY_ASSETS
-    assert len(set(REPLAY_ASSETS)) == 11
+    assert EXTRA_REPLAY_ASSETS == EXTRA_ASSETS
+    assert len(EXTRA_REPLAY_ASSETS) == 10
+    assert "ARB" in REPLAY_ASSETS and "ADA" not in REPLAY_ASSETS
+    assert len(set(REPLAY_ASSETS)) == 12
 
 
 @pytest.mark.parametrize("coin", EXTRA_REPLAY_ASSETS)
-def test_all_nine_share_independent_backtest_and_real_orders_stay_zero(coin):
+def test_all_ten_share_independent_backtest_and_real_orders_stay_zero(coin):
     result = replay_strategy(coin, "LONG", "15m", observations(),
                              initial_usd=500.0)
     assert result["status"] == "SIMULATED"
@@ -119,7 +119,7 @@ def test_compaction_is_past_only_order_preserving_and_bounded():
     assert compact_replay_observations(rows*100) == []
 
 
-def test_nine_public_replay_endpoints_use_local_histories_without_order_calls(monkeypatch):
+def test_ten_public_replay_endpoints_use_local_histories_without_order_calls(monkeypatch):
     calls=[]
     source = observations()
     def historical(asset, *, limit=3600):
@@ -139,7 +139,7 @@ def test_nine_public_replay_endpoints_use_local_histories_without_order_calls(mo
         assert body["real_trading_enabled"] is False
         assert body["wallet_funds_used"] is False
         assert body["orders_executed"] == 0
-    assert len(calls) == 9
+    assert len(calls) == 10
     assert all(limit == 3600 for _,limit in calls)
 
 
