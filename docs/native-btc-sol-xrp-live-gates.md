@@ -29,6 +29,11 @@ submit transactions or grant anything in Privy.
   inspection endpoint performs no writes. An internal-only conditional journal
   finalizer can store proof digest, amount and final block. This does not
   record realized gain, a 5% fee or a completed native BUY.
+- Native BUY destination-chain proof now checks one THORChain outbound against
+  the actual owner BTC receipt (six confirmations), Solana finalized transfer
+  or XRP validated Payment (exact delivered drops). The owner-only BUY readback
+  does not send, settle a trade, record gains or charge any fees. Original
+  Ethereum BUY source settlement still needs its own validation.
 
 ## Remaining required coding for real, automatic native LIVE
 
@@ -47,8 +52,9 @@ submit transactions or grant anything in Privy.
    instructions; XRP validated sequence, last ledger, Fee, DestinationTag,
    Memo and account reserve. No alternate external wallets.
 5. Native SELL source + THORChain + canonical Ethereum destination proof is
-   now independently checkable. Finish BUY destination delivery on BTC/SOL/XRP
-   and verified refund flows before posting a real position or wallet PnL. Never equate source finality to swap completion.
+   independently checkable; native BUY receipt inspection is also implemented.
+   Finish verified Ethereum BUY source finality, durable native BUY payout
+   posting and refund flows before posting positions or wallet PnL. Never equate source finality to swap completion.
 6. Settle actual per-coin FIFO/net costs and user-authorized 5% high-water-mark
    fee ONLY after independently verified successful real round trips.
 7. Validate on explicitly approved mainnet wallets: BTC/SOL/XRP entry, exit,

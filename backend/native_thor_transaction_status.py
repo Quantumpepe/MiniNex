@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 
 from .manual_swap_live_quotes import THOR_ASSETS
 from .native_live_order_journal import _valid_source_hash
+from .native_trade_receipts import _valid_native_hash
 from .storage import _db_url,_ensure_schema,_safe_did
 
 _THOR_URL="https://thornode.ninerealms.com/thorchain/tx/status/"
@@ -26,8 +27,11 @@ _VALID_HEX=re.compile(r"^(?:0x)?[0-9A-Fa-f]{64}$")
 
 
 def _matches_hash(asset:str,actual:object,expected:str)->bool:
-    if type(actual) is not str:
+    if type(actual) is not str or type(expected) is not str:
         return False
+    if asset=="ETH":
+        return bool(_VALID_HEX.fullmatch(actual)) and \
+            actual.lower().removeprefix("0x")==expected.lower().removeprefix("0x")
     return (actual.upper()==expected.upper()
             if asset in ("BTC","XRP") else actual==expected)
 
@@ -51,20 +55,23 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
     """
     if (type(original) is not dict
             or original.get("asset") not in _CHAINS
-            or original.get("side")!="SELL"
+            or original.get("side") not in ("BUY","SELL")
             or original.get("status")!="SOURCE_FINALIZED"
             or type(original.get("source_tx_hash")) is not str
-            or not _valid_source_hash(original["asset"],"SELL",
+            or not _valid_source_hash(original["asset"],original["side"],
                                       original["source_tx_hash"])):
         raise ValueError("Original sender finality missing or unrecognized")
     if type(observed) is not dict or type(observed.get("tx")) is not dict:
         raise ValueError("THORChain has not observed this original transaction")
     asset=original["asset"]
     tx=observed["tx"]
-    source_asset=THOR_ASSETS[asset][0]
-    target_asset=THOR_ASSETS[original["stable"]][0]
-    if (not _matches_hash(asset,tx.get("id"),original["source_tx_hash"])
-            or tx.get("chain")!=_CHAINS[asset]
+    side=original["side"]
+    source_asset=THOR_ASSETS[asset if side=="SELL" else original["stable"]][0]
+    target_asset=THOR_ASSETS[original["stable"] if side=="SELL" else asset][0]
+    source_chain=asset if side=="SELL" else "ETH"
+    target_chain="ETH" if side=="SELL" else asset
+    if (not _matches_hash(asset if side=="SELL" else "ETH",tx.get("id"),original["source_tx_hash"])
+            or tx.get("chain")!=source_chain
             or type(tx.get("from_address")) is not str
             or tx["from_address"]!=original["source_wallet"]
             or not _valid_memo_destination(
@@ -96,11 +103,13 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
     if type(outgoing) is not list:
         raise ValueError("Malformed THORChain outbound list")
     out_ids=[]
+    out_amounts=[]
     for transaction in outgoing:
-        if (type(transaction) is not dict or transaction.get("chain")!="ETH"
+        if (type(transaction) is not dict or transaction.get("chain")!=target_chain
                 or type(transaction.get("to_address")) is not str
-                or transaction["to_address"].lower()!=
-                   original["destination_wallet"].lower()):
+                or (transaction["to_address"].lower()!=original["destination_wallet"].lower()
+                    if side=="SELL" else
+                    transaction["to_address"]!=original["destination_wallet"])):
             raise ValueError("THORChain outbound targets a different owner")
         outputs=transaction.get("coins")
         if (type(outputs) is not list or not outputs
@@ -110,9 +119,13 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
                        for x in outputs)):
             raise ValueError("Unexpected THORChain outbound settlement asset")
         hash_=transaction.get("id")
-        if type(hash_) is not str or not _VALID_HEX.fullmatch(hash_):
+        if (type(hash_) is not str or
+                not (_VALID_HEX.fullmatch(hash_) if side=="SELL" or asset=="BTC"
+                     else _valid_native_hash(asset,hash_))):
             raise ValueError("THORChain outbound transaction id unavailable")
-        out_ids.append(hash_.lower().removeprefix("0x"))
+        out_ids.append(hash_.lower().removeprefix("0x")
+                       if side=="SELL" or asset=="BTC" else hash_)
+        out_amounts.append(str(sum(int(output["amount"]) for output in outputs)))
     return {
         "mode":"THORCHAIN_ORIGINAL_TRANSACTION_READ_ONLY",
         "asset":asset,
@@ -124,6 +137,8 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
         "protocol_reports_swap_finalized":(
             swap is not None and swap["completed"] is True),
         "protocol_outbound_hashes":out_ids,
+        "protocol_outbound_units_1e8":out_amounts,
+        "side":side,
         "destination_chain_receipts_verified":False,
         "realized_pnl_verified":False,"fee_assessed":False,
         "retry_permitted":False,"new_transactions_sent":0,

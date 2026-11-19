@@ -178,3 +178,90 @@ def test_known_owner_thornode_request_uses_only_original_persisted_hash(monkeypa
         DID,asset="BTC",intent_key="native_"+"d"*64))
     assert result["destination_chain_receipts_verified"] is False
     assert trace[-1]==thor._THOR_URL+HASH["BTC"]
+
+
+def _native_buy_outbound(asset):
+    if asset=="BTC":
+        return "f"*64
+    if asset=="XRP":
+        return "F"*64
+    alphabet="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    n=int.from_bytes(bytes(range(1,65)),"big")
+    result=""
+    while n:
+        n,i=divmod(n,58)
+        result=alphabet[i]+result
+    return result
+
+
+def _native_buy_original(asset):
+    return {
+        "privy_did":DID,"asset":asset,"intent_key":"native_"+"a"*64,
+        "source_tx_hash":"0x"+"e"*64,
+        "source_wallet":DEST,"destination_wallet":ADDR[asset],
+        "stable":"USDC","side":"BUY","status":"SOURCE_FINALIZED",
+    }
+
+
+def _native_buy_protocol(asset):
+    source=_native_buy_original(asset)
+    return {
+        "tx":{
+            "id":"E"*64,"chain":"ETH","from_address":DEST,
+            "coins":[{"asset":THOR_ASSETS["USDC"][0],"amount":"200000000"}],
+            "memo":"=:"+THOR_ASSETS[asset][0]+":"+source["destination_wallet"]+":0/1/0",
+        },
+        "stages":{
+            "inbound_observed":{"completed":True},
+            "inbound_finalised":{"completed":True},
+            "swap_finalised":{"completed":True},
+        },
+        "out_txs":[{
+            "id":_native_buy_outbound(asset),
+            "chain":asset,"to_address":source["destination_wallet"],
+            "coins":[{"asset":THOR_ASSETS[asset][0],"amount":"100000000"}],
+        }],
+    }
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_verified_native_buy_protocol_waits_for_real_native_destination(asset):
+    record=thor.inspect_original_thorchain_status(
+        _native_buy_original(asset),_native_buy_protocol(asset))
+    assert record["asset"]==asset
+    assert record["side"]=="BUY"
+    assert record["protocol_reports_swap_finalized"] is True
+    assert record["protocol_outbound_hashes"]==[_native_buy_outbound(asset).lower()
+        if asset=="BTC" else _native_buy_outbound(asset)]
+    assert record["protocol_outbound_units_1e8"]==["100000000"]
+    assert record["destination_chain_receipts_verified"] is False
+    assert record["realized_pnl_verified"] is False
+    assert record["fee_assessed"] is False
+    assert record["new_transactions_sent"]==0
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+@pytest.mark.parametrize("tamper",[
+    lambda r:r["tx"].update(id="B"*64),
+    lambda r:r["tx"].update(from_address="0x"+"b"*40),
+    lambda r:r["tx"].update(chain="BTC"),
+    lambda r:r["tx"].update(memo="=:ETH.USDC:"+DEST+":0/1/0"),
+    lambda r:r["out_txs"][0].update(to_address=DEST),
+    lambda r:r["out_txs"][0].update(chain="ETH"),
+    lambda r:r["out_txs"][0].update(id="not_a_valid_native_hash"),
+    lambda r:r["out_txs"][0].update(coins=[{"asset":"BTC.BTC","amount":"0"}]),
+    lambda r:r["stages"]["swap_finalised"].update(completed=False),
+])
+def test_wrong_original_buy_source_or_native_destination_rejected(asset,tamper):
+    original=_native_buy_original(asset)
+    raw=_native_buy_protocol(asset)
+    tamper(raw)
+    try:
+        result=thor.inspect_original_thorchain_status(original,raw)
+    except ValueError:
+        return
+    # THORChain 'swap_finalised' can be false during an otherwise valid partial
+    # report; it is not yet proof of a native payout.
+    assert raw["stages"]["swap_finalised"]["completed"] is False
+    assert result["protocol_reports_swap_finalized"] is False
+    assert result["destination_chain_receipts_verified"] is False
