@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from threading import Lock
 
 import httpx
 import psycopg
@@ -64,7 +65,7 @@ def _read_pending_original_usd_fills(limit:int=40)->list[dict]:
                  fill=_verified_account_fill(row,row["asset"])) for row in rows]
 
 
-_OWNER_RECONCILE_PAGE_LOCK = __import__("threading").Lock()
+_OWNER_RECONCILE_PAGE_LOCK = Lock()
 _OWNER_RECONCILE_PAGE_OFFSET = 0
 
 
