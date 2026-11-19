@@ -79,10 +79,11 @@ _REGISTRY_UNSORTED = (
         " DEX offer quality and ledger finality",
     ),
     CoinNetwork(
-        "ARB", "Arbitrum", "arbitrum-one-mainnet", "evm", 42161,
-        "Privy Ethereum-format EVM wallet on Arbitrum One; independent chain authorization",
+        "ARB", "Arbitrum", "arbitrum-one-mainnet", "evm-erc20", 42161,
+        "Privy EVM wallet on Arbitrum One; ARB is an ERC-20 token, ETH pays network gas",
         ("USDC", "USDT"), "same-chain-token-validation-required",
-        "Validate Arbitrum token contracts, router, gas, slippage and settlement before any swap",
+        "ARB contract 0x912CE59144191C1204E64559FE8253a0e49E6548 "
+        "(18 decimals); validate router, ETH gas, slippage and settlement before any swap",
     ),
     CoinNetwork(
         "AVAX", "Avalanche", "avalanche-c-mainnet", "evm", 43114,
