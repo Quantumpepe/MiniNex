@@ -942,7 +942,7 @@ SCHEMA = (
           conrelid=name::regclass AND conname='mininex_evm_arb_asset_v2') THEN
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I',
                          name,name||'_asset_check');
-          EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_asset_v2 CHECK (asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))',name);
+          EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_asset_v2 CHECK (asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))$arbcheck$,name);
         END IF;
       END LOOP;
       FOREACH name IN ARRAY ARRAY['mininex_live_evm_auto_sessions','mininex_live_evm_consent_challenges','mininex_live_evm_owner_permissions','mininex_live_evm_auto_broadcasts','mininex_live_evm_verified_fills','mininex_evm_fee_auto_permissions','mininex_evm_immutable_fill_usd_prices','mininex_evm_verified_fee_payments','mininex_evm_auto_fee_sends'] LOOP
@@ -965,7 +965,7 @@ SCHEMA = (
                  OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
         END LOOP;
-        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND stable='USDT') OR (asset IN ('POL','AVAX') AND stable='USDC') OR (asset IN ('LINK','UNI','ARB')))',name);
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND stable='USDT') OR (asset IN ('POL','AVAX') AND stable='USDC') OR (asset IN ('LINK','UNI','ARB')))$arbcheck$,name);
       END IF;
       name:='mininex_live_evm_consent_challenges';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
@@ -979,7 +979,7 @@ SCHEMA = (
                  OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
         END LOOP;
-        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))',name);
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
       END IF;
       name:='mininex_live_evm_owner_permissions';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
@@ -993,7 +993,7 @@ SCHEMA = (
                  OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
         END LOOP;
-        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))',name);
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
       END IF;
       name:='mininex_live_evm_auto_broadcasts';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
@@ -1007,7 +1007,7 @@ SCHEMA = (
                  OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
         END LOOP;
-        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))',name);
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
       END IF;
       name:='mininex_evm_fee_auto_permissions';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
@@ -1021,7 +1021,7 @@ SCHEMA = (
                  OR pg_get_constraintdef(c.oid) LIKE '%chain_id%') LOOP
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',name,oldcheck.conname);
         END LOOP;
-        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))',name);
+        EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_route_v2 CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT') OR (asset='POL' AND chain_id=137 AND stable='USDC') OR (asset='AVAX' AND chain_id=43114 AND stable='USDC') OR (asset IN ('LINK','UNI') AND chain_id=1) OR (asset='ARB' AND chain_id=42161 AND stable IN ('USDC','USDT')))$arbcheck$,name);
       END IF;
     END $arb_evm_schema_upgrade$""",
 
