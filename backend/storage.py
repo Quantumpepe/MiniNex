@@ -1075,6 +1075,9 @@ SCHEMA = (
        (privy_did,chain,updated_at)
        WHERE status IN ('SENDING','SUBMITTED',
                         'RECONCILIATION_REQUIRED','SOURCE_FINALIZED')""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_original_source_hash_unique
+       ON mininex_live_native_order_intents(chain,source_tx_hash)
+       WHERE source_tx_hash IS NOT NULL""",
 
     """DO $migration$
     DECLARE item RECORD;
