@@ -20,10 +20,10 @@ const data=()=>({
   ])),
 });
 
-test('nine saved settings remain separate; ARB is not tradable',()=>{
+test('ten saved settings remain separate and include ARB without granting trading',()=>{
   const snapshot=data();
-  assert.equal(EXTRA_REPLAY_COINS.length,9);
-  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),false);
+  assert.equal(EXTRA_REPLAY_COINS.length,10);
+  assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),true);
   assert.equal(validSavedExtraCoinPreferences(snapshot),true);
   const result=savedExtraOptions(snapshot);
   for(const coin of EXTRA_REPLAY_COINS){
@@ -72,4 +72,18 @@ test('per-coin save and retry replace duplicate global control, not trade contro
   assert.match(extraUI,/<ExtraCoinPaperControl/);
   assert.match(extraUI,/preferenceStatus==='failed'/);
   assert.match(extraUI,/<option value="AUTO">/);
+});
+
+
+test('selecting ARB always has independent form defaults, preventing wallet black screen',()=>{
+  const saved=data(), options=savedExtraOptions(saved);
+  assert.deepEqual(Object.keys(options),EXTRA_REPLAY_COINS);
+  assert.equal(options.ARB.budget,String(saved.settings.ARB.budget_usd));
+  assert.equal(options.ARB.mode,saved.settings.ARB.mode);
+  assert.equal(typeof options.ARB.stable,'string');
+  assert.equal(validSavedExtraCoinPreferences(saved),true);
+  const withoutArb=structuredClone(saved);
+  delete withoutArb.settings.ARB;
+  assert.equal(validSavedExtraCoinPreferences(withoutArb),false);
+  assert.match(settingsUI,/options=\\{replayOptions\\[opened\\]\\|\\|defaultReplayOption\\(\\)\\}/);
 });
