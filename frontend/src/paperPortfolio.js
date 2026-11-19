@@ -65,9 +65,9 @@ export function paperSparkline(samples) {
 }
 
 
-/** Exactly the 11 opt-in, independent PAPER portfolios. Never mix other assets. */
+/** Exactly the 12 opt-in, independent PAPER portfolios. Never mix real wallet funds. */
 export const HOME_PAPER_PORTFOLIO_COINS=Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB',
 ]);
 
 const EXTRA_COINS=HOME_PAPER_PORTFOLIO_COINS.slice(2);
@@ -101,7 +101,7 @@ function extraEquity(row,asset){
   if(row.status==='NOT_STARTED')return null;
   if(!['ACTIVE','PAUSED'].includes(row.status))return undefined;
   const start=row.budget_usd;
-  if(!isMoney(start)||start<=0||start>5000||typeof row.quote_valid!=='boolean')
+  if(!isMoney(start)||start<=0||!Number.isSafeInteger(start)||typeof row.quote_valid!=='boolean')
     return undefined;
   const equity=row.estimated_equity_usd;
   if(row.quote_valid&&!isMoney(equity))return undefined;
@@ -109,7 +109,7 @@ function extraEquity(row,asset){
   return {start,equity,valid:row.quote_valid,running:row.status==='ACTIVE'};
 }
 
-/** Summary for selected coin by default, ALL only after explicit user toggle.
+/** Summary for a selected coin or the combined ALL portfolio.
  *  Quote gaps leave capital visible but never create a false total/PnL.
  */
 export function summarizeHomePaperPortfolio(core,extraReport,scope){
