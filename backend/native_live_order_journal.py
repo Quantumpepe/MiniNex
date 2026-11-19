@@ -22,6 +22,7 @@ from .storage import _db_url, _ensure_schema, _safe_did
 from .native_coin_balances import _valid_address
 from .blockchain_preview import BTC_RE, ETH_RE
 from .native_trade_receipts import _valid_native_hash
+from .manual_swap_live_quotes import THOR_ASSETS
 
 _NATIVE_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
                  "XRP":"xrpl-mainnet"}
@@ -107,22 +108,61 @@ def immutable_native_order_identity(
             or quote_expires_at.tzinfo is None
             or quote_expires_at<=datetime.now(timezone.utc)):
         raise ValueError("Executable native quote expired")
+    # The real private THORNode adapter supplies an explicitly READ-ONLY,
+    # independently destination/vault/refund checked route. Persist its exact
+    # immutable evidence; NEVER infer from this that a wallet may be signed.
     if (type(quote) is not dict
-            or quote.get("mode")!="THORCHAIN_EXECUTABLE_OWNER_BOUND"
+            or quote.get("mode")!="THORCHAIN_DESTINATION_BOUND_READ_ONLY"
             or quote.get("from_network")!=chain
             or quote.get("to_network")!=dest_chain
             or quote.get("source_asset")!=(stable if side=="BUY" else asset)
             or quote.get("destination_asset")!=(asset if side=="BUY" else stable)
             or quote.get("amount")!=amount
+            or quote.get("source_wallet")!=source_wallet
             or quote.get("destination_wallet")!=destination_wallet
+            or quote.get("quote_expires_at")!=quote_expires_at
+            or type(quote.get("inbound_vault")) is not str
+            or not _wallet_matches(chain,quote["inbound_vault"])
+            or (quote["inbound_vault"].lower()==source_wallet.lower()
+                if chain=="ethereum-mainnet" else
+                quote["inbound_vault"]==source_wallet)
+            or (side=="BUY" and (
+                not _wallet_matches("ethereum-mainnet",quote.get("inbound_router"))
+                or quote.get("needs_erc20_router") is not True))
+            or (side=="SELL" and quote.get("inbound_router") is not None)
             or quote.get("original_vault_verified") is not True
             or quote.get("required_chain_memo_verified") is not True
             or quote.get("refund_path_verified") is not True
             or quote.get("exact_venue_fees_verified") is not True
+            or type(quote.get("expected_output_units_1e8")) is not str
+            or not re.fullmatch(r"[1-9][0-9]*",quote["expected_output_units_1e8"])
+            or type(quote.get("venue_fee_units_1e8")) is not str
+            or not re.fullmatch(r"[0-9]+",quote["venue_fee_units_1e8"])
+            or quote.get("transaction_encoding_verified") is not False
+            or quote.get("privy_native_signer_verified") is not False
+            or quote.get("source_transaction_sent") is not False
+            or quote.get("execution_enabled") is not False
             or quote.get("can_submit") is not False):
-        raise ValueError("Indicative or unverified native quote cannot be claimed")
-    # Do not hash a caller's display-only balance or venue price as authority.
-    quote_payload={key:quote[key] for key in sorted(quote)}
+        raise ValueError("Private native quote is not owner-bound or current")
+    memo=quote.get("memo")
+    if (type(memo) is not str or not 6<len(memo.encode("utf-8"))<=250
+            or any(c in memo for c in "\r\n\x00")):
+        raise ValueError("Original source refund memo unverified")
+    parts=memo.split(":")
+    owners=parts[2].split("/") if len(parts)>=3 else []
+    expected_target=THOR_ASSETS[asset if side=="BUY" else stable][0]
+    if (len(parts)<3 or parts[0].upper() not in ("=","S","SWAP")
+            or parts[1].upper()!=expected_target.upper()
+            or len(owners)!=2
+            or (owners[0].lower()!=destination_wallet.lower()
+                if side=="SELL" else owners[0]!=destination_wallet)
+            or (owners[1].lower()!=source_wallet.lower()
+                if side=="BUY" else owners[1]!=source_wallet)):
+        raise ValueError("Original destination or refund account redirected")
+    # Canonicalize datetimes: the actual THORChain quote has a UTC expiry.
+    quote_payload={key:(quote[key].isoformat()
+                        if isinstance(quote[key],datetime) else quote[key])
+                   for key in sorted(quote)}
     quote_digest=hashlib.sha256(json.dumps(
         quote_payload,sort_keys=True,separators=(",",":"),ensure_ascii=True,
     ).encode("utf-8")).hexdigest()

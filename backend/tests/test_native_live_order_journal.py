@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend import native_live_order_journal as journal
+from backend.manual_swap_live_quotes import THOR_ASSETS
 from backend.native_coin_balances import _checksum,_RIPPLE
 from backend.storage import SCHEMA
 
@@ -33,17 +34,34 @@ def identity(asset="BTC",side="SELL",amount="0.001",signal="signal001",
     destination=native if side=="BUY" else ETH
     chain="ethereum-mainnet" if side=="BUY" else journal._NATIVE_NETWORK[asset]
     target=journal._NATIVE_NETWORK[asset] if side=="BUY" else "ethereum-mainnet"
+    vault={
+        "BTC":"bc1q"+"p"*38,
+        "SOL":b58(bytes([8])*32,SOL_CHARS),
+        "XRP":b58(bytes([0])+bytes([8])*20+
+            _checksum(bytes([0])+bytes([8])*20),_RIPPLE),
+    }[asset] if side=="SELL" else "0x"+"c"*40
     quote={
-        "mode":"THORCHAIN_EXECUTABLE_OWNER_BOUND",
+        "mode":"THORCHAIN_DESTINATION_BOUND_READ_ONLY",
         "from_network":chain,"to_network":target,
         "source_asset":stable if side=="BUY" else asset,
         "destination_asset":asset if side=="BUY" else stable,
-        "amount":amount,"destination_wallet":destination,
+        "amount":amount,"source_wallet":source,
+        "destination_wallet":destination,"inbound_vault":vault,
+        "inbound_router":"0x"+"b"*40 if side=="BUY" else None,
+        "needs_erc20_router":side=="BUY",
+        "quote_expires_at":expires_at or FUTURE,
+        "memo":"=:"+THOR_ASSETS[asset if side=="BUY" else stable][0]+
+               ":"+destination+"/"+source+":0/1/0",
+        "expected_output_units_1e8":"1000000",
+        "venue_fee_units_1e8":"1000",
         "original_vault_verified":True,
         "required_chain_memo_verified":True,
         "refund_path_verified":True,
         "exact_venue_fees_verified":True,
-        "can_submit":False,
+        "transaction_encoding_verified":False,
+        "privy_native_signer_verified":False,
+        "source_transaction_sent":False,
+        "execution_enabled":False,"can_submit":False,
     }
     if change:quote.update(change)
     return journal.immutable_native_order_identity(
@@ -311,3 +329,27 @@ def test_native_grant_cannot_override_original_ledger_owner_terms(bad):
     assert len(cur.queries)==2
     assert not any("SET status='SENDING'" in query for query,args in cur.queries)
 
+
+@pytest.mark.parametrize("change",[
+    {"source_wallet":"bc1q"+"r"*38},
+    {"inbound_vault":"FAKE"},
+    {"inbound_router":"0x"+"z"*40},
+    {"needs_erc20_router":False},
+    {"quote_expires_at":datetime.now(timezone.utc)},
+    {"memo":"=:BTC.BTC:FAKE"},
+    {"memo":"=:BTC.BTC:"+BTC+"/0x"+"f"*40+":0/1/0"},
+    {"transaction_encoding_verified":True},
+    {"source_transaction_sent":True},
+    {"execution_enabled":True},
+])
+def test_original_quote_cannot_forge_wallet_expiry_or_privy_authority(change):
+    with pytest.raises(ValueError):
+        identity(asset="BTC",side="BUY",amount="50",change=change)
+
+
+def test_original_private_quote_can_hash_utc_datetime_without_fabricating_send():
+    result=identity(asset="SOL",side="SELL",amount="0.1")
+    assert result["chain"]=="solana-mainnet"
+    assert result["source_wallet"]==SOL
+    assert len(result["immutable_quote_sha256"])==64
+    assert len(result["payload_sha256"])==64
