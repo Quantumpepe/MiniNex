@@ -154,6 +154,10 @@ def test_same_signal_with_changed_price_or_amount_fails_closed():
 def audit(row):
     return {"did":DID,"asset":row["asset"],
             "payload_sha256":row["payload_sha256"],
+            "owner_consent_sha256":row["owner_consent_sha256"],
+            "privy_grant_sha256":row["privy_grant_sha256"],
+            "budget_revision":row["budget_revision"],
+            "source_wallet":row["source_wallet"],
             "owner_wallet_current":True,
             "exact_remote_policy_verified":True,
             "backend_quorum_current":True,
@@ -165,7 +169,10 @@ def test_atomic_one_shot_claim_requires_privy_and_stable_owner_intent():
     original={"status":"PREPARED","chain":row["chain"],
               "payload_sha256":row["payload_sha256"],
               "quote_expires_at":FUTURE,
-              "source_wallet":row["source_wallet"]}
+              "source_wallet":row["source_wallet"],
+              "owner_consent_sha256":row["owner_consent_sha256"],
+              "privy_grant_sha256":row["privy_grant_sha256"],
+              "budget_revision":row["budget_revision"]}
     cur=Cursor([{"privy_did":DID},original,{"pending":0},
                 {"status":"SENDING"}])
     result=journal._claim_once_locked(
@@ -183,6 +190,10 @@ def test_atomic_one_shot_claim_requires_privy_and_stable_owner_intent():
     {"exact_remote_policy_verified":False},
     {"owner_signed_budget_current":False},
     {"asset":"SOL"},{"payload_sha256":"0"*64},
+    {"owner_consent_sha256":"c"*64},
+    {"privy_grant_sha256":"c"*64},
+    {"source_wallet":"0x"+"c"*40},
+    {"budget_revision":4},
 ])
 def test_native_claim_without_remote_verified_policy_never_checks_database(bad):
     row=identity()
@@ -201,7 +212,11 @@ def test_existing_unresolved_wallet_send_serializes_next_source_nonce():
     cur=Cursor([
         {"privy_did":DID},
         {"chain":row["chain"],"status":"PREPARED",
-         "payload_sha256":row["payload_sha256"]},
+         "payload_sha256":row["payload_sha256"],
+         "source_wallet":row["source_wallet"],
+         "owner_consent_sha256":row["owner_consent_sha256"],
+         "privy_grant_sha256":row["privy_grant_sha256"],
+         "budget_revision":row["budget_revision"]},
         {"pending":1},
     ])
     with pytest.raises(HTTPException):
@@ -270,3 +285,4 @@ def test_schema_adds_wallet_journal_without_trading_caps_or_replaying_sends():
     assert "privy_grant_sha256" in q and "owner_consent_sha256" in q
     assert "RECONCILIATION_REQUIRED" in q
     assert "quote_expires_at" in q
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_original_source_hash_unique" in q
