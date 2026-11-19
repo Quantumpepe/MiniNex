@@ -85,3 +85,27 @@ def test_arb_uses_the_same_verified_hwm_worker_without_fee_send(monkeypatch):
     assert events==[("rate","ARB"),("fifo","ARB")]
     assert result["token_accounts_reconciled"]==1
     assert result["wallet_transactions_sent"]==0
+
+
+def test_original_usd_capture_prioritizes_newest_finalized_arb_token_fill(monkeypatch):
+    """A backlog must not let aging failed prices starve fresh on-chain fills."""
+    queries=[]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,params):queries.append((sql,params))
+        def fetchall(self):return []
+    class Connection:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return Cursor()
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda db:None)
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *args,**kwargs:Connection())
+    assert worker._read_pending_original_usd_fills(limit=40)==[]
+    sql,params=queries[0]
+    assert "f.asset IN ('LINK','UNI','ARB')" in sql
+    assert "b.status='FINALIZED_SUCCESS'" in sql
+    assert "ORDER BY f.created_at DESC" in sql
+    assert "n.quoted_asset='ETH'" in sql  # ARB pays native gas in ETH
+    assert params==(40,)
