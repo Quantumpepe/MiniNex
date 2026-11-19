@@ -284,7 +284,7 @@ def test_legacy_twelve_coin_schema_migration_persists_real_arb_preferences():
             cur.execute(
                 """INSERT INTO mininex_extra_paper_sessions
                    (privy_did,asset,settlement,strategy_mode,horizon,initial_demo_cash)
-                   VALUES (%s,'ARB','USDC','LONG','1h',12500)""",(did,))
+                   VALUES (%s,'ARB','USDC','AUTO','1h',12500)""",(did,))
             cur.execute(
                 """SELECT budget_usd,mode FROM mininex_extra_coin_preferences
                    WHERE privy_did=%s AND asset='ARB'""",(did,))
