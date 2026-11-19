@@ -19,7 +19,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 
-_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB","ARB"))
+_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"))
 
 
 def _approved_quote_pair(quote: object, allowance: object, *,
