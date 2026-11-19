@@ -14,8 +14,7 @@ TX_BUY="0x"+"11"*32
 TX_SELL="0x"+"22"*32
 
 
-def proof(side, tx, block, amount, received):
-    asset="LINK"
+def proof(side, tx, block, amount, received, asset="LINK"):
     stable="USDC"
     pair=_pair(asset,stable,side)
     timestamp=1800000+block*10
@@ -51,17 +50,18 @@ def audit():
     )
 
 
-def test_full_minined_token_history_real_net_without_auto_fee(monkeypatch):
+@pytest.mark.parametrize("asset", ["LINK", "UNI", "ARB"])
+def test_full_minined_token_history_real_net_without_auto_fee(monkeypatch,asset):
     rows=[
         dict(tx_hash=TX_SELL,wallet_address=WALLET),
         dict(tx_hash=TX_BUY,wallet_address=WALLET),
     ]
     by_tx={
-        TX_BUY:proof("BUY",TX_BUY,100,"100","2"),
-        TX_SELL:proof("SELL",TX_SELL,200,"1","75"),
+        TX_BUY:proof("BUY",TX_BUY,100,"100","2",asset=asset),
+        TX_SELL:proof("SELL",TX_SELL,200,"1","75",asset=asset),
     }
     monkeypatch.setattr(token_net, "_load_all_verified_owner_token_fills",
-                        lambda did,asset:rows)
+                        lambda did,coin:rows if coin==asset else [])
     async def priced(**kw):
         return by_tx[kw["row"]["tx_hash"]]
     monkeypatch.setattr(token_net,"independently_price_stored_evm_fill",priced)
@@ -72,7 +72,7 @@ def test_full_minined_token_history_real_net_without_auto_fee(monkeypatch):
     async def run():
         async with httpx.AsyncClient() as client:
             return await token_net.read_owner_erc20_verified_realized_net(
-                did="did:privy:account_12345",asset="LINK",client=client,now=1805000)
+                did="did:privy:account_12345",asset=asset,client=client,now=1805000)
     result=asyncio.run(run())
     assert result["closed_trades"][0]["intent_key"]==by_tx[TX_SELL]["intent_key"]
     assert Decimal(result["closed_trades"][0]["realized_net_usd"])==Decimal("24.7")
