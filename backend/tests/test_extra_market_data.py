@@ -288,6 +288,7 @@ def test_arb_replaces_ada_with_real_usdt_and_independent_usd_reference():
     assert quote["market_data_only"] is True
     assert quote["trading_enabled"] is False
     assert service.ingest_ws(make_ws("ADA",0.5),now=NOW) is False
-    assert service.history("ARB")==[]
+    assert len(service.history("ARB"))==1
+    assert service.history("ARB")[0]["price_usdt"]==1.2
     with pytest.raises(ValueError):
         service.history("ADA")
