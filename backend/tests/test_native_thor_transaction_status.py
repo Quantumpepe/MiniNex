@@ -126,6 +126,8 @@ def test_original_order_reader_is_owner_scoped():
 def test_unknown_owner_cannot_fetch_order_or_contact_thornode(monkeypatch):
     called=[]
     class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
         def execute(self,sql,params):
             called.append(("db",params))
         def fetchone(self):return None
@@ -148,6 +150,8 @@ def test_unknown_owner_cannot_fetch_order_or_contact_thornode(monkeypatch):
 def test_known_owner_thornode_request_uses_only_original_persisted_hash(monkeypatch):
     trace=[]
     class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
         def execute(self,sql,params):trace.append(params)
         def fetchone(self):return original("BTC")
     class DB:
