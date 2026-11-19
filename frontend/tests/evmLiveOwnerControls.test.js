@@ -5,7 +5,7 @@ import {validEvmTradeChallenge,validEvmTradeSignerOffer,
 } from '../src/evmLiveOwnerRules.js';
 
 const WALLET='0x'+'ab'.repeat(20);
-const ASSETS={BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1};
+const ASSETS={BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,ARB:42161};
 
 for(const [asset,chain] of Object.entries(ASSETS)){
   const req={asset,address:WALLET};
