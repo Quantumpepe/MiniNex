@@ -192,3 +192,30 @@ def test_original_sell_deposit_receipts_rotate_across_all_users(monkeypatch):
     batches=[rec.pending_native_sell_deposits(limit=2) for _ in range(4)]
     assert batches==[records[:2],records[2:4],records[4:],records[:2]]
     assert requests==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+
+
+@pytest.mark.parametrize("function,offset_var,required_sql",[["original_native_sells_ready_for_swap","_NATIVE_SELL_SWAP_PAGE_OFFSET","b.intent_key IS NULL"],["original_native_sells_needing_cycle","_NATIVE_SELL_CYCLE_PAGE_OFFSET","c.intent_key IS NULL"]])
+def test_downstream_native_reconciliation_pages_are_fair(monkeypatch,function,offset_var,required_sql):
+    """Owner-active native SELL/BUY conversion stages cannot monopolize a batch."""
+    history=[{"privy_did":f"did:privy:owner_{i}","asset":asset,
+              "intent_key":f"sig_abcdef012345{i}"} for i,asset in
+             enumerate(["BNB","POL","AVAX","BNB","POL"])]
+    calls=[]
+    class Database:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,params):
+            assert required_sql in sql
+            assert "LIMIT %s OFFSET %s" in sql
+            self.limit,self.offset=params
+            calls.append(params)
+        def fetchall(self):return history[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(rec,offset_var,0)
+    monkeypatch.setattr(rec,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(rec,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(rec.psycopg,"connect",lambda *args,**kwargs:Database())
+    scan=getattr(rec,function)
+    pages=[scan(limit=2) for _ in range(4)]
+    assert pages==[history[:2],history[2:4],history[4:],history[:2]]
+    assert calls==[(2,0),(2,2),(2,4),(2,5),(2,0)]
