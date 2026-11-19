@@ -23,7 +23,7 @@ from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_hwm")
-_EVM=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_EVM=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 
 
