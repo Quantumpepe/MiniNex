@@ -16,7 +16,7 @@ EXECUTOR = "signer_12345678"
 
 ASSETS = [
     ("BNB", "USDT"), ("POL", "USDC"), ("AVAX", "USDC"),
-    ("LINK", "USDC"), ("UNI", "USDT"),
+    ("LINK", "USDC"), ("UNI", "USDT"), ("ARB", "USDC"), ("ARB", "USDT"),
 ]
 
 
