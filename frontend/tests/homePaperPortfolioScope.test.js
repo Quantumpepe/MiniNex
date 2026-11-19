@@ -81,7 +81,7 @@ test('unstarted coin gets NO fabricated capital and does not consume global budg
   assert.equal(summarizeHomePaperPortfolio(c,e,'BTC'),null);
   assert.equal(summarizeHomePaperPortfolio(c,e,'SOL'),null);
   const total=summarizeHomePaperPortfolio(c,e,'ALL');
-  assert.equal(total.assetCount,11);
+  assert.equal(total.assetCount,10);
   assert.equal(total.startingCapital,500+9*500);
   assert.equal(total.equity,480+9*545);
 });
