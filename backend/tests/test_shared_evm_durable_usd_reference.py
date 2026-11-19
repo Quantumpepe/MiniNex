@@ -36,6 +36,7 @@ def row(proof, quoted, price):
 @pytest.mark.parametrize("asset,quoted,price",[
     ("LINK","USDC","0.9997"),("LINK","ETH","2800.25"),
     ("UNI","USDT","1.002"),("BNB","BNB","650.2"),
+    ("ARB","USDC","1.0001"),("ARB","ETH","2950.10"),
 ])
 def test_persisted_quoted_price_bound_to_actual_original_block(asset,quoted,price):
     proof=original(asset,stable=("USDT" if asset=="BNB" or quoted=="USDT" else "USDC"))
