@@ -19,7 +19,7 @@ from .storage import _db_url, _ensure_schema, _safe_did
 from .shared_evm_swap_receipts import _pair
 
 LOG=logging.getLogger("mininex.evm_grant_ledger")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 _STATES=frozenset(("DRAFT","CONSENT_VERIFIED","GRANT_VERIFIED","REVOKED"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")

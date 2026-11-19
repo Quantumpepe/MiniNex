@@ -31,7 +31,7 @@ def history(asset,*fills,truncated=False):
     }
 
 
-@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI","ARB"])
 def test_six_assets_fifo_partial_sells_are_separate_and_gas_not_fake_usd(asset):
     rows=history(asset,
         fill(asset,"SELL","0.75","90","sell2",gas="0.004"),

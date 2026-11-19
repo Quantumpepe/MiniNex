@@ -10,7 +10,7 @@ WALLET="0x"+"ab"*20
 SWAP="0x"+"cd"*32
 NATIVE="0x"+"ef"*32
 STABLE={"ETH":"USDC","BNB":"USDT","POL":"USDC",
-        "AVAX":"USDC","LINK":"USDC","UNI":"USDC"}
+        "AVAX":"USDC","LINK":"USDC","UNI":"USDC","ARB":"USDC"}
 
 
 def proof(asset,side):
@@ -27,7 +27,7 @@ def proof(asset,side):
         "source_spent_amount":"100" if side=="BUY" else "2",
         "destination_received_amount":"2" if side=="BUY" else "110",
     }
-    conversion=(None if asset in ("LINK","UNI") else {
+    conversion=(None if asset in ("LINK","UNI","ARB") else {
         "mode":"SHARED_FINALIZED_NATIVE_EVM_CONVERSION",
         "asset":asset,"network":pair["network"],
         "chain_id":pair["chain_id"],
@@ -41,7 +41,7 @@ def proof(asset,side):
     return swap,conversion
 
 
-@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("side",["BUY","SELL"])
 def test_shared_evm_cycle_reconciles_only_correct_confirmed_legs(asset,side):
     swap,native=proof(asset,side)
@@ -50,9 +50,9 @@ def test_shared_evm_cycle_reconciles_only_correct_confirmed_legs(asset,side):
         wallet=WALLET,swap_proof=swap,native_proof=native)
     assert r["required_transaction_legs_complete"] is True
     assert r["swap_tx_hash"]==SWAP
-    assert r["native_conversion_verified"]==(asset not in ("LINK","UNI"))
+    assert r["native_conversion_verified"]==(asset not in ("LINK","UNI","ARB"))
     assert r["native_conversion_tx_hash"]==(
-        None if asset in ("LINK","UNI") else NATIVE)
+        None if asset in ("LINK","UNI","ARB") else NATIVE)
     assert r["five_percent_fee_assessed"] is False
     assert r["inventory_or_cost_basis_settled"] is False
     assert r["live_execution_enabled_by_this_verifier"] is False
@@ -80,7 +80,7 @@ def test_native_asset_cannot_silently_skip_conversion_or_match_wrong_tx(
             wallet=WALLET,swap_proof=swap,native_proof=native)
 
 
-@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["ETH","BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("mutate",[
     lambda s:s.update(transaction_finalized=False),
     lambda s:s.update(swap_erc20_leg_verified=False),
