@@ -27,12 +27,15 @@ _NETWORK_TREASURY={
     56:"MININEX_TREASURY_BNB_WALLET",
     137:"MININEX_TREASURY_POL_WALLET",
     43114:"MININEX_TREASURY_AVAX_WALLET",
+    42161:"MININEX_TREASURY_ARB_WALLET",
 }
 
 
 def owner_fee_treasury(*,asset:str,stable:str)->str:
     chain=_pair(asset,stable,"BUY")["chain_id"]
-    setting=_NETWORK_TREASURY[chain]
+    setting=_NETWORK_TREASURY.get(chain)
+    if not setting:
+        raise HTTPException(503,"No configured treasury for this EVM chain")
     value=os.getenv(setting,"").strip()
     if not value:
         raise HTTPException(503,"Explicit chain treasury address not configured")
