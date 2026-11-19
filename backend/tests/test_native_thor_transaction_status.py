@@ -33,7 +33,7 @@ def status(asset="BTC",finalized=True,out=False):
             "from_address":ADDR[asset],
             "to_address":"vault_original",
             "coins":[{"asset":THOR_ASSETS[asset][0],"amount":"125000000"}],
-            "memo":"=:"+THOR_ASSETS["USDC"][0]+":"+DEST+":0/1/0",
+            "memo":"=:"+THOR_ASSETS["USDC"][0]+":"+DEST+"/"+ADDR[asset]+":0/1/0",
         },
         "stages":{
             "inbound_observed":{"completed":True},
@@ -209,7 +209,7 @@ def _native_buy_protocol(asset):
         "tx":{
             "id":"E"*64,"chain":"ETH","from_address":DEST,
             "coins":[{"asset":THOR_ASSETS["USDC"][0],"amount":"200000000"}],
-            "memo":"=:"+THOR_ASSETS[asset][0]+":"+source["destination_wallet"]+":0/1/0",
+            "memo":"=:"+THOR_ASSETS[asset][0]+":"+source["destination_wallet"]+"/"+DEST+":0/1/0",
         },
         "stages":{
             "inbound_observed":{"completed":True},
@@ -265,3 +265,40 @@ def test_wrong_original_buy_source_or_native_destination_rejected(asset,tamper):
     assert raw["stages"]["swap_finalised"]["completed"] is False
     assert result["protocol_reports_swap_finalized"] is False
     assert result["destination_chain_receipts_verified"] is False
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_swap_refund_cannot_be_diverted_from_original_native_owner(asset):
+    row=original(asset)
+    observed=status(asset,True,True)
+    observed["tx"]["memo"]=observed["tx"]["memo"].replace(
+        "/"+ADDR[asset]+":","/"+ADDR["BTC"]+"other:")
+    with pytest.raises(ValueError):
+        thor.inspect_original_thorchain_status(row,observed)
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_native_original_refund_cannot_be_omitted_or_changed(asset):
+    row=original(asset)
+    observed=status(asset,True,True)
+    observed["tx"]["memo"]=observed["tx"]["memo"].replace(
+        "/"+ADDR[asset]+":",":")
+    with pytest.raises(ValueError):
+        thor.inspect_original_thorchain_status(row,observed)
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_eth_original_refund_cannot_be_diverted_from_buyer(asset):
+    row=_native_buy_original(asset)
+    observed=_native_buy_protocol(asset)
+    observed["tx"]["memo"]=observed["tx"]["memo"].replace(
+        "/"+DEST+":","/0x"+"b"*40+":")
+    with pytest.raises(ValueError):
+        thor.inspect_original_thorchain_status(row,observed)
+
+
+def test_native_destination_address_is_case_sensitive():
+    original_address=ADDR["SOL"]
+    assert not thor._valid_memo_destination(
+        "=:SOL.SOL:"+original_address.lower()+"/"+DEST,
+        "SOL.SOL",original_address,DEST,
+        source_chain="ETH",target_chain="SOL")

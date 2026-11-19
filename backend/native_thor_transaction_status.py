@@ -37,14 +37,30 @@ def _matches_hash(asset:str,actual:object,expected:str)->bool:
 
 
 def _valid_memo_destination(memo:object,expected_asset:str,
-                            address:str)->bool:
-    if type(memo) is not str or not 6<len(memo)<=250:
+                            address:str,refund_address:str,
+                            *,source_chain:str,target_chain:str)->bool:
+    """The THORChain memo must preserve BOTH original user-owned wallets.
+
+    THORChain's documented `DESTADDR/REFUNDADDR` is encoded in the
+    destination field. Source-chain refunds must not be redirected to
+    another account. Native SOL/XRP address case is significant.
+    """
+    if (type(memo) is not str or not 6<len(memo)<=250
+            or type(address) is not str or type(refund_address) is not str):
         return False
     parts=memo.split(":")
     if len(parts)<3 or parts[0].upper() not in ("=","S","SWAP"):
         return False
-    return (parts[1].upper()==expected_asset.upper() and
-            parts[2].split("/")[0].lower()==address.lower())
+    wallet_parts=parts[2].split("/")
+    if len(wallet_parts)!=2 or not all(wallet_parts):
+        return False
+    destination,refund=wallet_parts
+    def matches(actual:str,expected:str,network:str)->bool:
+        return (actual.lower()==expected.lower() if network=="ETH"
+                else actual==expected)
+    return (parts[1].upper()==expected_asset.upper()
+            and matches(destination,address,target_chain)
+            and matches(refund,refund_address,source_chain))
 
 
 def inspect_original_thorchain_status(original:dict,observed:object)->dict:
@@ -75,7 +91,9 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
             or type(tx.get("from_address")) is not str
             or tx["from_address"]!=original["source_wallet"]
             or not _valid_memo_destination(
-                tx.get("memo"),target_asset,original["destination_wallet"])):
+                tx.get("memo"),target_asset,original["destination_wallet"],
+                original["source_wallet"],
+                source_chain=source_chain,target_chain=target_chain)):
         raise ValueError("THORChain original account or memo contradicts journal")
     coins=tx.get("coins")
     if (type(coins) is not list or len(coins)!=1
