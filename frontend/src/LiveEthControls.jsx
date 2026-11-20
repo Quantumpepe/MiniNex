@@ -452,7 +452,24 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
     </>}
   </div>;
 
-  return <details className="privy-disclosure privy-technical-section">
+  return <>
+    {enabled&&<div className="privy-hwm-box" style={{display:'grid',gap:8}}>
+      <strong>ETH · LIVE</strong>
+      <p className="privy-wallet-description">
+        {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
+      </p>
+      {ethAuto?.status==='ACTIVE'
+        ? <button className="privy-wallet-action" type="button"
+            disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
+        : <button className="privy-wallet-action" type="button"
+            disabled={busy||phase!=='ready'||!limits||
+              !ethAuto?.worker_deployed||changes||!ownAddress||
+              !limits.trading_paused}
+            onClick={startTradeOnce}>Start Trade · ETH</button>}
+      {!ethAuto?.worker_deployed&&
+        <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
+    </div>}
+    <details className="privy-disclosure privy-technical-section">
     <summary>
       <span>{t.liveEthTitle}</span>
       <small>{t.liveEthHint}</small>
@@ -494,17 +511,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
           <p className="privy-wallet-description">
             {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
           </p>
-          {ethAuto?.status==='ACTIVE'
-            ? <button className="privy-wallet-action" type="button"
-                disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
-            : <button className="privy-wallet-action" type="button"
-                disabled={busy||!ethAuto?.worker_deployed||changes||
-                  !limits?.trading_paused||!ownAddress}
-                onClick={startTradeOnce}>
-                Start Trade · ETH
-              </button>}
-          {!ethAuto?.worker_deployed&&
-            <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
+
         </div>
         <EthLiveWalletEquity
           walletAddress={ownAddress} userId={userId}
@@ -585,5 +592,6 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         onClick={()=>{setConfirmRevoke(false);setMessage('');setPhase('loading');
           refresh().catch(()=>setPhase('failed'));}}>{t.liveEthRefresh}</button>}
     </div>
-  </details>;
+  </details>
+  </>;
 }
