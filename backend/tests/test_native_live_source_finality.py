@@ -347,7 +347,9 @@ def test_passive_recovery_scans_stranded_sending_without_retry(monkeypatch):
     monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
     assert finality._pending_unknown_signed_sources(limit=2)==[]
     sql,params=queries[0]
-    assert "status IN ('SENDING','RECONCILIATION_REQUIRED')" in sql
+    assert "status='RECONCILIATION_REQUIRED'" in sql
+    assert "status='SENDING'" in sql
+    assert "updated_at < now() - interval '60 seconds'" in sql
     assert "source_signed_tx_hash IS NOT NULL" in sql
     assert "source_tx_hash IS NULL" in sql
     assert "side='SELL'" in sql
