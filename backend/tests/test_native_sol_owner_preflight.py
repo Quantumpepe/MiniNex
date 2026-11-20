@@ -44,7 +44,7 @@ def test_real_finalized_source_balance_fee_and_hash_decoded():
 
 
 @pytest.mark.parametrize("mutate", [
-    lambda x: x["getBalance"]["value"].__class__ == "ignored",
+    lambda x: x["getBalance"].update(value=True),
     lambda x: x["getBalance"].update(value=-1),
     lambda x: x["getBalance"].update(value=2**64),
     lambda x: x["getBalance"]["context"].update(slot=0),
@@ -57,10 +57,6 @@ def test_real_finalized_source_balance_fee_and_hash_decoded():
 def test_stale_or_malformed_finalized_sol_source_never_compiles(mutate):
     values = chain()
     mutate(values)
-    # First mutation is intentionally not changed by older fixtures; use
-    # the remaining mutations for the enforced negative variants.
-    if values == chain():
-        return
     with pytest.raises(ValueError):
         m._read_finalized_source(
             OWNER, values["getBalance"],
