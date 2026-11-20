@@ -29,9 +29,14 @@ def validate_owner_trade_grant_offer(
     if (type(record) is not dict or type(owned) is not dict
             or type(expected) is not dict
             or record.get("asset")!=asset
-            or record.get("status")!="CONSENT_VERIFIED"
+            or not (
+                record.get("status")=="CONSENT_VERIFIED"
+                and record.get("consent_verified_at") is not None
+                or record.get("status")=="DRAFT"
+                and record.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+                and record.get("consent_verified_at") is None
+                and record.get("consent_sha256") is None)
             or record.get("revoked_at") is not None
-            or record.get("consent_verified_at") is None
             or record.get("wallet_id")!=owned.get("wallet_id")
             or record.get("wallet_address")!=owned.get("address")
             or type(record.get("policy_id")) is not str
