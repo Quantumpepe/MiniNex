@@ -66,6 +66,9 @@ async def read_original_native_source_readiness(
             or owner.get("asset") != asset
             or owner.get("network") != _NATIVE_NETWORK[asset]
             or owner.get("original_wallet_link_verified") is not True
+            or owner.get("original_wallet_remote_owner_verified") is not True
+            or owner.get("original_public_key_matches_wallet") is not True
+            or owner.get("privy_native_wallet_api_supported") is not True
             or owner.get("can_submit") is not False
             or owner.get("execution_enabled") is not False):
         raise HTTPException(409, "Original native Privy owner wallet not available")
