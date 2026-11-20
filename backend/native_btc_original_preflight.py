@@ -17,6 +17,9 @@ from fastapi import HTTPException
 
 from .blockchain_preview import BTC_API
 from .native_btc_thor_outputs import _mainnet_p2wpkh_script
+from .native_btc_auto_utxo import (
+    get_original_btc_utxo_candidates, select_original_btc_utxos,
+)
 from .native_btc_thor_psbt import compile_original_unsigned_btc_thor_psbt
 from .native_btc_utxo_proof import get_original_btc_utxo_evidence
 from .native_thor_swap_quote import get_private_native_thornode_terms
@@ -57,18 +60,34 @@ async def _get_fresh_bitcoin_fee_rate() -> int:
 
 
 async def prepare_original_btc_unsigned_psbt(
-    did: str, *, stable: str, amount: str, input_utxos: object,
+    did: str, *, stable: str, amount: str, input_utxos: object = None,
 ) -> dict:
     """Owner-only internal readback; never expose as spend authorization."""
     did = _safe_did(did)
     if stable not in ("USDC", "USDT"):
         raise HTTPException(422, "Original Bitcoin settlement stable unsupported")
-    if type(input_utxos) is not list or not input_utxos:
-        raise HTTPException(422, "Original Bitcoin source UTXOs required")
+    if input_utxos is not None and (
+            type(input_utxos) is not list or not input_utxos):
+        raise HTTPException(422, "Original Bitcoin source UTXOs invalid")
     # Quote and chain evidence are obtained independently for the same Privy DID.
     terms = await get_private_native_thornode_terms(
         did, asset="BTC", side="SELL", stable=stable, amount=amount,
     )
+    fee_rate = await _get_fresh_bitcoin_fee_rate()
+    selection = None
+    if input_utxos is None:
+        discovery = await get_original_btc_utxo_candidates(did)
+        if discovery.get("source_wallet") != terms.get("source_wallet"):
+            raise HTTPException(409, "Privy Bitcoin UTXO discovery owner changed")
+        try:
+            selection = select_original_btc_utxos(
+                quote=terms, amount=amount, now=int(time.time()),
+                candidates=discovery["candidates"],
+                fee_rate_sats_per_vbyte=fee_rate,
+            )
+        except (ValueError, KeyError, TypeError, OverflowError):
+            raise HTTPException(409, "Current Bitcoin UTXOs do not fund original quote") from None
+        input_utxos = selection["input_utxos"]
     inputs = await get_original_btc_utxo_evidence(did, inputs=input_utxos)
     if (terms.get("source_wallet") != inputs.get("source_wallet")
             or terms.get("source_asset") != "BTC"
@@ -79,7 +98,6 @@ async def prepare_original_btc_unsigned_psbt(
             or inputs.get("funding_transactions_checked") is not True
             or inputs.get("bitcoin_spv_proof_verified") is not False):
         raise HTTPException(409, "BTC quote and original owner UTXOs do not agree")
-    fee_rate = await _get_fresh_bitcoin_fee_rate()
     # Reevaluate quote TTL AFTER all external network requests have finished.
     now = int(time.time())
     try:
@@ -117,6 +135,9 @@ async def prepare_original_btc_unsigned_psbt(
         "original_preflight_sha256": digest,
         "fee_rate_sats_per_vbyte": fee_rate,
         "btc_utxo_tip_height": inputs["tip_height"],
+        "automatic_input_selection_used": selection is not None,
+        "unverified_selection_sha256": (
+            selection["selection_sha256"] if selection is not None else None),
         "read_only_private_quote_checked": True,
         "current_esplora_unspent_reported": True,
         "bitcoin_spv_proof_verified": False,
