@@ -12,9 +12,8 @@ function PersonalDemo({t,lang,paperAvailable=true}) {
   const [data,setData]=useState({BTC:empty,ETH:empty});
   const [status,setStatus]=useState('idle');
   const [busy,setBusy]=useState(false);
-  // Paper availability is resolved once at App level. A global LIVE flag
-  // does not disable independently running BTC/ETH simulations.
-  // Never hide these sessions merely because this panel's fetch failed.
+  // Availability comes from App: BTC/ETH PAPER is independent of the
+  // global LIVE switch. A temporary duplicate request cannot hide this panel.
 
   const fetchOne=useCallback(async current=>{
     const token=await getAccessToken();
