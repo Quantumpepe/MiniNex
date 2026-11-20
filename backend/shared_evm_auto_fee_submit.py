@@ -56,7 +56,7 @@ async def submit_original_owner_auto_fee_once(
     if (asset not in _ASSETS or type(client) is not httpx.AsyncClient
             or not automatic_fee_transfer_worker_enabled()):
         raise HTTPException(409,"Owner auto fee payments not explicitly enabled")
-    remote=await get_owner_fee_auto_remote_grant_audit(
+    remote=await get_effective_owner_fee_grant(
         did=did,asset=asset)
     if (remote.get("owner_fee_grant_remotely_verified") is not True
             or remote.get("signer_quorum_remotely_verified") is not True
@@ -106,4 +106,58 @@ async def submit_original_owner_auto_fee_once(
         "onchain_finalized":False,
         "fee_paid_verified":False,
         "automatic_retry_allowed":False,
+    }
+
+
+async def get_effective_owner_fee_grant(*,did:str,asset:str)->dict:
+    """Use the ORIGINAL one-prompt owner grant when no separate fee grant exists.
+
+    A separate fee enrollment, including a REVOKED one, takes precedence:
+    never fall back to trading permission to undo a user's fee revocation.
+    """
+    import asyncio
+    from .shared_evm_fee_auto_grant_confirm import _read_original_fee_grant
+    separate=await asyncio.to_thread(_read_original_fee_grant,did,asset)
+    if separate is not None:
+        return await get_owner_fee_auto_remote_grant_audit(did=did,asset=asset)
+    from .shared_evm_remote_grant_audit import (
+        get_owner_evm_remote_grant_audit,_read_grant_record,
+        validate_pinned_evm_policy,_lte,
+    )
+    audit=await get_owner_evm_remote_grant_audit(did,asset)
+    fields=(
+        "owner_wallet_current","exact_remote_policy_rules_verified",
+        "privy_additional_signer_scoped","backend_quorum_current",
+        "signed_coin_budget_intent_in_ledger",
+    )
+    if audit.get("asset")!=asset or any(audit.get(k) is not True for k in fields):
+        raise HTTPException(409,"Original one-prompt fee owner grant not verified")
+    record=await asyncio.to_thread(_read_grant_record,did,asset)
+    if (record.get("status")!="GRANT_VERIFIED"
+            or record.get("authorization_method")!="PRIVY_SCOPED_GRANT"
+            or record.get("revoked_at") is not None
+            or record.get("consent_verified_at") is None):
+        raise HTTPException(409,"Owner's original combined permission is inactive")
+    policy=validate_pinned_evm_policy(
+        record,asset=asset,now=int(time.time()))
+    fee=policy["rules"][-1]
+    cap=_lte(fee,"transfer.value")
+    treasury=owner_fee_treasury(asset=asset,stable=record["stable"])
+    if not any(
+        c.get("field")=="transfer.to" and c.get("operator")=="eq"
+        and str(c.get("value","")).lower()==treasury
+        for c in fee["conditions"]
+    ):
+        raise HTTPException(409,"Original owner grant does not authorize Treasury")
+    return {
+        "source":"ONE_PRIVY_OWNER_GRANT",
+        "asset":asset,"chain_id":record["chain_id"],
+        "owner_wallet":record["wallet_address"],
+        "treasury_wallet":treasury,"stable":record["stable"],
+        "wallet_id":record["wallet_id"],"policy_id":record["policy_id"],
+        "policy_sha256":record["policy_sha256"],
+        "owner_max_fee_atomic":cap,
+        "owner_fee_grant_remotely_verified":True,
+        "signer_quorum_remotely_verified":True,
+        "fee_transfer_sent":False,
     }
