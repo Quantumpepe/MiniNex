@@ -14,6 +14,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from .native_btc_thor_outputs import _mainnet_p2wpkh_script
+from .native_privy_pubkey_binding import verify_native_public_key_owner
 from .native_coin_balances import _valid_address, verified_native_addresses
 from .privy_live_signer import _PRIVY_ID, fetch_privy_wallet_metadata
 from .privy_wallet_verification import fetch_privy_user
@@ -91,6 +92,16 @@ def inspect_original_native_signer_metadata(
             or entity.get("id") != did
             or remote.get("archived_at") is not None):
         raise ValueError("Remote native wallet belongs to another owner")
+    # Public-key/derived-address matching is an independent cryptographic
+    # check, not evidence of a trade permission. Optional legacy metadata
+    # without a key remains visibly *unverified*, never treated as a match.
+    public_key_bound = False
+    if remote.get("public_key") is not None:
+        key = verify_native_public_key_owner(
+            asset=asset, owner=original["address"],
+            public_key=remote["public_key"],
+        )
+        public_key_bound = key["original_public_key_matches_wallet"] is True
     signers = remote.get("additional_signers")
     if type(signers) is not list:
         raise ValueError("Native additional signer metadata unavailable")
@@ -121,6 +132,8 @@ def inspect_original_native_signer_metadata(
         }[asset],
         "original_wallet_link_verified": True,
         "original_wallet_remote_owner_verified": True,
+        "original_public_key_matches_wallet": public_key_bound,
+        "privy_native_wallet_api_supported": asset in ("BTC", "SOL"),
         "wallet_delegation_flag_reported": original["delegated"],
         "additional_signer_reference_present": bool(signer_ids),
         "signer_policy_reference_present": has_scoped_policy,
@@ -153,6 +166,8 @@ async def get_original_native_privy_signer_status(
         }[asset],
         "original_wallet_link_verified": False,
         "original_wallet_remote_owner_verified": False,
+        "original_public_key_matches_wallet": False,
+        "privy_native_wallet_api_supported": asset in ("BTC", "SOL"),
         "wallet_delegation_flag_reported": False,
         "additional_signer_reference_present": False,
         "signer_policy_reference_present": False,
