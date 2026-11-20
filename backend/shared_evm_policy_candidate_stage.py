@@ -20,6 +20,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .shared_evm_privy_user_policy import build_user_evm_policy_blueprint
+from .shared_evm_single_grant_policy import build_single_grant_evm_policy
+from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_owner_consent import _asset,_locked_coin_settings
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_policy_reference_rates import (
@@ -75,13 +77,21 @@ def _stage_locked(
     previous=cur.fetchone()
     if previous is not None:
         raise HTTPException(409,"Already staged EVM owner policy requires audit")
-    candidate=build_user_evm_policy_blueprint(
+    factory=(build_single_grant_evm_policy if single_privy_grant
+             else build_user_evm_policy_blueprint)
+    extra=({
+        "treasury":owner_fee_treasury(asset=asset,stable=stable),
+        # Fee transfer cap is the server-verified stablecoin input budget;
+        # exact 5% HWM debt must still be verified at fee-send time.
+        "owner_max_fee_atomic":buy_source_atomic_cap,
+    } if single_privy_grant else {})
+    candidate=factory(
         asset=asset,stable=stable,wallet=owned["address"],
         owner_id=owner_id,executor_id=signer_id,
         buy_source_atomic_cap=buy_source_atomic_cap,
         sell_source_atomic_cap=sell_source_atomic_cap,
         native_wrap_atomic_cap=native_wrap_atomic_cap,
-        expires_at=expires_at,now=now)
+        expires_at=expires_at,now=now,**extra)
     digest=hashlib.sha256(json.dumps(
         candidate,sort_keys=True,separators=(",",":")
     ).encode("utf-8")).hexdigest()
