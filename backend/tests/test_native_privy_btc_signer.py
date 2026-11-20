@@ -139,11 +139,23 @@ def test_btc_raw_sign_connects_exactly_one_dispatch_after_all_inputs(monkeypatch
         return {"mode":"ORIGINAL_NATIVE_EXECUTED_ONCE_PENDING_FINALITY",
                 "retry_allowed":False}
     monkeypatch.setattr(s,"dispatch_signed_original_native_once",dispatch)
+    source_checks=[]
+    async def evidence(did,*,inputs):
+        source_checks.append((did,len(inputs)))
+        return {
+            "source_wallet":psbt["source_wallet"],
+            "current_explorer_unspent_reported":True,
+            "funding_transactions_checked":True,
+            "input_count":len(utxos),
+            "inputs":utxos,
+        }
+    monkeypatch.setattr(s,"get_original_btc_utxo_evidence",evidence)
     result=asyncio.run(s.sign_and_dispatch_original_btc_sell_once(
         DID,intent_key=INTENT,quote={"asset":"BTC"},
         psbt=psbt,original_utxos=utxos,fee_rate_sats_per_vbyte=5,
         permission_audit=audit,client=client))
     assert result["retry_allowed"] is False
+    assert source_checks==[(DID,2)]
     assert len(client.calls)==2 and len(called)==1
     assert called[0][1]["asset"]=="BTC"
     assert called[0][1]["original_utxos"] is utxos
@@ -171,3 +183,42 @@ def test_privy_canonical_authorizer_accepts_only_exact_btc_raw_hash():
     ]:
         with pytest.raises(ValueError):
             pinned._canonical_authorization_payload(url=url,body=body,key=key)
+
+
+
+@pytest.mark.parametrize("change", [
+    lambda evidence:evidence.update(current_explorer_unspent_reported=False),
+    lambda evidence:evidence.update(funding_transactions_checked=False),
+    lambda evidence:evidence["inputs"][0].update(value_sats=9),
+    lambda evidence:evidence.update(source_wallet="bc1q"+("q"*38)),
+    lambda evidence:evidence.update(input_count=2),
+])
+def test_btc_original_utxos_must_still_be_unspent_before_any_send(monkeypatch,change):
+    psbt,utxos,sigs,audit=configure(monkeypatch)
+    client=Client(sigs)
+    events=[]
+    async def evidence(did,*,inputs):
+        events.append("post-sign-chain-proof")
+        import copy
+        response={
+            "source_wallet":psbt["source_wallet"],
+            "current_explorer_unspent_reported":True,
+            "funding_transactions_checked":True,
+            "input_count":len(utxos),
+            "inputs":copy.deepcopy(utxos),
+        }
+        change(response)
+        return response
+    async def dispatch(*a,**kw):
+        events.append("unexpected-chain-dispatch")
+        pytest.fail("Original spent or changed funding input must block broadcast")
+    monkeypatch.setattr(s,"get_original_btc_utxo_evidence",evidence)
+    monkeypatch.setattr(s,"dispatch_signed_original_native_once",dispatch)
+    with pytest.raises(s.HTTPException) as exc:
+        asyncio.run(s.sign_and_dispatch_original_btc_sell_once(
+            DID,intent_key=INTENT,quote={"asset":"BTC"},
+            psbt=psbt,original_utxos=utxos,fee_rate_sats_per_vbyte=5,
+            permission_audit=audit,client=client))
+    assert exc.value.status_code==409
+    assert events==["post-sign-chain-proof"]
+    assert len(client.calls)==1
