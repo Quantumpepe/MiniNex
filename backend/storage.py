@@ -140,14 +140,14 @@ SCHEMA = (
     """ALTER TABLE mininex_live_eth_policy_enrollments
        ADD COLUMN IF NOT EXISTS authorization_method TEXT NOT NULL
        DEFAULT 'EIP191_AND_PRIVY'
-       CHECK(authorization_method IN
-          ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
+       CHECK (authorization_method IN
+           ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
     """ALTER TABLE mininex_live_eth_policy_enrollments
        ADD COLUMN IF NOT EXISTS grant_budget_sha256 TEXT
-       CHECK(grant_budget_sha256 IS NULL OR
-         grant_budget_sha256 ~ '^[0-9a-f]{64}$')""",
-    # Existing installations have the original Stage-21 status CHECK.
-    # CREATE TABLE IF NOT EXISTS cannot extend the original constraint.
+       CHECK (grant_budget_sha256 IS NULL OR
+          grant_budget_sha256 ~ '^[0-9a-f]{64} A
+    # CREATE TABLE IF NOT EXISTS cannot extend that original constraint.
+    # Replace only that non-destructive CHECK to add GRANT_VERIFIED safely.
     """ALTER TABLE mininex_live_eth_policy_enrollments
        DROP CONSTRAINT IF EXISTS mininex_live_eth_policy_enrollments_status_check""",
     """ALTER TABLE mininex_live_eth_policy_enrollments
@@ -340,7 +340,7 @@ SCHEMA = (
        ADD COLUMN IF NOT EXISTS authorization_method TEXT NOT NULL
        DEFAULT 'EIP191_AND_PRIVY'
        CHECK (authorization_method IN
-         ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
+          ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
@@ -1449,11 +1449,6 @@ def record_trusted_realized_close(
        ADD COLUMN IF NOT EXISTS budget_revision BIGINT""",
     """ALTER TABLE mininex_live_evm_owner_permissions
        ADD COLUMN IF NOT EXISTS candidate_json JSONB""",
-    """ALTER TABLE mininex_live_evm_owner_permissions
-       ADD COLUMN IF NOT EXISTS authorization_method TEXT NOT NULL
-       DEFAULT 'EIP191_AND_PRIVY'
-       CHECK (authorization_method IN
-         ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
