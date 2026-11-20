@@ -54,6 +54,7 @@ export default function EvmLiveOwnerControls({
   const [session,setSession]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const [offeredFeeScope,setOfferedFeeScope]=useState(null);
   const allowed=enabled&&LIVE_EVM_ASSETS.includes(asset)&&
     /^0x[0-9a-fA-F]{40}$/.test(address||'')&&
     typeof getAccessToken==='function';
@@ -84,6 +85,7 @@ export default function EvmLiveOwnerControls({
   useEffect(()=>{
     let active=true;
     setPermission(null);setSession(null);setBusy(false);setError('');
+    setOfferedFeeScope(null);
     if(!allowed)return()=>{active=false;};
     const poll=async()=>{
       try{
@@ -160,6 +162,10 @@ export default function EvmLiveOwnerControls({
       if(!validEvmTradeSignerOffer(offer,{
         asset,stable,address,policyId:offer?.policy_id,
       }))throw Error('Privy owner policy differs from the saved coin budget');
+      // Show the EXACT remotely audited recipient and fee ceiling before
+      // the ONE wallet owner approval, without adding another confirmation.
+      setOfferedFeeScope(offer.fee_scope);
+      await new Promise(resolve=>window.requestAnimationFrame(resolve));
       // This is the ONE user-facing wallet approval. The Privy SDK shows
       // the request and the owner explicitly authorizes the exact scoped
       // signer. No prior EIP-191 signMessage is requested by this flow.
@@ -229,6 +235,12 @@ export default function EvmLiveOwnerControls({
     {sessionStatus!=='ACTIVE'&&current!=='GRANT_VERIFIED'&&
       <p className="privy-wallet-description">{t.warn}</p>}
     <p className="privy-wallet-description">{t.note}</p>
+    {offeredFeeScope&&
+      <p className="privy-wallet-description" role="status">
+        {lang==='de'?'Einmalige Handelsfreigabe: 5 % realisierter Nettogewinn über High-Water-Mark':'Single trading grant: 5% realized net gain above high-water mark'}
+        {' · '}{lang==='de'?'Empfänger':'Recipient'}: <code>{offeredFeeScope.treasury_wallet}</code>
+        {' · '}{lang==='de'?'Maximaler Transfer in Token-Atomeinheiten':'Maximum transfer in token atomic units'}: {offeredFeeScope.fee_max_atomic}
+      </p>}
     {busy&&<p className="privy-wallet-description" role="status">{t.signing}</p>}
     {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
   </section>;
