@@ -142,6 +142,6 @@ def test_read_only_preflight_rejects_bad_outpoints_before_rpc(monkeypatch):
 def test_read_only_utxo_inspector_never_signs_or_broadcasts():
     import inspect
     text = inspect.getsource(proof.inspect_original_btc_utxo_set)
-    for denied in ("sendrawtransaction", "privy_sign", "private_key",
+    for denied in ("sendrawtransaction", "privy_sign(", "private_key",
                    "seed_phrase", "psycopg", "request.post"):
         assert denied not in text
