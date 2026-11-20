@@ -128,3 +128,22 @@ def test_no_http_endpoint_or_remote_privy_creation():
     assert "sign_privy" not in code
     from backend.app import app
     assert all("evm-grant-confirm" not in r.path for r in app.routes)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+def test_single_owner_privy_grant_with_approvals_and_hwm_fee_reads_back(asset,monkeypatch):
+    """Actual remote policy readback must not reject the new 5/7-rule grant."""
+    from backend.shared_evm_single_grant_policy import build_single_grant_evm_policy
+    kw=args(asset)
+    expected=build_single_grant_evm_policy(
+        **kw,treasury="0x"+"cd"*20,owner_max_fee_atomic="50000000")
+    remote={**deepcopy(expected),"id":POLICY}
+    for i,rule in enumerate(remote["rules"]):
+        rule["id"]="rule_1234567"+str(i)
+    result=verify_exact_remote_evm_policy(remote,expected)
+    assert result["remote_exact_match"] is True
+    assert result["live_execution_enabled"] is False
+    assert len(expected["rules"])==(7 if asset in ("BNB","POL","AVAX") else 5)
+    remote["rules"][-1]["conditions"][-1]["value"]="999999999999"
+    with pytest.raises(ValueError):
+        verify_exact_remote_evm_policy(remote,expected)

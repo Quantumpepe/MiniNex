@@ -37,7 +37,7 @@ def verify_exact_remote_evm_policy(remote:object,expected:object)->dict:
     if (type(remote.get("rules")) is not list
             or type(expected.get("rules")) is not list
             or len(remote["rules"])!=len(expected["rules"])
-            or len(expected["rules"]) not in (2,4)):
+            or len(expected["rules"]) not in (2,4,5,7)):
         raise ValueError("Unexpected EVM Privy permissions")
     ids=set()
     rules=[]
