@@ -169,3 +169,32 @@ def verify_router_approval_transaction(
         chain_id=chain_id, amount_atomic=amount_atomic,
     )
     return type(tx) is dict and tx == expected
+
+
+
+def bound_owner_router_approval_rpc(
+    *, asset: str, side: str, stable: str, wallet_id: str,
+    wallet: str, amount_atomic: int,
+) -> tuple[str, dict]:
+    """Exact registry-derived Privy RPC for a finite, user-authorized approve.
+
+    Construct-only: caller MUST separately verify the original combined
+    remote owner grant and durable once-only nonce claim before signing/sending.
+    """
+    from .shared_evm_execution import bound_evm_wallet_rpc
+    pair = _pair(asset, stable, side)
+    approved = owner_approval_draft(
+        token=pair["source_token"], router=pair["router"],
+        wallet=wallet, chain_id=pair["chain_id"],
+        amount_atomic=amount_atomic,
+    )
+    if not verify_router_approval_transaction(
+        approved, token=pair["source_token"], router=pair["router"],
+        wallet=wallet, chain_id=pair["chain_id"],
+        amount_atomic=amount_atomic,
+    ):
+        raise ValueError("Router approval does not match original scoped grant")
+    return bound_evm_wallet_rpc(
+        asset=asset, wallet_id=wallet_id, wallet=wallet,
+        tx={**approved, "value": "0"},
+    )
