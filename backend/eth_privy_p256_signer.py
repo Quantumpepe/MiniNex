@@ -28,7 +28,7 @@ _KEY_ID=re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 def _canonical_authorization_payload(*,url:str,body:dict,key:str) -> bytes:
     if (type(url) is not str
             or not re.fullmatch(
-                r"https://api\\.privy\\.io/v1/wallets/[A-Za-z0-9_-]{6,160}/(?:rpc|raw_sign)",
+                r"https://api\.privy\.io/v1/wallets/[A-Za-z0-9_-]{6,160}/(?:rpc|raw_sign)",
                 url)
             or type(body) is not dict
             or type(key) is not str or not _KEY_ID.fullmatch(key)):
