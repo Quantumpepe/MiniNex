@@ -85,6 +85,11 @@ def test_real_owner_and_source_chain_and_fresh_quote_bound_psbt(monkeypatch):
     assert unsigned["source_amount_sats"] == 2500000
     assert unsigned["psbt_created"] is True
     assert unsigned["input_count"] == 1
+    digests = r["bip143_signature_digest_preview"]
+    assert digests["input_count"] == unsigned["input_count"]
+    assert digests["original_psbt_sha256"] == unsigned["psbt_sha256"]
+    assert len(digests["signature_digests"][0]["bip143_sighash_all_hex"]) == 64
+    assert digests["signature_requests_performed"] is False
     assert len(unsigned["psbt_base64"]) > 80
     assert r["original_preflight_sha256"] != unsigned["psbt_sha256"]
     for item in (
