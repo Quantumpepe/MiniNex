@@ -24,6 +24,8 @@ def owner(asset):
         "asset": asset, "network": NETWORKS[asset],
         "original_wallet_link_verified": True,
         "original_wallet_remote_owner_verified": True,
+        "original_public_key_matches_wallet": False,
+        "privy_native_wallet_api_supported": asset in ("BTC","SOL"),
         "additional_signer_reference_present": False,
         "can_submit": False, "execution_enabled": False,
     }
@@ -133,6 +135,10 @@ def test_shared_native_source_preflight_selects_owner_and_exact_chain(
     assert result["stable"] == stable
     assert result["original_source_preflight_verified"] is True
     assert result["original_native_owner_wallet_link_verified"] is True
+    assert result["original_native_owner_public_key_matches_wallet"] is False
+    assert result["documented_privy_native_wallet_chain_type_supported"] is (
+        asset in ("BTC","SOL"))
+    assert result["can_submit"] is False
     assert result["source_network"] == (
         "ethereum-mainnet" if side == "BUY" else NETWORKS[asset])
     assert result["destination_network"] == (
