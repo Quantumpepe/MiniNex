@@ -40,7 +40,9 @@ def assess_evm_permission_record(record:object, *,
         "stored_wallet_id":None,
         "owner_wallet_bound":False,
         "user_consent_recorded":False,
+        "authorization_method":None,
         "server_policy_digest_matched":False,
+        "policy_published":False,
         "signer_grant_recorded":False,
         "policy_current":False,
         "privy_live_readback_completed":False,
@@ -73,6 +75,8 @@ def assess_evm_permission_record(record:object, *,
             or expires.tzinfo is None):
         raise ValueError("Incorrect wallet/chain/permission record")
     result["status"]=state
+    result["authorization_method"]=record.get(
+        "authorization_method","EIP191_AND_PRIVY")
     result["stored_wallet_address"]=record["wallet_address"]
     result["stored_wallet_id"]=record["wallet_id"]
     result["owner_wallet_bound"]=True  # Ledger field match; live GET still needed
@@ -88,6 +92,7 @@ def assess_evm_permission_record(record:object, *,
     matching=(record.get("remote_policy_sha256")==record["policy_sha256"]
               and type(record.get("policy_id")) is str
               and _ID.fullmatch(record["policy_id"]) is not None)
+    result["policy_published"]=bool(matching)
     if state=="GRANT_VERIFIED" and (
             not matching or record.get("grant_verified_at") is None):
         raise ValueError("Unverified remote EVM grant")
@@ -115,7 +120,7 @@ def read_owner_evm_permission_status(did:str,*,asset:str)->dict:
                               owner_id,signer_id,policy_id,policy_sha256,
                               remote_policy_sha256,consent_sha256,
                               consent_verified_at,grant_verified_at,
-                              revoked_at,expires_at,status
+                              revoked_at,expires_at,status,authorization_method
                        FROM mininex_live_evm_owner_permissions
                        WHERE privy_did=%s AND asset=%s""",(did,asset))
                 record=cur.fetchone()
