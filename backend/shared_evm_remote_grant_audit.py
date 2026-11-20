@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime,timezone
+from decimal import Decimal
 import hashlib
 import json
 import re
@@ -101,13 +102,42 @@ def validate_pinned_evm_policy(record:object,*,asset:str,now:int)->dict:
     return expected
 
 
+def _grant_scope_digest(*,did:str,record:dict,budget_usd:object)->str:
+    """Exact saved-budget commitment after a real scoped Privy owner grant.
+
+    This SHA-256 is a database audit commitment, NEVER an EIP-191 signature.
+    The actual authorization is the remote wallet owner's checked addSigners
+    approval, checked again on every live readback.
+    """
+    if type(record) is not dict or record.get("authorization_method")!="PRIVY_SCOPED_GRANT":
+        raise ValueError("Original Privy grant method not present")
+    budget=Decimal(str(budget_usd))
+    if not budget.is_finite() or budget<=0:
+        raise ValueError("Original user budget invalid")
+    original={
+        "did":did,"asset":record["asset"],
+        "chain_id":record["chain_id"],"stable":record["stable"],
+        "wallet_id":record["wallet_id"],"wallet":record["wallet_address"],
+        "owner_id":record["owner_id"],"signer_id":record["signer_id"],
+        "policy_id":record["policy_id"],
+        "policy_sha256":record["policy_sha256"],
+        "budget_revision":record["budget_revision"],
+        "budget_usd":str(budget.normalize()),
+        "authorized_by":"PRIVY_OWNER_SCOPED_SIGNER_GRANT",
+    }
+    return hashlib.sha256(json.dumps(
+        original,sort_keys=True,separators=(",",":"),ensure_ascii=True,
+    ).encode("ascii")).hexdigest()
+
+
 def _read_grant_evidence_locked(cur,*,did:str,asset:str)->dict:
     cur.execute(
         """SELECT asset,chain_id,stable,wallet_id,wallet_address,
                   owner_id,signer_id,policy_id,policy_sha256,
                   remote_policy_sha256,consent_sha256,
                   consent_verified_at,grant_verified_at,revoked_at,
-                  expires_at,status,budget_revision,candidate_json
+                  expires_at,status,budget_revision,candidate_json,
+                  authorization_method
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     record=cur.fetchone()
@@ -123,22 +153,35 @@ def _read_grant_evidence_locked(cur,*,did:str,asset:str)->dict:
     pair=_pair(asset,record["stable"],"BUY")
     if record["chain_id"]!=pair["chain_id"]:
         raise HTTPException(409,"Wrong EVM network in permission record")
-    cur.execute(
-        """SELECT status,wallet_id,wallet_address,chain_id,stable,
-                  budget_revision,message_sha256,confirmed_at
-           FROM mininex_live_evm_consent_challenges
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    intent=cur.fetchone()
-    if (type(intent) is not dict
-            or intent.get("status")!="SIGNED_INTENT"
-            or intent.get("confirmed_at") is None
-            or intent.get("wallet_id")!=record["wallet_id"]
-            or intent.get("wallet_address")!=record["wallet_address"]
-            or intent.get("chain_id")!=record["chain_id"]
-            or intent.get("stable")!=record["stable"]
-            or intent.get("budget_revision")!=record["budget_revision"]
-            or intent.get("message_sha256")!=record["consent_sha256"]):
-        raise HTTPException(409,"Coin policy and owner's signed budget differ")
+    if record.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        cur.execute(
+            """SELECT stable,revision,budget_usd
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        budget=cur.fetchone()
+        if (type(budget) is not dict
+                or budget.get("stable")!=record["stable"]
+                or budget.get("revision")!=record["budget_revision"]
+                or record["consent_sha256"]!=_grant_scope_digest(
+                    did=did,record=record,budget_usd=budget["budget_usd"])):
+            raise HTTPException(409,"Original approved Privy budget changed")
+    else:
+        cur.execute(
+            """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                      budget_revision,message_sha256,confirmed_at
+               FROM mininex_live_evm_consent_challenges
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        intent=cur.fetchone()
+        if (type(intent) is not dict
+                or intent.get("status")!="SIGNED_INTENT"
+                or intent.get("confirmed_at") is None
+                or intent.get("wallet_id")!=record["wallet_id"]
+                or intent.get("wallet_address")!=record["wallet_address"]
+                or intent.get("chain_id")!=record["chain_id"]
+                or intent.get("stable")!=record["stable"]
+                or intent.get("budget_revision")!=record["budget_revision"]
+                or intent.get("message_sha256")!=record["consent_sha256"]):
+            raise HTTPException(409,"Coin policy and owner's signed budget differ")
     return record
 
 
