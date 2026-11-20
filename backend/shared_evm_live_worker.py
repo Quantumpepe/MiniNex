@@ -63,6 +63,20 @@ def evm_auto_worker_enabled()->bool:
     )
 
 
+def _persist_evm_worker_heartbeat()->None:
+    """Record an actual current worker poll, never infer it from an env flag."""
+    db=_db_url()
+    _ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """INSERT INTO mininex_live_worker_heartbeats
+                       (worker_name,last_poll_at,status)
+                   VALUES ('shared_evm_auto',now(),'RUNNING')
+                   ON CONFLICT(worker_name) DO UPDATE
+                   SET last_poll_at=now(),status='RUNNING'""")
+
+
 def owner_started_evm_sessions(limit:int=20)->list[dict]:
     """Read only ACTIVE owner-started sessions with unchanged coin settings.
 
@@ -326,6 +340,12 @@ class SharedEvmLiveWorker:
             await asyncio.sleep(_INTERVAL_SECONDS)
             if not evm_auto_worker_enabled():
                 continue
+            try:
+                await asyncio.to_thread(_persist_evm_worker_heartbeat)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("LIVE EVM worker heartbeat persistence failed")
             try:
                 sessions=await asyncio.to_thread(owner_started_evm_sessions)
             except asyncio.CancelledError:

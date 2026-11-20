@@ -1180,6 +1180,17 @@ SCHEMA += (
 )
 
 
+# Independently observed server-side LIVE worker heartbeat (not a trade,
+# wallet signature, deposit, or evidence of a finalized chain transaction).
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_live_worker_heartbeats (
+        worker_name TEXT PRIMARY KEY,
+        last_poll_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        status TEXT NOT NULL CHECK(status IN ('RUNNING'))
+    )""",
+)
+
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

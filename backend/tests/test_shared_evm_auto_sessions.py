@@ -123,6 +123,7 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
         def __init__(self):self.calls=[];self.rows=iter([
             {"status":"ACTIVE","chain_id":1,"stable":"USDC","budget_revision":7},
             {"sent":3,"finalized":2},
+            {"last_poll_at":NOW},
         ])
         def __enter__(self):return self
         def __exit__(self,*args):return False
@@ -138,8 +139,22 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
     monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:FakeDB())
     state=m.get_owner_evm_auto(DID,"LINK")
     assert state["status"]=="ACTIVE"
+    assert state["worker_attached"] is True
     assert state["original_blockchain_swaps_sent"]==3
     assert state["original_blockchain_swaps_finalized"]==2
     assert state["new_transactions_sent"]==0
     assert "tx_hash IS NOT NULL" in cur.calls[1][0]
     assert cur.calls[1][1]==(DID,"LINK")
+
+
+
+def test_worker_heartbeat_comes_from_live_loop_not_owner_session_label():
+    from backend.shared_evm_live_worker import _persist_evm_worker_heartbeat
+    import inspect
+    source=inspect.getsource(_persist_evm_worker_heartbeat)
+    assert "mininex_live_worker_heartbeats" in source
+    assert "ON CONFLICT" in source
+    assert "shared_evm_auto" in source
+    status_source=inspect.getsource(m.get_owner_evm_auto)
+    assert "INTERVAL '90 seconds'" in status_source
+    assert "last_poll_at" in status_source
