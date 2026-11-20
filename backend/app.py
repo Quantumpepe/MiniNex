@@ -1512,6 +1512,24 @@ async def eth_user_policy_candidate(
     })
 
 
+@app.post("/api/live/eth/policy/prepare-grant")
+async def eth_privy_policy_prepare_single_grant(
+    authorization: str | None = Header(default=None),
+):
+    """Stage restricted ETH owner policy without a second EIP191 signature.
+
+    No wallet authority is delegated: Privy's owner addSigners approval
+    is still mandatory before any source transaction can be signed.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await prepare_eth_policy_record(
+        did,single_privy_grant=True)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
 @app.post("/api/live/eth/policy/prepare")
 async def eth_privy_policy_prepare(
     authorization: str | None = Header(default=None),
