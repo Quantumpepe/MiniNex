@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
   nativeSourcePreflightRequest,validNativeSourcePreflight,
-  originalNativeBlocker,
+  originalNativeBlocker,validNativeOwnerReadback,
+  nativeOwnerReadbackBlocker,
 } from '../src/nativeSourceReadinessRules.js';
 
 const NETWORK=Object.freeze({BTC:'bitcoin-mainnet',
@@ -160,4 +161,82 @@ test('native check is under the quoted coin, with no additional capital controls
   const words=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
   assert.equal(words.split('nativeSourceCheck:').length,3);
   assert.equal(words.split('nativeSourceNotExecutable:').length,3);
+});
+
+function readback(asset='BTC'){
+  return {
+    mode:'PRIVY_ORIGINAL_NATIVE_OWNER_READBACK_ONLY',
+    asset,network:NETWORK[asset],
+    original_wallet_link_verified:true,
+    original_wallet_remote_owner_verified:true,
+    original_public_key_matches_wallet:true,
+    privy_native_wallet_api_supported:asset!=='XRP',
+    wallet_delegation_flag_reported:true,
+    additional_signer_reference_present:true,
+    signer_policy_reference_present:true,
+    exact_remote_policy_contents_verified:false,
+    per_user_owner_trade_consent_verified:false,
+    original_budget_revision_verified:false,
+    privy_transaction_signing_capability_verified:false,
+    original_order_claim_verified:false,
+    automated_signing_enabled:false,
+    live_trading_enabled:false,
+    execution_enabled:false,can_submit:false,
+  };
+}
+for(const asset of ['BTC','SOL','XRP']){
+  test('owner-only fallback stays separate from original chain proof for '+asset,()=>{
+    const report=readback(asset);
+    assert.equal(validNativeOwnerReadback(report,asset),true);
+    assert.equal(nativeOwnerReadbackBlocker(report,asset),
+      asset==='XRP'?'NATIVE_WALLET_UNSUPPORTED':'POLICY_AND_SEND_CLAIM_MISSING');
+    assert.equal(report.can_submit,false);
+    assert.equal(validNativeSourcePreflight(report,request(asset)),false);
+  });
+}
+test('readback makes missing wallet and missing signer visible without grants',()=>{
+  const btc=readback('BTC');
+  const absent={...btc,original_wallet_link_verified:false,
+    original_wallet_remote_owner_verified:false,
+    original_public_key_matches_wallet:false,
+    wallet_delegation_flag_reported:false,
+    additional_signer_reference_present:false,
+    signer_policy_reference_present:false};
+  assert.equal(validNativeOwnerReadback(absent,'BTC'),true);
+  assert.equal(nativeOwnerReadbackBlocker(absent,'BTC'),'ORIGINAL_WALLET_MISSING');
+  assert.equal(nativeOwnerReadbackBlocker(
+    {...btc,wallet_delegation_flag_reported:false},'BTC'),'SIGNER_NOT_ASSIGNED');
+  assert.equal(nativeOwnerReadbackBlocker(
+    {...btc,original_wallet_remote_owner_verified:false},'BTC'),'REMOTE_OWNER_UNVERIFIED');
+  assert.equal(nativeOwnerReadbackBlocker(
+    {...btc,original_public_key_matches_wallet:false},'BTC'),'PUBLIC_KEY_UNVERIFIED');
+});
+test('readback rejects forged privileged state or leaked signer credentials',()=>{
+  const owner=readback('SOL');
+  const flags=['exact_remote_policy_contents_verified',
+    'per_user_owner_trade_consent_verified','original_budget_revision_verified',
+    'privy_transaction_signing_capability_verified','original_order_claim_verified',
+    'automated_signing_enabled','live_trading_enabled','execution_enabled','can_submit'];
+  for(const k of flags){
+    assert.equal(validNativeOwnerReadback({...owner,[k]:true},'SOL'),false,k);
+    assert.equal(validNativeOwnerReadback({...owner,[k]:null},'SOL'),false,k);
+  }
+  for(const key of ['wallet_id','policy_id','authorization','source_wallet']){
+    assert.equal(validNativeOwnerReadback({...owner,[key]:'secret'},'SOL'),false,key);
+  }
+  assert.equal(validNativeOwnerReadback({...owner,network:'ethereum-mainnet'},'SOL'),false);
+  assert.equal(validNativeOwnerReadback({...owner,asset:'BTC'},'SOL'),false);
+});
+test('UI queries owner fallback only after source failed, never claims chain verification',()=>{
+  const ui=readFileSync(new URL('../src/NativeSourceReadiness.jsx',import.meta.url),'utf8');
+  assert.match(ui,/if\(!response\.ok\)throw Error\('Original source preflight unavailable'\)/);
+  assert.match(ui,/\/api\/live\/native\/authorization\//);
+  assert.match(ui,/validNativeOwnerReadback\(owner,nativeRequest\.asset\)/);
+  assert.match(ui,/nativeOwnerReadbackBlocker\(owner,nativeRequest\.asset\)/);
+  assert.match(ui,/setStatus\(\{code:ownerCode,sourceChecked:false\}\)/);
+  assert.match(ui,/status\.sourceChecked\?t\.nativeSourceChecked:t\.nativeSourceNotChecked/);
+  assert.doesNotMatch(ui,/sendTransaction|signAndSend|createPolicy|approve\(/);
+  const words=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
+  assert.equal(words.split('nativeSourceNotChecked:').length,3);
+  assert.equal(words.split('nativeSourceWalletMissing:').length,3);
 });
