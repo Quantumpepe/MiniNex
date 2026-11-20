@@ -28,6 +28,7 @@ from .wallet_balances import get_wallet_balances
 from .multicoin_evm_balances import get_multicoin_evm_balances
 from .native_coin_balances import get_native_balances
 from .native_trade_receipts import get_owner_native_sender_receipt
+from .native_privy_owner_signer import get_original_native_privy_signer_status
 from .native_live_destination_finality import get_private_native_ethereum_destination
 from .native_live_buy_destination import get_private_original_native_buy_destination
 from .native_live_sell_refund import get_private_original_native_sell_refund
@@ -503,6 +504,20 @@ async def authenticated_native_balances(
     """Verified real SOL/XRP/TRX wallet holdings from their own networks."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(await get_native_balances(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/authorization/{asset}")
+async def read_original_native_privy_owner_authorization(
+    asset: Literal["BTC","SOL","XRP"],
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only native Privy signer readback, never trade permission."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await get_original_native_privy_signer_status(did,asset=asset)
+    return JSONResponse(status,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
