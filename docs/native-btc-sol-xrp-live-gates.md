@@ -286,3 +286,5 @@ transaction; it never invokes sign-and-send.
 **Status:** these are offline code and tests on PR #202, not successfully
 executed native transfers. Android smoke workflow is skipped on this
 branch. No automatic Privy policy, production merge/deploy or LIVE switch.
+
+**Privy REST-Spezifikation abgeglichen:** Bitcoin ist Tier-2. Original-BIP143-Inputsignaturen müssen über `POST /v1/wallets/{wallet_id}/raw_sign` mit ausschließlich `{"params":{"hash":"0x..."}}` erfolgen, nicht über das Ethereum-`secp256k1_sign`-RPC. Der vorhandene P256-Backendsigner autorisiert deshalb nur exakt diesen 32-Byte-Hash-Endpunkt, ohne neue private Keys. SOL benutzt `POST /v1/wallets/{wallet_id}/rpc` mit der dokumentierten Methode `signTransaction` und unveränderter Base64-Transaktion. Offizielle Endpunkte: https://docs.privy.io/api-reference/wallets/raw-sign und https://docs.privy.io/api-reference/wallets/solana/sign-transaction. **Weiterhin keine Privy-Eigentümer-Policy oder Echtgeld-Ausführung bestätigt.**

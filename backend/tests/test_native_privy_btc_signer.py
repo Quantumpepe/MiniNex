@@ -72,7 +72,7 @@ class Client:
         idx=len(self.calls)-1
         signature=self.signatures[idx]
         return httpx.Response(status_code=200,
-            json={"data":{"signature":"0x"+signature+"00"}},
+            json={"method":"raw_sign","data":{"signature":"0x"+signature+"00","encoding":"hex"}},
             request=httpx.Request("POST",url))
 
 @pytest.mark.parametrize("two",[False,True])
@@ -87,8 +87,8 @@ def test_privy_btc_signs_every_exact_original_utxo_then_builds_canonical_wire(mo
     assert signed["source_transaction_sent"] is False
     assert len(client.calls)==(2 if two else 1)
     for i,(url,kwargs) in enumerate(client.calls):
-        assert url.endswith(WALLET+"/rpc")
-        assert kwargs["json"]["method"]=="secp256k1_sign"
+        assert url.endswith(WALLET+"/raw_sign")
+        assert set(kwargs["json"])=={"params"}
         assert kwargs["json"]["params"]["hash"].startswith("0x")
         assert kwargs["headers"]["privy-app-id"]==s.APP_ID
         assert "privy-authorization-signature" in kwargs["headers"]
@@ -125,10 +125,10 @@ def test_privy_btc_wrong_signature_fails_before_dispatch(monkeypatch):
 
 def test_raw_btc_signature_parser_rejects_malformed_recovery():
     assert s._parse_privy_secp256k1_signature(
-        {"data":{"signature":"0x"+"42"*64+"01"}})=="42"*64
+        {"method":"raw_sign","data":{"signature":"0x"+"42"*64+"01","encoding":"hex"}})=="42"*64
     for sig in ("0x"+"11"*63,"0x"+"ff"*64+"0a","oops","0x"+"ff"*75):
         with pytest.raises(ValueError):
-            s._parse_privy_secp256k1_signature({"data":{"signature":sig}})
+            s._parse_privy_secp256k1_signature({"method":"raw_sign","data":{"signature":sig,"encoding":"hex"}})
 
 def test_btc_raw_sign_connects_exactly_one_dispatch_after_all_inputs(monkeypatch):
     psbt,utxos,sigs,audit=configure(monkeypatch,two=True)
@@ -155,3 +155,19 @@ def test_no_btc_grant_or_chain_submission_while_signing():
     assert "sendrawtransaction" not in src
     assert "broadcast_original_native_signed_once" not in src
     assert "createPolicy(" not in src
+
+
+def test_privy_canonical_authorizer_accepts_only_exact_btc_raw_hash():
+    url=s._ENDPOINT+WALLET+"/raw_sign"
+    key="a"*64
+    authorized=pinned._canonical_authorization_payload(
+        url=url,body={"params":{"hash":"0x"+"c"*64}},key=key)
+    assert b"raw_sign" in authorized
+    for body in [
+        {"method":"raw_sign","params":{"hash":"0x"+"c"*64}},
+        {"params":{"hash":"0x"+"c"*63}},
+        {"params":{"hash":"0x"+"c"*64,"bytes":"abc"}},
+        {"params":{"bytes":"0xff","encoding":"hex"}},
+    ]:
+        with pytest.raises(ValueError):
+            pinned._canonical_authorization_payload(url=url,body=body,key=key)

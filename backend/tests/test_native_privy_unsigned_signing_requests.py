@@ -41,7 +41,7 @@ def test_bitcoin_raw_privy_sign_calls_match_exact_original_sighashes():
     assert r["wallet_id"] == BTC_WALLET
     assert r["signature_request_count"] == 1
     item = r["unsigned_sign_requests"][0]
-    assert item["method"] == "secp256k1_sign"
+    assert item["method"] == "raw_sign"
     assert set(item["params"]) == {"hash"}
     assert item["params"]["hash"].startswith("0x")
     assert len(item["params"]["hash"]) == 66

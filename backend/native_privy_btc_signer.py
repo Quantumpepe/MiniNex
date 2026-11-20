@@ -68,7 +68,10 @@ def _parse_privy_secp256k1_signature(payload: object) -> str:
     """Privy may append an ECDSA recovery byte; BIP143 takes 64 raw bytes."""
     data = payload.get("data") if type(payload) is dict else None
     sig = data.get("signature") if type(data) is dict else None
-    if type(sig) is not str:
+    if (type(payload) is not dict
+            or payload.get("method") != "raw_sign"
+            or type(data) is not dict or data.get("encoding") != "hex"
+            or type(sig) is not str):
         raise ValueError("Original Privy BTC ECDSA signature missing")
     raw = sig.removeprefix("0x")
     if not re.fullmatch(r"[0-9a-fA-F]{128}(?:[0-9a-fA-F]{2})?",raw):
@@ -123,10 +126,10 @@ async def sign_original_btc_with_privy_once(
     secret=os.getenv("MININEX_PRIVY_APP_SECRET","").strip()
     if len(secret)<12:
         raise HTTPException(503, "Privy BTC service secret not configured")
-    url=_ENDPOINT+linked["wallet_id"]+"/rpc"
+    url=_ENDPOINT+linked["wallet_id"]+"/raw_sign"
     raw_signatures=[]
     for item in preview["unsigned_sign_requests"]:
-        body={"method":item["method"],"params":item["params"]}
+        body={"params":item["params"]}
         key=item["idempotency_key"]
         signature=sign_privy_rpc_payload(
             url=url,body=body,idempotency_key=key)
