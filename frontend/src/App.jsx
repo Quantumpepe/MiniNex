@@ -395,7 +395,10 @@ export default function App() {
   const [helpOpen,setHelpOpen]=useState(false);
   helpRef.current=helpOpen;
   const [refreshNonce,setRefreshNonce]=useState(0);
-  const [paperVisible,setPaperVisible]=useState(false);
+  // Paper stays visible until the backend explicitly announces the
+  // final simulation cutover. A temporary availability/network failure
+  // must not make BTC and ETH disappear from the Wallet tab.
+  const [paperVisible,setPaperVisible]=useState(true);
   useEffect(()=>{
     let active=true;
     const verifyMode=()=>{
@@ -405,7 +408,10 @@ export default function App() {
             data?.paper_available===true
           );
         })
-        .catch(()=>{if(active)setPaperVisible(false);});
+        .catch(()=>{
+          // Preserve last known mode on a transient backend/network failure.
+          // The backend still independently rejects paper commands when off.
+        });
     };
     verifyMode();
     // Only the independent PAPER availability flag controls simulation UI.
@@ -514,7 +520,7 @@ export default function App() {
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
           <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt} paperAvailable={paperVisible}/>
-          {paperVisible&&<UserPaperSessions t={t} lang={language}/>}
+          <UserPaperSessions t={t} lang={language} paperAvailable={paperVisible}/>
         </>}
 
         {page==='activity'&&<>
