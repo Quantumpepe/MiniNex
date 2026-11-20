@@ -263,11 +263,16 @@ def _pending_unknown_signed_sources(limit:int=32)->list[dict]:
         raise ValueError("Invalid native unknown-source receipt page")
     db=_db_url()
     _ensure_schema(db)
+    # Avoid racing the currently active source broadcaster: its HTTP
+    # timeout is 12 seconds; only investigate SENDING rows stranded
+    # beyond a minute. RECONCILIATION_REQUIRED is immediately eligible.
     sql="""SELECT privy_did,asset,intent_key,payload_sha256,side,
                   chain,source_wallet,source_tx_hash,
                   source_signed_tx_hash,status
            FROM mininex_live_native_order_intents
-           WHERE status IN ('SENDING','RECONCILIATION_REQUIRED')
+           WHERE (status='RECONCILIATION_REQUIRED'
+                  OR (status='SENDING'
+                      AND updated_at < now() - interval '60 seconds'))
              AND side='SELL' AND asset IN ('BTC','SOL','XRP')
              AND source_tx_hash IS NULL
              AND source_signed_tx_hash IS NOT NULL
