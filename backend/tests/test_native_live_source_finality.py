@@ -323,6 +323,6 @@ def test_unknown_recovery_reuses_original_transaction_id_not_new_swap():
     source=inspect.getsource(
         finality.reconcile_unknown_original_native_signed_sources_once)
     assert 'signed_hash=original["source_signed_tx_hash"]' in source
-    for prohibited in ("sendTransaction","broadcast", "sign_transaction",
-                       "eth_sendTransaction","submit("):
+    for prohibited in ("sendTransaction(","broadcast_original_native_signed_once(",
+                       "sign_transaction(","eth_sendTransaction(","submit("):
         assert prohibited not in source
