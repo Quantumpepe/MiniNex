@@ -1,7 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import {nativeSourcePreflightRequest,validNativeSourcePreflight,
-  originalNativeBlocker} from './nativeSourceReadinessRules.js';
+  originalNativeBlocker,validNativeOwnerReadback,
+  nativeOwnerReadbackBlocker} from './nativeSourceReadinessRules.js';
 
 // Optional owner-initiated source-chain check for the CURRENT quoted native
 // coin. A successful preview is not a Privy permission or a live trade.
@@ -34,8 +35,9 @@ export default function NativeSourceReadiness({
     ref.current.abort=abort;
     const timeout=setTimeout(()=>abort.abort(),30000);
     setBusy(true);setFailed(false);setStatus(null);
+    let token=null;
     try {
-      const token=await getAccessToken();
+      token=await getAccessToken();
       if(!token||abort.signal.aborted)throw Error('Privy authentication required');
       const response=await fetch(API_BASE+nativeRequest.path,{
         method:'POST',cache:'no-store',signal:abort.signal,
@@ -50,20 +52,49 @@ export default function NativeSourceReadiness({
       if(!validNativeSourcePreflight(result,nativeRequest))
         throw Error('Invalid original source status');
       if(id===ref.current.id)
-        setStatus(originalNativeBlocker(result,nativeRequest));
+        setStatus({code:originalNativeBlocker(result,nativeRequest),
+          sourceChecked:true});
     }catch{
-      if(id===ref.current.id)setFailed(true);
+      // A failed chain read does not prove that the user's wallet is
+      // absent. Fetch the separate Privy owner status, without suggesting
+      // that any source fee, balance or source transaction was verified.
+      let ownerCode=null;
+      if(token&&!abort.signal.aborted){
+        try {
+          const response=await fetch(
+            API_BASE+'/api/live/native/authorization/'+nativeRequest.asset,{
+              method:'GET',cache:'no-store',signal:abort.signal,
+              headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+            },
+          );
+          if(response.ok){
+            const owner=await response.json();
+            if(validNativeOwnerReadback(owner,nativeRequest.asset)){
+              ownerCode=nativeOwnerReadbackBlocker(owner,nativeRequest.asset);
+            }
+          }
+        }catch{
+          // No reliable owner result: report an unavailable source.
+        }
+      }
+      if(id===ref.current.id){
+        if(ownerCode&&ownerCode!=='INVALID')
+          setStatus({code:ownerCode,sourceChecked:false});
+        else setFailed(true);
+      }
     }finally{
       clearTimeout(timeout);
       if(ref.current.abort===abort)ref.current.abort=null;
       if(id===ref.current.id)setBusy(false);
     }
   };
-  const message=status==='NATIVE_WALLET_UNSUPPORTED'?t.nativeSourceUnsupported:
-    status==='REMOTE_OWNER_UNVERIFIED'?t.nativeSourceOwnerMissing:
-    status==='PUBLIC_KEY_UNVERIFIED'?t.nativeSourceKeyMissing:
-    status==='SIGNER_NOT_ASSIGNED'?t.nativeSourceSignerMissing:
-    status==='POLICY_AND_SEND_CLAIM_MISSING'?t.nativeSourcePolicyPending:
+  const code=status?.code;
+  const message=code==='NATIVE_WALLET_UNSUPPORTED'?t.nativeSourceUnsupported:
+    code==='ORIGINAL_WALLET_MISSING'?t.nativeSourceWalletMissing:
+    code==='REMOTE_OWNER_UNVERIFIED'?t.nativeSourceOwnerMissing:
+    code==='PUBLIC_KEY_UNVERIFIED'?t.nativeSourceKeyMissing:
+    code==='SIGNER_NOT_ASSIGNED'?t.nativeSourceSignerMissing:
+    code==='POLICY_AND_SEND_CLAIM_MISSING'?t.nativeSourcePolicyPending:
     t.nativeSourceUnavailable;
   return <section className="mininex-eth-policy-review">
     <button type="button"
@@ -77,7 +108,9 @@ export default function NativeSourceReadiness({
     </p>}
     {status&&<div className="mininex-swap-quote" role="status">
       <strong>{t.nativeSourceTitle} · {nativeRequest.asset}</strong>
-      <p className="privy-wallet-description">{t.nativeSourceChecked}</p>
+      <p className="privy-wallet-description">
+        {status.sourceChecked?t.nativeSourceChecked:t.nativeSourceNotChecked}
+      </p>
       <p className="privy-wallet-description">{message}</p>
       <p className="privy-wallet-description">{t.nativeSourceNotExecutable}</p>
     </div>}
