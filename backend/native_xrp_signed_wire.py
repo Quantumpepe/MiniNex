@@ -1,7 +1,7 @@
 """Locally verify owner XRPL signatures and canonicalize original Payment.
 
-Only original ED25519 (64-byte) or secp256k1 (r||s) detached signatures
-are accepted. This is pure offline assembly: no Privy signature request,
+Only original ED25519 (64-byte) or secp256k1 (r||s / canonical DER)
+detached signatures are accepted. This is pure offline assembly: no Privy signature request,
 delegation, ledger submission, trade, payout or fee occurs.
 """
 from __future__ import annotations
@@ -31,8 +31,13 @@ def verify_original_xrp_detached_signature(
         unsigned,original_owner_public_key_hex=original_owner_public_key_hex,
         now=now,
     )
+    # DER ECDSA is variable-length (typically 69-72 bytes, sometimes
+    # shorter). A fixed allowlist of 70/71/72-byte lengths rejects valid
+    # XRPL signatures depending on the leading zero bytes of r and s.
+    # Canonical DER parsing and real curve verification below remain strict.
     if (type(detached_signature_hex) is not str
-            or len(detached_signature_hex) not in (128,130,140,142,144,146)
+            or len(detached_signature_hex) % 2 != 0
+            or not 16 <= len(detached_signature_hex) <= 144
             or not _HEX.fullmatch(detached_signature_hex)):
         raise ValueError("Original XRPL signature encoding unavailable")
     original_pub=bytes.fromhex(signing["original_public_key_hex"])
