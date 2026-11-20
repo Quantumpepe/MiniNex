@@ -84,3 +84,22 @@ TRX and DOGE follow only after these three chains.
 - Actual Privy native signing, ERC20 allowance, native chain send builders,
   retry/refund reconciliation, full FIFO/HWM and real-money mainnet validation
   remain outside these read-only steps. No Render environment toggles changed.
+
+
+## BTC original-owner unsigned PSBT progress (20 November 2026)
+
+- The quote-bound BTC source VOUT builder independently decodes and checks both
+  mainnet BIP173 P2WPKH destination addresses against their scripts. A plausible
+  but different caller-supplied P2WPKH script is rejected before serialization.
+- `backend/native_btc_thor_psbt.py` constructs a deterministic BIP174 v0
+  **unsigned** SegWit PSBT, including original ordered THORChain VOUTs, one
+  witness UTXO record for each original owner input, exact input/output satoshi
+  conservation, source change, memo and unsigned transaction fingerprint.
+- Duplicate inputs, invalid fee arithmetic and UTXO script/address mismatches
+  are rejected. The PSBT has no private key, wallet signature or broadcast.
+- This is an intermediate encoding artifact, **not a LIVE send**. Independently
+  confirmed BTC UTXO membership/unspent state, original signed consent,
+  Privy signer readback, chain fee freshness, durable one-shot source claim,
+  signed PSBT finalization, broadcast and finality are still mandatory.
+- The PR remains development-only; no Render deploy, native LIVE switch,
+  production BTC swap, or user fee collection is implied by this step.
