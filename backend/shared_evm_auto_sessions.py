@@ -148,9 +148,13 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                 # durable swap journal count as genuine blockchain sends.
                 # Never claim an actual trade merely from ACTIVE session state.
                 sent=0
+                finalized=0
                 if type(row) is dict:
                     cur.execute(
-                        """SELECT COUNT(*) AS sent
+                        """SELECT COUNT(*) AS sent,
+                                  COUNT(*) FILTER (
+                                      WHERE status='FINALIZED_SUCCESS'
+                                  ) AS finalized
                            FROM mininex_live_evm_auto_broadcasts
                            WHERE privy_did=%s AND asset=%s
                              AND tx_hash IS NOT NULL
@@ -161,6 +165,7 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                     counted=cur.fetchone()
                     if type(counted) is dict:
                         sent=int(counted.get("sent") or 0)
+                        finalized=int(counted.get("finalized") or 0)
     except psycopg.Error:
         raise HTTPException(503,"EVM live session status unavailable") from None
     return {
@@ -170,5 +175,5 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
         "stable":row.get("stable") if type(row) is dict else None,
         "worker_attached":False,"new_transactions_sent":0,
         "original_blockchain_swaps_sent":sent,
-        "original_blockchain_swaps_verified_count":sent,
+        "original_blockchain_swaps_finalized":finalized,
     }
