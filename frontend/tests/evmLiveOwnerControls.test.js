@@ -39,6 +39,26 @@ for(const [asset,chain] of Object.entries(ASSETS)){
   };
   const ctx={asset,address:WALLET,
     policyId:'policy_12345678',stable:offer.stable};
+  test(asset+' first owner grant requires explicit HWM fee and treasury scope',()=>{
+    const combined={...offer,combined_single_grant:true,
+      fee_scope:{
+        treasury_wallet:'0x'+'cd'.repeat(20),
+        fee_max_atomic:'1000000',
+        performance_fee_percent:5,
+        fee_basis:'REALIZED_NET_GAIN_ABOVE_HWM',
+        router_allowance_scoped:true,
+      }};
+    assert.equal(validEvmTradeSignerOffer(combined,ctx),true);
+    assert.equal(validEvmTradeSignerOffer({
+      ...combined,fee_scope:{...combined.fee_scope,
+        performance_fee_percent:6}},ctx),false);
+    assert.equal(validEvmTradeSignerOffer({
+      ...combined,fee_scope:{...combined.fee_scope,
+        treasury_wallet:'not-an-address'}},ctx),false);
+    assert.equal(validEvmTradeSignerOffer({
+      ...combined,fee_scope:{...combined.fee_scope,
+        router_allowance_scoped:false}},ctx),false);
+  });
   test(asset+' exact owner Privy trading signer only',()=>{
     assert.equal(validEvmTradeSignerOffer(offer,ctx),true);
     assert.equal(validEvmTradeSignerOffer({...offer,trade_sent:true},ctx),false);
