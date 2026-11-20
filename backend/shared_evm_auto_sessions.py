@@ -144,6 +144,23 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                        FROM mininex_live_evm_auto_sessions
                        WHERE privy_did=%s AND asset=%s""",(did,asset))
                 row=cur.fetchone()
+                # Only original Privy transaction hashes recorded in the
+                # durable swap journal count as genuine blockchain sends.
+                # Never claim an actual trade merely from ACTIVE session state.
+                sent=0
+                if type(row) is dict:
+                    cur.execute(
+                        """SELECT COUNT(*) AS sent
+                           FROM mininex_live_evm_auto_broadcasts
+                           WHERE privy_did=%s AND asset=%s
+                             AND tx_hash IS NOT NULL
+                             AND status IN ('SUBMITTED','FINALIZED_SUCCESS',
+                                            'FINALIZED_REVERTED',
+                                            'RECONCILIATION_REQUIRED')""",
+                        (did,asset))
+                    counted=cur.fetchone()
+                    if type(counted) is dict:
+                        sent=int(counted.get("sent") or 0)
     except psycopg.Error:
         raise HTTPException(503,"EVM live session status unavailable") from None
     return {
@@ -152,4 +169,6 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
         "chain_id":row.get("chain_id") if type(row) is dict else None,
         "stable":row.get("stable") if type(row) is dict else None,
         "worker_attached":False,"new_transactions_sent":0,
+        "original_blockchain_swaps_sent":sent,
+        "original_blockchain_swaps_verified_count":sent,
     }

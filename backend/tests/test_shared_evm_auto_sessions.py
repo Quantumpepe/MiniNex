@@ -114,3 +114,31 @@ def test_unscheduled_assets_never_inherit_other_coin_live_grant(asset):
     with pytest.raises(HTTPException) as e:
         m._require_asset(asset)
     assert e.value.status_code==404
+
+
+
+def test_session_status_counts_only_original_chain_submissions(monkeypatch):
+    """An ACTIVE label alone never creates an imaginary on-chain trade."""
+    class ReadCursor:
+        def __init__(self):self.calls=[];self.rows=iter([
+            {"status":"ACTIVE","chain_id":1,"stable":"USDC","budget_revision":7},
+            {"sent":3},
+        ])
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,args):self.calls.append((sql,args))
+        def fetchone(self):return next(self.rows)
+    cur=ReadCursor()
+    class FakeDB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return cur
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:FakeDB())
+    state=m.get_owner_evm_auto(DID,"LINK")
+    assert state["status"]=="ACTIVE"
+    assert state["original_blockchain_swaps_sent"]==3
+    assert state["new_transactions_sent"]==0
+    assert "tx_hash IS NOT NULL" in cur.calls[1][0]
+    assert cur.calls[1][1]==(DID,"LINK")

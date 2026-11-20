@@ -203,6 +203,9 @@ export default function EvmLiveOwnerControls({
         current==='GRANT_VERIFIED'?t.ready:
         current==='DRAFT'?t.draft:
         current==='REVOKED'?t.revoked:t.idle}
+      {Number.isSafeInteger(session?.original_blockchain_swaps_sent)&&
+        session.original_blockchain_swaps_sent>0&&
+        <span> · {session.original_blockchain_swaps_sent} {lang==='de'?'originale Blockchain-Swaps gesendet':'original blockchain swaps sent'}</span>}
     </p>
     {sessionStatus==='ACTIVE'
       ? <button type="button" className="privy-wallet-action"
