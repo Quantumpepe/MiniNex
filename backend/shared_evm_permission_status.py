@@ -31,7 +31,12 @@ def assess_evm_permission_record(record:object, *,
     """No frontend-reported grant or expired policy is ever sufficient."""
     if asset not in _ASSETS or type(now) is not datetime or now.tzinfo is None:
         raise ValueError("Unverified owner EVM permission query")
-    pair=_pair(asset,"USDT" if asset=="BNB" else "USDC","BUY")
+    stable=(record.get("stable") if type(record) is dict else
+            ("USDT" if asset=="BNB" else "USDC"))
+    try:
+        pair=_pair(asset,stable,"BUY")
+    except (ValueError,HTTPException):
+        raise ValueError("Unsupported selected stablecoin route") from None
     result={
         "mode":"OWNER_EVM_PRIVY_PERMISSION_STATUS_ONLY",
         "asset":asset,"chain_id":pair["chain_id"],"network":pair["network"],
@@ -59,7 +64,7 @@ def assess_evm_permission_record(record:object, *,
     if (state not in _STATES
             or record.get("asset")!=asset
             or record.get("chain_id")!=pair["chain_id"]
-            or record.get("stable")!=("USDT" if asset=="BNB" else "USDC")
+            or record.get("stable")!=stable
             or type(record.get("wallet_address")) is not str
             or not _ADDR.fullmatch(record["wallet_address"])
             or type(record.get("wallet_id")) is not str
