@@ -17,7 +17,7 @@ import psycopg
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
-from .eth_privy_user_grant import get_eth_user_grant_review
+from .eth_privy_user_grant import get_eth_user_grant_review,eth_grant_budget_digest
 from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .eth_live_strategy_tick import execute_live_eth_strategy_tick
 from .eth_live_auto_dispatch import expire_abandoned_eth_orders
@@ -58,6 +58,8 @@ def _start_locked(cur,did,stable,grant):
     cur.execute(
         """SELECT status,policy_id,wallet_address,limits_revision,
                   remote_policy_sha256,candidate_sha256,
+                  authorization_method,grant_budget_sha256,
+                  policy_owner_id,execution_signer_id,
                   extract(epoch FROM policy_expires_at)::bigint AS expires
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""",(did,))
@@ -71,15 +73,24 @@ def _start_locked(cur,did,stable,grant):
             or type(policy.get("expires")) is not int
             or policy["expires"]<int(time())+120):
         raise HTTPException(409,"Verified restricted wallet policy expired or changed")
-    cur.execute(
-        """SELECT status,revoked_at,limits_revision
-           FROM mininex_live_eth_consent_intents
-           WHERE privy_did=%s FOR UPDATE""",(did,))
-    consent=cur.fetchone()
-    if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("revoked_at") is not None
-            or consent.get("limits_revision")!=limits["revision"]):
-        raise HTTPException(409,"User live consent missing or revoked")
+    if policy.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        # Remote Privy approval is the sole owner authorization here.
+        # Bind it to the original saved, now-locked ETH capital revision.
+        expected_digest=eth_grant_budget_digest(
+            did=did,policy=policy,limits=limits)
+        if (type(policy.get("grant_budget_sha256")) is not str
+                or policy["grant_budget_sha256"]!=expected_digest):
+            raise HTTPException(409,"Approved ETH wallet capital changed")
+    else:
+        cur.execute(
+            """SELECT status,revoked_at,limits_revision
+               FROM mininex_live_eth_consent_intents
+               WHERE privy_did=%s FOR UPDATE""",(did,))
+        consent=cur.fetchone()
+        if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("revoked_at") is not None
+                or consent.get("limits_revision")!=limits["revision"]):
+            raise HTTPException(409,"User live consent missing or revoked")
     cur.execute(
         """SELECT COUNT(*) AS pending FROM mininex_live_order_intents
            WHERE privy_did=%s AND asset='ETH' AND state IN
