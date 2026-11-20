@@ -36,6 +36,8 @@ def evidence(asset,side,source="2500",allowance="3000",destination="0"):
         "destination_balance":destination if side=="BUY" else None,
         "native_gas_balance_atomic":"0",
         "source_balance":source,"router_allowance":allowance,
+        "router_allowance_atomic":str(int(Decimal(allowance)*
+                                      Decimal(10)**pair["source_decimals"])),
         "wallet_address":"0x"+"ab"*20,
         "wallet_identity_verified":True,
         "native_gas_available":True,
@@ -362,12 +364,14 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
         count+=1
         if count>1:raise asyncio.CancelledError()
     monkeypatch.setattr(worker.asyncio,"sleep",one_cycle)
+    async def approvals(*,client):calls.append("approvals")
     async def swaps():calls.append("swaps")
     async def native_buy(*,client):calls.append("native_buy")
     async def native_sell(*,client):calls.append("native_sell")
     async def historical(*,client):calls.append("historical")
     async def treasury_finality():calls.append("treasury_finality")
     async def fee_batch(*,client):calls.append("fee_batch")
+    monkeypatch.setattr(worker,"reconcile_original_router_approvals_once",approvals)
     monkeypatch.setattr(worker,"reconcile_submitted_evm_swaps_once",swaps)
     monkeypatch.setattr(worker,"reconcile_native_buy_cycle_once",native_buy)
     monkeypatch.setattr(worker,"reconcile_native_sell_once",native_sell)
@@ -378,7 +382,7 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
         await worker.SharedEvmLiveWorker(market=object())._run()
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(run())
-    assert calls==["swaps","native_buy","native_sell","historical",
+    assert calls==["approvals","swaps","native_buy","native_sell","historical",
                    "treasury_finality","fee_batch"]
 
 
@@ -411,3 +415,35 @@ def test_shared_live_session_scan_rotates_across_all_six_evm_assets(monkeypatch)
     assert all("g.status='GRANT_VERIFIED'" in sql for sql,args in queries)
     assert all("p.revision=s.budget_revision" in sql for sql,args in queries)
     assert all("LIMIT %s OFFSET %s" in sql for sql,args in queries)
+
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+def test_new_owner_wallet_automatically_sends_scoped_approval_before_swap(
+    monkeypatch,asset,
+):
+    if asset in ("BNB","POL","AVAX"):
+        monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
+    async def zero_allowance(did,**kw):
+        actions.append(("onchain_source",kw["amount"]))
+        return evidence(asset,"BUY",source="5000",allowance="0")
+    async def approve(**kw):
+        actions.append(("original_approval",kw["amount_atomic"]))
+        assert kw["asset"]==asset
+        assert kw["budget_revision"]==7
+        return {"state":"SUBMITTED","tx_hash":"0x"+"ef"*32}
+    monkeypatch.setattr(worker,"check_evm_source_allowance",zero_allowance)
+    monkeypatch.setattr(worker,"submit_scoped_router_approval_once",approve)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session(asset),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    assert result["state"]=="SUBMITTED"
+    assert result["reason"]=="ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP"
+    assert result["approval_tx_hash"]=="0x"+"ef"*32
+    assert len([a for a in actions if isinstance(a,tuple)
+                and a[0]=="original_approval"])==1
+    assert not any(isinstance(a,tuple) and
+                   a[0]=="original_single_execution" for a in actions)
