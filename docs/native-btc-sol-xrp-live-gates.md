@@ -288,3 +288,43 @@ executed native transfers. Android smoke workflow is skipped on this
 branch. No automatic Privy policy, production merge/deploy or LIVE switch.
 
 **Privy REST-Spezifikation abgeglichen:** Bitcoin ist Tier-2. Original-BIP143-Inputsignaturen müssen über `POST /v1/wallets/{wallet_id}/raw_sign` mit ausschließlich `{"params":{"hash":"0x..."}}` erfolgen, nicht über das Ethereum-`secp256k1_sign`-RPC. Der vorhandene P256-Backendsigner autorisiert deshalb nur exakt diesen 32-Byte-Hash-Endpunkt, ohne neue private Keys. SOL benutzt `POST /v1/wallets/{wallet_id}/rpc` mit der dokumentierten Methode `signTransaction` und unveränderter Base64-Transaktion. Offizielle Endpunkte: https://docs.privy.io/api-reference/wallets/raw-sign und https://docs.privy.io/api-reference/wallets/solana/sign-transaction. **Weiterhin keine Privy-Eigentümer-Policy oder Echtgeld-Ausführung bestätigt.**
+
+
+## Source-send crash recovery and pre-submit checks (20 November 2026)
+
+The internal original-native one-shot SELL dispatcher already serializes and
+verifies BTC/SOL/XRP signed wires and commits SENDING plus the exact expected
+chain transaction hash *before* its only source network POST. On a crash
+before the HTTP response can be recorded, an original row can stay in
+`SENDING` indefinitely. The passive unknown-source reconciler now scans
+both `RECONCILIATION_REQUIRED` and **stale** `SENDING` rows with a durable
+signed hash. It waits until 60 seconds after a SENDING update so it does not
+race the active 12-second broadcaster; it checks the exact hash only through
+the original owner-linked chain receipt, and uses a DB status-bound CAS to
+promote a truly confirmed source to SOURCE_FINALIZED. Unconfirmed or missing
+receipts stay unresolved. There is **no re-signing or re-broadcasting**.
+
+For subsequent deployment, `backend/native_passive_settlement.py` provides
+a disabled-by-default native receipt observer that handles unknown/stale
+SELL, acknowledged SELL, and Ethereum BUY source-finality checks independently.
+The optional setting `MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED=explicit-readonly`
+with DATABASE_URL enables *only* this observer, not a strategy worker, a
+trading switch, any transaction sender or fee collection. The observer runs
+blocking DB scans outside the HTTP event loop and never creates signatures.
+
+The BTC Privy sign+dispatch adapter now re-reads **current owner-bound
+confirmed and unspent** funding outpoints after signature generation and
+before the irreversible send claim. A spent/changed input fails closed.
+The SOL sign+dispatch adapter now re-reads the actual Solana mainnet genesis
+and finalized block height after Privy signature and rejects an already
+expired blockhash before committing a source send.
+
+A separate real-world XRPL codec regression was corrected: valid canonical
+secp256k1 ECDSA DER signatures are variable length, including 69 bytes;
+the previous fixed-length allowlist rejected a legitimate signed Payment.
+Canonical DER parsing, original signature verification and exact Payment
+readback remain mandatory.
+
+All changes are development-only in PR #202. **No real owner grant,
+mainnet spend, active auto trader, production merge, Render deploy, OTA
+or collected 5% performance fee** is implied by passing these tests.
