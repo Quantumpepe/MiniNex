@@ -78,11 +78,18 @@ def inspect_original_native_signer_metadata(
     original = _original_privy_native_wallet(linked, did, asset)
     if type(remote) is not dict:
         raise ValueError("Privy native wallet metadata missing")
+    # Privy's GET /v1/wallets/{wallet_id} represents the attributed user
+    # as "entity": {"type": "user", "id": did}, not "owner.user_id".
+    # Do not silently fall back to the old synthetic field, or permit an
+    # unrelated quorum's wallet to impersonate the signed-in user.
+    entity = remote.get("entity")
     if (remote.get("id") != original["wallet_id"]
             or remote.get("chain_type") != _CHAINS[asset]
             or remote.get("address") != original["address"]
-            or type(remote.get("owner")) is not dict
-            or remote["owner"].get("user_id") != did):
+            or type(entity) is not dict
+            or entity.get("type") != "user"
+            or entity.get("id") != did
+            or remote.get("archived_at") is not None):
         raise ValueError("Remote native wallet belongs to another owner")
     signers = remote.get("additional_signers")
     if type(signers) is not list:
