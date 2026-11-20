@@ -46,7 +46,7 @@ def _allowance_data(owner: object, spender: object) -> str:
 
 
 def inspect_original_native_buy_evm_preflight(
-    *, unsigned: object, now: int, chain_id: object,
+    *, unsigned: object, original_quote: object, now: int, chain_id: object,
     token_allowance: object, eth_balance: object,
     token_balance: object, pending_nonce: object,
     estimate_gas: object, gas_price: object,
@@ -66,6 +66,21 @@ def inspect_original_native_buy_evm_preflight(
             or unsigned.get("wallet_signed") is not False
             or type(now) is not int or now <= 0):
         raise ValueError("Untrusted native Ethereum BUY draft")
+    if (type(original_quote) is not dict
+            or original_quote.get("mode") != "THORCHAIN_DESTINATION_BOUND_READ_ONLY"
+            or original_quote.get("source_asset") != unsigned["stable"]
+            or original_quote.get("destination_asset") != unsigned["asset"]
+            or original_quote.get("from_network") != "ethereum-mainnet"
+            or original_quote.get("to_network") != unsigned.get("target_network")
+            or original_quote.get("source_wallet") != unsigned.get("source_wallet")
+            or original_quote.get("destination_wallet") != unsigned.get("destination_wallet")
+            or original_quote.get("inbound_vault") != unsigned.get("vault")
+            or original_quote.get("inbound_router") != unsigned.get("router")
+            or original_quote.get("original_vault_verified") is not True
+            or original_quote.get("refund_path_verified") is not True
+            or original_quote.get("required_chain_memo_verified") is not True
+            or original_quote.get("exact_venue_fees_verified") is not True):
+        raise ValueError("Original native BUY quote owner or router changed")
     tx = unsigned.get("unsigned_transaction")
     if (type(tx) is not dict or set(tx) != {
             "from", "to", "chainId", "value", "data"}
@@ -113,8 +128,39 @@ def inspect_original_native_buy_evm_preflight(
         expiry = datetime.fromisoformat(original_expiry)
     except ValueError:
         raise ValueError("Original Ethereum BUY quote expiry malformed") from None
-    if expiry.tzinfo is None or not now < expiry.timestamp():
+    if (expiry.tzinfo is None or not now < expiry.timestamp()
+            or original_quote.get("quote_expires_at") != expiry
+            or original_quote.get("amount") is None
+            or type(original_quote.get("amount")) is not str
+            or memo != original_quote.get("memo")):
         raise ValueError("Original THORChain quote expired during RPC readback")
+    # Bind the unsigned source deposit to the separately authenticated
+    # private quote. A forged router and matching manipulated unsigned
+    # metadata are insufficient without the original immutable quote digest.
+    quote_amount = original_quote["amount"]
+    if (not re.fullmatch(r"^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$", quote_amount)
+            or len(quote_amount) > 55):
+        raise ValueError("Original native BUY exact amount malformed")
+    from decimal import Decimal, InvalidOperation, localcontext
+    try:
+        with localcontext() as ctx:
+            ctx.prec = 100
+            amount_units = Decimal(quote_amount) * Decimal(10**6)
+    except (InvalidOperation, ValueError):
+        raise ValueError("Original native BUY quote amount unavailable") from None
+    if (not amount_units.is_finite()
+            or amount_units != amount_units.to_integral_value()
+            or int(amount_units) != atomic):
+        raise ValueError("Original native BUY source amount differs from quote")
+    original_digest = hashlib.sha256(json.dumps(
+        [unsigned["asset"], unsigned["stable"], quote_amount,
+         unsigned["source_wallet"], unsigned["destination_wallet"],
+         unsigned["vault"], unsigned["router"], memo,
+         int(expiry.timestamp()), router_expiry, data],
+        separators=(",", ":"), ensure_ascii=True,
+    ).encode("ascii")).hexdigest()
+    if unsigned.get("unsigned_transaction_sha256") != original_digest:
+        raise ValueError("Original native BUY quote-to-router fingerprint changed")
     if _int_quantity(chain_id) != 1:
         raise ValueError("Wrong source chain: ETH mainnet required")
     if type(token_allowance) is not str or not _WORD.fullmatch(token_allowance):
@@ -215,7 +261,7 @@ async def preflight_original_native_eth_buy(
             gas_price = await _rpc(client, method="eth_gasPrice",
                                   params=[], req_id=7)
         return inspect_original_native_buy_evm_preflight(
-            unsigned=unsigned, now=int(time.time()),
+            unsigned=unsigned, original_quote=original, now=int(time.time()),
             chain_id=chain, token_allowance=allowance_word,
             eth_balance=balance, token_balance=source,
             pending_nonce=pending_nonce, estimate_gas=gas,
