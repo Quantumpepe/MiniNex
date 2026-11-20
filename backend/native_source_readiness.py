@@ -8,6 +8,9 @@ remain independent and never grant wallet authorization.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+import re
+
 from fastapi import HTTPException
 
 from .native_btc_original_preflight import prepare_original_btc_unsigned_psbt
@@ -20,6 +23,28 @@ from .storage import _safe_did
 _SETTLEMENTS = {"BTC": ("USDC", "USDT"),
                 "SOL": ("USDC", "USDT"),
                 "XRP": ("USDC",)}
+_NATIVE_NETWORK = {
+    "BTC": "bitcoin-mainnet",
+    "SOL": "solana-mainnet",
+    "XRP": "xrpl-mainnet",
+}
+_INPUT_PRECISION = {"BTC": 8, "SOL": 9, "XRP": 6}
+_DECIMAL = re.compile(r"^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$")
+
+
+def _exact_source_units(asset: str, side: str, amount: str) -> str:
+    if type(amount) is not str or len(amount) > 55 or not _DECIMAL.fullmatch(amount):
+        raise HTTPException(422, "Invalid original native source amount")
+    precision = 6 if side == "BUY" else _INPUT_PRECISION[asset]
+    try:
+        value = Decimal(amount) * (Decimal(10) ** precision)
+    except (InvalidOperation, ValueError, OverflowError):
+        raise HTTPException(422, "Unrepresentable original native source amount") from None
+    if (not value.is_finite() or value <= 0
+            or value != value.to_integral_value()):
+        raise HTTPException(422, "Original native amount cannot be rounded")
+    return str(int(value))
+
 
 
 async def read_original_native_source_readiness(
@@ -31,9 +56,11 @@ async def read_original_native_source_readiness(
             or stable not in _SETTLEMENTS.get(asset, ())
             or type(amount) is not str or not amount or len(amount) > 55):
         raise HTTPException(422, "Unsupported original native source request")
+    source_units = _exact_source_units(asset, side, amount)
     owner = await get_original_native_privy_signer_status(did, asset=asset)
     if (type(owner) is not dict
             or owner.get("asset") != asset
+            or owner.get("network") != _NATIVE_NETWORK[asset]
             or owner.get("original_wallet_link_verified") is not True
             or owner.get("can_submit") is not False
             or owner.get("execution_enabled") is not False):
@@ -49,7 +76,8 @@ async def read_original_native_source_readiness(
                 or source.get("source_funds_and_gas_verified") is not True
                 or source.get("pending_nonce_and_gas_estimate_verified") is not True
                 or source.get("asset") != asset
-                or source.get("stable") != stable):
+                or source.get("stable") != stable
+                or str(source.get("source_amount_atomic")) != source_units):
             raise HTTPException(409, "Original Ethereum stablecoin source unverified")
         source_network = "ethereum-mainnet"
         target_network = owner["network"]
@@ -67,6 +95,8 @@ async def read_original_native_source_readiness(
         if (source.get("mode") != "ORIGINAL_BTC_PSBT_OWNER_PREFLIGHT_READ_ONLY"
                 or type(unsigned) is not dict
                 or unsigned.get("psbt_created") is not True
+                or str(source.get("source_amount_sats")) != source_units
+                or source.get("stable") != stable
                 or source.get("current_esplora_unspent_reported") is not True
                 or source.get("bip143_signature_digest_preview", {}).get(
                     "signature_requests_performed") is not False):
@@ -85,7 +115,9 @@ async def read_original_native_source_readiness(
         if (source.get("mode") != "ORIGINAL_SOL_SOURCE_UNSIGNED_MAINNET_PREFLIGHT"
                 or source.get("solana_mainnet_genesis_verified") is not True
                 or source.get("current_owner_blockhash_and_balance_verified") is not True
-                or source.get("real_message_fee_verified") is not True):
+                or source.get("real_message_fee_verified") is not True
+                or str(source.get("source_amount_lamports")) != source_units
+                or source.get("stable") != stable):
             raise HTTPException(409, "Original Solana source not independently verified")
         source_network = "solana-mainnet"
         target_network = "ethereum-mainnet"
@@ -100,7 +132,9 @@ async def read_original_native_source_readiness(
             did, amount=amount)
         if (source.get("mode") != "ORIGINAL_XRP_SOURCE_UNSIGNED_MAINNET_PREFLIGHT"
                 or source.get("xrpl_mainnet_id_verified") is not True
-                or source.get("source_account_and_fee_verified") is not True):
+                or source.get("source_account_and_fee_verified") is not True
+                or str(source.get("source_amount_drops")) != source_units
+                or source.get("stable") != "USDC"):
             raise HTTPException(409, "Original XRP source not independently verified")
         source_network = "xrpl-mainnet"
         target_network = "ethereum-mainnet"
