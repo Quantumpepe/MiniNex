@@ -249,9 +249,10 @@ async def reconcile_original_native_source_once(limit:int=32)->dict:
     }
 
 
-# A timed-out network submission may already be confirmed on-chain. The
-# immutable signed tx ID is committed before any network POST. Recover it by
-# READ-ONLY source-chain finality, never by signing or rebroadcasting.
+# A timed-out network submission OR a server crash between the durable
+# SENDING commit and recording the network answer may already be confirmed.
+# The immutable signed tx ID is committed before any network POST. Recover
+# either state by READ-ONLY source-chain finality; never sign or rebroadcast.
 _UNKNOWN_SIGNED_PAGE_LOCK=Lock()
 _UNKNOWN_SIGNED_PAGE_OFFSET=0
 
@@ -266,8 +267,8 @@ def _pending_unknown_signed_sources(limit:int=32)->list[dict]:
                   chain,source_wallet,source_tx_hash,
                   source_signed_tx_hash,status
            FROM mininex_live_native_order_intents
-           WHERE status='RECONCILIATION_REQUIRED' AND side='SELL'
-             AND asset IN ('BTC','SOL','XRP')
+           WHERE status IN ('SENDING','RECONCILIATION_REQUIRED')
+             AND side='SELL' AND asset IN ('BTC','SOL','XRP')
              AND source_tx_hash IS NULL
              AND source_signed_tx_hash IS NOT NULL
            ORDER BY created_at ASC,privy_did,asset,intent_key
@@ -289,12 +290,13 @@ def _pending_unknown_signed_sources(limit:int=32)->list[dict]:
 def _persist_unknown_native_finality_locked(
     cur,*,original:dict,verified:dict,
 )->str:
-    """Atomic UNKNOWN -> FINALIZED only after independent chain evidence."""
+    """Atomic SENDING/UNKNOWN -> FINALIZED only on independent chain proof."""
     asset=original.get("asset") if type(original) is dict else None
     hash_=original.get("source_signed_tx_hash") if type(original) is dict else None
     if (asset not in _CHAIN
             or original.get("side")!="SELL"
-            or original.get("status")!="RECONCILIATION_REQUIRED"
+            or original.get("status") not in (
+                "SENDING","RECONCILIATION_REQUIRED")
             or original.get("source_tx_hash") is not None
             or type(hash_) is not str
             or not _valid_source_hash(asset,"SELL",hash_)
@@ -303,16 +305,20 @@ def _persist_unknown_native_finality_locked(
         raise HTTPException(409,"Unknown original source not chain-confirmed")
     did=_safe_did(original["privy_did"])
     key=original["intent_key"]
+    # The expected state is bound, never interpolated into SQL. If the
+    # original sender concurrently saved SUBMITTED, let its normal finality
+    # worker finish instead of changing a now-stale row.
+    expected_state=original["status"]
     cur.execute(
         """UPDATE mininex_live_native_order_intents
            SET status='SUBMITTED',source_tx_hash=source_signed_tx_hash,
                updated_at=now()
            WHERE privy_did=%s AND asset=%s AND intent_key=%s
-             AND status='RECONCILIATION_REQUIRED'
+             AND status=%s
              AND side='SELL' AND source_tx_hash IS NULL
              AND source_signed_tx_hash=%s
              AND payload_sha256=%s RETURNING status""",
-        (did,asset,key,hash_,original["payload_sha256"]),
+        (did,asset,key,expected_state,hash_,original["payload_sha256"]),
     )
     row=cur.fetchone()
     if type(row) is not dict or row.get("status")!="SUBMITTED":
