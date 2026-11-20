@@ -22,6 +22,7 @@ HASH="0x"+"ab"*32
 @pytest.mark.parametrize("asset,stable,chain",[
     ("ETH","USDC",1),("LINK","USDC",1),("UNI","USDT",1),
     ("BNB","USDT",56),("POL","USDC",137),("AVAX","USDC",43114),
+    ("ARB","USDC",42161),
 ])
 @pytest.mark.parametrize("side",["BUY","SELL"])
 def test_one_privy_network_rpc_for_every_evm_asset(asset,stable,chain,side):
