@@ -256,3 +256,52 @@ def test_current_privy_wallet_metadata_entity_shape_is_required():
         )
         assert result["original_wallet_remote_owner_verified"] is True
         assert result["exact_remote_policy_contents_verified"] is False
+
+
+def test_remote_native_pubkey_binding_is_independent_of_delegation_and_policy():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    import hashlib
+    from backend.tests.test_native_btc_thor_outputs import _reference_address
+
+    key = ec.derive_private_key(4711, ec.SECP256K1()).public_key()
+    pub = key.public_bytes(
+        serialization.Encoding.X962,
+        serialization.PublicFormat.CompressedPoint,
+    )
+    program = hashlib.new(
+        "ripemd160", hashlib.sha256(pub).digest(),
+    ).digest()
+    address = _reference_address(program.hex())
+    linked = user("BTC")
+    linked["linked_accounts"][0]["address"] = address
+    current = remote("BTC")
+    current["address"] = address
+    current["public_key"] = "0x" + pub.hex()
+    r = auth.inspect_original_native_signer_metadata(
+        did=DID,asset="BTC",linked=linked,remote=current)
+    assert r["original_public_key_matches_wallet"] is True
+    assert r["privy_native_wallet_api_supported"] is True
+    assert r["exact_remote_policy_contents_verified"] is False
+    assert r["can_submit"] is False
+
+    current["public_key"] = "02" + "aa"*32
+    with pytest.raises(ValueError):
+        auth.inspect_original_native_signer_metadata(
+            did=DID,asset="BTC",linked=linked,remote=current)
+
+
+def test_missing_remote_pubkey_is_visible_as_unknown_not_accepted_as_verified():
+    r = auth.inspect_original_native_signer_metadata(
+        did=DID,asset="SOL",linked=user("SOL"),remote=remote("SOL"))
+    assert r["original_public_key_matches_wallet"] is False
+    assert r["privy_native_wallet_api_supported"] is True
+    assert r["privy_transaction_signing_capability_verified"] is False
+
+
+def test_xrp_mocked_chain_type_is_not_claimed_as_supported_by_privy_api():
+    result = auth.inspect_original_native_signer_metadata(
+        did=DID,asset="XRP",linked=user("XRP"),remote=remote("XRP"))
+    assert result["privy_native_wallet_api_supported"] is False
+    assert result["privy_transaction_signing_capability_verified"] is False
+    assert result["live_trading_enabled"] is False
