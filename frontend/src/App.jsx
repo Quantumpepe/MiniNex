@@ -395,9 +395,8 @@ export default function App() {
   const [helpOpen,setHelpOpen]=useState(false);
   helpRef.current=helpOpen;
   const [refreshNonce,setRefreshNonce]=useState(0);
-  // Paper stays visible until the backend explicitly announces the
-  // final simulation cutover. A temporary availability/network failure
-  // must not make BTC and ETH disappear from the Wallet tab.
+  // Keep BTC/ETH paper visible unless the backend explicitly confirms its
+  // cutover; transient availability errors must not remove Wallet controls.
   const [paperVisible,setPaperVisible]=useState(true);
   useEffect(()=>{
     let active=true;
@@ -409,8 +408,8 @@ export default function App() {
           );
         })
         .catch(()=>{
-          // Preserve last known mode on a transient backend/network failure.
-          // The backend still independently rejects paper commands when off.
+          // Keep the last confirmed mode on a temporary API failure.
+          // The backend separately rejects PAPER actions if explicitly off.
         });
     };
     verifyMode();
