@@ -171,6 +171,16 @@ def _claim_single_auto_fee_locked(
     pending=cur.fetchone()
     if type(pending) is not dict or pending.get("pending")!=0:
         raise HTTPException(409,"Original fee wallet network send unresolved")
+    cur.execute(
+        """SELECT COUNT(*) AS pending
+           FROM mininex_live_evm_router_approval_sends
+           WHERE privy_did=%s AND chain_id=%s
+             AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+        (did,pair["chain_id"]))
+    approval=cur.fetchone()
+    if type(approval) is not dict or approval.get("pending")!=0:
+        raise HTTPException(409,"Original token router approval is still onchain")
+
     # Do not autosend if an existing manual-payment draft might have
     # already been signed outside MiniNex; require a fresh unique debt.
     cur.execute(
