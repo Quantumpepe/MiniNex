@@ -152,3 +152,20 @@ async def check_evm_source_allowance(
         "native_wrap_unwrap_settled":False,
         "execution_enabled":False,"can_submit":False,
     }
+
+
+def verify_router_approval_transaction(
+    tx: object, *, token: str, router: str, wallet: str,
+    chain_id: int, amount_atomic: int,
+) -> bool:
+    """Fail closed unless a proposed approval is the exact scoped transaction.
+
+    Approval bytes alone do not authorize a wallet send. The executor must
+    separately verify the live owner grant, budget revision and source order.
+    In particular, unlimited approvals and alternate spenders are forbidden.
+    """
+    expected = owner_approval_draft(
+        token=token, router=router, wallet=wallet,
+        chain_id=chain_id, amount_atomic=amount_atomic,
+    )
+    return type(tx) is dict and tx == expected
