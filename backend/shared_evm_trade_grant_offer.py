@@ -56,7 +56,30 @@ def validate_owner_trade_grant_offer(
             or type(quorum) is not dict
             or quorum.get("remote_quorum_public_key_verified") is not True):
         raise HTTPException(409,"Privy original trading policy or quorum changed")
+    combined=record.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+    fee_scope=None
+    if combined:
+        rules=expected.get("rules",[])
+        fee=rules[-1] if type(rules) is list and rules else None
+        if type(fee) is not dict or "owner-approved net-profit fee" not in fee.get("name",""):
+            raise HTTPException(409,"One-grant policy missing explicit 5 percent fee scope")
+        fields={(c.get("field"),c.get("operator")):c.get("value")
+                for c in fee.get("conditions",[]) if type(c) is dict}
+        treasury=fields.get(("transfer.to","eq"))
+        maximum=fields.get(("transfer.value","lte"))
+        if (type(treasury) is not str or len(treasury)!=42
+                or type(maximum) is not str or not maximum.isdigit()):
+            raise HTTPException(409,"Privy fee recipient and amount not explicit")
+        fee_scope={
+            "treasury_wallet":treasury,
+            "fee_max_atomic":maximum,
+            "performance_fee_percent":5,
+            "fee_basis":"REALIZED_NET_GAIN_ABOVE_HWM",
+            "router_allowance_scoped":True,
+        }
     return {
+        "combined_single_grant":combined,
+        "fee_scope":fee_scope,
         "mode":"OWNER_EVM_TRADING_SIGNER_OFFER_ONLY",
         "asset":asset,"chain_id":record["chain_id"],
         "wallet_address":record["wallet_address"],
