@@ -28,7 +28,7 @@ def setup(monkeypatch,valid=True,fail_post=False):
             "signer_quorum_remotely_verified":valid,
         }
     monkeypatch.setattr(
-        autosend,"get_owner_fee_auto_remote_grant_audit",grant)
+        autosend,"get_effective_owner_fee_grant",grant)
     monkeypatch.setattr(autosend,"owner_fee_treasury",lambda **kw:TREASURY)
     async def prices(*a,**kw):
         return {}
