@@ -89,6 +89,74 @@ def _pending_owner_auto_fee_obligations(limit:int=25)->list[dict]:
     return rows
 
 
+_COMBINED_FEE_PAGE_OFFSET=0
+
+
+def _pending_combined_grant_fee_obligations(limit:int=25)->list[dict]:
+    """Original one-signature trading grants also permit exact HWM fees.
+
+    Exclude ANY separate fee enrollment: its revocation must never be
+    bypassed by falling back to the trading grant.
+    """
+    global _COMBINED_FEE_PAGE_OFFSET
+    if not automatic_fee_transfer_worker_enabled():
+        return []
+    if type(limit) is not int or not 1<=limit<=200:
+        raise ValueError("Invalid transient combined-fee processing page")
+    db=_db_url();_ensure_schema(db)
+    sql="""SELECT o.privy_did,o.asset,o.execution_id
+              FROM mininex_evm_fee_obligations o
+              JOIN mininex_evm_fee_events e
+                ON e.privy_did=o.privy_did AND e.asset=o.asset
+               AND e.execution_id=o.execution_id
+              JOIN mininex_live_evm_auto_broadcasts b
+                ON b.privy_did=o.privy_did AND b.asset=o.asset
+               AND b.intent_key=o.execution_id
+              JOIN mininex_live_evm_owner_permissions g
+                ON g.privy_did=o.privy_did AND g.asset=o.asset
+              LEFT JOIN mininex_evm_fee_auto_permissions separate
+                ON separate.privy_did=o.privy_did
+               AND separate.asset=o.asset
+              LEFT JOIN mininex_evm_verified_fee_payments p
+                ON p.privy_did=o.privy_did AND p.asset=o.asset
+               AND p.execution_id=o.execution_id
+              LEFT JOIN mininex_evm_auto_fee_sends a
+                ON a.privy_did=o.privy_did AND a.asset=o.asset
+               AND a.execution_id=o.execution_id
+              WHERE o.settlement_status='AWAITING_VERIFIED_TRANSFER'
+                AND o.settlement_tx_hash IS NULL
+                AND o.fee_due_usd=e.fee_assessed_usd
+                AND o.fee_due_usd>0
+                AND b.status='FINALIZED_SUCCESS' AND b.side='SELL'
+                AND e.source_tx_hash=b.tx_hash
+                AND b.wallet_address=g.wallet_address
+                AND b.stable=g.stable AND b.chain_id=g.chain_id
+                AND g.authorization_method='PRIVY_SCOPED_GRANT'
+                AND g.status='GRANT_VERIFIED'
+                AND g.grant_verified_at IS NOT NULL
+                AND g.consent_verified_at IS NOT NULL
+                AND g.revoked_at IS NULL
+                AND g.expires_at>now()
+                AND g.policy_id IS NOT NULL
+                AND g.remote_policy_sha256=g.policy_sha256
+                AND separate.privy_did IS NULL
+                AND p.execution_id IS NULL AND a.execution_id IS NULL
+              ORDER BY o.created_at,o.privy_did,o.asset,o.execution_id
+              LIMIT %s OFFSET %s"""
+    with _PENDING_FEE_SCAN_LOCK:
+        offset=_COMBINED_FEE_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    rows=list(cur.fetchall())
+        _COMBINED_FEE_PAGE_OFFSET=offset+len(rows)
+    return rows
+
+
 async def run_owner_approved_auto_fee_batch(
     *,client:httpx.AsyncClient,
 )->dict:
@@ -101,6 +169,7 @@ async def run_owner_approved_auto_fee_batch(
         raise ValueError("Verified server HTTP client required")
     try:
         owners=await asyncio.to_thread(_pending_owner_auto_fee_obligations)
+        owners+=await asyncio.to_thread(_pending_combined_grant_fee_obligations)
     except psycopg.Error:
         LOG.warning("Cannot scan original unpaid five-percent HWM debt")
         return result
