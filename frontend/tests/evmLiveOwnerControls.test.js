@@ -34,6 +34,14 @@ for(const [asset,chain] of Object.entries(ASSETS)){
     budget_revision:1,policy_id:'policy_12345678',
     execution_signer_id:'signer_12345678',
     owner_add_signer_required:true,
+    combined_single_grant:true,
+    fee_scope:{
+      treasury_wallet:'0x'+'cd'.repeat(20),
+      fee_max_atomic:'1000000',
+      performance_fee_percent:5,
+      fee_basis:'REALIZED_NET_GAIN_ABOVE_HWM',
+      router_allowance_scoped:true,
+    },
     privy_signer_attached:false,
     live_session_started:false,trade_sent:false,
   };
@@ -61,6 +69,8 @@ for(const [asset,chain] of Object.entries(ASSETS)){
   });
   test(asset+' exact owner Privy trading signer only',()=>{
     assert.equal(validEvmTradeSignerOffer(offer,ctx),true);
+    assert.equal(validEvmTradeSignerOffer({...offer,combined_single_grant:false},ctx),false);
+    assert.equal(validEvmTradeSignerOffer({...offer,fee_scope:null},ctx),false);
     assert.equal(validEvmTradeSignerOffer({...offer,trade_sent:true},ctx),false);
     assert.equal(validEvmTradeSignerOffer({...offer,policy_id:'bad'},ctx),false);
   });
