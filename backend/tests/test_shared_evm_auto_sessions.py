@@ -122,7 +122,7 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
     class ReadCursor:
         def __init__(self):self.calls=[];self.rows=iter([
             {"status":"ACTIVE","chain_id":1,"stable":"USDC","budget_revision":7},
-            {"sent":3},
+            {"sent":3,"finalized":2},
         ])
         def __enter__(self):return self
         def __exit__(self,*args):return False
@@ -139,6 +139,7 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
     state=m.get_owner_evm_auto(DID,"LINK")
     assert state["status"]=="ACTIVE"
     assert state["original_blockchain_swaps_sent"]==3
+    assert state["original_blockchain_swaps_finalized"]==2
     assert state["new_transactions_sent"]==0
     assert "tx_hash IS NOT NULL" in cur.calls[1][0]
     assert cur.calls[1][1]==(DID,"LINK")
