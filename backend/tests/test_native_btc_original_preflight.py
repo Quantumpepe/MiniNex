@@ -129,6 +129,55 @@ def test_expired_route_after_network_fetch_is_not_an_executable_psbt(monkeypatch
     assert exc.value.status_code == 409
 
 
+def test_original_psbt_can_auto_select_owner_inputs_without_manual_coin_control(monkeypatch):
+    async def terms(*a, **kw):
+        return quote()
+    async def candidates(_did):
+        rows = _fixtures()[0]
+        return {
+            "source_wallet": SOURCE,
+            "candidates": rows,
+            "confirmed_candidate_count": len(rows),
+            "candidate_chain_provenance_checked": False,
+        }
+    async def utxo(_did, *, inputs):
+        assert inputs == _fixtures()[0]
+        return _proof()
+    async def fee():
+        return 5
+    monkeypatch.setattr(preflight, "get_private_native_thornode_terms", terms)
+    monkeypatch.setattr(preflight, "get_original_btc_utxo_candidates", candidates)
+    monkeypatch.setattr(preflight, "get_original_btc_utxo_evidence", utxo)
+    monkeypatch.setattr(preflight, "_get_fresh_bitcoin_fee_rate", fee)
+    monkeypatch.setattr(preflight.time, "time", lambda: NOW)
+    r = asyncio.run(preflight.prepare_original_btc_unsigned_psbt(
+        "did:privy:btc_test", stable="USDC", amount=AMOUNT,
+    ))
+    assert r["automatic_input_selection_used"] is True
+    assert len(r["unverified_selection_sha256"]) == 64
+    assert r["unsigned_psbt"]["input_count"] == 1
+    assert r["bitcoin_utxo_atomic_lock_acquired"] is False
+    assert r["can_submit"] is False
+
+
+def test_original_psbt_auto_selection_rejects_owner_change(monkeypatch):
+    async def terms(*a, **kw):
+        return quote()
+    async def candidates(_did):
+        return {"source_wallet": VAULT, "candidates": _fixtures()[0]}
+    async def fee():
+        return 5
+    monkeypatch.setattr(preflight, "get_private_native_thornode_terms", terms)
+    monkeypatch.setattr(preflight, "get_original_btc_utxo_candidates", candidates)
+    monkeypatch.setattr(preflight, "_get_fresh_bitcoin_fee_rate", fee)
+    monkeypatch.setattr(preflight.time, "time", lambda: NOW)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(preflight.prepare_original_btc_unsigned_psbt(
+            "did:privy:btc_test", stable="USDC", amount=AMOUNT,
+        ))
+    assert exc.value.status_code == 409
+
+
 def test_original_psbt_bundle_does_not_broadcast_or_grant_wallet_rights():
     import inspect
     source = inspect.getsource(preflight.prepare_original_btc_unsigned_psbt)
