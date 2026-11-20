@@ -59,7 +59,7 @@ def test_one_evm_privy_grant_draft_never_demands_extra_message_signature(asset,c
     sql,params=cur.queries[-1]
     assert "authorization_method" in sql
     assert params[-1]=="PRIVY_SCOPED_GRANT"
-    assert params[-5] is None # no fabricated owner's EIP191 digest
+    assert params[-6] is None # no fabricated owner's EIP191 digest
 
 
 def test_one_evm_owner_grant_budget_revision_and_wallet_are_immutable():
