@@ -29,7 +29,7 @@ def preview(asset="BTC", stable=_STABLE, amount=_AMOUNT):
 
 def inspect(**override):
     args = {
-        "unsigned": preview(), "now": NOW,
+        "unsigned": preview(), "original_quote": quote(), "now": NOW,
         "chain_id": "0x1",
         "token_allowance": "0x" + f"{_FUNDS:064x}",
         "eth_balance": hex(_ETH_WEI),
@@ -181,6 +181,47 @@ def test_real_mainnet_rpc_readback_is_owner_bound_and_not_a_tx(monkeypatch):
     )
     assert called[3][1][0]["data"] == m._allowance_data(ETH, ROUTER)
 
+
+
+@pytest.mark.parametrize("field", [
+    "source_wallet", "destination_wallet", "inbound_vault",
+    "inbound_router", "source_asset", "destination_asset",
+    "quote_expires_at", "memo", "amount",
+])
+def test_original_verified_quote_fields_cannot_be_replaced_in_preflight(field):
+    original = quote()
+    if field == "quote_expires_at":
+        from datetime import timedelta
+        original[field] += timedelta(seconds=1)
+    elif field == "amount":
+        original[field] = "49"
+    elif field == "memo":
+        original[field] = original[field].replace("0/1/0", "0/1/1")
+    else:
+        original[field] = "0x" + "f"*40
+    with pytest.raises(ValueError):
+        inspect(original_quote=original)
+
+
+def test_original_unsigned_fingerprint_cannot_be_recomputed_with_wrong_route():
+    draft = preview()
+    changed = copy.deepcopy(draft)
+    changed["router"] = "0x" + "f"*40
+    changed["unsigned_transaction"]["to"] = changed["router"]
+    with pytest.raises(ValueError):
+        inspect(unsigned=changed)
+
+    changed = copy.deepcopy(draft)
+    changed["unsigned_transaction_sha256"] = "f"*64
+    with pytest.raises(ValueError):
+        inspect(unsigned=changed)
+
+
+def test_original_input_amount_cannot_silently_round_on_rpc_readback():
+    original = quote()
+    original["amount"] = "50.0000001"
+    with pytest.raises(ValueError):
+        inspect(original_quote=original)
 
 def test_native_buy_no_privy_signatures_or_erc20_approval_created():
     import inspect
