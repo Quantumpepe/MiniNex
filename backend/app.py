@@ -38,6 +38,7 @@ from .user_paper import read_user_paper, start_user_paper, set_user_paper_status
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
 from .shared_evm_passive_settlement import PassiveEvmSettlementWorker
+from .native_passive_settlement import PassiveNativeSettlementWorker
 from .shared_evm_live_worker import SharedEvmLiveWorker
 from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
@@ -140,6 +141,7 @@ paper = PaperAutoEngine(market)
 personal_paper = PersonalPaperWorker(market,extra_markets)
 eth_auto_live = EthAutoLiveWorker(market)
 evm_passive_settlement = PassiveEvmSettlementWorker()
+native_passive_settlement = PassiveNativeSettlementWorker()
 evm_auto_live = SharedEvmLiveWorker(extra_markets)
 
 
@@ -154,9 +156,11 @@ async def lifespan(app: FastAPI):
     await eth_auto_live.start()
     await evm_auto_live.start()
     await evm_passive_settlement.start()
+    await native_passive_settlement.start()
     try:
         yield
     finally:
+        await native_passive_settlement.stop()
         await evm_passive_settlement.stop()
         await evm_auto_live.stop()
         await eth_auto_live.stop()
