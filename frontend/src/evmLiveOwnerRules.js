@@ -29,6 +29,13 @@ export function validEvmTradeSignerOffer(data,{asset,address,policyId,stable}) {
     POLICY_ID.test(data.execution_signer_id||'')&&
     Number.isSafeInteger(data.budget_revision)&&data.budget_revision>0&&
     data.owner_add_signer_required===true&&
+    (data.combined_single_grant!==true||(
+      data.fee_scope?.performance_fee_percent===5&&
+      data.fee_scope?.fee_basis==='REALIZED_NET_GAIN_ABOVE_HWM'&&
+      data.fee_scope?.router_allowance_scoped===true&&
+      ETH_ADDRESS.test(data.fee_scope?.treasury_wallet||'')&&
+      /^(?:[1-9][0-9]*)$/.test(data.fee_scope?.fee_max_atomic||'')
+    ))&&
     data.privy_signer_attached===false&&
     data.live_session_started===false&&data.trade_sent===false;
 }
