@@ -6,11 +6,40 @@ from backend import native_btc_thor_outputs as btc
 from backend.manual_swap_live_quotes import THOR_ASSETS
 
 NOW=1803000000
-SOURCE="bc1q"+"q"*38
-VAULT="bc1q"+"p"*38
-ETH="0x"+"a"*40
+# Independently construct checksum-correct BIP173 addresses from scripts.
+# The production decoder must reject any address/script mismatch.
+_ALPHABET="qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+def _reference_address(program_hex):
+    data=[0]
+    bits=acc=0
+    for byte in bytes.fromhex(program_hex):
+        acc=(acc<<8)|byte
+        bits+=8
+        while bits>=5:
+            bits-=5
+            data.append((acc>>bits)&31)
+            acc&=(1<<bits)-1
+    if bits:
+        data.append((acc<<(5-bits))&31)
+    chk=1
+    for value in [3,3,0,2,3]+data+[0]*6:
+        top=chk>>25
+        chk=((chk&0x1ffffff)<<5)^value
+        for i,poly in enumerate((
+                0x3b6a57b2,0x26508e6d,0x1ea119fa,
+                0x3d4233dd,0x2a1462b3)):
+            if (top>>i)&1:
+                chk^=poly
+    checksum=chk^1
+    return "bc1"+"".join(_ALPHABET[v] for v in data+[
+        (checksum>>5*(5-i))&31 for i in range(6)])
+
+
 SOURCE_SCRIPT="0014"+"11"*20
 VAULT_SCRIPT="0014"+"22"*20
+SOURCE=_reference_address("11"*20)
+VAULT=_reference_address("22"*20)
+ETH="0x"+"a"*40
 UTXOS=[{"txid":"a"*64,"vout":0,"value_sats":5000000}]
 AMOUNT="0.025"
 
@@ -147,3 +176,39 @@ def test_no_wallet_signing_broadcast_or_hidden_key_in_btc_output_builder():
     for forbidden in ["PrivyClient","psycopg","httpx","sendRawTransaction",
                       "bitcoin.sign","wif","seed_phrase","private_key"]:
         assert forbidden not in c
+
+
+def test_original_btc_address_is_cryptographically_bound_to_both_scripts():
+    result=preview()
+    assert btc._mainnet_p2wpkh_script(SOURCE).hex()==SOURCE_SCRIPT
+    assert btc._mainnet_p2wpkh_script(VAULT).hex()==VAULT_SCRIPT
+    assert result["ordered_outputs"][0]["script_pubkey_hex"]==VAULT_SCRIPT
+    assert result["ordered_outputs"][1]["script_pubkey_hex"]==SOURCE_SCRIPT
+    for kwargs in (
+            {"owner_script_hex":VAULT_SCRIPT},
+            {"vault_script_hex":SOURCE_SCRIPT},
+            {"vault_script_hex":"0014"+"33"*20},
+            {"owner_script_hex":"0014"+"33"*20}):
+        with pytest.raises(ValueError,match="differs from quoted"):
+            preview(**kwargs)
+
+
+def test_invalid_bech32_checksum_or_wrong_network_cannot_redirect_vault():
+    for bad in (
+            VAULT[:-1]+("q" if VAULT[-1]!="q" else "p"),
+            VAULT.upper(),
+            "tb"+VAULT[2:],
+            "bc1q"+"q"*38):
+        q=quote()
+        q["inbound_vault"]=bad
+        with pytest.raises(ValueError):
+            preview(quote=q)
+
+
+def test_original_btc_owner_checksum_required_even_with_plausible_script():
+    owner=SOURCE[:-1]+("p" if SOURCE[-1]!="p" else "q")
+    q=quote()
+    q["source_wallet"]=owner
+    q["memo"]=q["memo"].replace("/"+SOURCE+":","/"+owner+":")
+    with pytest.raises(ValueError):
+        preview(quote=q)
