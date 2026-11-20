@@ -147,7 +147,7 @@ test('independent PAPER cutover leaves LIVE wallet tools and coin settings visib
   assert.match(mobile,/\{showSimulatedTrades&&<PaperPortfolioCard/);
   assert.match(mobile,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
-  assert.match(app,/\{paperVisible&&<UserPaperSessions/);
+  assert.match(app,/<UserPaperSessions t=\{t\} lang=\{language\} paperAvailable=\{paperVisible\}\/>/);
   assert.match(wallet,/paperAvailable=\{paperAvailable\}/);
   assert.match(settings,/\{paperAvailable&&<ExtraPaperComparison/);
   assert.match(settings,/\{selectedSettings \? <>/);
