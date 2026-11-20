@@ -138,7 +138,7 @@ def inspect_original_native_buy_evm_preflight(
     # private quote. A forged router and matching manipulated unsigned
     # metadata are insufficient without the original immutable quote digest.
     quote_amount = original_quote["amount"]
-    if (not re.fullmatch(r"^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$", quote_amount)
+    if (not re.fullmatch(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$", quote_amount)
             or len(quote_amount) > 55):
         raise ValueError("Original native BUY exact amount malformed")
     from decimal import Decimal, InvalidOperation, localcontext
