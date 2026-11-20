@@ -52,7 +52,7 @@ def user():
 def metadata():
     return {
         "id":WALLET_ID,"chain_type":"ethereum",
-        "address":WALLET,"owner":{"user_id":DID},
+        "address":WALLET,"entity":{"type":"user","id":DID},
         "additional_signers":[{
             "signer_id":SIGNER,
             "override_policy_ids":[POLICY],
@@ -101,7 +101,9 @@ def test_no_broadened_remote_evm_policy_may_be_verified(asset,mutate):
     lambda m:m["additional_signers"][0].update(
         override_policy_ids=[POLICY,"unrestricted_123456"]),
     lambda m:m["additional_signers"][0].update(signer_id="attacker_123456"),
-    lambda m:m.update(owner={"user_id":"did:privy:another"}),
+    lambda m:m.update(entity={"type":"user","id":"did:privy:another"}),
+    lambda m:m.update(entity={"type":"organization","id":DID}),
+    lambda m:m.update(archived_at=1763660000000),
     lambda m:m.update(address="0x"+"cd"*20),
     lambda m:m.update(additional_signers=[]),
 ])
