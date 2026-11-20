@@ -39,6 +39,16 @@ def test_exact_original_allowance_finality_and_reorg_guards(asset,stable):
         check({**tx,"input":"0x095ea7b3"+"f"*128},receipt,"0x64")
     with pytest.raises(ValueError):
         check(tx,{**receipt,"blockHash":"0x"+"de"*32},"0x64")
+    with pytest.raises(ValueError):
+        _verify_approval_finality(
+            {**row,"router_address":"0x"+"dc"*20},
+            chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
+            finalized={"number":"0x64"})
+    with pytest.raises(ValueError):
+        _verify_approval_finality(
+            {**row,"token_address":"0x"+"dc"*20},
+            chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
+            finalized={"number":"0x64"})
 
 def test_second_unrelated_market_event_has_independent_approval_nonce():
     args=dict(did="did:privy:user",asset="LINK",side="BUY",

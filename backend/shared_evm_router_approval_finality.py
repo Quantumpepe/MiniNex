@@ -72,7 +72,14 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
     wallet=row["wallet_address"]
     token=row["token_address"]
     spender=row["router_address"]
+    if (type(wallet) is not str or type(token) is not str
+            or type(spender) is not str
+            or token.lower()!=route["source_token"].lower()
+            or spender.lower()!=route["router"].lower()):
+        raise ValueError("Original approval token or spender differs from canonical route")
     amount=int(row["amount_atomic"])
+    if not 0<amount<10**45:
+        raise ValueError("Original approved amount not finite")
     expected="0x095ea7b3"+f"{int(spender,16):064x}"+f"{amount:064x}"
     if (str(tx.get("hash","")).lower()!=hash_
             or str(receipt.get("transactionHash","")).lower()!=hash_
