@@ -159,6 +159,7 @@ def _persist_source_finality_locked(
             or verified.get("source_stable_atomic") is None):
         raise HTTPException(409,"Original ETH BUY source not verified")
     if (type(original) is not dict or type(verified) is not dict
+            or type(verified) is not dict
             or verified.get("source_chain_finalized") is not True
             or verified.get("destination_settlement_finalized") is not False
             or verified.get("net_profit_verified") is not False
