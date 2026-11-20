@@ -891,6 +891,25 @@ async def owner_publish_evm_privy_policy(
     })
 
 
+@app.post("/api/live/evm/policy/{asset}/prepare-grant")
+async def owner_prepare_evm_policy_single_wallet_grant(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Build a restricted owner policy without an extra EIP-191 signature.
+
+    This request does not delegate Privy or authorize ANY trade. The
+    wallet owner subsequently approves the exact policy via addSigners.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await stage_owner_evm_policy_from_budget(
+        did,asset,single_privy_grant=True)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
 @app.post("/api/live/evm/policy/{asset}/prepare")
 async def owner_prepare_evm_policy(
     asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
