@@ -3,7 +3,7 @@
 Only validates already prepared original owner payloads. Actual sender must
 independently prove current Privy user permission and journal claim first.
 BTC: one raw secp256k1_sign digest per BIP143 input.
-SOL: unsigned serialized transaction via solana_signTransaction, never send.
+SOL: unsigned serialized transaction via signTransaction, never send.
 XRP: cryptographic signing is implemented separately; Privy does not document
 a native 'xrpl' wallet API, and no unverified RPC is fabricated here.
 """
@@ -126,7 +126,7 @@ def preview_privy_sol_sign_transaction_request(
         "original_intent_key": intent_key,
         "original_message_sha256": original_message["message_sha256"],
         "owner_public_key_sha256": proven["public_key_sha256"],
-        "method": "solana_signTransaction",
+        "method": "signTransaction",
         "params": {
             "transaction": base64.b64encode(empty_signed_tx).decode("ascii"),
             "encoding": "base64",

@@ -66,7 +66,7 @@ def test_multi_input_bitcoin_signing_requests_are_distinct_and_ordered():
 def test_sol_sign_only_rpc_serializes_blank_signature_slot_before_message():
     r = _sol()
     assert r["mode"] == "ORIGINAL_SOL_PRIVY_SIGN_TRANSACTION_PREVIEW_ONLY"
-    assert r["method"] == "solana_signTransaction"
+    assert r["method"] == "signTransaction"
     assert r["params"]["encoding"] == "base64"
     wire = base64.b64decode(r["params"]["transaction"], validate=True)
     compiled = compile_original_unsigned_sol_message(**sol_fixture())

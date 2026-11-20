@@ -101,7 +101,7 @@ def test_real_sol_privy_rpc_signs_only_original_wallet_message(monkeypatch):
     assert len(client.calls)==1
     url,kwargs=client.calls[0]
     assert url.endswith(WALLET+"/rpc")
-    assert kwargs["json"]["method"]=="solana_signTransaction"
+    assert kwargs["json"]["method"]=="signTransaction"
     assert kwargs["json"]["params"]["encoding"]=="base64"
     assert kwargs["json"]["params"]["transaction"]
     assert kwargs["headers"]["privy-app-id"]==s.APP_ID

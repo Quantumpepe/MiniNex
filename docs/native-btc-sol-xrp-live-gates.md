@@ -237,7 +237,7 @@ claiming that the user has delegated a trading wallet:
   matching pair of unsigned metadata and calldata is not enough.
 - BTC uses an offline `secp256k1_sign` digest-request plan for each
   canonical BIP143 input. SOL uses an offline
-  `solana_signTransaction` request plan for a serialized blank-signer
+  `signTransaction` request plan for a serialized blank-signer
   legacy transaction. Both verify that the public key matches the original
   owner and bind each request to the original signal ID, without making
   any remote signer RPC calls. A local offline SOL signed-transaction
