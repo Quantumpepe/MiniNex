@@ -56,7 +56,7 @@ async def post_claimed_privy_evm_rpc(
             not re.fullmatch(r"https://api\.privy\.io/v1/wallets/[A-Za-z0-9_-]{6,160}/rpc",url)
             or type(body) is not dict or body.get("method")!="eth_sendTransaction"
             or type(body.get("caip2")) is not str
-            or body["caip2"] not in ("eip155:1","eip155:56","eip155:137","eip155:43114")
+            or body["caip2"] not in ("eip155:1","eip155:56","eip155:137","eip155:43114","eip155:42161")
             or type(body.get("params")) is not dict
             or type(body["params"].get("transaction")) is not dict
             or type(app_secret) is not str or len(app_secret)<12
