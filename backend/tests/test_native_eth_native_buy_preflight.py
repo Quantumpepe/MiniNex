@@ -49,7 +49,7 @@ def inspect(**override):
 ])
 def test_native_buy_wallet_router_token_vault_and_current_gas_verified(asset,stable,amount):
     tx = preview(asset=asset,stable=stable,amount=amount)
-    r = inspect(unsigned=tx)
+    r = inspect(unsigned=tx, original_quote=quote(asset,stable,amount))
     assert r["mode"] == "THORCHAIN_ETH_ORIGINAL_NATIVE_BUY_NETWORK_PREFLIGHT"
     assert r["asset"] == asset and r["stable"] == stable
     assert r["source_wallet"] == ETH
