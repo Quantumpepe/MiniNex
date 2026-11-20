@@ -31,7 +31,8 @@ class Prepared:
 ])
 def test_one_evm_privy_grant_draft_never_demands_extra_message_signature(asset,chain):
     cur=Prepared([
-        {"budget_usd":1500,"stable":"USDC","revision":7},
+        {"budget_usd":1500,"stable":("USDT" if asset=="BNB" else "USDC"),
+         "revision":7},
         None,
         {"status":"DRAFT"},
     ])
