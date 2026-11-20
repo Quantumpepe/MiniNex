@@ -126,3 +126,53 @@ TRX and DOGE follow only after these three chains.
   or a user-visible live trade.
 - As before, the user sets trading capital and budgets; no artificial capital,
   daily-turnover, coin-size or trade-count caps are added by this work.
+
+ 
+## Native package 3 implementation additions (20 November 2026)
+
+**BTC native SELL:** The original BTC SegWit flow now has automated original
+Privy-wallet outpoint discovery, largest-first UTXO selection, separately
+verified confirmed funding transactions and live unspent outspend states,
+current network miner-fee readback and a quote-bound BIP174 unsigned PSBT.
+An independent BIP143 SIGHASH_ALL builder verifies the original PSBT inputs
+and ordered THORChain vault/change/memo outputs. A local secp256k1 signature
+verifier accepts actual detached original-owner signatures and can assemble
+SegWit witness wire bytes **without broadcast**. No Privy signing capability
+or authorized one-shot order claim has been granted.
+
+**XRP native SELL:** The native XRPL Payment now has FullyCanonicalSig
+flags, official xrpl-py signing serialization for the exact original owner
+(secp256k1 or Ed25519), current validated sequence/ledger expiry, original
+owner refund memo, strict original unsigned-Payment fingerprint and a local
+signature-check / signed-blob assembler. Neither this signed blob nor a
+cryptographic signature alone authorizes a live trade or proves a transfer.
+
+**SOL native SELL:** Previously implemented Solana compiled owner transfer
+and refund memo plus local detached Ed25519 signature verification remain on
+this same PR, shared with BTC/XRP settlement evidence. Native source
+execution remains awaiting real Privy owner delegation and order claim.
+
+**Common Privy original-native readback:** A new account-authenticated
+`GET /api/live/native/authorization/{BTC|SOL|XRP}` endpoint verifies one
+original Privy-linked wallet, its remote wallet owner and scoped signer
+references. It does not confuse a `delegated` flag or policy ID reference
+with a remotely verified *policy body*, individual owner consent or actual
+native-signing capability. All execution permissions remain explicitly false.
+
+**Native BUY from ETH stablecoins:** A read-only Ethereum mainnet preflight
+now independently obtains current token allowance to the quoted THORChain
+router, original owner stablecoin and ETH gas holdings, chain ID, pending
+nonce, estimated gas and actual gas price. The source calldata is decoded
+to check vault/token/amount/expiry/owner refund against the *real* canonical
+depositWithExpiry ABI. A successful result is still an **unsigned**
+transaction and does not approve ERC20 allowance, move funds, send Ethereum
+transactions or authorize any additional signer.
+
+**Outstanding real production work:** Independently read and verify exact
+Privy policy contents and signed per-user per-coin budgets; final native
+BTC/SOL/XRP signer/transaction APIs and grant paths; server-side durable
+atomic source UTXO/nonce claims, no-duplicate transport and all corresponding
+mainnet submission/finality/refund paths; true confirmed FIFO/HWM 5% profit
+fee collection; owner-authorized full round trips and Auto/Pause/Exit.
+External Privy grant/owner consent are required at the correct stage.
+No manual Render deploy or Android OTA is required for an unmerged PR.
