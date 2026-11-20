@@ -161,8 +161,10 @@ def assess_privy_user_grant(
         or metadata.get("id") != wallet["wallet_id"]
         or metadata.get("chain_type") != "ethereum"
         or str(metadata.get("address", "")).lower() != wallet["address"]
-        or type(metadata.get("owner")) is not dict
-        or metadata["owner"].get("user_id") != did
+        or type(metadata.get("entity")) is not dict
+        or metadata["entity"].get("type") != "user"
+        or metadata["entity"].get("id") != did
+        or metadata.get("archived_at") is not None
         or type(metadata.get("additional_signers")) is not list
         or stored.get("wallet_address") != wallet["address"]
         or stored.get("policy_owner_id") != owner
