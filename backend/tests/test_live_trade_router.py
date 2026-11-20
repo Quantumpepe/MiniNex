@@ -78,6 +78,22 @@ def venues(monkeypatch):
     monkeypatch.setattr(router,"quote_owner_erc20_trade",erc20)
     monkeypatch.setattr(router,"quote_native_btc",btc)
     monkeypatch.setattr(router,"get_native_swap_quote",other)
+    async def owner_native(did,*,asset,side,stable,amount):
+        seen.append(("OWNER_NATIVE",did,asset,side,stable,amount))
+        return {
+            "mode":"OWNER_VERIFIED_NATIVE_MULTICHAIN_QUOTE_ONLY",
+            "asset":asset,"side":side,"stable":stable,
+            "source_asset":stable if side=="BUY" else asset,
+            "destination_asset":asset if side=="BUY" else stable,
+            "input_amount":amount,"estimated_output_amount":"0.2",
+            "wallet_identity_verified":True,
+            "native_wallet_balance_verified":True,
+            "ethereum_settlement_wallet_verified":True,
+            "source_chain_balance_verified":True,
+            "network_fee_and_xrpl_reserve_spendability_verified":False,
+            "execution_enabled":False,"can_submit":False,
+        }
+    monkeypatch.setattr(router,"quote_owner_native_trade",owner_native)
     return seen
 
 
@@ -111,6 +127,12 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
         assert venues==[("BTC",DID,side,stable,amount)]
         assert plan["wallet_funds_verified"] is True
         assert plan["quote_level"]=="WALLET_VERIFIED_CROSSCHAIN_INDICATIVE"
+    elif asset in ("SOL","XRP"):
+        assert venues==[("OWNER_NATIVE",DID,asset,side,stable,amount)]
+        assert plan["wallet_funds_verified"] is True
+        assert plan["source_chain_balance_verified"] is True
+        assert plan["network_fee_spendability_verified"] is False
+        assert plan["quote_level"]=="OWNER_WALLET_BALANCE_VERIFIED_NATIVE_INDICATIVE"
     elif asset in ("LINK","UNI"):
         assert venues==[("ERC20",DID,asset,side,stable,amount)]
         assert plan["wallet_funds_verified"] is True
@@ -167,7 +189,7 @@ def test_wrong_provider_quote_never_claims_live_order(venues,monkeypatch,field,v
     monkeypatch.setattr(router,"get_native_swap_quote",wrong)
     with pytest.raises(HTTPException) as e:
         asyncio.run(router.get_unified_trade_plan(
-            DID,asset="SOL",side="SELL",stable="USDC",amount="1"))
+            DID,asset="TRX",side="SELL",stable="USDT",amount="1"))
     assert e.value.status_code==502
 
 
@@ -216,4 +238,4 @@ def test_one_authenticated_api_for_all_coins_no_client_address_or_send(venues,he
     assert response.status_code==200
     assert response.headers["cache-control"]=="private, no-store"
     assert response.json()["execution_enabled"] is False
-    assert venues==[("OTHER","USDC","SOL","50")]
+    assert venues==[("OWNER_NATIVE",DID,"SOL","BUY","USDC","50")]

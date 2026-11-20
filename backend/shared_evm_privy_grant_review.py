@@ -101,7 +101,10 @@ def assess_owner_evm_privy_grant(
         )
         if (type(wallet_metadata) is not dict
                 or wallet_metadata.get("id")!=owned["wallet_id"]
-                or wallet_metadata.get("owner",{}).get("user_id")!=did
+                or type(wallet_metadata.get("entity")) is not dict
+                or wallet_metadata["entity"].get("type")!="user"
+                or wallet_metadata["entity"].get("id")!=did
+                or wallet_metadata.get("archived_at") is not None
                 or type(policy_id) is not str or not _ID.fullmatch(policy_id)
                 or type(signer_id) is not str or not _ID.fullmatch(signer_id)
                 or signer_id!=executor_id):

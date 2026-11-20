@@ -23,6 +23,7 @@ from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 from .live_btc_quotes import quote_native_btc
 from .manual_swap_live_quotes import get_native_swap_quote
+from .native_trade_owner_quote import quote_owner_native_trade
 from .storage import _safe_did
 from .strategy_replay import REPLAY_ASSETS
 
@@ -175,6 +176,37 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
         result={
             "quote_level":"WALLET_VERIFIED_CROSSCHAIN_INDICATIVE",
             "wallet_funds_verified":True,
+            "quote_provider":"THORCHAIN_PUBLIC_MCP",
+            "estimated_output_amount":upstream.get("estimated_output_amount"),
+            "minimum_output_amount":None,
+            "approval_or_permit_required":None,
+            "transaction_preview_created":False,
+        }
+    elif asset in ("SOL","XRP"):
+        upstream=await quote_owner_native_trade(
+            did,asset=asset,side=side,stable=stable,amount=amount)
+        if (type(upstream) is not dict
+                or upstream.get("mode")!="OWNER_VERIFIED_NATIVE_MULTICHAIN_QUOTE_ONLY"
+                or upstream.get("asset")!=asset
+                or upstream.get("side")!=side
+                or upstream.get("stable")!=stable
+                or upstream.get("source_asset")!=request["source_asset"]
+                or upstream.get("destination_asset")!=request["destination_asset"]
+                or upstream.get("input_amount")!=amount
+                or upstream.get("wallet_identity_verified") is not True
+                or upstream.get("native_wallet_balance_verified") is not True
+                or upstream.get("ethereum_settlement_wallet_verified") is not True
+                or upstream.get("source_chain_balance_verified") is not True
+                or upstream.get("network_fee_and_xrpl_reserve_spendability_verified") is not False
+                or upstream.get("execution_enabled") is not False
+                or upstream.get("can_submit") is not False):
+            raise HTTPException(502,"Owner-bound native route mismatch")
+        result={
+            "quote_level":"OWNER_WALLET_BALANCE_VERIFIED_NATIVE_INDICATIVE",
+            "wallet_funds_verified":True,
+            "source_chain_balance_verified":True,
+            "network_fee_spendability_verified":False,
+            "destination_settlement_finalized":False,
             "quote_provider":"THORCHAIN_PUBLIC_MCP",
             "estimated_output_amount":upstream.get("estimated_output_amount"),
             "minimum_output_amount":None,

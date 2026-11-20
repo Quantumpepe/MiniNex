@@ -277,7 +277,7 @@ def wallet_user():
 def wallet_metadata(signers=None):
     return {
         "id":"wallet_2324_example","chain_type":"ethereum",
-        "address":WALLET,"owner":{"user_id":DID},
+        "address":WALLET,"entity":{"type":"user","id":DID},
         "additional_signers":[] if signers is None else signers,
     }
 
@@ -351,7 +351,7 @@ def test_wrong_policy_owner_extra_rules_or_another_wallet_denies_offer(monkeypat
     altered["owner_id"]=SIGNER
     assert assess(remote=altered)["policy_verified"] is False
     altered=wallet_metadata()
-    altered["owner"]={"user_id":"did:privy:other"}
+    altered["entity"]={"type":"user","id":"did:privy:other"}
     assert assess(meta=altered)["wallet_owned_by_user"] is False
     other=wallet_metadata([{"signer_id":"untrusted_other"}])
     assert assess(meta=other)["can_request_user_grant"] is False

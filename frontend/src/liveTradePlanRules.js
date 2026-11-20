@@ -17,7 +17,7 @@ export const LIVE_NETWORKS=Object.freeze({
   ARB:'arbitrum-one-mainnet',
 });
 const COIN_PRECISION=Object.freeze({
-  BTC:8,ETH:18,BNB:18,SOL:8,XRP:6,TRX:6,POL:18,
+  BTC:8,ETH:18,BNB:18,SOL:9,XRP:6,TRX:6,POL:18,
   AVAX:18,LINK:18,DOGE:8,UNI:18,ARB:18,
 });
 const LIVE_EVM_CHAINS=Object.freeze({
@@ -31,6 +31,7 @@ const PROVIDER_LEVELS=Object.freeze({
   BTC:'WALLET_VERIFIED_CROSSCHAIN_INDICATIVE',
   ERC20:'WALLET_VERIFIED_UNSIGNED_ERC20_SWAP',
   NATIVE_EVM:'WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP',
+  NATIVE_OWNER:'OWNER_WALLET_BALANCE_VERIFIED_NATIVE_INDICATIVE',
 });
 
 export function normalizedLiveStable(asset,stored){
@@ -89,6 +90,13 @@ export function validLiveTradePlan(value,request){
        value.wallet_funds_verified!==true||
        value.quote_provider!=='UNISWAP_V3_CHAIN_SPECIFIC'||
        value.native_wrap_unwrap_not_yet_settled!==true)return false;
+  }else if(['SOL','XRP'].includes(request.asset)){
+    if(value.quote_level!==PROVIDER_LEVELS.NATIVE_OWNER||
+       value.wallet_funds_verified!==true||
+       value.source_chain_balance_verified!==true||
+       value.network_fee_spendability_verified!==false||
+       value.destination_settlement_finalized!==false||
+       value.quote_provider!=='THORCHAIN_PUBLIC_MCP')return false;
   }else if(value.quote_level!=='VENUE_INDICATIVE_WALLET_NOT_VERIFIED'||
            value.wallet_funds_verified!==false||
            value.quote_provider!=='THORCHAIN_PUBLIC_MCP')return false;

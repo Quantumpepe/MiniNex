@@ -15,6 +15,7 @@ function response(request){
   const eth=request.asset==='ETH',btc=request.asset==='BTC';
   const erc20=['LINK','UNI','ARB'].includes(request.asset);
   const nativeEvm=['BNB','POL','AVAX'].includes(request.asset);
+  const nativeOwner=['SOL','XRP'].includes(request.asset);
   const chainIds={ETH:1,BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,ARB:42161};
   return {
     mode:'UNIFIED_ELEVEN_COIN_TRADE_PLAN',
@@ -26,8 +27,12 @@ function response(request){
       btc?'WALLET_VERIFIED_CROSSCHAIN_INDICATIVE':
       erc20?'WALLET_VERIFIED_UNSIGNED_ERC20_SWAP':
       nativeEvm?'WALLET_VERIFIED_UNSIGNED_NATIVE_EVM_SWAP':
+      nativeOwner?'OWNER_WALLET_BALANCE_VERIFIED_NATIVE_INDICATIVE':
       'VENUE_INDICATIVE_WALLET_NOT_VERIFIED',
-    wallet_funds_verified:eth||btc||erc20||nativeEvm,
+    wallet_funds_verified:eth||btc||erc20||nativeEvm||nativeOwner,
+    source_chain_balance_verified:nativeOwner,
+    network_fee_spendability_verified:false,
+    destination_settlement_finalized:false,
     quote_provider:eth?'UNISWAP_ETHEREUM':
       erc20?(request.asset==='ARB'?'UNISWAP_V3_CHAIN_SPECIFIC':'UNISWAP_ETHEREUM_ERC20'):
       nativeEvm?'UNISWAP_V3_CHAIN_SPECIFIC':'THORCHAIN_PUBLIC_MCP',
@@ -92,7 +97,8 @@ test('amounts are exact input units, not simulated USD budget',()=>{
   assert.equal(createLivePlanRequest('ETH','SELL','USDC','0.000000000000000001').body.amount,
     '0.000000000000000001');
   assert.equal(createLivePlanRequest('BTC','SELL','USDC','0.00000001').body.amount,'0.00000001');
-  assert.equal(createLivePlanRequest('SOL','SELL','USDC','0.000000001'),null);
+  assert.equal(createLivePlanRequest('SOL','SELL','USDC','0.000000001')?.amount,'0.000000001');
+  assert.equal(createLivePlanRequest('SOL','SELL','USDC','0.0000000001'),null);
   assert.equal(createLivePlanRequest('XRP','SELL','USDC','0.0000001'),null);
   assert.equal(createLivePlanRequest('ETH','BUY','USDC','0.0000001'),null);
   for(const raw of ['0','0.0','-1','NaN','1e8','01','',null,4,'10000000'.repeat(8)]){
@@ -132,4 +138,23 @@ test('quote is rendered for selected coin only; old PAPER and AUTO controls rema
   assert.doesNotMatch(livePanel,/eth_sendTransaction|sendTransaction\(|signTransaction\(|approve\(/);
   assert.match(labels,/livePlanNotExecutable:/);
   assert.match(labels,/livePlanVenueOnly:/);
+});
+
+test('SOL and XRP quote checks are actual owner-bound readbacks, never executed trades',()=>{
+  for(const asset of ['SOL','XRP']){
+    const request=createLivePlanRequest(asset,'SELL','USDC','2');
+    const good=response(request);
+    assert.equal(validLiveTradePlan(good,request),true);
+    for(const [field,wrong] of [
+      ['wallet_funds_verified',false],
+      ['source_chain_balance_verified',false],
+      ['network_fee_spendability_verified',true],
+      ['destination_settlement_finalized',true],
+      ['quote_level','VENUE_INDICATIVE_WALLET_NOT_VERIFIED'],
+      ['quote_provider','FAKE'],
+    ]){
+      const mutated={...good,[field]:wrong};
+      assert.equal(validLiveTradePlan(mutated,request),false,asset+' '+field);
+    }
+  }
 });

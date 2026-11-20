@@ -1092,6 +1092,94 @@ SCHEMA += (
 )
 
 
+# Native BTC/SOL/XRP durable chain settlement schema from PR #202.
+SCHEMA += (
+    # Each native original intent is written before any future Privy submission.
+    # PREPARED records are inert, and unknown SENDING outcomes cannot be retried.
+    """CREATE TABLE IF NOT EXISTS mininex_live_native_order_intents (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','SOL','XRP')),
+        intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 6 AND 160),
+        chain TEXT NOT NULL CHECK (chain IN
+            ('bitcoin-mainnet','solana-mainnet','xrpl-mainnet','ethereum-mainnet')),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        budget_revision BIGINT NOT NULL CHECK (budget_revision >= 0),
+        source_wallet TEXT NOT NULL,
+        destination_wallet TEXT NOT NULL,
+        input_amount NUMERIC(60,18) NOT NULL CHECK (input_amount > 0),
+        immutable_quote_sha256 TEXT NOT NULL
+            CHECK (immutable_quote_sha256 ~ '^[0-9a-f]{64}$'),
+        owner_consent_sha256 TEXT NOT NULL
+            CHECK (owner_consent_sha256 ~ '^[0-9a-f]{64}$'),
+        privy_grant_sha256 TEXT NOT NULL
+            CHECK (privy_grant_sha256 ~ '^[0-9a-f]{64}$'),
+        payload_sha256 TEXT NOT NULL
+            CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
+        quote_expires_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PREPARED'
+          CHECK (status IN ('PREPARED','SENDING','SUBMITTED',
+                            'RECONCILIATION_REQUIRED','SOURCE_FINALIZED',
+                            'DESTINATION_FINALIZED','REFUNDED_VERIFIED',
+                            'CANCELLED')),
+        source_tx_hash TEXT,
+        source_signed_tx_hash TEXT CHECK (source_signed_tx_hash IS NULL
+            OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
+        source_proof_sha256 TEXT CHECK (source_proof_sha256 IS NULL OR
+            source_proof_sha256 ~ '^[0-9a-f]{64}$'),
+        source_finalized_at TIMESTAMPTZ,
+        destination_tx_hash TEXT,
+        destination_proof_sha256 TEXT CHECK (
+            destination_proof_sha256 IS NULL OR
+            destination_proof_sha256 ~ '^[0-9a-f]{64}$'),
+        destination_received_atomic NUMERIC(78,0) CHECK (
+            destination_received_atomic > 0),
+        destination_finalized_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        CHECK ((status IN ('PREPARED','SENDING','RECONCILIATION_REQUIRED',
+                           'CANCELLED') AND source_tx_hash IS NULL)
+            OR (status IN ('SUBMITTED','SOURCE_FINALIZED',
+                           'DESTINATION_FINALIZED','REFUNDED_VERIFIED')
+                AND source_tx_hash IS NOT NULL)),
+        CHECK (source_tx_hash IS NULL OR
+               source_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
+        CHECK (destination_tx_hash IS NULL OR
+               destination_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
+        CHECK (destination_tx_hash IS NULL OR
+               status IN ('DESTINATION_FINALIZED','REFUNDED_VERIFIED')),
+        CHECK (status != 'DESTINATION_FINALIZED' OR (
+            destination_tx_hash IS NOT NULL AND
+            destination_proof_sha256 IS NOT NULL AND
+            destination_received_atomic IS NOT NULL AND
+            destination_finalized_at IS NOT NULL)),
+        CHECK ((status IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
+                           'REFUNDED_VERIFIED') AND
+                source_proof_sha256 IS NOT NULL AND
+                source_finalized_at IS NOT NULL)
+             OR status NOT IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
+                                'REFUNDED_VERIFIED'))
+    )""",
+    """ALTER TABLE mininex_live_native_order_intents
+        ADD COLUMN IF NOT EXISTS source_signed_tx_hash TEXT
+        CHECK (source_signed_tx_hash IS NULL
+          OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$')""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique
+       ON mininex_live_native_order_intents(chain,source_signed_tx_hash)
+       WHERE source_signed_tx_hash IS NOT NULL""",
+    """CREATE INDEX IF NOT EXISTS mininex_native_pending_owner_scan
+       ON mininex_live_native_order_intents
+       (privy_did,chain,updated_at)
+       WHERE status IN ('SENDING','SUBMITTED',
+                        'RECONCILIATION_REQUIRED','SOURCE_FINALIZED')""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_original_source_hash_unique
+       ON mininex_live_native_order_intents(chain,source_tx_hash)
+       WHERE source_tx_hash IS NOT NULL""",
+
+)
+
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

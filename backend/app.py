@@ -27,10 +27,18 @@ from .verified_sync import synchronize_one_page
 from .wallet_balances import get_wallet_balances
 from .multicoin_evm_balances import get_multicoin_evm_balances
 from .native_coin_balances import get_native_balances
+from .native_trade_receipts import get_owner_native_sender_receipt
+from .native_privy_owner_signer import get_original_native_privy_signer_status
+from .native_source_readiness import read_original_native_source_readiness
+from .native_live_destination_finality import get_private_native_ethereum_destination
+from .native_live_buy_destination import get_private_original_native_buy_destination
+from .native_live_sell_refund import get_private_original_native_sell_refund
+from .native_live_eth_buy_source import get_original_eth_buy_source
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
 from .shared_evm_passive_settlement import PassiveEvmSettlementWorker
+from .native_passive_settlement import PassiveNativeSettlementWorker
 from .shared_evm_live_worker import SharedEvmLiveWorker
 from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
@@ -133,6 +141,7 @@ paper = PaperAutoEngine(market)
 personal_paper = PersonalPaperWorker(market,extra_markets)
 eth_auto_live = EthAutoLiveWorker(market)
 evm_passive_settlement = PassiveEvmSettlementWorker()
+native_passive_settlement = PassiveNativeSettlementWorker()
 evm_auto_live = SharedEvmLiveWorker(extra_markets)
 
 
@@ -147,9 +156,11 @@ async def lifespan(app: FastAPI):
     await eth_auto_live.start()
     await evm_auto_live.start()
     await evm_passive_settlement.start()
+    await native_passive_settlement.start()
     try:
         yield
     finally:
+        await native_passive_settlement.stop()
         await evm_passive_settlement.stop()
         await evm_auto_live.stop()
         await eth_auto_live.stop()
@@ -503,6 +514,95 @@ async def authenticated_native_balances(
     })
 
 
+@app.get("/api/live/native/authorization/{asset}")
+async def read_original_native_privy_owner_authorization(
+    asset: Literal["BTC","SOL","XRP"],
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only native Privy signer readback, never trade permission."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await get_original_native_privy_signer_status(did,asset=asset)
+    return JSONResponse(status,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/source-receipt/{asset}/{transaction_hash}")
+async def read_owner_finalized_native_source_receipt(
+    asset: Literal["SOL","XRP"], transaction_hash: str,
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated source-chain observation, never claimed as swap payout."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await get_owner_native_sender_receipt(
+        did,asset=asset,transaction_hash=transaction_hash)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/settlement/{asset}/{intent_key}")
+async def read_owner_original_native_settlement(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Independent source+protocol+destination receipt; never a trading grant."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    proof=await get_private_native_ethereum_destination(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(proof,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/buy-source/{asset}/{intent_key}")
+async def read_owner_original_native_eth_buy_source(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Read-only proof of original Ethereum THORChain stablecoin funding."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await get_original_eth_buy_source(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(report,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/buy-settlement/{asset}/{intent_key}")
+async def read_owner_original_native_buy_settlement(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Owner-only destination-chain BUY readback; never a signing endpoint."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    proof=await get_private_original_native_buy_destination(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(proof,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/sell-refund/{asset}/{intent_key}")
+async def read_owner_original_native_sell_refund(
+    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Original chain refund readback; never a swap-fill or fee record."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    proof=await get_private_original_native_sell_refund(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(proof,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
 @app.get("/api/wallet/multicoin-balances")
 async def authenticated_multicoin_balances(
     authorization: str | None = Header(default=None),
@@ -538,6 +638,24 @@ async def unified_real_market_trade_plan(
     return JSONResponse(result,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/native/source-readiness/{asset}")
+async def inspect_owner_native_source_readiness(
+    asset: Literal["BTC", "SOL", "XRP"],
+    request: UnifiedLiveTradeRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated read-only original source preflight, never an order."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    status = await read_original_native_source_readiness(
+        did, asset=asset, side=request.side,
+        stable=request.stable, amount=request.amount,
+    )
+    return JSONResponse(status, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
     })
 
 

@@ -1,0 +1,330 @@
+# BTC / SOL / XRP: native LIVE rollout gate (19 November 2026)
+
+Scope: Third trading workstream. Keep fixed 12 coins:
+BTC ETH BNB SOL XRP TRX POL AVAX LINK DOGE UNI ARB.
+This development PR does not change Render LIVE toggles, sign user wallets,
+submit transactions or grant anything in Privy.
+
+## Code and regressions already implemented in PR #202
+
+- BTC: existing owner-linked native SegWit wallet, manually signed UTXO send,
+  public cross-chain quotes, native chain receipt and pause controls preserved.
+- SOL/XRP: current verified native Privy wallet and independent mainnet holdings
+  now gate the common per-coin BUY/SELL trade preview, together with the
+  current owner-linked Ethereum USDC/USDT settlement wallet.
+- SOL: original wallet signature, finalized slot, owner balance delta and
+  network fee inspected on independently fetched mainnet transactions.
+- XRP: original account, Payment transaction, matching hash, tesSUCCESS in a
+  validated ledger and actual fee inspected. XRP currently has USDC settlement.
+- Authenticated endpoint: GET /api/live/native/source-receipt/{asset}/{hash},
+  strictly SOL/XRP and original Privy-owned wallet.
+- The app uses owner-bound SOL/XRP trade-plan responses and offers the
+  matching SOL/XRP receipt check next to the original BTC/ETH readbacks.
+- Absolutely no fabricated native transaction, position, payout or fee.
+  None of these read-only proofs constitutes a completed THORChain swap.
+- No user budget, coin size, daily turnover or artificial execution caps added.
+- Native SELL payout proof now also independently validates a THORChain-linked
+  finalized Ethereum USDC/USDT Transfer to the original Privy-linked owner,
+  with canonical Ethereum block and exact atomic amount. The authenticated
+  inspection endpoint performs no writes. An internal-only conditional journal
+  finalizer can store proof digest, amount and final block. This does not
+  record realized gain, a 5% fee or a completed native BUY.
+- Native BUY destination-chain proof now checks one THORChain outbound against
+  the actual owner BTC receipt (six confirmations), Solana finalized transfer
+  or XRP validated Payment (exact delivered drops). The owner-only BUY readback
+  does not send, settle a trade, record gains or charge any fees. Original
+  Ethereum BUY source settlement still needs its own validation.
+
+## Remaining required coding for real, automatic native LIVE
+
+1. Fetch a fresh executable THORChain quote with independently checked
+   network, owner destination, inbound vault, memo/tag, minimum output,
+   expiry and refund policy. The public MCP used now is quote-only.
+2. Confirm and integrate production Privy signer/delegation APIs for BTC,
+   Solana and XRPL. Privy supports Bitcoin and Solana server wallets; XRPL
+   support was announced October 2026 and its actual account-specific
+   production signing and granular policy availability still need checking.
+3. Persist original owner and per-coin budget-revision-bound swap intentions,
+   signer-policy digest, exact quote terms and one-shot send claims in Postgres.
+   Never automatically resend after unknown submit outcome.
+4. Build exact source-chain transactions: BTC SegWit with real miner fee and
+   swap memo or supported memoless method; Solana valid blockhash and chain
+   instructions; XRP validated sequence, last ledger, Fee, DestinationTag,
+   Memo and account reserve. No alternate external wallets.
+5. Native SELL source + THORChain + canonical Ethereum destination proof is
+   independently checkable; native BUY receipt inspection is also implemented.
+   Finish verified Ethereum BUY source finality, durable native BUY payout
+   posting and refund flows before posting positions or wallet PnL. Never equate source finality to swap completion.
+6. Settle actual per-coin FIFO/net costs and user-authorized 5% high-water-mark
+   fee ONLY after independently verified successful real round trips.
+7. Validate on explicitly approved mainnet wallets: BTC/SOL/XRP entry, exit,
+   auto trading, pause/resume, incomplete swap recovery and exact order history.
+
+No automatic LIVE launch until all requirements are met and user confirms
+Privy policies. EVM switches never enable native signing by implication.
+TRX and DOGE follow only after these three chains.
+
+
+## Additional BUY source and refund binding (same PR)
+
+- For BTC/SOL/XRP BUY, an actual finalized Ethereum mainnet source receipt
+  can now be independently inspected for exact owner address, original hash,
+  canonical block, official ERC-20 USDC/USDT Transfer, THORChain router
+  Deposit event, depositWithExpiry parameters, current trusted Asgard vault,
+  original coin destination and refund-to-owner memo.
+- An internal-only fair-page passive source reconciler can commit that
+  original receipt digest into the immutable journal; it cannot send.
+- The private THORChain quote includes the explicit original-source
+  refund_address request and verifies the refund field in the returned memo.
+  Native wallet case sensitivity is preserved on SOL/XRP.
+- An exact unsigned Ethereum original BUY depositWithExpiry transaction
+  constructor uses the current owner-bound quote and canonical ABI. Its
+  internal output explicitly requires separate Privy policy confirmation,
+  live gas/allowance verification and wallet signing before any send.
+- Actual Privy native signing, ERC20 allowance, native chain send builders,
+  retry/refund reconciliation, full FIFO/HWM and real-money mainnet validation
+  remain outside these read-only steps. No Render environment toggles changed.
+
+
+## BTC original-owner unsigned PSBT progress (20 November 2026)
+
+- The quote-bound BTC source VOUT builder independently decodes and checks both
+  mainnet BIP173 P2WPKH destination addresses against their scripts. A plausible
+  but different caller-supplied P2WPKH script is rejected before serialization.
+- `backend/native_btc_thor_psbt.py` constructs a deterministic BIP174 v0
+  **unsigned** SegWit PSBT, including original ordered THORChain VOUTs, one
+  witness UTXO record for each original owner input, exact input/output satoshi
+  conservation, source change, memo and unsigned transaction fingerprint.
+- Duplicate inputs, invalid fee arithmetic and UTXO script/address mismatches
+  are rejected. The PSBT has no private key, wallet signature or broadcast.
+- This is an intermediate encoding artifact, **not a LIVE send**. Independently
+  confirmed BTC UTXO membership/unspent state, original signed consent,
+  Privy signer readback, chain fee freshness, durable one-shot source claim,
+  signed PSBT finalization, broadcast and finality are still mandatory.
+- The PR remains development-only; no Render deploy, native LIVE switch,
+  production BTC swap, or user fee collection is implied by this step.
+
+
+## BTC read-only source-UTXO preflight (20 November 2026)
+
+- New `native_btc_utxo_proof.py` binds every claimed SegWit input to the actual
+  owner P2WPKH script, Esplora funding transaction, confirmed amount and
+  explicitly **unspent** outspend response. Duplicate or conflicting outpoints
+  are rejected, with an explicit funding chain tip and per-input checkpoint.
+- A current Esplora API response is *not* a cryptographic SPV proof, a lock or
+  a guaranteed future spend. The real signer must re-read the same source
+  immediately before a user-approved broadcast, then commit a durable one-shot
+  order claim. None of these checks may be converted into signed authority.
+- New `native_btc_original_preflight.py` composes the owner-bound private
+  THORChain SELL quote, Privy-linked original UTXO evidence, fresh next-block
+  Esplora miner fee and BIP174 unsigned PSBT. Quote expiry is rechecked *after*
+  the network reads. No fallback fee or unverified funding outpoint is accepted.
+- Dedicated negative tests cover incorrect funding output, wrong wallet,
+  spent/missing outpoints, mismatched value/script/txid, stale quote, invalid
+  network fee and absent signer/claim authorization. The preflight is internal
+  only; it is not a wallet API, a Privy delegation, an auto execution trigger
+  or a user-visible live trade.
+- As before, the user sets trading capital and budgets; no artificial capital,
+  daily-turnover, coin-size or trade-count caps are added by this work.
+
+ 
+## Native package 3 implementation additions (20 November 2026)
+
+**BTC native SELL:** The original BTC SegWit flow now has automated original
+Privy-wallet outpoint discovery, largest-first UTXO selection, separately
+verified confirmed funding transactions and live unspent outspend states,
+current network miner-fee readback and a quote-bound BIP174 unsigned PSBT.
+An independent BIP143 SIGHASH_ALL builder verifies the original PSBT inputs
+and ordered THORChain vault/change/memo outputs. A local secp256k1 signature
+verifier accepts actual detached original-owner signatures and can assemble
+SegWit witness wire bytes **without broadcast**. No Privy signing capability
+or authorized one-shot order claim has been granted.
+
+**XRP native SELL:** The native XRPL Payment now has FullyCanonicalSig
+flags, official xrpl-py signing serialization for the exact original owner
+(secp256k1 or Ed25519), current validated sequence/ledger expiry, original
+owner refund memo, strict original unsigned-Payment fingerprint and a local
+signature-check / signed-blob assembler. Neither this signed blob nor a
+cryptographic signature alone authorizes a live trade or proves a transfer.
+
+**SOL native SELL:** Previously implemented Solana compiled owner transfer
+and refund memo plus local detached Ed25519 signature verification remain on
+this same PR, shared with BTC/XRP settlement evidence. Native source
+execution remains awaiting real Privy owner delegation and order claim.
+
+**Common Privy original-native readback:** A new account-authenticated
+`GET /api/live/native/authorization/{BTC|SOL|XRP}` endpoint verifies one
+original Privy-linked wallet, its remote wallet owner and scoped signer
+references. It does not confuse a `delegated` flag or policy ID reference
+with a remotely verified *policy body*, individual owner consent or actual
+native-signing capability. All execution permissions remain explicitly false.
+
+**Native BUY from ETH stablecoins:** A read-only Ethereum mainnet preflight
+now independently obtains current token allowance to the quoted THORChain
+router, original owner stablecoin and ETH gas holdings, chain ID, pending
+nonce, estimated gas and actual gas price. The source calldata is decoded
+to check vault/token/amount/expiry/owner refund against the *real* canonical
+depositWithExpiry ABI. A successful result is still an **unsigned**
+transaction and does not approve ERC20 allowance, move funds, send Ethereum
+transactions or authorize any additional signer.
+
+**Outstanding real production work:** Independently read and verify exact
+Privy policy contents and signed per-user per-coin budgets; final native
+BTC/SOL/XRP signer/transaction APIs and grant paths; server-side durable
+atomic source UTXO/nonce claims, no-duplicate transport and all corresponding
+mainnet submission/finality/refund paths; true confirmed FIFO/HWM 5% profit
+fee collection; owner-authorized full round trips and Auto/Pause/Exit.
+External Privy grant/owner consent are required at the correct stage.
+No manual Render deploy or Android OTA is required for an unmerged PR.
+
+## Unified native readiness and verified Privy support tiers (20 November 2026)
+
+The authenticated `POST /api/live/native/source-readiness/{BTC|SOL|XRP}`
+accepts the exact input side, stablecoin and source amount and executes the
+already implemented chain-specific *read-only* preflight. It independently
+checks atomic amount precision, the Privy wallet's original native network,
+quoted owner identity and chain source evidence, then returns only a redacted
+common capability/status summary. BTC SELL reads confirmed real UTXOs and
+a BIP174 unsigned PSBT; SOL SELL reads mainnet finalized balance, blockhash
+and actual fee; XRP SELL reads the validated ledger, source balance, reserves
+and network fee; BUY for any of the three checks the original Ethereum
+mainnet ERC-20 THORChain Router approval/balance/gas/nonce. All raw PSBTs,
+memo, vault deposit instructions, detached signatures and sensitive signer
+or policy references remain internal, with `execution_enabled=false` and
+`can_submit=false`.
+
+**External product compatibility checked against current Privy documentation:**
+Privy lists Solana in Tier 3, Bitcoin in Tier 2, and other Ed25519/secp256k1
+chains in Tier 1 unless separately upgraded. Its Bitcoin SegWit docs
+specifically permit raw ECDSA input-hash signing, which matches the prepared
+BIP143 path. XRP's raw curve signing is plausible, but native XRPL wallet
+abstraction, wallet chain-type ID, policy rule enforcement and remote
+server-signer capabilities must be confirmed from actual Privy metadata/API
+before any production executor is allowed to sign. A syntactically valid
+XRP account in mocked tests is not evidence that the connected Privy
+tenant already supports remote XRP signing with these permissions.
+
+Official references:
+- https://docs.privy.io/wallets/overview/chains
+- https://docs.privy.io/wallets/using-wallets/bitcoin/sign-transaction-inputs
+- https://docs.privy.io/wallets/using-wallets/signers/overview
+
+**Still not LIVE:** User-authenticated per-coin native Privy consent, exact
+remote policy/rule readback, checked owner signing capability, durable
+one-shot transaction claim, network submit and chain finality, THORChain
+refund/outbound fill accounting and verified 5% high-water-mark fee collection.
+No real user transactions or Render/Android production deploy from PR #202.
+
+
+## Implementation checkpoint: original native Privy ownership and offline signing (20 November 2026)
+
+This checkpoint validates real Privy wallet metadata semantics before
+claiming that the user has delegated a trading wallet:
+
+- `GET /v1/wallets/:wallet_id` ties a user-created remote wallet to its
+  documented `entity: {type: "user", id: did}`; the former synthetic
+  `owner.user_id` field is no longer trusted. Archived or mismatched
+  owners fail closed. Tests cover both cases.
+- `native_privy_pubkey_binding.py` confirms original BTC BIP173 P2WPKH
+  source address from compressed secp256k1 owner key and SOL base58 address
+  from original Ed25519 pubkey. Curve point membership is checked for BTC
+  and secp256k1 XRP. XRP classic address cryptographic derivation is not
+  equivalent to Privy supporting the XRPL native wallet API.
+- `native_eth_native_buy_preflight.py` is now re-bound to the
+  independently fetched original private THORChain quote, including the
+  exact original route token, owner, router, Asgard vault, refund memo,
+  atomic amount, expiry and immutable calldata fingerprint. A forged
+  matching pair of unsigned metadata and calldata is not enough.
+- BTC uses an offline `secp256k1_sign` digest-request plan for each
+  canonical BIP143 input. SOL uses an offline
+  `signTransaction` request plan for a serialized blank-signer
+  legacy transaction. Both verify that the public key matches the original
+  owner and bind each request to the original signal ID, without making
+  any remote signer RPC calls. A local offline SOL signed-transaction
+  response verifier checks every wire byte and original owner signature,
+  transfer, vault and refund memo. Tests include actual local BTC
+  secp256k1 and SOL Ed25519 signing roundtrips, not network sends.
+- Source-readiness reports separate status fields for original owner
+  key match and whether Privy documents that native chain type. XRP
+  is explicitly marked **unsupported by the current documented native
+  wallet enum**, even though raw XRPL secp256k1/Ed25519 signature and
+  Payment serialization work as pure standalone cryptographic operations.
+
+Vendor documentation:
+- https://docs.privy.io/api-reference/wallets/get
+- https://docs.privy.io/wallets/overview/chains
+- https://docs.privy.io/wallets/using-wallets/bitcoin/sign-transaction-inputs
+
+Still required before LIVE: Privy native BTC/SOL exact remote policy contents
+and owner-granted P-256 signer authorization, a proven XRPL custody/signing
+adapter (not an invented "xrpl" Privy wallet type), an original durable
+single-send order claim, real source submission and signed-chain finality,
+THORChain outbound/refund reconciliation, and verifiable 5% HWM fee
+collection. This PR has not granted any wallet signer, sent assets,
+activated live trades, changed budget/trade ceilings, merged or deployed.
+
+## Final signed-wire readback, still offline (20 November 2026)
+
+The BTC and XRP original-chain **signed transaction readbacks** now verify
+already assembled source transactions without invoking Privy or a broadcast.
+BTC checks canonical BIP143 SIGHASH_ALL per input against independently
+verified original UTXOs and SegWit PSBT, rejects signature malleability
+(high-S or DER variation), changed outpoints/vault/change/OP_RETURN and
+altered witness fields, and returns only immutable fingerprints rather
+than wire bytes. XRP uses the official XRPL binary codec to reject extra
+fields, changed Payment amount, fee, destination, sequence or ledger expiry;
+the canonical secp256k1/Ed25519 signature is independently rechecked
+against the original owner and the unchanged source Payment. Existing SOL
+readback similarly confirms exact original message, recent blockhash,
+transfer, memo and Ed25519 signature.
+
+Privy BTC raw signer request parameters were corrected to the documented
+object shape `{"hash":"0x<32-byte-BIP143-digest>"}` (not an array).
+The Solana sign-only transaction remains a serialized one-signer
+transaction; it never invokes sign-and-send.
+
+**Status:** these are offline code and tests on PR #202, not successfully
+executed native transfers. Android smoke workflow is skipped on this
+branch. No automatic Privy policy, production merge/deploy or LIVE switch.
+
+**Privy REST-Spezifikation abgeglichen:** Bitcoin ist Tier-2. Original-BIP143-Inputsignaturen müssen über `POST /v1/wallets/{wallet_id}/raw_sign` mit ausschließlich `{"params":{"hash":"0x..."}}` erfolgen, nicht über das Ethereum-`secp256k1_sign`-RPC. Der vorhandene P256-Backendsigner autorisiert deshalb nur exakt diesen 32-Byte-Hash-Endpunkt, ohne neue private Keys. SOL benutzt `POST /v1/wallets/{wallet_id}/rpc` mit der dokumentierten Methode `signTransaction` und unveränderter Base64-Transaktion. Offizielle Endpunkte: https://docs.privy.io/api-reference/wallets/raw-sign und https://docs.privy.io/api-reference/wallets/solana/sign-transaction. **Weiterhin keine Privy-Eigentümer-Policy oder Echtgeld-Ausführung bestätigt.**
+
+
+## Source-send crash recovery and pre-submit checks (20 November 2026)
+
+The internal original-native one-shot SELL dispatcher already serializes and
+verifies BTC/SOL/XRP signed wires and commits SENDING plus the exact expected
+chain transaction hash *before* its only source network POST. On a crash
+before the HTTP response can be recorded, an original row can stay in
+`SENDING` indefinitely. The passive unknown-source reconciler now scans
+both `RECONCILIATION_REQUIRED` and **stale** `SENDING` rows with a durable
+signed hash. It waits until 60 seconds after a SENDING update so it does not
+race the active 12-second broadcaster; it checks the exact hash only through
+the original owner-linked chain receipt, and uses a DB status-bound CAS to
+promote a truly confirmed source to SOURCE_FINALIZED. Unconfirmed or missing
+receipts stay unresolved. There is **no re-signing or re-broadcasting**.
+
+For subsequent deployment, `backend/native_passive_settlement.py` provides
+a disabled-by-default native receipt observer that handles unknown/stale
+SELL, acknowledged SELL, and Ethereum BUY source-finality checks independently.
+The optional setting `MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED=explicit-readonly`
+with DATABASE_URL enables *only* this observer, not a strategy worker, a
+trading switch, any transaction sender or fee collection. The observer runs
+blocking DB scans outside the HTTP event loop and never creates signatures.
+
+The BTC Privy sign+dispatch adapter now re-reads **current owner-bound
+confirmed and unspent** funding outpoints after signature generation and
+before the irreversible send claim. A spent/changed input fails closed.
+The SOL sign+dispatch adapter now re-reads the actual Solana mainnet genesis
+and finalized block height after Privy signature and rejects an already
+expired blockhash before committing a source send.
+
+A separate real-world XRPL codec regression was corrected: valid canonical
+secp256k1 ECDSA DER signatures are variable length, including 69 bytes;
+the previous fixed-length allowlist rejected a legitimate signed Payment.
+Canonical DER parsing, original signature verification and exact Payment
+readback remain mandatory.
+
+All changes are development-only in PR #202. **No real owner grant,
+mainnet spend, active auto trader, production merge, Render deploy, OTA
+or collected 5% performance fee** is implied by passing these tests.

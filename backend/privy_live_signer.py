@@ -99,8 +99,12 @@ def _scoped_signer(wallet: object, *, did: str, address: str,
         return False
     if str(wallet.get("address", "")).lower() != address.lower():
         return False
-    owner = wallet.get("owner")
-    if not isinstance(owner, dict) or owner.get("user_id") != did:
+    # Privy's current GET /v1/wallets/{wallet_id} reports user attribution
+    # in "entity", not a synthetic "owner.user_id" object.
+    entity = wallet.get("entity")
+    if (type(entity) is not dict or entity.get("type") != "user"
+            or entity.get("id") != did
+            or wallet.get("archived_at") is not None):
         return False
     signers = wallet.get("additional_signers")
     if not isinstance(signers, list):
