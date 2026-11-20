@@ -127,7 +127,7 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
         ])
         def __enter__(self):return self
         def __exit__(self,*args):return False
-        def execute(self,sql,args):self.calls.append((sql,args))
+        def execute(self,sql,args=None):self.calls.append((sql,args))
         def fetchone(self):return next(self.rows)
     cur=ReadCursor()
     class FakeDB:
