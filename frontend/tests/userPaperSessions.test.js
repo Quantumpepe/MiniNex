@@ -66,6 +66,7 @@ test('BTC and ETH paper Wallet panel is retained after temporary availability er
   assert.match(ui,/const \[status,setStatus\]=useState\('idle'\)/);
   assert.match(ui,/if\(!paperAvailable\)return null/);
   assert.doesNotMatch(ui,/setPaperVisible\(/);
+  assert.doesNotMatch(ui,/paperVisible/);
   assert.doesNotMatch(ui,/live_trading_enabled/);
   assert.match(app,/\.catch\(\(\)=>\{[\s\S]*?Keep the last confirmed mode/);
 });
