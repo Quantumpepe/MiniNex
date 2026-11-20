@@ -20,21 +20,37 @@ from .live_eth_receipts import _num
 from .storage import _db_url,_ensure_schema
 
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
+_APPROVAL_PAGE_OFFSET=0
 
 
-def _pending_approvals()->list[dict]:
+def _pending_approvals(limit:int=100)->list[dict]:
+    """Rotate across original chain submissions, not just the oldest page.
+
+    A perpetually pending old transaction must not prevent other wallets
+    from having their original allowances finalized.
+    """
+    global _APPROVAL_PAGE_OFFSET
+    if type(limit) is not int or not 1<=limit<=500:
+        raise ValueError("Invalid passive approval scan page size")
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,asset,side,stable,chain_id,wallet_address,
+            sql="""SELECT privy_did,asset,side,stable,chain_id,wallet_address,
                           token_address,router_address,amount_atomic,
                           idempotency_key,tx_hash
                    FROM mininex_live_evm_router_approval_sends
                    WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
-                   ORDER BY created_at,privy_did,asset
-                   LIMIT 100""")
-            return list(cur.fetchall())
+                   ORDER BY created_at,privy_did,asset,idempotency_key
+                   LIMIT %s OFFSET %s"""
+            offset=_APPROVAL_PAGE_OFFSET
+            cur.execute(sql,(limit,offset))
+            rows=list(cur.fetchall())
+            if not rows and offset:
+                offset=0
+                cur.execute(sql,(limit,0))
+                rows=list(cur.fetchall())
+    _APPROVAL_PAGE_OFFSET=offset+len(rows)
+    return rows
 
 
 def _verify_approval_finality(row:dict,*,chain_id:object,
