@@ -37,8 +37,8 @@ def inspect_original_btc_signed_transaction(
         unsigned = bytes.fromhex(original_psbt["unsigned_tx_hex"])
     except (ValueError, base64.binascii.Error, TypeError, KeyError):
         raise ValueError("Bitcoin signed witness encoding malformed") from None
-    if (len(signed) < len(unsigned) + 2 + 75 * context["input_count"]
-            or len(signed) > len(unsigned) + 100 * context["input_count"] + 2
+    if (len(signed) < len(unsigned) + 2 + 40 * context["input_count"]
+            or len(signed) > len(unsigned) + 130 * context["input_count"] + 2
             or signed[:4] != unsigned[:4]
             or signed[4:6] != b"\x00\x01"
             or signed[6:len(unsigned)-2] != unsigned[4:-4]
