@@ -10,6 +10,9 @@ This module neither signs nor submits trades. Owner approval does not\nstart AUT
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+from decimal import Decimal
 import logging
 import os
 import re
@@ -59,7 +62,7 @@ def _read_policy_for_grant(did: str, *, wallet: str, owner: str,
                     """SELECT policy_id,candidate_json,candidate_sha256,
                               remote_policy_sha256,status,wallet_address,
                               policy_owner_id,execution_signer_id,
-                              limits_revision,
+                              limits_revision,authorization_method,
                               extract(epoch FROM policy_expires_at)::bigint
                                   AS expires_at_unix
                        FROM mininex_live_eth_policy_enrollments
@@ -223,37 +226,69 @@ async def get_eth_user_grant_review(did: str) -> dict:
     )
 
 
+def eth_grant_budget_digest(*,did:str,policy:dict,limits:dict)->str:
+    """Audit commitment to the wallet, selected capital and Privy policy.
+
+    This SHA-256 is NOT a signature. Authorization is Privy's previously
+    verified scoped owner wallet signer grant.
+    """
+    if policy.get("authorization_method")!="PRIVY_SCOPED_GRANT":
+        raise ValueError("No owner single-grant scope")
+    amounts={}
+    for key in ("planned_capital_usd","max_order_usd",
+                "max_daily_turnover_usd"):
+        amount=Decimal(str(limits.get(key)))
+        if not amount.is_finite() or amount<=0:
+            raise ValueError("Invalid owner budget")
+        amounts[key]=str(amount.normalize())
+    original={
+        "did":did,"wallet":policy["wallet_address"],
+        "limits_revision":policy["limits_revision"],
+        "policy_owner_id":policy["policy_owner_id"],
+        "execution_signer_id":policy["execution_signer_id"],
+        "policy_id":policy["policy_id"],
+        "candidate_sha256":policy["candidate_sha256"],
+        **amounts,
+        "owner_authorization":"PRIVY_OWNER_SCOPED_GRANT",
+    }
+    return hashlib.sha256(json.dumps(original,sort_keys=True,
+        separators=(",",":"),ensure_ascii=True).encode("ascii")).hexdigest()
+
+
 def _confirm_grant_locked(cur, *, did: str, expected: dict) -> dict:
     cur.execute(
-        """SELECT trading_paused,revision FROM mininex_live_eth_limits
+        """SELECT trading_paused,revision,planned_capital_usd,
+                  max_order_usd,max_daily_turnover_usd
+           FROM mininex_live_eth_limits
            WHERE privy_did=%s FOR UPDATE""", (did,),
     )
     live = cur.fetchone()
     if (type(live) is not dict or live.get("trading_paused") is not True
             or live.get("revision") != expected["limits_revision"]):
         raise HTTPException(409, "LIVE limits changed during Privy permission review")
-    cur.execute(
-        """SELECT status,limits_revision,policy_owner_id,execution_signer_id,
-                  wallet_address,confirmed_at,revoked_at
-           FROM mininex_live_eth_consent_intents
-           WHERE privy_did=%s FOR UPDATE""", (did,),
-    )
-    consent = cur.fetchone()
-    if (
-        type(consent) is not dict
-        or consent.get("status") != "SIGNED_INTENT"
-        or consent.get("confirmed_at") is None
-        or consent.get("revoked_at") is not None
-        or any(consent.get(k) != expected[k] for k in (
-            "wallet_address","limits_revision","policy_owner_id",
-            "execution_signer_id",
-        ))
-    ):
-        raise HTTPException(409, "Signer intent is no longer authorized")
+    if expected.get("authorization_method")!="PRIVY_SCOPED_GRANT":
+        cur.execute(
+            """SELECT status,limits_revision,policy_owner_id,execution_signer_id,
+                      wallet_address,confirmed_at,revoked_at
+               FROM mininex_live_eth_consent_intents
+               WHERE privy_did=%s FOR UPDATE""", (did,),
+        )
+        consent = cur.fetchone()
+        if (
+            type(consent) is not dict
+            or consent.get("status") != "SIGNED_INTENT"
+            or consent.get("confirmed_at") is None
+            or consent.get("revoked_at") is not None
+            or any(consent.get(k) != expected[k] for k in (
+                "wallet_address","limits_revision","policy_owner_id",
+                "execution_signer_id",
+            ))
+        ):
+            raise HTTPException(409, "Signer intent is no longer authorized")
     cur.execute(
         """SELECT policy_id,status,wallet_address,limits_revision,
                   policy_owner_id,execution_signer_id,candidate_sha256,
-                  remote_policy_sha256
+                  remote_policy_sha256,authorization_method
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""", (did,),
     )
@@ -266,15 +301,22 @@ def _confirm_grant_locked(cur, *, did: str, expected: dict) -> dict:
             "policy_owner_id","execution_signer_id","candidate_sha256",
         ))
         or row.get("remote_policy_sha256") != expected["candidate_sha256"]
+        or row.get("authorization_method","EIP191_AND_PRIVY") !=
+           expected.get("authorization_method","EIP191_AND_PRIVY")
     ):
         raise HTTPException(409, "Privy signer policy changed during confirmation")
     if row["status"] == "REMOTE_VERIFIED_UNATTACHED":
+        digest=(eth_grant_budget_digest(did=did,policy=row,limits=live)
+                if row.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+                else None)
         cur.execute(
             """UPDATE mininex_live_eth_policy_enrollments
-               SET status='GRANT_VERIFIED',updated_at=now()
+               SET status='GRANT_VERIFIED',updated_at=now(),
+                   grant_budget_sha256=CASE WHEN
+                     authorization_method='PRIVY_SCOPED_GRANT'
+                     THEN %s ELSE grant_budget_sha256 END
                WHERE privy_did=%s AND status='REMOTE_VERIFIED_UNATTACHED'
-               RETURNING status""", (did,),
-        )
+               RETURNING status""",(digest,did))
         updated = cur.fetchone()
         if type(updated) is not dict or updated.get("status") != "GRANT_VERIFIED":
             raise HTTPException(409, "Concurrent signer-grant change")
@@ -318,5 +360,7 @@ async def confirm_eth_user_grant(did: str) -> dict:
         "wallet_address":stored["wallet_address"],
         "limits_revision":stored["limits_revision"],
         "policy_owner_id":owner, "execution_signer_id":signer,
+        "authorization_method":stored.get(
+            "authorization_method","EIP191_AND_PRIVY"),
     }
     return await asyncio.to_thread(_commit_grant, did, expected)
