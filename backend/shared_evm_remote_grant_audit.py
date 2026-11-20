@@ -19,6 +19,8 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .shared_evm_privy_user_policy import build_user_evm_policy_blueprint
+from .shared_evm_single_grant_policy import build_single_grant_evm_policy
+from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_privy_grant_review import verify_exact_remote_evm_policy
 from .shared_evm_swap_receipts import _pair
 from .privy_wallet_verification import fetch_privy_user
@@ -72,7 +74,9 @@ def validate_pinned_evm_policy(record:object,*,asset:str,now:int)->dict:
     if type(candidate) is not dict or type(candidate.get("rules")) is not list:
         raise ValueError("No previously reviewed EVM policy candidate")
     rules=candidate["rules"]
-    if len(rules)!=(4 if asset in ("BNB","POL","AVAX") else 2):
+    single=record.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+    base_count=4 if asset in ("BNB","POL","AVAX") else 2
+    if len(rules)!=(base_count+3 if single else base_count):
         raise ValueError("Noncanonical per-coin Privy policy actions")
     expires=_expiry(candidate)
     if (type(now) is not int or not now<expires<=now+30*86400
@@ -83,15 +87,21 @@ def validate_pinned_evm_policy(record:object,*,asset:str,now:int)->dict:
         raise ValueError("Expired or inconsistent Privy policy")
     if record.get("asset")!=asset:
         raise ValueError("Wrong asset policy")
-    expected=build_user_evm_policy_blueprint(
+    factory=(build_single_grant_evm_policy if single
+             else build_user_evm_policy_blueprint)
+    extra=({
+        "treasury":owner_fee_treasury(asset=asset,stable=record["stable"]),
+        "owner_max_fee_atomic":_lte(rules[-1],"transfer.value"),
+    } if single else {})
+    expected=factory(
         asset=asset,stable=record["stable"],
         wallet=record["wallet_address"],
         owner_id=record["owner_id"],executor_id=record["signer_id"],
         buy_source_atomic_cap=_lte(rules[0],"exactInputSingle.params.amountIn"),
         sell_source_atomic_cap=_lte(rules[1],"exactInputSingle.params.amountIn"),
         native_wrap_atomic_cap=(
-            _lte(rules[2],"value") if len(rules)==4 else None),
-        expires_at=expires,now=now)
+            _lte(rules[2],"value") if base_count==4 else None),
+        expires_at=expires,now=now,**extra)
     if candidate!=expected:
         raise ValueError("Pinned policy differs from current strict factory")
     digest=hashlib.sha256(json.dumps(
