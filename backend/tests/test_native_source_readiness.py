@@ -179,6 +179,9 @@ def test_wrong_coin_or_stable_never_calls_sources(monkeypatch,asset,side,stable)
 
 @pytest.mark.parametrize("field,value", [
     ("original_wallet_link_verified", False),
+    ("original_wallet_remote_owner_verified", False),
+    ("original_public_key_matches_wallet", False),
+    ("privy_native_wallet_api_supported", False),
     ("asset", "XRP"), ("can_submit", True), ("execution_enabled", True),
 ])
 def test_wallet_must_be_verified_and_never_claim_execution(monkeypatch,field,value):
