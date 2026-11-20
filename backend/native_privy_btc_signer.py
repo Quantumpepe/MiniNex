@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .native_btc_signed_wire import verify_original_btc_detached_signatures
 from .native_btc_privy_signed_readback import inspect_original_btc_signed_transaction
+from .native_btc_utxo_proof import get_original_btc_utxo_evidence
 from .native_privy_owner_signer import (
     _original_privy_native_wallet, inspect_original_native_signer_metadata,
 )
@@ -188,6 +189,27 @@ async def sign_and_dispatch_original_btc_sell_once(
         did,psbt=psbt,original_utxos=original_utxos,
         intent_key=intent_key,permission_audit=permission_audit,
         client=client)
+    # Re-read confirmed funding outpoints AFTER Privy signature and BEFORE
+    # any irreversible one-shot journal claim. A UTXO may have been spent
+    # since the quote or first PSBT was prepared. This is not a trade-size
+    # limit: it prevents signing an already-spent or redirected input.
+    current=await get_original_btc_utxo_evidence(
+        did,inputs=original_utxos)
+    expected=[(
+        row["txid"].lower(),row["vout"],row["value_sats"],
+        row["script_pubkey_hex"].lower(),
+    ) for row in original_utxos]
+    actual=[(
+        row["txid"].lower(),row["vout"],row["value_sats"],
+        row["script_pubkey_hex"].lower(),
+    ) for row in current.get("inputs",[])]
+    if (current.get("source_wallet")!=psbt.get("source_wallet")
+            or current.get("current_explorer_unspent_reported") is not True
+            or current.get("funding_transactions_checked") is not True
+            or current.get("input_count")!=len(expected)
+            or actual!=expected):
+        raise HTTPException(
+            409,"Original BTC source outpoints changed before dispatch")
     return await dispatch_signed_original_native_once(
         did,asset="BTC",intent_key=intent_key,
         quote=quote,manifest=psbt,
