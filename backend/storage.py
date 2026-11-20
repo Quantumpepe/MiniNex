@@ -145,9 +145,9 @@ SCHEMA = (
     """ALTER TABLE mininex_live_eth_policy_enrollments
        ADD COLUMN IF NOT EXISTS grant_budget_sha256 TEXT
        CHECK(grant_budget_sha256 IS NULL OR
-         grant_budget_sha256 ~ '^[0-9a-f]{64}
-    # CREATE TABLE IF NOT EXISTS cannot extend that original constraint.
-    # Replace only that non-destructive CHECK to add GRANT_VERIFIED safely.
+         grant_budget_sha256 ~ '^[0-9a-f]{64}$')""",
+    # Existing installations have the original Stage-21 status CHECK.
+    # CREATE TABLE IF NOT EXISTS cannot extend the original constraint.
     """ALTER TABLE mininex_live_eth_policy_enrollments
        DROP CONSTRAINT IF EXISTS mininex_live_eth_policy_enrollments_status_check""",
     """ALTER TABLE mininex_live_eth_policy_enrollments
