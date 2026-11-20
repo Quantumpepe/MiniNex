@@ -176,3 +176,41 @@ mainnet submission/finality/refund paths; true confirmed FIFO/HWM 5% profit
 fee collection; owner-authorized full round trips and Auto/Pause/Exit.
 External Privy grant/owner consent are required at the correct stage.
 No manual Render deploy or Android OTA is required for an unmerged PR.
+
+## Unified native readiness and verified Privy support tiers (20 November 2026)
+
+The authenticated `POST /api/live/native/source-readiness/{BTC|SOL|XRP}`
+accepts the exact input side, stablecoin and source amount and executes the
+already implemented chain-specific *read-only* preflight. It independently
+checks atomic amount precision, the Privy wallet's original native network,
+quoted owner identity and chain source evidence, then returns only a redacted
+common capability/status summary. BTC SELL reads confirmed real UTXOs and
+a BIP174 unsigned PSBT; SOL SELL reads mainnet finalized balance, blockhash
+and actual fee; XRP SELL reads the validated ledger, source balance, reserves
+and network fee; BUY for any of the three checks the original Ethereum
+mainnet ERC-20 THORChain Router approval/balance/gas/nonce. All raw PSBTs,
+memo, vault deposit instructions, detached signatures and sensitive signer
+or policy references remain internal, with `execution_enabled=false` and
+`can_submit=false`.
+
+**External product compatibility checked against current Privy documentation:**
+Privy lists Solana in Tier 3, Bitcoin in Tier 2, and other Ed25519/secp256k1
+chains in Tier 1 unless separately upgraded. Its Bitcoin SegWit docs
+specifically permit raw ECDSA input-hash signing, which matches the prepared
+BIP143 path. XRP's raw curve signing is plausible, but native XRPL wallet
+abstraction, wallet chain-type ID, policy rule enforcement and remote
+server-signer capabilities must be confirmed from actual Privy metadata/API
+before any production executor is allowed to sign. A syntactically valid
+XRP account in mocked tests is not evidence that the connected Privy
+tenant already supports remote XRP signing with these permissions.
+
+Official references:
+- https://docs.privy.io/wallets/overview/chains
+- https://docs.privy.io/wallets/using-wallets/bitcoin/sign-transaction-inputs
+- https://docs.privy.io/wallets/using-wallets/signers/overview
+
+**Still not LIVE:** User-authenticated per-coin native Privy consent, exact
+remote policy/rule readback, checked owner signing capability, durable
+one-shot transaction claim, network submit and chain finality, THORChain
+refund/outbound fill accounting and verified 5% high-water-mark fee collection.
+No real user transactions or Render/Android production deploy from PR #202.
