@@ -103,3 +103,26 @@ TRX and DOGE follow only after these three chains.
   signed PSBT finalization, broadcast and finality are still mandatory.
 - The PR remains development-only; no Render deploy, native LIVE switch,
   production BTC swap, or user fee collection is implied by this step.
+
+
+## BTC read-only source-UTXO preflight (20 November 2026)
+
+- New `native_btc_utxo_proof.py` binds every claimed SegWit input to the actual
+  owner P2WPKH script, Esplora funding transaction, confirmed amount and
+  explicitly **unspent** outspend response. Duplicate or conflicting outpoints
+  are rejected, with an explicit funding chain tip and per-input checkpoint.
+- A current Esplora API response is *not* a cryptographic SPV proof, a lock or
+  a guaranteed future spend. The real signer must re-read the same source
+  immediately before a user-approved broadcast, then commit a durable one-shot
+  order claim. None of these checks may be converted into signed authority.
+- New `native_btc_original_preflight.py` composes the owner-bound private
+  THORChain SELL quote, Privy-linked original UTXO evidence, fresh next-block
+  Esplora miner fee and BIP174 unsigned PSBT. Quote expiry is rechecked *after*
+  the network reads. No fallback fee or unverified funding outpoint is accepted.
+- Dedicated negative tests cover incorrect funding output, wrong wallet,
+  spent/missing outpoints, mismatched value/script/txid, stale quote, invalid
+  network fee and absent signer/claim authorization. The preflight is internal
+  only; it is not a wallet API, a Privy delegation, an auto execution trigger
+  or a user-visible live trade.
+- As before, the user sets trading capital and budgets; no artificial capital,
+  daily-turnover, coin-size or trade-count caps are added by this work.
