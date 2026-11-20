@@ -328,6 +328,11 @@ SCHEMA = (
        ADD COLUMN IF NOT EXISTS budget_revision BIGINT""",
     """ALTER TABLE mininex_live_evm_owner_permissions
        ADD COLUMN IF NOT EXISTS candidate_json JSONB""",
+    """ALTER TABLE mininex_live_evm_owner_permissions
+       ADD COLUMN IF NOT EXISTS authorization_method TEXT NOT NULL
+       DEFAULT 'EIP191_AND_PRIVY'
+       CHECK (authorization_method IN
+         ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
