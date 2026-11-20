@@ -262,3 +262,27 @@ single-send order claim, real source submission and signed-chain finality,
 THORChain outbound/refund reconciliation, and verifiable 5% HWM fee
 collection. This PR has not granted any wallet signer, sent assets,
 activated live trades, changed budget/trade ceilings, merged or deployed.
+
+## Final signed-wire readback, still offline (20 November 2026)
+
+The BTC and XRP original-chain **signed transaction readbacks** now verify
+already assembled source transactions without invoking Privy or a broadcast.
+BTC checks canonical BIP143 SIGHASH_ALL per input against independently
+verified original UTXOs and SegWit PSBT, rejects signature malleability
+(high-S or DER variation), changed outpoints/vault/change/OP_RETURN and
+altered witness fields, and returns only immutable fingerprints rather
+than wire bytes. XRP uses the official XRPL binary codec to reject extra
+fields, changed Payment amount, fee, destination, sequence or ledger expiry;
+the canonical secp256k1/Ed25519 signature is independently rechecked
+against the original owner and the unchanged source Payment. Existing SOL
+readback similarly confirms exact original message, recent blockhash,
+transfer, memo and Ed25519 signature.
+
+Privy BTC raw signer request parameters were corrected to the documented
+object shape `{"hash":"0x<32-byte-BIP143-digest>"}` (not an array).
+The Solana sign-only transaction remains a serialized one-signer
+transaction; it never invokes sign-and-send.
+
+**Status:** these are offline code and tests on PR #202, not successfully
+executed native transfers. Android smoke workflow is skipped on this
+branch. No automatic Privy policy, production merge/deploy or LIVE switch.
