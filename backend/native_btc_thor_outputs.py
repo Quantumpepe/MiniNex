@@ -71,7 +71,7 @@ def _mainnet_p2wpkh_script(address:object)->bytes:
             acc&=(1<<bits)-1
     if bits>=5 or acc!=0 or len(program)!=20:
         raise ValueError("Invalid Bitcoin SegWit witness padding")
-    return b"\\x00\\x14"+bytes(program)
+    return bytes((0,20))+bytes(program)
 
 
 def _parse_sats(value:object)->int:
