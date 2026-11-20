@@ -102,3 +102,34 @@ def test_native_xrp_signed_wire_has_no_broadcast_dependency():
     for denied in ("sendrawtransaction","requests.post","PrivyClient",
                    "psycopg","private_key","submit("):
         assert denied not in code
+
+
+
+def test_valid_69_byte_xrpl_der_signature_is_accepted():
+    """DER scalar length may legitimately be 31 bytes; no fixed size list."""
+    unsigned, pub = original("secp256k1")
+    signing = encode_original_xrp_privy_signing_blob(
+        unsigned, original_owner_public_key_hex=pub, now=NOW)
+    digest = hashlib.sha512(
+        bytes.fromhex(signing["signing_blob_hex"])).digest()[:32]
+    n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+    z = int.from_bytes(digest, "big")
+    # Deterministic test-only ECDSA signing (private key 31 from the fixture).
+    # Find an original signature with a shorter canonical DER scalar.
+    for nonce in range(1, 4096):
+        x = ec.derive_private_key(
+            nonce, ec.SECP256K1()).public_key().public_numbers().x
+        r = x % n
+        s = (pow(nonce, -1, n) * (z + r * 31)) % n
+        if r == 0 or s == 0:
+            continue
+        der = utils.encode_dss_signature(r, s)
+        if len(der) == 69:
+            report = verify_original_xrp_detached_signature(
+                unsigned, original_owner_public_key_hex=pub,
+                detached_signature_hex=der.hex(), now=NOW)
+            assert report["original_owner_signature_verified"] is True
+            assert report["source_transaction_sent"] is False
+            break
+    else:
+        pytest.fail("Test did not find 69-byte valid DER signature")
