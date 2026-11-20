@@ -236,3 +236,93 @@ def test_sql_has_immutable_chain_proof_not_native_trading_authority():
     assert "source_finalized_at" in schema
     assert "SOURCE_FINALIZED" in schema
     assert "CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_original_source_hash_unique" in schema
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_unknown_signed_source_can_finish_only_if_original_hash_is_confirmed(asset):
+    row=original(asset)
+    expected=row.pop("source_tx_hash")
+    row["status"]="RECONCILIATION_REQUIRED"
+    row["source_tx_hash"]=None
+    row["source_signed_tx_hash"]=expected
+    temporary={**row,"status":"SUBMITTED","source_tx_hash":expected}
+    verified=finality._confirmed_original_source(
+        temporary,proof(asset),WALLET[asset],
+    )
+    db_row={k:temporary[k] for k in (
+        "status","side","chain","source_wallet","source_tx_hash",
+        "payload_sha256")}
+    db_row["source_proof_sha256"]=None
+    cur=Cursor([
+        {"status":"SUBMITTED"},db_row,{"status":"SOURCE_FINALIZED"},
+    ])
+    actual=finality._persist_unknown_native_finality_locked(
+        cur,original=row,verified=verified,
+    )
+    assert actual=="SOURCE_FINALIZED"
+    assert len(cur.queries)==3
+    assert "status='RECONCILIATION_REQUIRED'" in cur.queries[0][0]
+    assert "source_signed_tx_hash=%s" in cur.queries[0][0]
+    assert cur.queries[0][1][3]==expected
+    assert "status='SUBMITTED'" in cur.queries[2][0]
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+def test_unknown_chain_source_without_exact_proof_cannot_promote(asset):
+    row=original(asset)
+    expected=row.pop("source_tx_hash")
+    row["status"]="RECONCILIATION_REQUIRED"
+    row["source_tx_hash"]=None
+    row["source_signed_tx_hash"]=expected
+    temporary={**row,"status":"SUBMITTED","source_tx_hash":expected}
+    verified=finality._confirmed_original_source(
+        temporary,proof(asset),WALLET[asset])
+    for changed in (
+        {"source_chain_finalized":False},
+        {"source_tx_hash":"0"*64},
+        {"source_tx_hash":None},
+    ):
+        cur=Cursor([])
+        with pytest.raises(HTTPException):
+            finality._persist_unknown_native_finality_locked(
+                cur,original=row,verified={**verified,**changed})
+        assert cur.queries==[]
+
+
+def test_unknown_source_recovery_never_rebroadcasts_even_on_rpc_failure(monkeypatch):
+    row=original("BTC")
+    expected=row.pop("source_tx_hash")
+    row["status"]="RECONCILIATION_REQUIRED"
+    row["source_tx_hash"]=None
+    row["source_signed_tx_hash"]=expected
+    monkeypatch.setattr(finality,"_pending_unknown_signed_sources",
+                        lambda limit=32:[row])
+    calls=[]
+    async def user(did):
+        calls.append("owner")
+        return {"id":did}
+    async def check(did,hash_):
+        calls.append(("btc_receipt",hash_))
+        raise HTTPException(503,"Explorer temporarily unavailable")
+    monkeypatch.setattr(finality,"fetch_privy_user",user)
+    monkeypatch.setattr(finality,"_exact_owner_wallets",
+                        lambda u,d,a:(WALLET[a],"0x"+"a"*40))
+    monkeypatch.setattr(finality,"check_native_btc_transaction",check)
+    result=asyncio.run(
+        finality.reconcile_unknown_original_native_signed_sources_once())
+    assert result["finalized_without_resend"]==0
+    assert result["unresolved_without_resend"]==1
+    assert result["new_signatures_created"]==0
+    assert result["new_transactions_sent"]==0
+    assert result["source_resubmission_permitted"] is False
+    assert calls==["owner",("btc_receipt",expected)]
+
+
+def test_unknown_recovery_reuses_original_transaction_id_not_new_swap():
+    import inspect
+    source=inspect.getsource(
+        finality.reconcile_unknown_original_native_signed_sources_once)
+    assert 'signed_hash=original["source_signed_tx_hash"]' in source
+    for prohibited in ("sendTransaction","broadcast", "sign_transaction",
+                       "eth_sendTransaction","submit("):
+        assert prohibited not in source
