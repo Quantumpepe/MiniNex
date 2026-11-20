@@ -35,8 +35,9 @@ LOG=logging.getLogger("mininex.evm_owner_router_approval")
 
 
 def _original_approval_id(*,did:str,asset:str,side:str,stable:str,
-                          wallet:str,amount:int,revision:int)->str:
-    raw=json.dumps([did,asset,side,stable,wallet,amount,revision],
+                          wallet:str,amount:int,revision:int,
+                          signal_event_id:str)->str:
+    raw=json.dumps([did,asset,side,stable,wallet,amount,revision,signal_event_id],
                    separators=(",",":"),ensure_ascii=True).encode("ascii")
     return "appr_"+hashlib.sha256(raw).hexdigest()[:58]
 
@@ -183,10 +184,14 @@ def _finish(*,did:str,asset:str,key:str,digest:str,tx_hash:str|None)->str:
 
 async def submit_scoped_router_approval_once(
     *,did:str,asset:str,side:str,stable:str,amount_atomic:int,
-    budget_revision:int,client:httpx.AsyncClient,
+    budget_revision:int,signal_event_id:str,client:httpx.AsyncClient,
 )->dict:
     """One approved owner-wallet ERC20 approve, not an arbitrary spender API."""
     did=_safe_did(did)
+    if (type(signal_event_id) is not str or
+            not __import__("re").fullmatch(r"[A-Za-z0-9_.:-]{8,128}",
+                                        signal_event_id)):
+        raise ValueError("Original strategy event required for approval")
     if (type(client) is not httpx.AsyncClient
             or type(amount_atomic) is not int or amount_atomic<=0
             or type(budget_revision) is not int or budget_revision<1):
@@ -226,7 +231,8 @@ async def submit_scoped_router_approval_once(
         raise HTTPException(409,"Onchain approval differs from original grant")
     key=_original_approval_id(
         did=did,asset=asset,side=side,stable=stable,wallet=wallet,
-        amount=amount_atomic,revision=budget_revision)
+        amount=amount_atomic,revision=budget_revision,
+        signal_event_id=signal_event_id)
     key=valid_order_key(key)
     digest=hashlib.sha256(json.dumps(
         [url,body,record["policy_sha256"],budget_revision],
