@@ -40,7 +40,7 @@ function PersonalDemo({t,lang,paperAvailable=true}) {
 
   // Live UI refresh only; strategy execution remains fully server-side.
   useEffect(()=>{
-    if(!ready||!authenticated||!paperVisible)return;
+    if(!ready||!authenticated||!paperAvailable)return;
     let cancelled=false;
     let inFlight=false;
     const refresh=async()=>{
