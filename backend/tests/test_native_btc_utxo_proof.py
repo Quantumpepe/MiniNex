@@ -1,4 +1,5 @@
 """No original BTC UTXO may be signed without actual outpoint evidence."""
+import asyncio
 import copy
 
 import pytest
@@ -125,8 +126,7 @@ def test_duplicate_or_mixed_owner_utxos_rejected():
         _inspect(tip=0)
 
 
-@pytest.mark.asyncio
-async def test_read_only_preflight_rejects_bad_outpoints_before_rpc(monkeypatch):
+def test_read_only_preflight_rejects_bad_outpoints_before_rpc(monkeypatch):
     async def fake_user(_):
         return {"id": "did:privy:owner"}
     monkeypatch.setattr(proof, "fetch_privy_user", fake_user)
@@ -135,7 +135,7 @@ async def test_read_only_preflight_rejects_bad_outpoints_before_rpc(monkeypatch)
     i, _, _ = _fixtures()
     bad = i + [copy.deepcopy(i[0])]
     with pytest.raises(HTTPException) as exc:
-        await proof.get_original_btc_utxo_evidence("did:privy:owner", inputs=bad)
+        asyncio.run(proof.get_original_btc_utxo_evidence("did:privy:owner", inputs=bad))
     assert exc.value.status_code == 422
 
 
