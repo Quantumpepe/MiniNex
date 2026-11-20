@@ -502,8 +502,10 @@ def verify_revocation_remote_absence(
             or wallet_metadata.get("id") != owned["wallet_id"]
             or wallet_metadata.get("chain_type") != "ethereum"
             or str(wallet_metadata.get("address", "")).lower() != owned["address"]
-            or type(wallet_metadata.get("owner")) is not dict
-            or wallet_metadata["owner"].get("user_id") != did):
+            or type(wallet_metadata.get("entity")) is not dict
+            or wallet_metadata["entity"].get("type") != "user"
+            or wallet_metadata["entity"].get("id") != did
+            or wallet_metadata.get("archived_at") is not None):
         return result
     result["remote_wallet_metadata_verified"] = True
     signers = wallet_metadata.get("additional_signers")
