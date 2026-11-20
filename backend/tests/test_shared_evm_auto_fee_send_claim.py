@@ -63,7 +63,7 @@ def cur_for(asset,grant=None,trade_pending=0,existing_fee=None):
     if grant is not None:g.update(grant)
     vals=[
         {"privy_did":DID},g,{"pending":trade_pending},
-        {"pending":0},{"pending":0},{"pending":0},existing_fee,
+        {"pending":0},{"pending":0},{"pending":0},{"pending":0},existing_fee,
     ]
     return Cur(vals)
 
