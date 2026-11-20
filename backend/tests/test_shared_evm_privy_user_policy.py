@@ -94,3 +94,39 @@ def test_no_asset_specific_double_systems_and_no_remote_grant():
     assert "AsyncClient" not in text
     assert "privy.io/v1" not in text
     assert "sign_privy" not in text
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda tx: tx.update(chainId=1),
+    lambda tx: tx.update(to="0x" + "cd"*20),
+    lambda tx: tx.update(value="0x1"),
+    lambda tx: tx.update(data=tx["data"][:10] + "00"*32 + tx["data"][-64:]),
+    lambda tx: tx.update(data=tx["data"][:-64] + "f"*64),
+    lambda tx: tx.update(from_="other"),
+])
+def test_router_approval_exact_scope_rejects_mutation(mutation):
+    from backend.shared_evm_allowance import (
+        owner_approval_draft, verify_router_approval_transaction,
+    )
+    token="0x"+"ab"*20
+    router="0x"+"bc"*20
+    wallet="0x"+"cd"*20
+    args=dict(token=token,router=router,wallet=wallet,chain_id=56,
+              amount_atomic=123456)
+    draft=owner_approval_draft(**args)
+    assert verify_router_approval_transaction(draft,**args)
+    bad=copy.deepcopy(draft)
+    mutation(bad)
+    assert not verify_router_approval_transaction(bad,**args)
+
+
+def test_router_approval_rejects_infinite_amount_and_extra_fields():
+    from backend.shared_evm_allowance import (
+        owner_approval_draft, verify_router_approval_transaction,
+    )
+    args=dict(token="0x"+"ab"*20,router="0x"+"bc"*20,
+              wallet="0x"+"cd"*20,chain_id=1,amount_atomic=123)
+    approval=owner_approval_draft(**args)
+    assert not verify_router_approval_transaction(
+        {**approval,"data":approval["data"][:-64]+"f"*64},**args)
+    assert not verify_router_approval_transaction({**approval,"gas":"0x0"},**args)
