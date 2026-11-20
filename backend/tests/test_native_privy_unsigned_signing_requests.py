@@ -143,3 +143,70 @@ def test_sign_request_builders_have_no_http_or_live_privy_post():
             "sendAndSendTransaction", "signAndSend", "psycopg",
         ):
             assert forbidden not in source
+
+
+def test_btc_privy_raw_sign_request_digest_roundtrips_through_detached_wire():
+    from backend.native_btc_signed_wire import verify_original_btc_detached_signatures
+    from backend.native_btc_segwit_sighash import build_original_btc_segwit_v0_sighashes
+    psbt, inputs, public, detached_signatures = btc_fixture(two=True)
+    requests = preview_privy_btc_raw_sign_requests(
+        psbt, original_utxos=inputs,
+        owner_public_key_hex=public,wallet_id=BTC_WALLET,intent_key=INTENT,
+    )
+    digest = build_original_btc_segwit_v0_sighashes(
+        psbt,original_utxos=inputs,
+    )
+    for envelope, original in zip(
+        requests["unsigned_sign_requests"],digest["signature_digests"]
+    ):
+        assert envelope["params"] == [
+            "0x" + original["bip143_sighash_all_hex"]
+        ]
+    result = verify_original_btc_detached_signatures(
+        psbt,original_utxos=inputs,
+        original_owner_public_key_hex=public,
+        original_signatures_hex=detached_signatures,
+    )
+    assert result["verified_input_count"] == 2
+    assert result["original_psbt_sha256"] == requests["original_psbt_sha256"]
+    assert result["all_bip143_sighash_all_signatures_valid"] is True
+    assert result["source_transaction_sent"] is False
+    assert result["can_submit"] is False
+
+
+def test_sol_offline_privy_sign_transaction_roundtrip_matches_original_memo():
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from cryptography.hazmat.primitives import serialization
+    from backend.native_sol_signed_wire import verify_original_sol_detached_signature
+    from backend.tests.test_native_sol_compiled_message import b58
+
+    secret = ed25519.Ed25519PrivateKey.from_private_bytes(bytes(range(1,33)))
+    public = secret.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+    )
+    owner = b58(public)
+    original = sol_fixture()
+    old_owner = original["quote"]["source_wallet"]
+    original["quote"]["source_wallet"] = owner
+    original["quote"]["memo"] = original["quote"]["memo"].replace(
+        "/"+old_owner+":", "/"+owner+":",
+    )
+    original["source_account"]["owner"] = owner
+    message = compile_original_unsigned_sol_message(**original)
+    request = preview_privy_sol_sign_transaction_request(
+        message,owner_public_key_hex=public.hex(),
+        wallet_id=SOL_WALLET,intent_key=INTENT,
+    )
+    transaction = base64.b64decode(request["params"]["transaction"],validate=True)
+    assert transaction[:65] == b"\x01"+bytes(64)
+    signature = secret.sign(transaction[65:])
+    proof = verify_original_sol_detached_signature(
+        message,owner_signature_base64=base64.b64encode(signature).decode("ascii"),
+    )
+    assert proof["detached_ed25519_signature_valid"] is True
+    assert base64.b64decode(proof["wire_base64"]) == (
+        b"\x01" + signature + transaction[65:]
+    )
+    assert proof["source_wallet"] == request["source_wallet"]
+    assert proof["source_transaction_sent"] is False
+    assert proof["can_submit"] is False
