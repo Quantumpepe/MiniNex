@@ -34,10 +34,9 @@ test('live mode hides simulated home timeline and keeps personal PAPER controls 
   const compact=read('../src/CompactOverview.jsx');
   assert.match(app,/getJson\('\/api\/user-paper\/availability'\)/);
   assert.match(ui,/if\(!paperAvailable\)return null/);
-  assert.doesNotMatch(ui,/live_trading_enabled===false/);
+  assert.doesNotMatch(ui,/live_trading_enabled/);
   assert.doesNotMatch(ui,/\/api\/user-paper\/availability/);
   assert.match(app,/const \[paperVisible,setPaperVisible\]=useState\(true\)/);
-  assert.match(app,/\.catch\(\(\)=>\{/);
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
   assert.match(compact,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
   assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
@@ -59,13 +58,15 @@ test('home uses only the current Privy account, never shared demo or LIVE fills'
   assert.doesNotMatch(app,/<ActivityList trades=\{trades\}/);
 });
 
-test('wallet BTC ETH paper stays visible during API timeout, independent of live flag',()=>{
+
+test('BTC and ETH paper Wallet panel is retained after temporary availability errors',()=>{
   assert.match(app,/<PrivyWalletPanel t=\{t\} lang=\{language\}/);
   assert.match(app,/paperAvailable=\{paperVisible\}/);
   assert.match(ui,/const ASSETS=\['BTC','ETH'\]/);
   assert.match(ui,/const \[status,setStatus\]=useState\('idle'\)/);
   assert.match(ui,/if\(!paperAvailable\)return null/);
   assert.doesNotMatch(ui,/setPaperVisible\(/);
+  assert.doesNotMatch(ui,/paperVisible/);
   assert.doesNotMatch(ui,/live_trading_enabled/);
-  assert.match(app,/\.catch\(\(\)=>\{[\s\S]*?Preserve last known mode/);
+  assert.match(app,/\.catch\(\(\)=>\{[\s\S]*?Keep the last confirmed mode/);
 });
