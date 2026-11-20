@@ -214,3 +214,51 @@ remote policy/rule readback, checked owner signing capability, durable
 one-shot transaction claim, network submit and chain finality, THORChain
 refund/outbound fill accounting and verified 5% high-water-mark fee collection.
 No real user transactions or Render/Android production deploy from PR #202.
+
+
+## Implementation checkpoint: original native Privy ownership and offline signing (20 November 2026)
+
+This checkpoint validates real Privy wallet metadata semantics before
+claiming that the user has delegated a trading wallet:
+
+- `GET /v1/wallets/:wallet_id` ties a user-created remote wallet to its
+  documented `entity: {type: "user", id: did}`; the former synthetic
+  `owner.user_id` field is no longer trusted. Archived or mismatched
+  owners fail closed. Tests cover both cases.
+- `native_privy_pubkey_binding.py` confirms original BTC BIP173 P2WPKH
+  source address from compressed secp256k1 owner key and SOL base58 address
+  from original Ed25519 pubkey. Curve point membership is checked for BTC
+  and secp256k1 XRP. XRP classic address cryptographic derivation is not
+  equivalent to Privy supporting the XRPL native wallet API.
+- `native_eth_native_buy_preflight.py` is now re-bound to the
+  independently fetched original private THORChain quote, including the
+  exact original route token, owner, router, Asgard vault, refund memo,
+  atomic amount, expiry and immutable calldata fingerprint. A forged
+  matching pair of unsigned metadata and calldata is not enough.
+- BTC uses an offline `secp256k1_sign` digest-request plan for each
+  canonical BIP143 input. SOL uses an offline
+  `solana_signTransaction` request plan for a serialized blank-signer
+  legacy transaction. Both verify that the public key matches the original
+  owner and bind each request to the original signal ID, without making
+  any remote signer RPC calls. A local offline SOL signed-transaction
+  response verifier checks every wire byte and original owner signature,
+  transfer, vault and refund memo. Tests include actual local BTC
+  secp256k1 and SOL Ed25519 signing roundtrips, not network sends.
+- Source-readiness reports separate status fields for original owner
+  key match and whether Privy documents that native chain type. XRP
+  is explicitly marked **unsupported by the current documented native
+  wallet enum**, even though raw XRPL secp256k1/Ed25519 signature and
+  Payment serialization work as pure standalone cryptographic operations.
+
+Vendor documentation:
+- https://docs.privy.io/api-reference/wallets/get
+- https://docs.privy.io/wallets/overview/chains
+- https://docs.privy.io/wallets/using-wallets/bitcoin/sign-transaction-inputs
+
+Still required before LIVE: Privy native BTC/SOL exact remote policy contents
+and owner-granted P-256 signer authorization, a proven XRPL custody/signing
+adapter (not an invented "xrpl" Privy wallet type), an original durable
+single-send order claim, real source submission and signed-chain finality,
+THORChain outbound/refund reconciliation, and verifiable 5% HWM fee
+collection. This PR has not granted any wallet signer, sent assets,
+activated live trades, changed budget/trade ceilings, merged or deployed.
