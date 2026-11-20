@@ -327,6 +327,73 @@ def _record_send_result_locked(
     return state
 
 
+def _claim_signed_native_source_once_locked(
+    cur,*,did:str,asset:str,key:str,digest:str,
+    signed_source_tx_hash:str,permission_audit:dict,
+)->str:
+    """Durably save the exact signed tx hash in SAME transaction as SENDING.
+
+    Must be called only after verifying the full original signed wire and
+    independent real Privy policy. A committed SENDING row is never retried
+    even when no response is received from the public source network.
+    """
+    if (asset not in _NATIVE_NETWORK
+            or not _valid_source_hash(asset,"SELL",signed_source_tx_hash)
+            or type(key) is not str
+            or not re.fullmatch(r"native_[0-9a-f]{64}",key)):
+        raise ValueError("Original signed native transaction ID invalid")
+    state=_claim_once_locked(
+        cur,did=did,asset=asset,key=key,digest=digest,
+        permission_audit=permission_audit,
+    )
+    if state!="SENDING":
+        raise HTTPException(409,"Original native source not atomically claimed")
+    cur.execute(
+        """UPDATE mininex_live_native_order_intents
+           SET source_signed_tx_hash=%s,updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND status='SENDING' AND side='SELL'
+             AND source_signed_tx_hash IS NULL
+             AND source_tx_hash IS NULL AND payload_sha256=%s
+           RETURNING source_signed_tx_hash""",
+        (signed_source_tx_hash,did,asset,key,digest),
+    )
+    row=cur.fetchone()
+    if (type(row) is not dict
+            or row.get("source_signed_tx_hash")!=signed_source_tx_hash):
+        raise HTTPException(409,"Original signed transaction was not reserved")
+    return state
+
+
+def _record_signed_native_source_result_locked(
+    cur,*,did:str,asset:str,key:str,digest:str,
+    signed_source_tx_hash:str,network_accepted:bool,
+)->str:
+    """Record the one network answer or permanently unknown response.
+
+    A timeout/unknown RPC response remains RECONCILIATION_REQUIRED with the
+    expected source hash stored for read-only chain lookup; NEVER resubmit.
+    """
+    if (type(network_accepted) is not bool
+            or not _valid_source_hash(asset,"SELL",signed_source_tx_hash)):
+        raise ValueError("Invalid original native network observation")
+    cur.execute(
+        """SELECT side,status,payload_sha256,source_signed_tx_hash
+           FROM mininex_live_native_order_intents
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+           FOR UPDATE""",(did,asset,key))
+    current=cur.fetchone()
+    if (type(current) is not dict or current.get("side")!="SELL"
+            or current.get("status")!="SENDING"
+            or current.get("payload_sha256")!=digest
+            or current.get("source_signed_tx_hash")!=signed_source_tx_hash):
+        raise HTTPException(409,"Original signed source ID no longer reserved")
+    return _record_send_result_locked(
+        cur,did=did,asset=asset,key=key,digest=digest,
+        tx_hash=signed_source_tx_hash if network_accepted else None,
+    )
+
+
 def persist_internal_native_order(identity:dict)->dict:
     """Internal-only future executor entry; no signer, approval or broadcast."""
     if (type(identity) is not dict or identity.get("asset") not in _NATIVE_NETWORK
