@@ -42,9 +42,9 @@ def test_bitcoin_raw_privy_sign_calls_match_exact_original_sighashes():
     assert r["signature_request_count"] == 1
     item = r["unsigned_sign_requests"][0]
     assert item["method"] == "secp256k1_sign"
-    assert len(item["params"]) == 1
-    assert item["params"][0].startswith("0x")
-    assert len(item["params"][0]) == 66
+    assert set(item["params"]) == {"hash"}
+    assert item["params"]["hash"].startswith("0x")
+    assert len(item["params"]["hash"]) == 66
     assert len(item["idempotency_key"]) == 64
     assert r == _btc()
     for flag in ("api_requests_performed", "real_privy_policy_verified",
@@ -58,7 +58,7 @@ def test_multi_input_bitcoin_signing_requests_are_distinct_and_ordered():
     assert r["signature_request_count"] == 2
     a, b = r["unsigned_sign_requests"]
     assert [a["input_index"], b["input_index"]] == [0,1]
-    assert a["params"] != b["params"]
+    assert a["params"]["hash"] != b["params"]["hash"]
     assert a["idempotency_key"] != b["idempotency_key"]
     assert a["prevout_txid"] != b["prevout_txid"]
 
@@ -159,9 +159,9 @@ def test_btc_privy_raw_sign_request_digest_roundtrips_through_detached_wire():
     for envelope, original in zip(
         requests["unsigned_sign_requests"],digest["signature_digests"]
     ):
-        assert envelope["params"] == [
-            "0x" + original["bip143_sighash_all_hex"]
-        ]
+        assert envelope["params"] == {
+            "hash": "0x" + original["bip143_sighash_all_hex"]
+        }
     result = verify_original_btc_detached_signatures(
         psbt,original_utxos=inputs,
         original_owner_public_key_hex=public,
