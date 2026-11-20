@@ -8,7 +8,7 @@ remain independent and never grant wallet authorization.
 """
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import re
 
 from fastapi import HTTPException
@@ -37,7 +37,11 @@ def _exact_source_units(asset: str, side: str, amount: str) -> str:
         raise HTTPException(422, "Invalid original native source amount")
     precision = 6 if side == "BUY" else _INPUT_PRECISION[asset]
     try:
-        value = Decimal(amount) * (Decimal(10) ** precision)
+        # Never round the owner's original atomic amount under Decimal's
+        # default precision, even with a long but otherwise valid input.
+        with localcontext() as context:
+            context.prec = 100
+            value = Decimal(amount) * (Decimal(10) ** precision)
     except (InvalidOperation, ValueError, OverflowError):
         raise HTTPException(422, "Unrepresentable original native source amount") from None
     if (not value.is_finite() or value <= 0
