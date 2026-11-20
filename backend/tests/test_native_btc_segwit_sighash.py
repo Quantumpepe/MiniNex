@@ -86,7 +86,7 @@ def test_bip143_never_signs_forged_input_prevout_value_or_script(change):
     lambda p: p.update(execution_enabled=True),
     lambda p: p.update(source_transaction_sent=True),
     lambda p: p.update(unsigned_txid="ff"*32),
-    lambda p: p.update(unsigned_tx_hex=p["unsigned_tx_hex"][:-2]+"00"),
+    lambda p: p.update(unsigned_tx_hex=p["unsigned_tx_hex"][:-2]+"01"),
     lambda p: p.update(psbt_sha256="0"*64),
     lambda p: p.update(psbt_base64="!!!"),
     lambda p: p.update(source_wallet=p["inbound_vault"]),
