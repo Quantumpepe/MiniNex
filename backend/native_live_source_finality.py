@@ -248,6 +248,123 @@ async def reconcile_original_native_source_once(limit:int=32)->dict:
     }
 
 
+# A timed-out network submission may already be confirmed on-chain. The
+# immutable signed tx ID is committed before any network POST. Recover it by
+# READ-ONLY source-chain finality, never by signing or rebroadcasting.
+_UNKNOWN_SIGNED_PAGE_LOCK=Lock()
+_UNKNOWN_SIGNED_PAGE_OFFSET=0
+
+
+def _pending_unknown_signed_sources(limit:int=32)->list[dict]:
+    global _UNKNOWN_SIGNED_PAGE_OFFSET
+    if type(limit) is not int or not 0<limit<=256:
+        raise ValueError("Invalid native unknown-source receipt page")
+    db=_db_url()
+    _ensure_schema(db)
+    sql="""SELECT privy_did,asset,intent_key,payload_sha256,side,
+                  chain,source_wallet,source_tx_hash,
+                  source_signed_tx_hash,status
+           FROM mininex_live_native_order_intents
+           WHERE status='RECONCILIATION_REQUIRED' AND side='SELL'
+             AND asset IN ('BTC','SOL','XRP')
+             AND source_tx_hash IS NULL
+             AND source_signed_tx_hash IS NOT NULL
+           ORDER BY created_at ASC,privy_did,asset,intent_key
+           LIMIT %s OFFSET %s"""
+    with _UNKNOWN_SIGNED_PAGE_LOCK:
+        offset=_UNKNOWN_SIGNED_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    rows=list(cur.fetchall())
+        _UNKNOWN_SIGNED_PAGE_OFFSET=offset+len(rows)
+    return rows
+
+
+def _persist_unknown_native_finality_locked(
+    cur,*,original:dict,verified:dict,
+)->str:
+    """Atomic UNKNOWN -> FINALIZED only after independent chain evidence."""
+    asset=original.get("asset") if type(original) is dict else None
+    hash_=original.get("source_signed_tx_hash") if type(original) is dict else None
+    if (asset not in _CHAIN
+            or original.get("side")!="SELL"
+            or original.get("status")!="RECONCILIATION_REQUIRED"
+            or original.get("source_tx_hash") is not None
+            or type(hash_) is not str
+            or not _valid_source_hash(asset,"SELL",hash_)
+            or verified.get("source_chain_finalized") is not True
+            or verified.get("source_tx_hash")!=hash_):
+        raise HTTPException(409,"Unknown original source not chain-confirmed")
+    did=_safe_did(original["privy_did"])
+    key=original["intent_key"]
+    cur.execute(
+        """UPDATE mininex_live_native_order_intents
+           SET status='SUBMITTED',source_tx_hash=source_signed_tx_hash,
+               updated_at=now()
+           WHERE privy_did=%s AND asset=%s AND intent_key=%s
+             AND status='RECONCILIATION_REQUIRED'
+             AND side='SELL' AND source_tx_hash IS NULL
+             AND source_signed_tx_hash=%s
+             AND payload_sha256=%s RETURNING status""",
+        (did,asset,key,hash_,original["payload_sha256"]),
+    )
+    row=cur.fetchone()
+    if type(row) is not dict or row.get("status")!="SUBMITTED":
+        raise HTTPException(409,"Unknown source chain identity changed")
+    promoted={**original,"status":"SUBMITTED","source_tx_hash":hash_}
+    return _persist_source_finality_locked(
+        cur,original=promoted,verified=verified)
+
+
+async def reconcile_unknown_original_native_signed_sources_once(limit:int=32)->dict:
+    """Read-only chain lookup; no retry, new signature or source broadcast."""
+    originals=_pending_unknown_signed_sources(limit)
+    finalized=unresolved=0
+    for original in originals:
+        try:
+            did=_safe_did(original["privy_did"])
+            asset=original["asset"]
+            signed_hash=original["source_signed_tx_hash"]
+            if not _valid_source_hash(asset,"SELL",signed_hash):
+                raise ValueError("Original signed hash invalid")
+            user=await fetch_privy_user(did)
+            owned,_eth=_exact_owner_wallets(user,did,asset)
+            if owned!=original["source_wallet"]:
+                raise ValueError("Original native owner was changed")
+            proof=(await check_native_btc_transaction(did,signed_hash)
+                   if asset=="BTC" else
+                   await get_owner_native_sender_receipt(
+                       did,asset=asset,transaction_hash=signed_hash))
+            provisional={**original,"status":"SUBMITTED",
+                         "source_tx_hash":signed_hash}
+            verified=_confirmed_original_source(provisional,proof,owned)
+            db=_db_url()
+            _ensure_schema(db)
+            with psycopg.connect(db,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    _persist_unknown_native_finality_locked(
+                        cur,original=original,verified=verified)
+            finalized+=1
+        except (ValueError,HTTPException,psycopg.Error,TypeError,KeyError):
+            unresolved+=1
+    return {
+        "mode":"UNKNOWN_ORIGINAL_NATIVE_SIGNED_SOURCE_READ_ONLY_RECOVERY",
+        "scanned":len(originals),
+        "finalized_without_resend":finalized,
+        "unresolved_without_resend":unresolved,
+        "new_signatures_created":0,
+        "new_transactions_sent":0,
+        "source_resubmission_permitted":False,
+        "destination_settlement_finalized":False,
+        "fees_collected":False,
+    }
+
+
 # Separate BUY readback work scan; does not change legacy SELL pagination.
 _ETH_BUY_PAGE_OFFSET=0
 
