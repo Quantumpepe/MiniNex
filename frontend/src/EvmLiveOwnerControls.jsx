@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {useSignMessage,useSigners} from '@privy-io/react-auth';
+import {useSigners} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
 import {
   LIVE_EVM_ASSETS,validEvmTradeChallenge,validEvmTradeSignerOffer,
@@ -13,7 +13,7 @@ const WORDS={
     status:'LIVE-Sitzung',setup:'Handel mit Privy verbinden',
     grant:'Privy-Handelsberechtigung freigeben',
     start:'LIVE starten',pause:'Handel pausieren',
-    warn:'Privy zeigt die erforderlichen Wallet-Berechtigungen. Der bestehende Privy-Prozess kann eine separate Nachrichten-Signatur und Signer-Freigabe verlangen. Erst nach erfolgreichem Abschluss beginnt der LIVE-Handel. Netzwerkgebühren und Verluste sind möglich.',
+    warn:'Privy bittet beim Start einmal um die Freigabe für diesen Coin und das gewählte Kapital. Danach handelt MiniNex innerhalb der genehmigten Berechtigung automatisch. Netzwerkgebühren und Verluste sind möglich.',
     needBudget:'Zuerst Kapital und Stablecoin in den Handelseinstellungen speichern.',
     ready:'Freigabe verifiziert',unattached:'Wallet-Freigabe in Privy erforderlich',
     draft:'Policy bereit zur Veröffentlichung',publish:'Vorbereitete Policy veröffentlichen',idle:'Noch nicht verbunden',
@@ -31,7 +31,7 @@ const WORDS={
     status:'LIVE session',setup:'Connect trading with Privy',
     grant:'Approve Privy trading signer',
     start:'Start LIVE',pause:'Pause trading',
-    warn:'Privy shows the required wallet permissions. The existing Privy flow can request both a message signature and a separate signer approval. Trading begins only when the process succeeds. Network fees and losses are possible.',
+    warn:'Privy requests one wallet trading approval for the selected coin and capital. MiniNex can then trade automatically within the authorized scope. Network fees and losses are possible.',
     needBudget:'Save your coin capital and stablecoin in trading settings first.',
     ready:'Grant verified',unattached:'Wallet grant required in Privy',
     draft:'Policy can be published',publish:'Publish prepared policy',idle:'Not connected',
@@ -48,7 +48,6 @@ const WORDS={
 export default function EvmLiveOwnerControls({
   asset,stable,address,userId,getAccessToken,enabled,lang='de',
 }){
-  const {signMessage}=useSignMessage();
   const {addSigners}=useSigners();
   const t=WORDS[lang==='de'?'de':'en'];
   const [permission,setPermission]=useState(null);
@@ -124,50 +123,41 @@ export default function EvmLiveOwnerControls({
     if(freshSession.status==='ACTIVE')return;
     let state=freshPermission.status;
     if(state==='REVOKED')throw Error(t.revoked);
+    const mode=freshPermission.authorization_method;
+    let published=freshPermission.policy_published===true;
     if(state==='NOT_PREPARED'){
-      const challenge=await request(path+'/consent/'+asset+'/challenge','POST');
-      if(!validEvmTradeChallenge(challenge,{asset,address}))
-        throw Error('Original wallet, coin or capital changed');
-      // The owner signs exactly the server-issued, coin/budget-revision-bound
-      // message. A successful message signature is NOT a Privy delegation.
-      const signed=await signMessage({message:challenge.challenge},{address});
-      if(!/^0x[0-9a-fA-F]{130}$/.test(signed?.signature||''))
-        throw Error('Wallet signature was not confirmed');
-      const consent=await request(path+'/consent/'+asset+'/confirm','POST',{
-        signature:signed.signature,
-      });
-      if(consent?.state!=='SIGNED_INTENT'||
-         consent?.owner_signature_verified!==true||
-         consent?.additional_privy_grant_still_required!==true||
-         consent?.live_trading_enabled!==false)
-        throw Error('Coin-budget consent was not verified');
-      const draft=await request(path+'/policy/'+asset+'/prepare','POST');
-      if(draft?.mode!=='OWNER_SIGNED_EVM_PRIVY_POLICY_DRAFT_ONLY'||
+      // Prepare exactly the user's saved budget and router policy, but
+      // without requesting an EIP-191 message signature. At this stage
+      // Privy grants NO spending authority whatsoever.
+      const draft=await request(path+'/policy/'+asset+'/prepare-grant','POST');
+      if(draft?.mode!=='OWNER_EVM_PRIVY_GRANT_DRAFT_ONLY'||
          draft?.asset!==asset||
-         draft?.signed_budget_revision!==challenge.budget_revision||
          draft?.owner_delegation_granted!==false||
-         draft?.policy_published_in_privy!==false)
-        throw Error('Original trading policy could not be prepared');
+         draft?.policy_published_in_privy!==false||
+         !Number.isSafeInteger(draft?.signed_budget_revision)||
+         draft.signed_budget_revision<1)
+        throw Error('Original scoped coin budget policy unavailable');
       state='DRAFT';
+      published=false;
     }
-    if(state==='DRAFT'){
-      // A policy publication with an uncertain outcome must be reconciled
-      // server-side. Never issue an unverified second publication.
-      const published=await request(path+'/policy/'+asset+'/publish','POST');
-      if(published?.status!=='REMOTE_VERIFIED_UNATTACHED'||
-         published?.asset!==asset||
-         published?.wallet_signer_attached!==false||
-         published?.separate_privy_owner_add_signer_required!==true)
-        throw Error('Privy policy publication requires reconciliation');
-      state='CONSENT_VERIFIED';
+    if(state==='DRAFT'&&!published){
+      const publishedResult=await request(path+'/policy/'+asset+'/publish','POST');
+      if(publishedResult?.status!=='REMOTE_VERIFIED_UNATTACHED'||
+         publishedResult?.asset!==asset||
+         publishedResult?.wallet_signer_attached!==false||
+         publishedResult?.separate_privy_owner_add_signer_required!==true)
+        throw Error('Uncertain wallet policy publication: no repeat permitted');
+      published=true;
     }
-    if(state==='CONSENT_VERIFIED'){
+    if((state==='DRAFT'&&published)||
+       state==='CONSENT_VERIFIED'){
       const offer=await request(path+'/policy/'+asset+'/grant-review');
       if(!validEvmTradeSignerOffer(offer,{
         asset,stable,address,policyId:offer?.policy_id,
-      }))throw Error('Trading grant differs from the saved coin settings');
-      // One explicit Start Trade interaction; the Privy owner still
-      // authorizes the exact restricted signer in its own modal.
+      }))throw Error('Privy owner policy differs from the saved coin budget');
+      // This is the ONE user-facing wallet approval. The Privy SDK shows
+      // the request and the owner explicitly authorizes the exact scoped
+      // signer. No prior EIP-191 signMessage is requested by this flow.
       await addSigners({
         address,signers:[{
           signerId:offer.execution_signer_id,
@@ -178,7 +168,7 @@ export default function EvmLiveOwnerControls({
       if(checked?.state!=='GRANT_VERIFIED'||
          checked?.owner_signer_grant_verified!==true||
          checked?.transaction_signed_or_sent!==false)
-        throw Error('Privy trading grant could not be independently verified');
+        throw Error('Privy owner grant not independently verified');
       state='GRANT_VERIFIED';
     }
     if(state!=='GRANT_VERIFIED')
