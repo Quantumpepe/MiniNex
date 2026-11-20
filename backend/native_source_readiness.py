@@ -174,6 +174,10 @@ async def read_original_native_source_readiness(
         "original_native_owner_wallet_link_verified": True,
         "original_native_wallet_remote_owner_verified": (
             owner.get("original_wallet_remote_owner_verified") is True),
+        "original_native_owner_public_key_matches_wallet": (
+            owner.get("original_public_key_matches_wallet") is True),
+        "documented_privy_native_wallet_chain_type_supported": (
+            owner.get("privy_native_wallet_api_supported") is True),
         "native_privy_signer_reference_observed": (
             owner.get("additional_signer_reference_present") is True),
         "original_source_preflight_verified": True,
