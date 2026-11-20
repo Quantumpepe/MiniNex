@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from backend import native_privy_sol_signer as s
 from backend.tests.test_native_sol_privy_signed_readback import original_signed
 from backend.native_coin_balances import _BASE58,_decode_b58
+from backend import eth_privy_p256_signer as pinned
 
 DID="did:privy:original_sol_wallet"
 WALLET="wallet_sol_verified_012345678"
@@ -30,8 +31,8 @@ def setup(monkeypatch):
         serialization.PrivateFormat.PKCS8,serialization.NoEncryption())
     public=key.public_key().public_bytes(serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo)
-    monkeypatch.setenv(s._PRIVATE_ENV,base64.b64encode(private).decode())
-    monkeypatch.setenv(s._PUBLIC_ENV,base64.b64encode(public).decode())
+    monkeypatch.setenv(pinned._KEY_ENV,base64.b64encode(private).decode())
+    monkeypatch.setenv(pinned._PUBLIC_ENV,base64.b64encode(public).decode())
     monkeypatch.setenv(s._QUORUM_ENV,SIGNER)
     monkeypatch.setenv("MININEX_PRIVY_APP_SECRET","only-test-not-real-secret-xxxxxxxx")
     async def user(did):
@@ -106,7 +107,7 @@ def test_real_sol_privy_rpc_signs_only_original_wallet_message(monkeypatch):
     assert kwargs["headers"]["privy-app-id"]==s.APP_ID
     assert "privy-authorization-signature" in kwargs["headers"]
     signature=base64.b64decode(kwargs["headers"]["privy-authorization-signature"])
-    payload=s._canonical_authorization_payload(
+    payload=pinned._canonical_authorization_payload(
         url=url,body=kwargs["json"],key=kwargs["headers"]["privy-idempotency-key"])
     key.public_key().verify(signature,payload,ec.ECDSA(hashes.SHA256()))
 

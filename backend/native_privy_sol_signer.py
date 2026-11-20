@@ -13,16 +13,13 @@ dispatcher commits one irreversible SENDING claim before any broadcast.
 from __future__ import annotations
 
 import base64
-import binascii
 import os
 import re
 
 import httpx
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException
 
-from .eth_privy_p256_signer import _canonical_authorization_payload
+from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .native_privy_owner_signer import (
     _original_privy_native_wallet, inspect_original_native_signer_metadata,
 )
@@ -38,33 +35,16 @@ from .storage import _safe_did
 _ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
 _KEY = re.compile(r"^[a-z0-9]{64}$")
 _RPC = "https://api.privy.io/v1/wallets/"
-_PRIVATE_ENV = "MININEX_PRIVY_SOL_AUTH_P256_PKCS8"
-_PUBLIC_ENV = "MININEX_PRIVY_SOL_SIGNER_PUBLIC_KEY_SPKI"
-_QUORUM_ENV = "MININEX_PRIVY_SOL_SIGNER_ID"
+# Reuse the existing verified P-256 backend authorization key; the wallet
+# must STILL attach a distinct owner-approved SOL-specific policy before
+# any SOL signature can be produced. No second private key is provisioned.
+_QUORUM_ENV = "MININEX_PRIVY_ETH_SIGNER_ID"
 
 
 def _signed_privy_sol_authorization(url: str, body: dict, key: str) -> str:
-    """Sign the exact RPC payload using the separately pinned SOL backend key."""
-    private64 = os.getenv(_PRIVATE_ENV, "").strip()
-    public64 = os.getenv(_PUBLIC_ENV, "").strip()
-    if not private64 or not public64 or len(private64) > 4096 or len(public64) > 2048:
-        raise HTTPException(503, "SOL Privy authorization key pair not configured")
-    try:
-        private = serialization.load_der_private_key(
-            base64.b64decode(private64, validate=True), password=None)
-        public = serialization.load_der_public_key(
-            base64.b64decode(public64, validate=True))
-    except (ValueError, TypeError, binascii.Error):
-        raise HTTPException(503, "SOL Privy authorization key malformed") from None
-    if (not isinstance(private, ec.EllipticCurvePrivateKey)
-            or not isinstance(private.curve, ec.SECP256R1)
-            or not isinstance(public, ec.EllipticCurvePublicKey)
-            or not isinstance(public.curve, ec.SECP256R1)
-            or private.public_key().public_numbers() != public.public_numbers()):
-        raise HTTPException(503, "SOL signer private key differs from pinned quorum member")
-    payload = _canonical_authorization_payload(url=url, body=body, key=key)
-    return base64.b64encode(private.sign(
-        payload, ec.ECDSA(hashes.SHA256()))).decode("ascii")
+    """Use the already pinned original backend P-256 key for this RPC only."""
+    return sign_privy_rpc_payload(
+        url=url, body=body, idempotency_key=key)
 
 
 def _signed_sol_permission(audit: object, *, did: str, intent: str,
