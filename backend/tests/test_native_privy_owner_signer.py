@@ -190,3 +190,42 @@ def test_native_privy_unknown_asset_rejected_without_lookup():
         asyncio.run(auth.get_original_native_privy_signer_status(
             DID, asset="TRX"))
     assert exc.value.status_code == 422
+
+
+def test_native_authorization_readback_route_is_authenticated_and_read_only(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend import app as api
+    seen = []
+
+    def auth_header(header):
+        if header != "Bearer native_test":
+            raise HTTPException(401, "Unauthorized")
+        return {"user_id": DID}
+
+    async def status(did, *, asset):
+        seen.append((did, asset))
+        return {
+            "mode": "PRIVY_ORIGINAL_NATIVE_OWNER_READBACK_ONLY",
+            "asset": asset, "live_trading_enabled": False,
+            "execution_enabled": False, "can_submit": False,
+        }
+    monkeypatch.setattr(api, "verify_privy_bearer", auth_header)
+    monkeypatch.setattr(
+        api, "get_original_native_privy_signer_status", status)
+    client = TestClient(api.app)
+    for coin in ("BTC", "SOL", "XRP"):
+        path = "/api/live/native/authorization/" + coin
+        assert client.get(path).status_code == 401
+        assert client.get(path, headers={
+            "Authorization": "Bearer invalid"}).status_code == 401
+        response = client.get(path, headers={
+            "Authorization": "Bearer native_test"})
+        assert response.status_code == 200
+        assert response.json()["asset"] == coin
+        assert response.json()["can_submit"] is False
+        assert response.headers["cache-control"] == "private, no-store"
+        assert client.post(path, headers={
+            "Authorization": "Bearer native_test"}).status_code == 405
+    assert seen == [(DID, asset) for asset in ("BTC", "SOL", "XRP")]
+    assert client.get("/api/live/native/authorization/ADA",
+        headers={"Authorization": "Bearer native_test"}).status_code == 422
