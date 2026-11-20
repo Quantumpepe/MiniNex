@@ -239,10 +239,11 @@ def test_sql_has_immutable_chain_proof_not_native_trading_authority():
 
 
 @pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
-def test_unknown_signed_source_can_finish_only_if_original_hash_is_confirmed(asset):
+@pytest.mark.parametrize("initial_state",["SENDING","RECONCILIATION_REQUIRED"])
+def test_unknown_signed_source_can_finish_only_if_original_hash_is_confirmed(asset,initial_state):
     row=original(asset)
     expected=row.pop("source_tx_hash")
-    row["status"]="RECONCILIATION_REQUIRED"
+    row["status"]=initial_state
     row["source_tx_hash"]=None
     row["source_signed_tx_hash"]=expected
     temporary={**row,"status":"SUBMITTED","source_tx_hash":expected}
@@ -261,17 +262,19 @@ def test_unknown_signed_source_can_finish_only_if_original_hash_is_confirmed(ass
     )
     assert actual=="SOURCE_FINALIZED"
     assert len(cur.queries)==3
-    assert "status='RECONCILIATION_REQUIRED'" in cur.queries[0][0]
+    assert "AND status=%s" in cur.queries[0][0]
     assert "source_signed_tx_hash=%s" in cur.queries[0][0]
-    assert cur.queries[0][1][3]==expected
+    assert cur.queries[0][1][3]==initial_state
+    assert cur.queries[0][1][4]==expected
     assert "status='SUBMITTED'" in cur.queries[2][0]
 
 
 @pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
-def test_unknown_chain_source_without_exact_proof_cannot_promote(asset):
+@pytest.mark.parametrize("initial_state",["SENDING","RECONCILIATION_REQUIRED"])
+def test_unknown_chain_source_without_exact_proof_cannot_promote(asset,initial_state):
     row=original(asset)
     expected=row.pop("source_tx_hash")
-    row["status"]="RECONCILIATION_REQUIRED"
+    row["status"]=initial_state
     row["source_tx_hash"]=None
     row["source_signed_tx_hash"]=expected
     temporary={**row,"status":"SUBMITTED","source_tx_hash":expected}
@@ -326,3 +329,85 @@ def test_unknown_recovery_reuses_original_transaction_id_not_new_swap():
     for prohibited in ("sendTransaction(","broadcast_original_native_signed_once(",
                        "sign_transaction(","eth_sendTransaction(","submit("):
         assert prohibited not in source
+
+
+def test_passive_recovery_scans_stranded_sending_without_retry(monkeypatch):
+    queries=[]
+    class DB:
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def cursor(self,**kwargs): return self
+        def execute(self,sql,parameters):
+            queries.append((sql,parameters))
+        def fetchall(self):
+            return []
+    monkeypatch.setattr(finality,"_UNKNOWN_SIGNED_PAGE_OFFSET",0)
+    monkeypatch.setattr(finality,"_db_url",lambda:"postgres://fake")
+    monkeypatch.setattr(finality,"_ensure_schema",lambda *_:None)
+    monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
+    assert finality._pending_unknown_signed_sources(limit=2)==[]
+    sql,params=queries[0]
+    assert "status IN ('SENDING','RECONCILIATION_REQUIRED')" in sql
+    assert "source_signed_tx_hash IS NOT NULL" in sql
+    assert "source_tx_hash IS NULL" in sql
+    assert "side='SELL'" in sql
+    assert params==(2,0)
+
+
+def test_crashed_sending_receipt_finalizes_without_second_send(monkeypatch):
+    row=original("SOL")
+    tx=row["source_tx_hash"]
+    row.update(status="SENDING",source_tx_hash=None,
+               source_signed_tx_hash=tx)
+    monkeypatch.setattr(finality,"_pending_unknown_signed_sources",
+                        lambda limit=32:[row])
+    observed=[]
+    async def user(did):
+        observed.append("owner")
+        return {"id":did}
+    async def native(did,*,asset,transaction_hash):
+        observed.append(("finalized_source",asset,transaction_hash))
+        return proof("SOL")
+    monkeypatch.setattr(finality,"fetch_privy_user",user)
+    monkeypatch.setattr(finality,"_exact_owner_wallets",
+                        lambda user,did,asset:(WALLET[asset],"0x"+"a"*40))
+    monkeypatch.setattr(finality,"get_owner_native_sender_receipt",native)
+    monkeypatch.setattr(finality,"_db_url",lambda:"postgres://fake")
+    monkeypatch.setattr(finality,"_ensure_schema",lambda *_:None)
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+    monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
+    def persist(cursor,*,original,verified):
+        observed.append(("persist",original["status"],
+                         verified["source_tx_hash"]))
+        assert original["status"]=="SENDING"
+        assert verified["source_chain_finalized"] is True
+        return "SOURCE_FINALIZED"
+    monkeypatch.setattr(finality,"_persist_unknown_native_finality_locked",
+                        persist)
+    result=asyncio.run(
+        finality.reconcile_unknown_original_native_signed_sources_once())
+    assert result["finalized_without_resend"]==1
+    assert result["new_signatures_created"]==0
+    assert result["new_transactions_sent"]==0
+    assert result["source_resubmission_permitted"] is False
+    assert observed==[
+        "owner",("finalized_source","SOL",tx),("persist","SENDING",tx),
+    ]
+
+
+@pytest.mark.parametrize("state",["PREPARED","SUBMITTED","SOURCE_FINALIZED"])
+def test_only_uncertain_signed_states_may_promote(state):
+    row=original("BTC")
+    tx=row["source_tx_hash"]
+    row.update(status=state,source_tx_hash=None,source_signed_tx_hash=tx)
+    provisional={**row,"status":"SUBMITTED","source_tx_hash":tx}
+    verified=finality._confirmed_original_source(
+        provisional,proof("BTC"),WALLET["BTC"])
+    cursor=Cursor([])
+    with pytest.raises(HTTPException):
+        finality._persist_unknown_native_finality_locked(
+            cursor,original=row,verified=verified)
+    assert cursor.queries==[]
