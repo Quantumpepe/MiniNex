@@ -13,11 +13,12 @@ import re
 import time
 
 import httpx
+from eth_abi import decode
 from fastapi import HTTPException
 
 from .eth_router02_live_quote import _rpc
 from .live_eth_quotes import STABLES
-from .native_eth_thor_deposit_tx import encode_original_eth_native_buy_deposit
+from .native_eth_thor_deposit_tx import encode_original_eth_native_buy_deposit, _SELECTOR
 from .native_thor_swap_quote import get_private_native_thornode_terms
 from .storage import _safe_did
 
@@ -81,6 +82,29 @@ def inspect_original_native_buy_evm_preflight(
             or type(unsigned.get("router_expires_at")) is not int
             or unsigned["router_expires_at"] <= now + 60):
         raise ValueError("Original router source deadline invalid")
+    # Decode the actual signed-call payload, never trust a caller-provided
+    # label, router or token/recipient outside the original ERC20 ABI.
+    data = tx["data"]
+    if (not data.startswith("0x" + _SELECTOR.hex())
+            or len(data) > 2000 or len(data) % 2):
+        raise ValueError("Wrong THORChain ERC20 depositWithExpiry selector")
+    try:
+        vault, token, atomic, memo, router_expiry = decode(
+            ["address", "address", "uint256", "string", "uint256"],
+            bytes.fromhex(data[10:]),
+        )
+    except (ValueError, TypeError, OverflowError) as error:
+        raise ValueError("Original Ethereum THORChain ABI cannot be decoded") from error
+    memo_parts = memo.split(":")
+    destination_and_refund = memo_parts[2].split("/") if len(memo_parts) >= 3 else []
+    if (vault.lower() != unsigned.get("vault", "").lower()
+            or token.lower() != STABLES[unsigned["stable"]].lower()
+            or atomic != int(unsigned["source_amount_atomic"])
+            or router_expiry != unsigned["router_expires_at"]
+            or len(destination_and_refund) != 2
+            or destination_and_refund[0] != unsigned["destination_wallet"]
+            or destination_and_refund[1].lower() != unsigned["source_wallet"].lower()):
+        raise ValueError("Original native BUY token/vault/amount/refund changed")
     original_expiry = unsigned.get("original_quote_expires_at")
     if type(original_expiry) is not str:
         raise ValueError("Original BUY quote deadline unavailable")
@@ -100,11 +124,9 @@ def inspect_original_native_buy_evm_preflight(
     if needed <= 0 or allowance < needed:
         raise ValueError("Original owner ERC20 allowance missing or insufficient")
     eth_wei = _int_quantity(eth_balance)
-    token_units = _int_quantity(token_balance) if False else (
-        int(token_balance, 16) if
-        type(token_balance) is str and _WORD.fullmatch(token_balance)
-        else -1
-    )
+    token_units = (int(token_balance, 16)
+                   if type(token_balance) is str and _WORD.fullmatch(token_balance)
+                   else -1)
     if token_units < needed:
         raise ValueError("Original source wallet stablecoin balance unavailable")
     nonce = _int_quantity(pending_nonce)
