@@ -25,6 +25,9 @@ from psycopg.rows import dict_row
 
 from .eth_live_strategy_tick import verified_live_evm_momentum
 from .shared_evm_allowance import check_evm_source_allowance
+from .shared_evm_router_approval_send import submit_scoped_router_approval_once
+from .shared_evm_router_approval_finality import reconcile_original_router_approvals_once
+from .live_eth_quotes import _quantity
 from .shared_evm_policy_reference_rates import (
     _price,fetch_evm_policy_reference_rates,
 )
@@ -142,6 +145,7 @@ def exact_user_coin_live_amount(
     *,asset:str,side:str,stable:str,budget_usd:int,
     source_evidence:dict,prices:dict,now:int,
     pending_buy_usd:object=Decimal(0),
+    ignore_allowance:bool=False,
 )->str|None:
     """Exact user-budget BUY or owner-held SELL from real onchain evidence.
 
@@ -166,7 +170,7 @@ def exact_user_coin_live_amount(
         source=Decimal(source_evidence["source_balance"])
         allowance=Decimal(source_evidence["router_allowance"])
         if (not source.is_finite() or not allowance.is_finite()
-                or source<=0 or allowance<=0):
+                or source<=0 or allowance<0):
             return None
         if side=="BUY":
             if (source_evidence.get("destination_token_address")
@@ -189,9 +193,11 @@ def exact_user_coin_live_amount(
             available_budget=max(Decimal(0),
                                  Decimal(budget_usd)-existing_exposure-pending)
             stable_usd=_price(prices,stable,now)
-            amount=min(source,allowance,available_budget/stable_usd)
+            amount=min(source,available_budget/stable_usd)
+            if not ignore_allowance:
+                amount=min(amount,allowance)
         else:
-            amount=min(source,allowance)
+            amount=source if ignore_allowance else min(source,allowance)
         quantum=Decimal(1).scaleb(-pair["source_decimals"])
         amount=amount.quantize(quantum,rounding=ROUND_DOWN)
         return format(amount,"f") if amount>0 else None
@@ -263,10 +269,31 @@ async def execute_owner_evm_live_tick(
         asset=asset,side=side,stable=stable,
         budget_usd=row["budget_usd"],source_evidence=evidence,
         prices=prices,now=int(current),
-        pending_buy_usd=row["pending_buy_usd"])
+        pending_buy_usd=row["pending_buy_usd"],
+        ignore_allowance=True)
     if amount is None:
         return {"asset":asset,"state":"WAIT",
-                "reason":"NO_APPROVED_VERIFIED_SOURCE_BALANCE"}
+                "reason":"NO_VERIFIED_SOURCE_BALANCE_OR_BUDGET"}
+    # The user's existing ONE scoped Privy grant includes bounded Router02
+    # approve calldata. A new wallet normally has zero token allowance.
+    # Submit and finalize that ONE on-chain approval first, without any
+    # additional user-facing signature. Never reserve/spend a swap before
+    # its real allowance exists onchain.
+    pair=_pair(asset,stable,side)
+    _,required_atomic=_quantity(amount,pair["source_decimals"])
+    try:
+        allowance_atomic=int(evidence["router_allowance_atomic"])
+    except (KeyError,ValueError,TypeError):
+        return {"asset":asset,"state":"WAIT",
+                "reason":"TOKEN_ROUTER_ALLOWANCE_UNVERIFIED"}
+    if allowance_atomic<int(required_atomic):
+        submitted=await submit_scoped_router_approval_once(
+            did=did,asset=asset,side=side,stable=stable,
+            amount_atomic=int(required_atomic),
+            budget_revision=row["budget_revision"],client=client)
+        return {"asset":asset,"state":submitted["state"],
+                "reason":"ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP",
+                "approval_tx_hash":submitted.get("tx_hash")}
     # The coordinator fetches a fresh Router02 quote AND checks exact full
     # source/allowance/gas atomics once more before any budget claim/send.
     # Do not repeat the identical RPC here just to delay order execution.
@@ -310,6 +337,14 @@ class SharedEvmLiveWorker:
                 sessions=[]
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                try:
+                    # Restore spending rights ONLY after original approval
+                    # transaction was finalized, never after an RPC timeout.
+                    await reconcile_original_router_approvals_once(client=client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Original router allowance finality unavailable")
                 try:
                     # Finalize the exact original Router02 submissions first.
                     # Never rebroadcast and never require an ACTIVE session.
