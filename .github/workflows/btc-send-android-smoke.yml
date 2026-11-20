@@ -7,6 +7,10 @@ on:
       - '.github/workflows/btc-send-android-smoke.yml'
   workflow_dispatch:
 
+concurrency:
+  group: mininex-android-startup-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
