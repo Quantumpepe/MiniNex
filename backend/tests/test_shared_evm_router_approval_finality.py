@@ -21,7 +21,7 @@ def test_exact_original_allowance_finality_and_reorg_guards(asset,stable):
         router_address=pair["router"].lower(),
         amount_atomic=12345,tx_hash=HASH)
     tx=dict(hash=HASH,from_=WALLET,to=row["token_address"],
-            chainId=pair["chain_id"],value="0x0",
+            chainId=hex(pair["chain_id"]),value="0x0",
             input="0x095ea7b3"+f"{int(pair['router'],16):064x}"+f"{12345:064x}",
             blockNumber="0x64",blockHash=BLOCK)
     tx["from"]=tx.pop("from_")
