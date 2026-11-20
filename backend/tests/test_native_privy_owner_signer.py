@@ -36,7 +36,8 @@ def remote(asset):
     return {
         "id": wallet_id, "chain_type": network,
         "address": address,
-        "owner": {"user_id": DID},
+        "entity": {"type": "user", "id": DID},
+        "archived_at": None,
         "additional_signers": [{
             "signer_id": "mininex_executor_001",
             "override_policy_ids": ["native_owner_policy_001"],
@@ -99,7 +100,11 @@ def test_wrong_wallet_owner_or_unrestricted_remote_signer_fails_closed(asset):
         {**valid, "id": "other_wallet"},
         {**valid, "address": "wrong_address"},
         {**valid, "chain_type": "ethereum"},
-        {**valid, "owner": {"user_id": "did:privy:wrong"}},
+        {**valid, "entity": {"type":"user","id":"did:privy:wrong"}},
+        {**valid, "entity": None},
+        {**valid, "entity": {"type":"organization","id":DID}},
+        {**valid, "archived_at": 1763660000000},
+        {**valid, "owner": {"user_id": DID}, "entity": {"type": "user", "id":"did:privy:other"}},
         {**valid, "additional_signers": None},
         {**valid, "additional_signers": [{"signer_id": "native_executor_001"}]},
         {**valid, "additional_signers": [{
@@ -167,7 +172,7 @@ def test_native_privy_wrong_owner_or_failed_api_still_has_no_approval(monkeypatc
     async def current_user(did):
         return user("BTC")
     async def mismatched(_id):
-        return {**remote("BTC"), "owner": {"user_id": "did:privy:another"}}
+        return {**remote("BTC"), "entity": {"type":"user", "id":"did:privy:another"}}
     monkeypatch.setattr(auth, "fetch_privy_user", current_user)
     monkeypatch.setattr(auth, "fetch_privy_wallet_metadata", mismatched)
     result = asyncio.run(auth.get_original_native_privy_signer_status(
@@ -229,3 +234,25 @@ def test_native_authorization_readback_route_is_authenticated_and_read_only(monk
     assert seen == [(DID, asset) for asset in ("BTC", "SOL", "XRP")]
     assert client.get("/api/live/native/authorization/ADA",
         headers={"Authorization": "Bearer native_test"}).status_code == 422
+
+
+def test_legacy_owner_user_id_cannot_replace_documented_entity(monkeypatch):
+    """Old fixture shape must not yield a forged remote wallet ownership proof."""
+    candidate = remote("BTC")
+    candidate.pop("entity")
+    candidate["owner"] = {"user_id": DID}
+    with pytest.raises(ValueError, match="another owner"):
+        auth.inspect_original_native_signer_metadata(
+            did=DID,asset="BTC",linked=user("BTC"),remote=candidate,
+        )
+
+
+def test_current_privy_wallet_metadata_entity_shape_is_required():
+    for asset in ("BTC","SOL"):
+        meta = remote(asset)
+        assert meta["entity"] == {"type":"user","id":DID}
+        result = auth.inspect_original_native_signer_metadata(
+            did=DID,asset=asset,linked=user(asset),remote=meta,
+        )
+        assert result["original_wallet_remote_owner_verified"] is True
+        assert result["exact_remote_policy_contents_verified"] is False
