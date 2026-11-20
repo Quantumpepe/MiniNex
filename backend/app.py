@@ -29,6 +29,7 @@ from .multicoin_evm_balances import get_multicoin_evm_balances
 from .native_coin_balances import get_native_balances
 from .native_trade_receipts import get_owner_native_sender_receipt
 from .native_privy_owner_signer import get_original_native_privy_signer_status
+from .native_source_readiness import read_original_native_source_readiness
 from .native_live_destination_finality import get_private_native_ethereum_destination
 from .native_live_buy_destination import get_private_original_native_buy_destination
 from .native_live_sell_refund import get_private_original_native_sell_refund
@@ -633,6 +634,24 @@ async def unified_real_market_trade_plan(
     return JSONResponse(result,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/native/source-readiness/{asset}")
+async def inspect_owner_native_source_readiness(
+    asset: Literal["BTC", "SOL", "XRP"],
+    request: UnifiedLiveTradeRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated read-only original source preflight, never an order."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    status = await read_original_native_source_readiness(
+        did, asset=asset, side=request.side,
+        stable=request.stable, amount=request.amount,
+    )
+    return JSONResponse(status, headers={
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
     })
 
 
