@@ -127,6 +127,7 @@ def build_original_unsigned_xrp_thor_payment(
     ledger_expiry=ledger+20
     payment={
         "TransactionType":"Payment",
+        "Flags":0x80000000,  # Fully canonical signature; no additional payment flags.
         "Account":owner,"Destination":vault,
         "Amount":str(payable),"Fee":str(fee),
         "Sequence":sequence,"LastLedgerSequence":ledger_expiry,
