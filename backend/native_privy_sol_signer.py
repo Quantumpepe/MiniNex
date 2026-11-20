@@ -27,6 +27,7 @@ from .native_privy_unsigned_signing_requests import (
     preview_privy_sol_sign_transaction_request,
 )
 from .native_sol_privy_signed_readback import inspect_original_sol_signed_transaction
+from .native_sol_owner_preflight import _sol_rpc, _SOL_MAINNET_GENESIS
 from .privy_live_signer import fetch_privy_wallet_metadata
 from .privy_wallet_verification import APP_ID, fetch_privy_user
 from .native_live_signed_dispatch import dispatch_signed_original_native_once
@@ -180,6 +181,24 @@ async def sign_and_dispatch_original_sol_sell_once(
     signed = await sign_original_sol_with_privy_once(
         did, original_message=manifest, intent_key=intent_key,
         permission_audit=permission_audit, client=client)
+    # The blockhash can expire during the Privy round-trip. Re-read the
+    # REAL finalized block height after signing but before the irrevocable
+    # source-send claim, rather than broadcasting an already expired message.
+    try:
+        genesis = await _sol_rpc(
+            client, method="getGenesisHash", params=[], request_id=21)
+        height = await _sol_rpc(
+            client, method="getBlockHeight",
+            params=[{"commitment":"finalized"}], request_id=22)
+    except (httpx.HTTPError, ValueError, TypeError, KeyError):
+        raise HTTPException(
+            503,"Original SOL chain height not available before source send") from None
+    if (genesis != _SOL_MAINNET_GENESIS
+            or type(height) is not int
+            or type(manifest.get("last_valid_block_height")) is not int
+            or height < 1
+            or height >= manifest["last_valid_block_height"]):
+        raise HTTPException(409,"Original SOL signed blockhash expired or chain changed")
     return await dispatch_signed_original_native_once(
         did, asset="SOL", intent_key=intent_key, quote=quote,
         manifest=manifest,
