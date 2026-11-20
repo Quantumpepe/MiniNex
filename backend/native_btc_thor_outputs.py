@@ -28,7 +28,50 @@ _P2WPKH_INPUT_VBYTES=69
 _TX_OVERHEAD_VBYTES=12
 _MIN_VAULT_SATS=10000
 _MIN_CHANGE_SATS=294
-_P2WPKH_ADDRESS=re.compile(r"^bc1q[ac-hj-np-z02-9]{38}$")
+_BECH32_ALPHABET="qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+_BECH32_GENERATORS=(0x3b6a57b2,0x26508e6d,0x1ea119fa,0x3d4233dd,0x2a1462b3)
+
+
+def _bech32_polymod(values:list[int])->int:
+    chk=1
+    for value in values:
+        top=chk>>25
+        chk=((chk&0x1ffffff)<<5)^value
+        for i,generator in enumerate(_BECH32_GENERATORS):
+            if (top>>i)&1:
+                chk^=generator
+    return chk
+
+
+def _mainnet_p2wpkh_script(address:object)->bytes:
+    """Decode BIP173 mainnet v0 P2WPKH including its full checksum.
+
+    A caller-supplied script is not proof of the quoted Asgard destination:
+    derive the script from the quoted address before constructing any VOUT.
+    """
+    if (type(address) is not str or len(address)!=42
+            or not address.startswith("bc1")
+            or address!=address.lower()):
+        raise ValueError("Expected original Bitcoin mainnet P2WPKH address")
+    values=[_BECH32_ALPHABET.find(ch) for ch in address[3:]]
+    if (-1 in values or values[0]!=0
+            or _bech32_polymod([3,3,0,2,3]+values)!=1):
+        raise ValueError("Bitcoin P2WPKH address checksum or version invalid")
+    words=values[1:-6]
+    if len(words)!=32:
+        raise ValueError("Bitcoin witness program must be exactly 20 bytes")
+    acc=bits=0
+    program=bytearray()
+    for word in words:
+        acc=(acc<<5)|word
+        bits+=5
+        if bits>=8:
+            bits-=8
+            program.append((acc>>bits)&255)
+            acc&=(1<<bits)-1
+    if bits>=5 or acc!=0 or len(program)!=20:
+        raise ValueError("Invalid Bitcoin SegWit witness padding")
+    return b"\\x00\\x14"+bytes(program)
 
 
 def _parse_sats(value:object)->int:
@@ -105,8 +148,8 @@ def preview_btc_thor_original_outputs(
             or quote.get("from_network")!="bitcoin-mainnet"
             or quote.get("to_network")!="ethereum-mainnet"
             or quote.get("amount")!=amount
-            or type(owner) is not str or not _P2WPKH_ADDRESS.fullmatch(owner)
-            or type(vault) is not str or not _P2WPKH_ADDRESS.fullmatch(vault)
+            or type(owner) is not str
+            or type(vault) is not str
             or owner==vault or type(target) is not str
             or not re.fullmatch(r"0x[0-9a-fA-F]{40}",target)
             or not isinstance(expiry,datetime) or expiry.tzinfo is None
@@ -136,6 +179,9 @@ def preview_btc_thor_original_outputs(
         return bytes.fromhex(value)
     owner_script=script(owner_script_hex)
     vault_script=script(vault_script_hex)
+    if (owner_script!=_mainnet_p2wpkh_script(owner)
+            or vault_script!=_mainnet_p2wpkh_script(vault)):
+        raise ValueError("BTC output script differs from quoted owner or Asgard vault")
     if owner_script==vault_script:
         raise ValueError("Cannot send THORChain BTC to the originating wallet")
     seen=set()
