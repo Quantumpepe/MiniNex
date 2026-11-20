@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 
 from .eth_privy_native_rpc import send_privy_native_weth9
 from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .eth_privy_user_grant import eth_grant_budget_digest
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import (
@@ -90,7 +91,9 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
     if type(amount_wei) is not int or not 0<amount_wei<10**45:
         raise ValueError("Invalid WETH9 amount")
     cur.execute(
-        """SELECT trading_paused,revision FROM mininex_live_eth_limits
+        """SELECT trading_paused,revision,planned_capital_usd,
+                  max_order_usd,max_daily_turnover_usd
+           FROM mininex_live_eth_limits
            WHERE privy_did=%s FOR UPDATE""",(did,))
     limits=cur.fetchone()
     if type(limits) is not dict or limits.get("trading_paused") is not False:
@@ -105,6 +108,7 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
     cur.execute(
         """SELECT status,policy_id,wallet_address,execution_signer_id,
                   limits_revision,remote_policy_sha256,candidate_sha256,
+                  policy_owner_id,authorization_method,grant_budget_sha256,
                   extract(epoch FROM policy_expires_at)::bigint AS expiry
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""",(did,))
@@ -119,15 +123,23 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
             or type(policy.get("expiry")) is not int
             or policy["expiry"]<int(time.time())+30):
         raise HTTPException(409,"Native WETH9 grant expired or revoked")
-    cur.execute(
-        """SELECT status,revoked_at,limits_revision
-           FROM mininex_live_eth_consent_intents
-           WHERE privy_did=%s FOR UPDATE""",(did,))
-    consent=cur.fetchone()
-    if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("revoked_at") is not None
-            or consent.get("limits_revision")!=limits["revision"]):
-        raise HTTPException(409,"Native conversion no longer authorized")
+    if policy.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        try:
+            digest=eth_grant_budget_digest(did=did,policy=policy,limits=limits)
+        except (ValueError,TypeError,KeyError):
+            raise HTTPException(409,"Original ETH native owner grant invalid") from None
+        if policy.get("grant_budget_sha256")!=digest:
+            raise HTTPException(409,"ETH native conversion budget grant changed")
+    else:
+        cur.execute(
+            """SELECT status,revoked_at,limits_revision
+               FROM mininex_live_eth_consent_intents
+               WHERE privy_did=%s FOR UPDATE""",(did,))
+        consent=cur.fetchone()
+        if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("revoked_at") is not None
+                or consent.get("limits_revision")!=limits["revision"]):
+            raise HTTPException(409,"Native conversion no longer authorized")
     # ETH, LINK, UNI and ETH native conversions share the same wallet nonce.
     # Lock the SAME owner account row as the common EVM order claim before
     # checking pending transactions. This closes concurrent check/insert races.
