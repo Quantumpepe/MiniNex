@@ -353,3 +353,90 @@ def test_original_private_quote_can_hash_utc_datetime_without_fabricating_send()
     assert result["source_wallet"]==SOL
     assert len(result["immutable_quote_sha256"])==64
     assert len(result["payload_sha256"])==64
+
+
+def test_real_native_signed_hash_is_reserved_with_atomic_original_claim():
+    row=identity("BTC")
+    expected="d"*64
+    original={
+        "status":"PREPARED","chain":row["chain"],
+        "payload_sha256":row["payload_sha256"],
+        "quote_expires_at":FUTURE,
+        "source_wallet":row["source_wallet"],
+        "owner_consent_sha256":row["owner_consent_sha256"],
+        "privy_grant_sha256":row["privy_grant_sha256"],
+        "budget_revision":row["budget_revision"],
+    }
+    cur=Cursor([
+        {"privy_did":DID},original,{"pending":0},
+        {"status":"SENDING"},{"source_signed_tx_hash":expected},
+    ])
+    state=journal._claim_signed_native_source_once_locked(
+        cur,did=DID,asset="BTC",key=row["intent_key"],
+        digest=row["payload_sha256"],signed_source_tx_hash=expected,
+        permission_audit=audit(row),
+    )
+    assert state=="SENDING"
+    assert len(cur.queries)==5
+    assert "source_signed_tx_hash=%s" in cur.queries[-1][0]
+    assert "status='SENDING'" in cur.queries[-1][0]
+    assert cur.queries[-1][1][0]==expected
+
+
+@pytest.mark.parametrize("valid_reply", [True,False])
+def test_signed_native_record_accepts_only_reserved_hash_and_never_resends(valid_reply):
+    row=identity("BTC")
+    expected="e"*64
+    expected_state="SUBMITTED" if valid_reply else "RECONCILIATION_REQUIRED"
+    cur=Cursor([
+        {"side":"SELL","status":"SENDING",
+         "payload_sha256":row["payload_sha256"],
+         "source_signed_tx_hash":expected},
+        {"status":"SENDING","side":"SELL",
+         "payload_sha256":row["payload_sha256"],"source_tx_hash":None},
+        {"status":expected_state},
+    ])
+    result=journal._record_signed_native_source_result_locked(
+        cur,did=DID,asset="BTC",key=row["intent_key"],
+        digest=row["payload_sha256"],
+        signed_source_tx_hash=expected,network_accepted=valid_reply,
+    )
+    assert result==expected_state
+    assert len(cur.queries)==3
+    assert cur.queries[-1][1][0]==expected_state
+    assert cur.queries[-1][1][1]==(expected if valid_reply else None)
+
+
+def test_signed_native_result_rejects_any_other_intent_or_signed_hash():
+    row=identity("BTC")
+    expected="e"*64
+    for changed in [
+        {"source_signed_tx_hash":"a"*64},
+        {"status":"RECONCILIATION_REQUIRED"},
+        {"payload_sha256":"b"*64},
+        {"side":"BUY"},
+    ]:
+        current={"side":"SELL","status":"SENDING",
+                 "payload_sha256":row["payload_sha256"],
+                 "source_signed_tx_hash":expected}
+        current.update(changed)
+        cur=Cursor([current])
+        with pytest.raises(HTTPException):
+            journal._record_signed_native_source_result_locked(
+                cur,did=DID,asset="BTC",key=row["intent_key"],
+                digest=row["payload_sha256"],
+                signed_source_tx_hash=expected,network_accepted=False,
+            )
+        assert len(cur.queries)==1
+
+
+def test_signed_hash_is_durably_present_before_mainnet_submission():
+    q="\n".join(SCHEMA)
+    assert "ADD COLUMN IF NOT EXISTS source_signed_tx_hash" in q
+    assert "mininex_native_signed_source_hash_unique" in q
+    assert "source_signed_tx_hash IS NULL" in (
+        journal.__dict__["_claim_signed_native_source_once_locked"].__code__
+        .co_consts[2] if False else
+        __import__("inspect").getsource(
+            journal._claim_signed_native_source_once_locked)
+    )
