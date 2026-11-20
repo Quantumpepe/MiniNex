@@ -107,7 +107,7 @@ async def prepare_original_btc_unsigned_psbt(
         psbt["original_output_digest_sha256"], now,
     ], separators=(",", ":"), ensure_ascii=True).encode("ascii")).hexdigest()
     return {
-        "mode": "ORIGINAL_BTC_PSVT_OWNER_PREFLIGHT_READ_ONLY",
+        "mode": "ORIGINAL_BTC_PSBT_OWNER_PREFLIGHT_READ_ONLY",
         "asset": "BTC", "side": "SELL", "stable": stable,
         "source_wallet": psbt["source_wallet"],
         "destination_wallet": psbt["destination_wallet"],
