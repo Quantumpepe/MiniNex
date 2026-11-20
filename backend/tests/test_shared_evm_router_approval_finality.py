@@ -47,3 +47,32 @@ def test_second_unrelated_market_event_has_independent_approval_nonce():
     b=_original_approval_id(**args,signal_event_id="market_101")
     assert a!=b
     assert a.startswith("appr_") and b.startswith("appr_")
+
+
+
+def test_finality_poll_rotates_past_stuck_earliest_approvals(monkeypatch):
+    from backend import shared_evm_router_approval_finality as finality
+    from backend import shared_evm_router_approval_finality as unit
+    records=[{"id":n} for n in range(5)]
+    queries=[]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,args):
+            assert "status='SUBMITTED'" in sql
+            assert "LIMIT %s OFFSET %s" in sql
+            self.limit,self.offset=args
+            queries.append(args)
+        def fetchall(self):
+            return records[self.offset:self.offset+self.limit]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return Cursor()
+    monkeypatch.setattr(unit,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(unit,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(unit.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(unit,"_APPROVAL_PAGE_OFFSET",0)
+    pages=[finality._pending_approvals(limit=2) for _ in range(4)]
+    assert pages==[records[:2],records[2:4],records[4:],records[:2]]
+    assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
