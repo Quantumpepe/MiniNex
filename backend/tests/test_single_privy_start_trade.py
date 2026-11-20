@@ -29,7 +29,11 @@ class Prepared:
     ("BNB",56),("POL",137),("AVAX",43114),
     ("LINK",1),("UNI",1),("ARB",42161),
 ])
-def test_one_evm_privy_grant_draft_never_demands_extra_message_signature(asset,chain):
+def test_one_evm_privy_grant_draft_never_demands_extra_message_signature(asset,chain,monkeypatch):
+    monkeypatch.setattr(
+        'backend.shared_evm_policy_candidate_stage.owner_fee_treasury',
+        lambda **kwargs: '0x'+'cd'*20,
+    )
     cur=Prepared([
         {"budget_usd":1500,"stable":("USDT" if asset=="BNB" else "USDC"),
          "revision":7},
@@ -51,6 +55,7 @@ def test_one_evm_privy_grant_draft_never_demands_extra_message_signature(asset,c
     )
     assert prepared["asset"]==asset
     assert prepared["chain_id"]==chain
+    assert prepared["rules_count"]==(7 if asset in ("BNB","POL","AVAX") else 5)
     assert prepared["mode"]=="OWNER_EVM_PRIVY_GRANT_DRAFT_ONLY"
     assert prepared["owner_delegation_granted"] is False
     assert prepared["policy_published_in_privy"] is False
