@@ -413,10 +413,12 @@ async def prepare_eth_policy_record(
     now = int(time.time())
     # Return the original already-checked row before recalculating prices
     # or a 24-hour expiry. No remote calls, no duplicate local policy IDs.
-    existing = await asyncio.to_thread(
+    existing = (await asyncio.to_thread(
         _load_existing_prepared, did, evidence, owner, executor, now,
-        single_privy_grant,
-    )
+        True,
+    ) if single_privy_grant else await asyncio.to_thread(
+        _load_existing_prepared, did, evidence, owner, executor, now,
+    ))
     if existing is not None:
         return existing
     # Fetch from a fixed independent HTTPS source; never browser prices.
@@ -425,9 +427,12 @@ async def prepare_eth_policy_record(
         evidence=evidence, snapshot=prices, owner=owner,
         executor=executor, now=now,
     )
+    if single_privy_grant:
+        return await asyncio.to_thread(
+            _store_prepared, did, evidence, plan, owner, executor, now, True,
+        )
     return await asyncio.to_thread(
         _store_prepared, did, evidence, plan, owner, executor, now,
-        single_privy_grant,
     )
 
 
