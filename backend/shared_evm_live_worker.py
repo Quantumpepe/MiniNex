@@ -290,7 +290,8 @@ async def execute_owner_evm_live_tick(
         submitted=await submit_scoped_router_approval_once(
             did=did,asset=asset,side=side,stable=stable,
             amount_atomic=int(required_atomic),
-            budget_revision=row["budget_revision"],client=client)
+            budget_revision=row["budget_revision"],
+            signal_event_id=event,client=client)
         return {"asset":asset,"state":submitted["state"],
                 "reason":"ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP",
                 "approval_tx_hash":submitted.get("tx_hash")}
