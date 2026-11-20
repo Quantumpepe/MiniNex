@@ -29,7 +29,8 @@ def owner(asset):
     }
 
 
-def source(asset, side, stable):
+def source(asset, side, stable, amount):
+    units = m._exact_source_units(asset, side, amount)
     base = {
         "asset": asset, "side": side, "stable": stable,
         "source_wallet": "native-owned-source",
@@ -45,6 +46,7 @@ def source(asset, side, stable):
     if side == "BUY":
         base.update({
             "mode": "THORCHAIN_ETH_ORIGINAL_NATIVE_BUY_NETWORK_PREFLIGHT",
+            "source_amount_atomic": units,
             "chain_id_verified": True,
             "original_router_allowance_verified": True,
             "source_funds_and_gas_verified": True,
@@ -53,6 +55,7 @@ def source(asset, side, stable):
     elif asset == "BTC":
         base.update({
             "mode": "ORIGINAL_BTC_PSBT_OWNER_PREFLIGHT_READ_ONLY",
+            "source_amount_sats": units,
             "unsigned_psbt": {"psbt_created": True},
             "current_esplora_unspent_reported": True,
             "bip143_signature_digest_preview": {
@@ -61,6 +64,7 @@ def source(asset, side, stable):
     elif asset == "SOL":
         base.update({
             "mode": "ORIGINAL_SOL_SOURCE_UNSIGNED_MAINNET_PREFLIGHT",
+            "source_amount_lamports": units,
             "solana_mainnet_genesis_verified": True,
             "current_owner_blockhash_and_balance_verified": True,
             "real_message_fee_verified": True,
@@ -68,6 +72,7 @@ def source(asset, side, stable):
     else:
         base.update({
             "mode": "ORIGINAL_XRP_SOURCE_UNSIGNED_MAINNET_PREFLIGHT",
+            "source_amount_drops": units,
             "xrpl_mainnet_id_verified": True,
             "source_account_and_fee_verified": True,
         })
@@ -86,7 +91,7 @@ def _install(monkeypatch, *, changed_owner=None, changed_source=None):
 
     async def execute(asset, did, side, stable, amount):
         calls.append(("source", asset, side, stable, amount))
-        result = source(asset, side, stable)
+        result = source(asset, side, stable, amount)
         if changed_source:
             changed_source(result)
         return result
@@ -218,3 +223,48 @@ def test_authenticated_private_readiness_api_is_read_only(monkeypatch):
         "Authorization":"Bearer local_native_test"}).status_code == 405
     assert client.post(url,json={**data,"recipient":"external-wallet"},headers={
         "Authorization":"Bearer local_native_test"}).status_code == 422
+
+
+@pytest.mark.parametrize("amount,side,asset", [
+    ("0","SELL","BTC"),("-1","SELL","BTC"),
+    ("1.000000001","SELL","BTC"),
+    ("1.0000000001","SELL","SOL"),
+    ("1.0000001","SELL","XRP"),
+    ("0.0000001","BUY","SOL"),
+    ("NaN","SELL","XRP"),
+    ("1e5","BUY","BTC"),
+])
+def test_native_readiness_never_rounds_or_accepts_fake_input(
+    monkeypatch,amount,side,asset,
+):
+    calls=_install(monkeypatch)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(m.read_original_native_source_readiness(
+            DID,asset=asset,side=side,stable="USDC",amount=amount))
+    assert exc.value.status_code == 422
+    assert calls == []
+
+
+@pytest.mark.parametrize("asset,side,field", [
+    ("BTC","BUY","source_amount_atomic"),
+    ("BTC","SELL","source_amount_sats"),
+    ("SOL","SELL","source_amount_lamports"),
+    ("XRP","SELL","source_amount_drops"),
+    ("XRP","BUY","source_amount_atomic"),
+])
+def test_original_route_must_match_user_exact_atomic_amount(
+    monkeypatch,asset,side,field,
+):
+    _install(monkeypatch,changed_source=lambda r:r.update({field:"1"}))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(m.read_original_native_source_readiness(
+            DID,asset=asset,side=side,stable="USDC",amount="1.25"))
+    assert exc.value.status_code == 409
+
+
+def test_original_native_wallet_network_not_substitutable(monkeypatch):
+    _install(monkeypatch,changed_owner=lambda r:r.update(network="ethereum-mainnet"))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(m.read_original_native_source_readiness(
+            DID,asset="SOL",side="SELL",stable="USDC",amount="1"))
+    assert exc.value.status_code == 409
