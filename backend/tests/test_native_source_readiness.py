@@ -24,7 +24,7 @@ def owner(asset):
         "asset": asset, "network": NETWORKS[asset],
         "original_wallet_link_verified": True,
         "original_wallet_remote_owner_verified": True,
-        "original_public_key_matches_wallet": False,
+        "original_public_key_matches_wallet": asset in ("BTC","SOL"),
         "privy_native_wallet_api_supported": asset in ("BTC","SOL"),
         "additional_signer_reference_present": False,
         "can_submit": False, "execution_enabled": False,
@@ -121,8 +121,7 @@ def _install(monkeypatch, *, changed_owner=None, changed_source=None):
 @pytest.mark.parametrize("asset,side,stable", [
     ("BTC","BUY","USDC"),("BTC","SELL","USDC"),
     ("BTC","SELL","USDT"),("SOL","BUY","USDT"),
-    ("SOL","SELL","USDC"),("XRP","BUY","USDC"),
-    ("XRP","SELL","USDC"),
+    ("SOL","SELL","USDC"),
 ])
 def test_shared_native_source_preflight_selects_owner_and_exact_chain(
     monkeypatch, asset, side, stable,
@@ -135,9 +134,8 @@ def test_shared_native_source_preflight_selects_owner_and_exact_chain(
     assert result["stable"] == stable
     assert result["original_source_preflight_verified"] is True
     assert result["original_native_owner_wallet_link_verified"] is True
-    assert result["original_native_owner_public_key_matches_wallet"] is False
-    assert result["documented_privy_native_wallet_chain_type_supported"] is (
-        asset in ("BTC","SOL"))
+    assert result["original_native_owner_public_key_matches_wallet"] is True
+    assert result["documented_privy_native_wallet_chain_type_supported"] is True
     assert result["can_submit"] is False
     assert result["source_network"] == (
         "ethereum-mainnet" if side == "BUY" else NETWORKS[asset])
@@ -216,7 +214,7 @@ def test_authenticated_private_readiness_api_is_read_only(monkeypatch):
 
     monkeypatch.setattr(api, "verify_privy_bearer", verify)
     client = TestClient(api.app)
-    url = "/api/live/native/source-readiness/XRP"
+    url = "/api/live/native/source-readiness/SOL"
     data = {"side":"SELL","stable":"USDC","amount":"3"}
     assert client.post(url,json=data).status_code == 401
     invalid = client.post(url,json=data,headers={
@@ -277,3 +275,12 @@ def test_original_native_wallet_network_not_substitutable(monkeypatch):
         asyncio.run(m.read_original_native_source_readiness(
             DID,asset="SOL",side="SELL",stable="USDC",amount="1"))
     assert exc.value.status_code == 409
+
+
+def test_xrp_readiness_requires_real_xrpl_signer_support_not_raw_math(monkeypatch):
+    calls = _install(monkeypatch)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(m.read_original_native_source_readiness(
+            DID, asset="XRP", side="SELL", stable="USDC", amount="2"))
+    assert exc.value.status_code == 409
+    assert calls == [("owner", "XRP", DID)]
