@@ -19,7 +19,7 @@ import re
 import httpx
 
 from .blockchain_preview import BTC_API
-from .native_coin_balances import _BASE58, _rpc_url, _valid_address
+from .native_coin_balances import _BASE58, _rpc_url
 
 _TXID=re.compile(r"^[0-9a-f]{64}$")
 _XRP_HASH=re.compile(r"^[A-F0-9]{64}$")
@@ -67,9 +67,7 @@ def signed_native_transaction_hash(asset:str,proof:dict,signed_base64:str)->str:
                 or len(signed)<65 or signed[:1]!=b"\x01"):
             raise ValueError("Original Solana signature not verified")
         h=_b58(signed[1:65])
-        if not _valid_address("SOL",h) and len(h)!=88:
-            # Signature identifiers are 64-byte base58, unlike 32-byte
-            # Solana account public keys.
+        if not 80<=len(h)<=90:
             raise ValueError("Invalid original Solana transaction signature")
     else:
         h=proof.get("signed_transaction_hash")
@@ -117,7 +115,7 @@ async def broadcast_original_native_signed_once(
         # the call does not prove execution or chain confirmation.
         if len(expected_source_hash)<75 or len(expected_source_hash)>90:
             raise ValueError("Original SOL signature id invalid")
-        if signed[:1]!=b"\x01" or _b58(wire[1:65])!=expected_source_hash:
+        if wire[:1]!=b"\x01" or _b58(wire[1:65])!=expected_source_hash:
             raise ValueError("Solana signer changed before network submission")
         response=await client.post(
             _rpc_url("SOL"),json={
