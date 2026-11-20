@@ -6,21 +6,14 @@ import {PRIVY_APP_ID} from './privyConfig.js';
 const ASSETS=['BTC','ETH'];
 const empty={status:'NOT_STARTED',paper_only:true,trades:[]};
 
-function PersonalDemo({t,lang}) {
+function PersonalDemo({t,lang,paperAvailable=true}) {
   const {ready,authenticated,getAccessToken}=usePrivy();
   const [asset,setAsset]=useState('BTC');
   const [data,setData]=useState({BTC:empty,ETH:empty});
   const [status,setStatus]=useState('idle');
   const [busy,setBusy]=useState(false);
-  const [paperVisible,setPaperVisible]=useState(false);
-  useEffect(()=>{
-    let active=true;
-    fetch(API_BASE+'/api/user-paper/availability',{cache:'no-store'})
-      .then(r=>{if(!r.ok)throw new Error('Unavailable');return r.json();})
-      .then(data=>{if(active)setPaperVisible(data?.paper_available===true&&data?.live_trading_enabled===false);})
-      .catch(()=>{if(active)setPaperVisible(false);});
-    return()=>{active=false;};
-  },[]);
+  // Availability comes from App: BTC/ETH PAPER is independent of the
+  // global LIVE switch. A temporary duplicate request cannot hide this panel.
 
   const fetchOne=useCallback(async current=>{
     const token=await getAccessToken();
@@ -36,14 +29,14 @@ function PersonalDemo({t,lang}) {
   },[getAccessToken]);
 
   useEffect(()=>{
-    if(!ready||!authenticated||!paperVisible){setData({BTC:empty,ETH:empty});setStatus('idle');return;}
+    if(!ready||!authenticated||!paperAvailable){setData({BTC:empty,ETH:empty});setStatus('idle');return;}
     let active=true;
     setStatus('loading');
     Promise.all(ASSETS.map(fetchOne)).then(rows=>{
       if(active){setData({BTC:rows[0],ETH:rows[1]});setStatus('ready');}
     }).catch(()=>{if(active)setStatus('failed');});
     return()=>{active=false;};
-  },[ready,authenticated,fetchOne,paperVisible]);
+  },[ready,authenticated,fetchOne,paperAvailable]);
 
   // Live UI refresh only; strategy execution remains fully server-side.
   useEffect(()=>{
@@ -62,7 +55,7 @@ function PersonalDemo({t,lang}) {
     };
     const timer=setInterval(refresh,20000);
     return()=>{cancelled=true;clearInterval(timer);};
-  },[ready,authenticated,fetchOne,busy,paperVisible]);
+  },[ready,authenticated,fetchOne,busy,paperAvailable]);
 
   const command=async action=>{
     if(busy||!ready||!authenticated)return;
@@ -86,7 +79,7 @@ function PersonalDemo({t,lang}) {
   };
   const current=data[asset]||empty;
   const position=current.position||{};
-  if(!paperVisible)return null;
+  if(!paperAvailable)return null;
   return <section className="privy-hwm-box personal-paper" aria-label={t.personalDemoTitle}>
     <div className="privy-hwm-title"><strong>{t.personalDemoTitle}</strong></div>
     <p className="privy-wallet-description">{t.personalDemoNote}</p>
@@ -172,6 +165,8 @@ function PersonalDemo({t,lang}) {
   </section>;
 }
 
-export default function UserPaperSessions({t,lang}) {
-  return PRIVY_APP_ID?<PersonalDemo t={t} lang={lang}/>:null;
+export default function UserPaperSessions({t,lang,paperAvailable=true}) {
+  return PRIVY_APP_ID
+    ? <PersonalDemo t={t} lang={lang} paperAvailable={paperAvailable}/>
+    : null;
 }
