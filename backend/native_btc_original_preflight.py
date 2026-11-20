@@ -21,6 +21,7 @@ from .native_btc_auto_utxo import (
     get_original_btc_utxo_candidates, select_original_btc_utxos,
 )
 from .native_btc_thor_psbt import compile_original_unsigned_btc_thor_psbt
+from .native_btc_segwit_sighash import build_original_btc_segwit_v0_sighashes
 from .native_btc_utxo_proof import get_original_btc_utxo_evidence
 from .native_thor_swap_quote import get_private_native_thornode_terms
 from .storage import _safe_did
@@ -114,6 +115,9 @@ async def prepare_original_btc_unsigned_psbt(
             owner_script_hex=owner_script, vault_script_hex=vault_script,
             fee_rate_sats_per_vbyte=fee_rate,
         )
+        signature_digests = build_original_btc_segwit_v0_sighashes(
+            psbt, original_utxos=source_utxos,
+        )
     except (ValueError, TypeError, KeyError, OverflowError):
         raise HTTPException(409, "BTC quote expired or source PSBT preflight failed") from None
     if (psbt["source_wallet"] != inputs["source_wallet"]
@@ -131,6 +135,7 @@ async def prepare_original_btc_unsigned_psbt(
         "destination_wallet": psbt["destination_wallet"],
         "source_amount_sats": psbt["source_amount_sats"],
         "unsigned_psbt": psbt,
+        "bip143_signature_digest_preview": signature_digests,
         "explorer_utxo_proof_sha256": inputs["proof_sha256"],
         "original_preflight_sha256": digest,
         "fee_rate_sats_per_vbyte": fee_rate,
