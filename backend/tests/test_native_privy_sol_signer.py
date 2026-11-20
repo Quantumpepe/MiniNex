@@ -153,12 +153,22 @@ def test_sign_then_dispatch_connects_once_without_public_api(monkeypatch):
         return {"mode":"ORIGINAL_NATIVE_EXECUTED_ONCE_PENDING_FINALITY",
                 "retry_allowed":False,"journal_state":"SUBMITTED"}
     monkeypatch.setattr(s,"dispatch_signed_original_native_once",dispatch)
+    source_readback=[]
+    async def sol_chain(client,*,method,params,request_id):
+        source_readback.append((method,params,request_id))
+        return (s._SOL_MAINNET_GENESIS if method=="getGenesisHash"
+                else manifest["last_valid_block_height"]-1)
+    monkeypatch.setattr(s,"_sol_rpc",sol_chain)
     quote={"from_network":"solana-mainnet"}
     result=asyncio.run(s.sign_and_dispatch_original_sol_sell_once(
         DID,intent_key=INTENT,quote=quote,manifest=manifest,
         permission_audit=audit,client=client))
     assert result["journal_state"]=="SUBMITTED"
     assert len(client.calls)==1 and len(sent)==1
+    assert source_readback==[
+        ("getGenesisHash",[],21),
+        ("getBlockHeight",[{"commitment":"finalized"}],22),
+    ]
     assert sent[0][1]["asset"]=="SOL"
     assert sent[0][1]["signed_wire_base64"]==base64.b64encode(wire).decode()
     assert sent[0][1]["quote"] is quote
@@ -171,3 +181,55 @@ def test_native_signer_code_cannot_grant_policy_or_send_funds_itself():
     assert "broadcast_original_native_signed_once" not in source
     assert "addSigners(" not in source
     assert "createPolicy(" not in source
+
+
+
+@pytest.mark.parametrize("network,height_offset",[
+    ("incorrect-mainnet", -1),
+    ("correct", 0),
+    ("correct", 1),
+    ("correct", None),
+    ("correct", "stale"),
+])
+def test_privy_sol_signed_blockhash_must_be_live_before_chain_send(
+    monkeypatch, network, height_offset,
+):
+    manifest,wire,audit,_=setup(monkeypatch)
+    client=FakeClient(wire)
+    events=[]
+    async def sol_rpc(client,*,method,params,request_id):
+        events.append(method)
+        if method=="getGenesisHash":
+            return (s._SOL_MAINNET_GENESIS if network=="correct" else "wrong")
+        return (manifest["last_valid_block_height"]+height_offset
+                if type(height_offset) is int else height_offset)
+    async def forbidden_send(*args,**kwargs):
+        events.append("broadcast-was-not-allowed")
+        pytest.fail("Expired native source must not enter durable broadcast")
+    monkeypatch.setattr(s,"_sol_rpc",sol_rpc)
+    monkeypatch.setattr(s,"dispatch_signed_original_native_once",
+                        forbidden_send)
+    with pytest.raises(s.HTTPException) as exc:
+        asyncio.run(s.sign_and_dispatch_original_sol_sell_once(
+            DID,intent_key=INTENT,quote={"from_network":"solana-mainnet"},
+            manifest=manifest,permission_audit=audit,client=client))
+    assert exc.value.status_code==409
+    assert events==["getGenesisHash","getBlockHeight"]
+    assert len(client.calls)==1
+
+
+def test_sol_network_probe_failure_does_not_submit_unknown_source(monkeypatch):
+    manifest,wire,audit,_=setup(monkeypatch)
+    client=FakeClient(wire)
+    async def network_error(*a,**kw):
+        raise httpx.ReadTimeout("current Solana chain source unavailable")
+    async def no_send(*a,**kw):
+        pytest.fail("Never send if Solana final height cannot be checked")
+    monkeypatch.setattr(s,"_sol_rpc",network_error)
+    monkeypatch.setattr(s,"dispatch_signed_original_native_once",no_send)
+    with pytest.raises(s.HTTPException) as exc:
+        asyncio.run(s.sign_and_dispatch_original_sol_sell_once(
+            DID,intent_key=INTENT,quote={},
+            manifest=manifest,permission_audit=audit,client=client))
+    assert exc.value.status_code==503
+    assert len(client.calls)==1
