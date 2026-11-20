@@ -476,10 +476,13 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
           asset={asset} stable={stable} lang={lang}
           address={address} userId={user?.id}
           getAccessToken={getAccessToken} enabled={verifiedAccount}/>
-        <EvmFeeAutoOwnerConsent key={'fee-auto-'+user?.id+'-'+asset}
-          asset={asset} stable={stable} lang={lang}
-          address={address} userId={user?.id}
-          getAccessToken={getAccessToken} enabled={verifiedAccount}/>
+        <details className="privy-disclosure privy-technical-section">
+          <summary>{lang==='de'?'Bestehende separate Gebührenfreigabe (erweitert)':'Existing separate fee authorization (advanced)'}</summary>
+          <EvmFeeAutoOwnerConsent key={'fee-auto-'+user?.id+'-'+asset}
+            asset={asset} stable={stable} lang={lang}
+            address={address} userId={user?.id}
+            getAccessToken={getAccessToken} enabled={verifiedAccount}/>
+        </details>
       </div> : null;
 
   const renderSessionControls = asset =>
