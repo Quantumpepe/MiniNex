@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+from cryptography.hazmat.primitives.asymmetric import ec
 from xrpl.core.addresscodec import encode_classic_address
 
 from .native_btc_thor_outputs import _mainnet_p2wpkh_script
@@ -48,6 +49,13 @@ def verify_native_public_key_owner(
         key = _raw_key(public_key, 33)
         if key[0] not in (2, 3, 0xed):
             raise ValueError("Privy native curve public key malformed")
+        if key[0] in (2, 3):
+            try:
+                ec.EllipticCurvePublicKey.from_encoded_point(
+                    ec.SECP256K1(), key,
+                )
+            except ValueError:
+                raise ValueError("Invalid native secp256k1 public point") from None
         if asset == "BTC":
             if key[0] == 0xed:
                 raise ValueError("Bitcoin SegWit requires secp256k1 public key")
