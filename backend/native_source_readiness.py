@@ -29,7 +29,7 @@ _NATIVE_NETWORK = {
     "XRP": "xrpl-mainnet",
 }
 _INPUT_PRECISION = {"BTC": 8, "SOL": 9, "XRP": 6}
-_DECIMAL = re.compile(r"^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$")
+_DECIMAL = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 
 
 def _exact_source_units(asset: str, side: str, amount: str) -> str:
