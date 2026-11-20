@@ -53,7 +53,7 @@ def preview_privy_btc_raw_sign_requests(
             "prevout_txid": entry["prevout_txid"],
             "prevout_vout": entry["prevout_vout"],
             "method": "secp256k1_sign",
-            "params": ["0x" + digest],
+            "params": {"hash": "0x" + digest},
             "idempotency_key": hashlib.sha256(
                 (intent_key + ":BTC:" + str(index) + ":" + digest).encode(
                     "ascii")).hexdigest(),
