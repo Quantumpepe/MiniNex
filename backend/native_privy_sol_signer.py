@@ -80,6 +80,9 @@ def _signed_sol_permission(audit: object, *, did: str, intent: str,
             or audit.get("wallet_id") != wallet_id
             or audit.get("signer_id") != signer_id
             or audit.get("policy_id") != policy_id
+            or audit.get("original_message_sha256") != audit.get("source_message_sha256")
+            or type(audit.get("original_message_sha256")) is not str
+            or not _KEY.fullmatch(audit["original_message_sha256"])
             or audit.get("owner_wallet_current") is not True
             or audit.get("exact_remote_policy_verified") is not True
             or audit.get("backend_quorum_current") is not True
@@ -126,6 +129,10 @@ async def sign_original_sol_with_privy_once(
             and x.get("override_policy_ids") == [policy_id]
         ]) != 1):
         raise HTTPException(409, "Privy has not attached exact SOL owner signer")
+    if (type(permission_audit) is not dict
+            or permission_audit.get("original_message_sha256") !=
+                original_message.get("message_sha256")):
+        raise HTTPException(409, "Original SOL signed source no longer matches consent")
     _signed_sol_permission(
         permission_audit, did=did, intent=intent_key,
         owner=owner, wallet_id=linked["wallet_id"],
