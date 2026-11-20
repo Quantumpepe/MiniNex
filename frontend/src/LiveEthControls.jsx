@@ -1,7 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import EthLiveWalletEquity from './EthLiveWalletEquity.jsx';
-import EthAutoOwnerApproval from './EthAutoOwnerApproval.jsx';
 import {API_BASE} from './data.js';
 import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,validEthPrivyIncidentReview,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
 
@@ -490,51 +489,20 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
             <p role="alert" className="privy-wallet-description">{t.liveEthInvalidLimits}</p>}
         </div>
         <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
-          <strong>{t.liveEthPolicyTitle}</strong>
-          <p className="privy-wallet-description">
-            {policyState?.status==='REMOTE_VERIFIED_UNATTACHED'
-              ?t.liveEthPolicyCreated:policyState?.status==='GRANT_VERIFIED'
-              ?t.liveEthGrantVerified:policyState?.status==='PREPARED'
-              ?t.liveEthPolicyPrepared:policyState?.status==='NOT_PREPARED'
-              ?t.liveEthPolicyNotPrepared:t.liveEthPolicyNeedsReview}
-          </p>
-          {['NOT_PREPARED','PREPARED'].includes(policyState?.status)&&
-            <button className="privy-wallet-action privy-wallet-action--secondary"
-              type="button" onClick={setupPolicy}
-              disabled={busy||!ownAddress||!limits.trading_paused||
-                usdUnits(limits.max_order_usd)===0n||changes}>
-              {t.liveEthPolicySetupButton}</button>}
-          {validScopedGrantOffer(grantOffer,ownAddress)&&
-            <>
-              <p role="alert" className="privy-wallet-description">
-                {t.liveEthPrivyGrantWarning}
-              </p>
-              <button type="button" className="privy-wallet-action"
-                disabled={busy||changes||!limits.trading_paused}
-                onClick={grantPrivySigner}>{t.liveEthGrantButton}</button>
-            </>}
-          {!validScopedGrantOffer(grantOffer,ownAddress)&&
-             policyState?.status==='REMOTE_VERIFIED_UNATTACHED'&&
-            <p className="privy-wallet-description">{t.liveEthGrantAuditLocked}</p>}
-        </div>
-        <EthAutoOwnerApproval
-          userId={userId} walletAddress={ownAddress}
-          getAccessToken={getAccessToken} paused={limits?.trading_paused===true}
-          enabled={enabled} t={t}/>
-        <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
           <strong>{t.liveEthAutoTitle}</strong>
           <p className="privy-wallet-description">{t.liveEthAutoDescription}</p>
           <p className="privy-wallet-description">
             {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
           </p>
           {ethAuto?.status==='ACTIVE'
-            ?<button className="privy-wallet-action" type="button"
+            ? <button className="privy-wallet-action" type="button"
                 disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
-            :<button className="privy-wallet-action" type="button"
+            : <button className="privy-wallet-action" type="button"
                 disabled={busy||!ethAuto?.worker_deployed||changes||
-                  policyState?.status!=='GRANT_VERIFIED'||
                   !limits?.trading_paused||!ownAddress}
-                onClick={startEthAuto}>{t.liveEthAutoStart}</button>}
+                onClick={startTradeOnce}>
+                Start Trade · ETH
+              </button>}
           {!ethAuto?.worker_deployed&&
             <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
         </div>
