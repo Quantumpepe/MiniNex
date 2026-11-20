@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import EthLiveWalletEquity from './EthLiveWalletEquity.jsx';
+import EthAutoOwnerApproval from './EthAutoOwnerApproval.jsx';
 import {API_BASE} from './data.js';
 import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,validEthPrivyIncidentReview,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
 
@@ -513,6 +514,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
           </p>
 
         </div>
+        <EthAutoOwnerApproval
+          userId={userId} walletAddress={ownAddress}
+          getAccessToken={getAccessToken} paused={limits?.trading_paused===true}
+          enabled={enabled} t={t}/>
         <EthLiveWalletEquity
           walletAddress={ownAddress} userId={userId}
           getAccessToken={getAccessToken} enabled={enabled} t={t}/>
