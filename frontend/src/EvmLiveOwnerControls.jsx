@@ -85,7 +85,7 @@ export default function EvmLiveOwnerControls({
     let active=true;
     setPermission(null);setSession(null);setBusy(false);setError('');
     if(!allowed)return()=>{active=false;};
-    (async()=>{
+    const poll=async()=>{
       try{
         const [p,s]=await Promise.all([
           request(path+'/permission-status/'+asset),
@@ -93,10 +93,15 @@ export default function EvmLiveOwnerControls({
         ]);
         if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
           throw Error('Invalid backend trading session state');
-        if(active){setPermission(p);setSession(s);}
+        if(active){setPermission(p);setSession(s);setError('');}
       }catch{if(active)setError(t.failed);}
-    })();
-    return()=>{active=false;};
+    };
+    void poll();
+    // Passive read-only refresh: the backend heartbeat and genuine
+    // blockchain submissions become visible without extra user clicks.
+    // This never signs, starts, approves, or retries any transaction.
+    const timer=window.setInterval(()=>{void poll();},20000);
+    return()=>{active=false;window.clearInterval(timer);};
   },[asset,stable,address,userId,allowed]);
   const command=async(action)=>{
     if(!allowed||busy)return;
@@ -197,7 +202,8 @@ export default function EvmLiveOwnerControls({
     <strong>{t.title} · {asset}</strong>
     <p className="privy-wallet-description">{t.desc}</p>
     <p className="privy-wallet-description" role="status">
-      {t.status}: {sessionStatus==='ACTIVE'?t.running:
+      {t.status}: {sessionStatus==='ACTIVE'?
+        (session?.worker_attached===true?t.running:t.off):
         sessionStatus==='PAUSED'?t.paused:
         current==='CONSENT_VERIFIED'?t.unattached:
         current==='GRANT_VERIFIED'?t.ready:
@@ -205,7 +211,10 @@ export default function EvmLiveOwnerControls({
         current==='REVOKED'?t.revoked:t.idle}
       {Number.isSafeInteger(session?.original_blockchain_swaps_sent)&&
         session.original_blockchain_swaps_sent>0&&
-        <span> · {session.original_blockchain_swaps_sent} {lang==='de'?'originale Blockchain-Swaps gesendet':'original blockchain swaps sent'}</span>}
+        <span> · {session.original_blockchain_swaps_sent} {lang==='de'?'Blockchain-Swaps gesendet':'blockchain swaps sent'}</span>}
+      {Number.isSafeInteger(session?.original_blockchain_swaps_finalized)&&
+        session.original_blockchain_swaps_finalized>0&&
+        <span> · {session.original_blockchain_swaps_finalized} {lang==='de'?'erfolgreich finalisiert':'successfully finalized'}</span>}
     </p>
     {sessionStatus==='ACTIVE'
       ? <button type="button" className="privy-wallet-action"
