@@ -72,7 +72,8 @@ def encode_original_xrp_privy_signing_blob(
             or payment.get("Fee") != unsigned.get("network_fee_drops")
             or payment.get("Sequence") != unsigned.get("account_sequence")
             or type(payment.get("LastLedgerSequence")) is not int
-            or payment["LastLedgerSequence"] <= payment["Sequence"]
+            or type(unsigned.get("account_validated_ledger")) is not int
+            or payment["LastLedgerSequence"] != unsigned["account_validated_ledger"] + 20
             or payment.get("Memos") is None):
         raise ValueError("Original XRPL payment terms changed")
     expiry = unsigned.get("quote_expires_at")
@@ -102,7 +103,7 @@ def encode_original_xrp_privy_signing_blob(
     try:
         encoded = encode_for_signing(canonical)
         blob = bytes.fromhex(encoded)
-    except (ValueError, TypeError, KeyError, Exception) as error:
+    except Exception as error:
         # xrpl-py codec errors must not result in a guessed signing payload.
         raise ValueError("Canonical XRPL signing bytes unavailable") from error
     if not blob.startswith(_STX) or len(blob) < 100:
