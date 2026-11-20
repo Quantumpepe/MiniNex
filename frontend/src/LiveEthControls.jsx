@@ -327,24 +327,14 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         throw Error('ETH owner policy state unavailable');
       let stage=lifecycle.status;
       if(stage==='NOT_PREPARED'){
-        const challenge=await request('/api/live/eth/consent/challenge','POST');
-        if(challenge?.wallet?.toLowerCase()!==ownAddress.toLowerCase()||
-           challenge?.execution_enabled!==false||
-           typeof challenge?.challenge!=='string')
-          throw Error('ETH owner consent challenge changed');
-        const signed=await signMessage({message:challenge.challenge},{address:ownAddress});
-        if(!/^0x[0-9a-fA-F]{130}$/.test(signed?.signature||''))
-          throw Error('ETH wallet consent was not signed');
-        const confirmed=await request('/api/live/eth/consent/confirm','POST',{
-          signature:signed.signature,
-        });
-        if(confirmed?.execution_enabled!==false||
-           confirmed?.status!=='SIGNED_INTENT')
-          throw Error('ETH trading budget consent was not verified');
-        const prepared=await request('/api/live/eth/policy/prepare','POST');
+        // Restricted policy preparation is NOT wallet authorization.
+        // The only user-facing approval in this path is the owner
+        // Privy addSigners prompt after the policy is published.
+        const prepared=await request(
+          '/api/live/eth/policy/prepare-grant','POST');
         if(prepared?.status!=='PREPARED'||
            prepared?.execution_enabled!==false)
-          throw Error('ETH owner policy was not prepared');
+          throw Error('ETH original wallet policy could not be prepared');
         stage='PREPARED';
       }
       if(stage==='PREPARED'){
@@ -459,7 +449,6 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
             onClick={startTradeOnce}>Start Trade · ETH</button>}
       {!ethAuto?.worker_deployed&&
         <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
-      <p className="privy-wallet-description">{t.liveEthPrivyGrantWarning}</p>
       {message&&<p role="status" className="privy-wallet-description">{message}</p>}
     </>}
   </div>;
