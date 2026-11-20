@@ -80,3 +80,49 @@ export function originalNativeBlocker(data,request){
     return 'SIGNER_NOT_ASSIGNED';
   return 'POLICY_AND_SEND_CLAIM_MISSING';
 }
+
+
+// A source-chain preflight can fail before any quoted transaction exists.
+// In that case, read the original Privy wallet status separately. Do NOT
+// present this fallback as a verified source-chain fee, balance or trade.
+export function validNativeOwnerReadback(data,asset){
+  if(!NATIVE.includes(asset)||!data||typeof data!=='object'||
+    Array.isArray(data)||
+    data.mode!=='PRIVY_ORIGINAL_NATIVE_OWNER_READBACK_ONLY'||
+    data.asset!==asset||data.network!==LIVE_NETWORKS[asset]||
+    !['original_wallet_link_verified',
+      'original_wallet_remote_owner_verified',
+      'original_public_key_matches_wallet',
+      'privy_native_wallet_api_supported',
+      'wallet_delegation_flag_reported',
+      'additional_signer_reference_present',
+      'signer_policy_reference_present'].every(k=>isBoolean(data[k]))||
+    !['exact_remote_policy_contents_verified',
+      'per_user_owner_trade_consent_verified',
+      'original_budget_revision_verified',
+      'privy_transaction_signing_capability_verified',
+      'original_order_claim_verified','automated_signing_enabled',
+      'live_trading_enabled','execution_enabled','can_submit'].every(
+        k=>isFalse(data[k])
+      )||
+    UNSAFE.some(k=>k in data))return false;
+  return true;
+}
+
+export function nativeOwnerReadbackBlocker(data,asset){
+  if(!validNativeOwnerReadback(data,asset))return 'INVALID';
+  if(!data.privy_native_wallet_api_supported)
+    return 'NATIVE_WALLET_UNSUPPORTED';
+  if(!data.original_wallet_link_verified)
+    return 'ORIGINAL_WALLET_MISSING';
+  if(!data.wallet_delegation_flag_reported)
+    return 'SIGNER_NOT_ASSIGNED';
+  if(!data.original_wallet_remote_owner_verified)
+    return 'REMOTE_OWNER_UNVERIFIED';
+  if(!data.original_public_key_matches_wallet)
+    return 'PUBLIC_KEY_UNVERIFIED';
+  if(!data.additional_signer_reference_present||
+     !data.signer_policy_reference_present)
+    return 'SIGNER_NOT_ASSIGNED';
+  return 'POLICY_AND_SEND_CLAIM_MISSING';
+}
