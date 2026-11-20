@@ -213,21 +213,37 @@ def _stage_locked(
             )
         return _snapshot(row, current_revision=values["revision"])
 
-    cur.execute(
-        """INSERT INTO mininex_live_eth_policy_enrollments
-              (privy_did,wallet_address,limits_revision,policy_owner_id,
-               execution_signer_id,candidate_sha256,idempotency_key,
-               candidate_json,policy_expires_at,status,authorization_method)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,to_timestamp(%s),'PREPARED',%s)""",
-        (
-            did, values["wallet"], values["revision"], owner, executor,
-            info["sha256"], prepared["idempotency_key"],
-            json.dumps(prepared["candidate"], sort_keys=True),
-            info["expires_at_unix"],
-        "PRIVY_SCOPED_GRANT" if single_privy_grant
-        else "EIP191_AND_PRIVY",
-        ),
+    params=(
+        did, values["wallet"], values["revision"], owner, executor,
+        info["sha256"], prepared["idempotency_key"],
+        json.dumps(prepared["candidate"], sort_keys=True),
+        info["expires_at_unix"],
     )
+    if single_privy_grant:
+        # New mode stores an explicit authorization method with NO owner
+        # EIP191 signature. The future Privy addSigners action is its sole
+        # owner authorization.
+        cur.execute(
+            """INSERT INTO mininex_live_eth_policy_enrollments
+                 (privy_did,wallet_address,limits_revision,policy_owner_id,
+                  execution_signer_id,candidate_sha256,idempotency_key,
+                  candidate_json,policy_expires_at,status,
+                  authorization_method)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,to_timestamp(%s),
+                       'PREPARED',%s)""",
+            params+("PRIVY_SCOPED_GRANT",),
+        )
+    else:
+        # Keep the existing, already approved EIP191 path unchanged.
+        cur.execute(
+            """INSERT INTO mininex_live_eth_policy_enrollments
+                 (privy_did,wallet_address,limits_revision,policy_owner_id,
+                  execution_signer_id,candidate_sha256,idempotency_key,
+                  candidate_json,policy_expires_at,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,
+                       to_timestamp(%s),'PREPARED')""",
+            params,
+        )
     return _snapshot({
         "wallet_address": values["wallet"],
         "limits_revision": values["revision"],
