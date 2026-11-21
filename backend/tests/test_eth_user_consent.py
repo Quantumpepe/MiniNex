@@ -229,7 +229,7 @@ def test_signature_does_not_accept_wrong_eoa_or_modified_message():
     {"wallet_identity_verified": False},
     {"wallet_additional_signers_reviewed": False},
     {"live_limits_revision": True},
-    {"live_max_order_usd": "99999"},
+    {"live_max_order_usd": "NaN"},
     {"live_capital_usd": "0"},
     {"verified_wallet_address": "0x1"},
 ])
@@ -237,6 +237,16 @@ def test_missing_wallet_grant_conditions_and_limits_fail_before_persistence(case
     with pytest.raises(HTTPException) as err:
         consent._require_enrollment_evidence(evidence(**case))
     assert err.value.status_code == 409
+
+
+def test_owner_selected_eth_capital_does_not_require_legacy_daily_or_order_caps():
+    submitted=evidence(
+        live_capital_usd="5000",live_max_order_usd="0",
+        live_daily_turnover_usd="0")
+    parsed=consent._require_enrollment_evidence(submitted)
+    assert parsed["capital"]=="5000"
+    assert parsed["order"]=="0"
+    assert parsed["daily"]=="0"
 
 
 def test_changed_live_limits_revision_and_paused_state_block_stale_signature():

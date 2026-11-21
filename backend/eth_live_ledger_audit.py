@@ -84,11 +84,13 @@ def assess_eth_live_ledger(limits: dict, totals: dict) -> dict:
         raise HTTPException(503, "ETH ledger has unpriced pending orders")
     capital_available = max(Decimal(0), cap - pending)
     # Historical turnover is informative, NOT a user trading restriction.
-    blockers = ["LIVE_EXECUTOR_DISABLED"]
+    # A read-only audit cannot authorize a wallet send, but neither does
+    # it impose an artificial global LIVE kill switch on the real executor.
+    blockers = []
     if paused:
         blockers.append("USER_STOPPED")
-    if not cap or not order or not day:
-        blockers.append("LIMITS_NOT_CONFIGURED")
+    if not cap:
+        blockers.append("OWNER_CAPITAL_NOT_CONFIGURED")
     if unreconciled:
         blockers.append("UNRECONCILED_LIVE_ORDERS")
     if stale:

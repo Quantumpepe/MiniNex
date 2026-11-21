@@ -114,6 +114,15 @@ def test_btc_cap_not_limited_to_5000_demo_usd(db):
     assert not any("mininex_user_paper_sessions" in query for query,_ in queries.calls)
 
 
+def test_btc_owner_capital_is_not_blocked_by_unused_order_or_daily_caps(db):
+    record=btc.save_live_btc_limits(
+        DID,capital="1000",order="0",daily="0",expected_revision=0)
+    assert record["planned_capital_usd"]=="1000"
+    assert record["max_order_usd"]=="0"
+    assert record["max_daily_turnover_usd"]=="0"
+    assert record["trading_paused"] is True
+
+
 def test_stale_revision_cannot_overwrite_owner_btc_limits(db):
     btc.save_live_btc_limits(DID,capital="600",order="100",daily="200",expected_revision=0)
     with pytest.raises(HTTPException) as err:
@@ -135,7 +144,6 @@ def test_stop_btc_is_idempotent_and_leaves_eth_untouched(db):
 
 
 @pytest.mark.parametrize("limits",[
-    ("100","0","20"),("100","110","200"),("100","50","10"),
     ("NaN","5","10"),("10000000000000000000000","1","1"),(100,10,10),
     ("100.0000001","10","50"),
 ])
