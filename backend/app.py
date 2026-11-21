@@ -45,6 +45,7 @@ from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
 from .shared_evm_passive_settlement import PassiveEvmSettlementWorker
 from .native_passive_settlement import PassiveNativeSettlementWorker
+from .native_live_worker import NativeLiveWorker
 from .shared_evm_live_worker import SharedEvmLiveWorker
 from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
@@ -149,6 +150,9 @@ eth_auto_live = EthAutoLiveWorker(market)
 evm_passive_settlement = PassiveEvmSettlementWorker()
 native_passive_settlement = PassiveNativeSettlementWorker()
 evm_auto_live = SharedEvmLiveWorker(extra_markets)
+# The native trading worker starts only after a real Privy-policy auditor
+# is wired in the final owner-grant stage. No grant, no live task.
+native_auto_live = NativeLiveWorker(market,extra_markets)
 
 
 @asynccontextmanager
@@ -161,6 +165,7 @@ async def lifespan(app: FastAPI):
         await personal_paper.start()
     await eth_auto_live.start()
     await evm_auto_live.start()
+    await native_auto_live.start()
     await evm_passive_settlement.start()
     await native_passive_settlement.start()
     try:
@@ -168,6 +173,7 @@ async def lifespan(app: FastAPI):
     finally:
         await native_passive_settlement.stop()
         await evm_passive_settlement.stop()
+        await native_auto_live.stop()
         await evm_auto_live.stop()
         await eth_auto_live.stop()
         await personal_paper.stop()
