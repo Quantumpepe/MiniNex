@@ -476,7 +476,10 @@ export default function App() {
               {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
-              {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
+              <button type="button" className="sim-toggle" onClick={toggleSimulation} style={{margin:"8px 12px",padding:"8px 14px",borderRadius:"8px",border:"1px solid #3a5a6a",background:paperVisible?"#1aa979":"#1a2a35",color:"#fff",fontSize:"14px",cursor:"pointer"}}>
+            {paperVisible ? (language==="de"?"Simulation aus":"Simulation off") : (language==="de"?"Simulation an":"Simulation on")}
+          </button>
+          {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
                 <div className="panel-top"><h2>{t.recentTrades} · {showAllPaperHistory?t.homeAllCoins:asset}</h2>
                    <div className="home-history-filter-actions">
                      <span className="muted-description">{t.simulatedTradeLabel}</span>
@@ -496,8 +499,8 @@ export default function App() {
 
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
-          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt} paperAvailable={paperVisible}/>
-          <UserPaperSessions t={t} lang={language} paperAvailable={paperVisible}/>
+          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt} paperAvailable={true}/>
+          <UserPaperSessions t={t} lang={language} paperAvailable={true}/>
         </>}
 
         {page==='activity'&&<>
