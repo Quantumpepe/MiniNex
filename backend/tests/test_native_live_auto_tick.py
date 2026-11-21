@@ -96,19 +96,23 @@ def test_no_remote_wallet_consent_never_sends(monkeypatch):
         asyncio.run(run())
 
 
-def test_native_sell_signal_waits_without_unsupported_wallet_signer(monkeypatch):
+def test_native_sell_signal_requires_grant_instead_of_hard_block(monkeypatch):
     row=session("TRX")
     def signal(*a,**kw):return {"action":"SELL"}
-    async def forbid(*a,**kw):
-        raise AssertionError("Do not sign native SELL without signer and settlement")
+    async def money(did,**kwargs):
+        return "100"
+    async def auditor(did,**kwargs):
+        return grant(row, kwargs["amount"])
     monkeypatch.setattr(m,"verified_live_native_momentum",signal)
-    monkeypatch.setattr(m,"verified_owner_native_buy_amount",forbid)
+    monkeypatch.setattr(m,"verified_owner_native_buy_amount",money)
     async def run():
         async with httpx.AsyncClient() as client:
             return await m.execute_owner_native_live_tick(
                 row,market=object(),client=client,
-                grant_auditor=forbid,now=1800000000)
-    assert asyncio.run(run())["state"]=="WAIT"
+                grant_auditor=auditor,now=1800000000)
+    result = asyncio.run(run())
+    assert result["state"]=="SELL_GRANT_VERIFIED"
+    assert result["reason"]=="NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE"
 
 
 def test_btc_uses_only_its_own_market_source():
