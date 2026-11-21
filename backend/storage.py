@@ -1067,7 +1067,8 @@ SCHEMA = (
 SCHEMA += (
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_router_approval_sends (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB','BTC','SOL','XRP')),
+        asset TEXT NOT NULL CHECK(asset IN
+            ('BNB','POL','AVAX','LINK','UNI','ARB','BTC','SOL','XRP','TRX','DOGE')),
         side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
         stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
         chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
@@ -1121,15 +1122,27 @@ SCHEMA += (
          IF NOT EXISTS(
            SELECT 1 FROM pg_constraint
            WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
-             AND conname='mininex_native_thor_allowance_asset_v1'
+             AND conname='mininex_native_thor_allowance_asset_v2'
          ) THEN
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              DROP CONSTRAINT IF EXISTS
+              mininex_native_thor_allowance_asset_v1;
            ALTER TABLE mininex_live_evm_router_approval_sends
               DROP CONSTRAINT IF EXISTS
               mininex_live_evm_router_approval_sends_asset_check;
            ALTER TABLE mininex_live_evm_router_approval_sends
-              ADD CONSTRAINT mininex_native_thor_allowance_asset_v1
+              ADD CONSTRAINT mininex_native_thor_allowance_asset_v2
               CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB',
-                              'BTC','SOL','XRP'));
+                              'BTC','SOL','XRP','TRX','DOGE'));
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              ADD CONSTRAINT mininex_thor_approval_route_mode_v2
+              CHECK(
+                (approval_mode='ROUTER02_FINITE' AND asset IN
+                  ('BNB','POL','AVAX','LINK','UNI','ARB')) OR
+                (approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO')
+                   AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
+                   AND side='BUY' AND chain_id=1)
+              );
          END IF;
        END $native_thor_allowance$""",
 )
@@ -1141,10 +1154,11 @@ SCHEMA += (
     # PREPARED records are inert, and unknown SENDING outcomes cannot be retried.
     """CREATE TABLE IF NOT EXISTS mininex_live_native_order_intents (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK (asset IN ('BTC','SOL','XRP')),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','SOL','XRP','TRX','DOGE')),
         intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 6 AND 160),
         chain TEXT NOT NULL CHECK (chain IN
-            ('bitcoin-mainnet','solana-mainnet','xrpl-mainnet','ethereum-mainnet')),
+            ('bitcoin-mainnet','solana-mainnet','xrpl-mainnet',
+             'tron-mainnet','dogecoin-mainnet','ethereum-mainnet')),
         side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
         stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
         budget_revision BIGINT NOT NULL CHECK (budget_revision >= 0),
@@ -1230,6 +1244,33 @@ SCHEMA += (
     """ALTER TABLE mininex_live_native_order_intents
         ADD COLUMN IF NOT EXISTS source_eth_scan_next_block NUMERIC(78,0)
         CHECK (source_eth_scan_next_block > 0)""",
+    """DO $native_buy_five$
+       BEGIN
+         IF NOT EXISTS(
+           SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_native_order_intents'::regclass
+             AND conname='mininex_native_five_asset_v2'
+         ) THEN
+           ALTER TABLE mininex_live_native_order_intents
+             DROP CONSTRAINT IF EXISTS
+             mininex_live_native_order_intents_asset_check;
+           ALTER TABLE mininex_live_native_order_intents
+             DROP CONSTRAINT IF EXISTS
+             mininex_live_native_order_intents_chain_check;
+           ALTER TABLE mininex_live_native_order_intents
+             ADD CONSTRAINT mininex_native_five_asset_v2
+             CHECK(asset IN ('BTC','SOL','XRP','TRX','DOGE'));
+           ALTER TABLE mininex_live_native_order_intents
+             ADD CONSTRAINT mininex_native_chain_v2
+             CHECK(chain IN ('bitcoin-mainnet','solana-mainnet',
+                              'xrpl-mainnet','tron-mainnet',
+                              'dogecoin-mainnet','ethereum-mainnet'));
+           ALTER TABLE mininex_live_native_order_intents
+             ADD CONSTRAINT mininex_native_no_unsupported_sell_v2
+             CHECK(asset NOT IN ('TRX','DOGE') OR
+                   (side='BUY' AND chain='ethereum-mainnet'));
+         END IF;
+       END $native_buy_five$""",
     """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique
        ON mininex_live_native_order_intents(chain,source_signed_tx_hash)
        WHERE source_signed_tx_hash IS NOT NULL""",

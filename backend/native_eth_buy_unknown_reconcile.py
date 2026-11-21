@@ -42,7 +42,7 @@ _ADDR=re.compile(r"^0x[0-9a-fA-F]{40}$")
 _HASH=re.compile(r"^0x[0-9a-fA-F]{64}$")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _INTENT=re.compile(r"^native_[0-9a-f]{64}$")
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _PAGE_LOCK=Lock()
 _SCAN_BLOCKS_PER_TICK=3
 

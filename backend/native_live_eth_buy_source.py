@@ -26,7 +26,7 @@ from .native_thor_transaction_status import _VALID_INTENT
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url, _ensure_schema, _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _HASH=re.compile(r"^0x[a-fA-F0-9]{64}$")
 _ADDRESS=re.compile(r"^0x[a-fA-F0-9]{40}$")
@@ -145,7 +145,7 @@ def inspect_original_eth_buy_source(
             or not _HASH.fullmatch(original["source_tx_hash"])
             or type(original.get("input_amount")) not in (str,Decimal)
             or type(inbounds) is not list):
-        raise ValueError("Original BTC/SOL/XRP Ethereum BUY not journal-bound")
+        raise ValueError("Original native Ethereum BUY not journal-bound")
     asset=original["asset"]
     owner=original["source_wallet"].lower()
     tx_id=original["source_tx_hash"].lower()

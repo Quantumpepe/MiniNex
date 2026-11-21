@@ -32,7 +32,7 @@ from .live_eth_receipts import _num
 _HASH=re.compile(r"^0x[0-9a-fA-F]{64}$")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _ID=re.compile(r"^appr_[0-9a-f]{58}$")
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _PENDING_OFFSET=0
 
 

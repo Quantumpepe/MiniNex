@@ -37,7 +37,7 @@ from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .shared_evm_router_approval_send import _finish as _finish_shared_approval
 from .storage import _db_url, _ensure_schema, _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
 _SHA=re.compile(r"^[a-f0-9]{64}$")
 _EVENT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")

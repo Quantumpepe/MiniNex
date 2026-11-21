@@ -27,7 +27,7 @@ from .native_live_order_journal import (
 from .native_eth_buy_privy_dispatch import submit_original_eth_native_buy_once
 from .storage import _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _EVENT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 _AMOUNT=re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")

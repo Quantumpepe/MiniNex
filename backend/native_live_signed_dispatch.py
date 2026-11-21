@@ -44,6 +44,7 @@ from .storage import _db_url, _ensure_schema, _safe_did
 _INTENT=re.compile(r"^native_[0-9a-f]{64}$")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _ASSET_PRECISION={"BTC":8,"SOL":9,"XRP":6}
+_ORIGINAL_ETH_BUY_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 
 
 def _original_quote_digest(quote:object)->str:
@@ -162,7 +163,7 @@ def inspect_original_order_source_for_dispatch(
 
 
 def _get_original_prepared_source(did:str,asset:str,intent_key:str)->dict:
-    if (asset not in _ASSET_PRECISION or type(intent_key) is not str
+    if (asset not in _ORIGINAL_ETH_BUY_ASSETS or type(intent_key) is not str
             or not _INTENT.fullmatch(intent_key)):
         raise ValueError("Invalid owner native intent reference")
     db=_db_url()
@@ -181,7 +182,8 @@ def _get_original_prepared_source(did:str,asset:str,intent_key:str)->dict:
             )
             row=cur.fetchone()
     if (type(row) is not dict or row.get("privy_did")!=did
-            or row.get("asset")!=asset or row.get("status")!="PREPARED"):
+            or row.get("asset")!=asset or row.get("status")!="PREPARED"
+            or (asset in ("TRX","DOGE") and row.get("side")!="BUY")):
         raise HTTPException(409,"No authorized original native source to submit")
     return row
 

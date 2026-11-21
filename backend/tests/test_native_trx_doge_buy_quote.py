@@ -175,3 +175,94 @@ def test_original_privy_native_wallet_used_as_thor_destination(asset,monkeypatch
         asyncio.run(q.get_private_native_thornode_terms(
             DID,asset=asset,side="SELL",stable="USDC",amount="1"))
     assert err.value.status_code==422
+
+
+@pytest.mark.parametrize("asset",["TRX","DOGE"])
+def test_extended_original_ethereum_buy_journal_and_privy_body_share_owner(asset):
+    from backend import native_live_order_journal as ledger
+    from backend import native_eth_buy_privy_dispatch as dispatcher
+    from backend.tests.test_native_eth_native_buy_preflight import inspect
+    now=1803000000
+    terms,_,_=original(asset,now=now)
+    intent=ledger.immutable_native_order_identity(
+        did=DID,asset=asset,side="BUY",stable="USDC",
+        source_wallet=ETH,destination_wallet=owner_coin(asset),
+        amount="50",quote=terms,quote_expires_at=terms["quote_expires_at"],
+        strategy_run_id="strategy_tron_doge_001",
+        signal_event_id="signal_initial_buy_001",
+        budget_revision=2,
+        owner_consent_sha256="a"*64,privy_grant_sha256="b"*64)
+    assert intent["chain"]=="ethereum-mainnet"
+    assert intent["destination_chain"]==terms["to_network"]
+    assert intent["privy_did"]==DID
+    assert len(intent["payload_sha256"])==64
+    unsigned=e.encode_original_eth_native_buy_deposit(
+        terms,asset=asset,stable="USDC",amount="50",now=now)
+    preflight=inspect(unsigned=unsigned,original_quote=terms,now=now)
+    url,body,nonce,digest=dispatcher.bound_original_native_buy_rpc(
+        {**intent,"status":"PREPARED","input_amount":Decimal("50")},
+        terms,preflight,wallet_id="extended_native_wallet_001",now=now)
+    assert url=="https://api.privy.io/v1/wallets/extended_native_wallet_001/rpc"
+    assert body["caip2"]=="eip155:1"
+    assert body["params"]["transaction"]["to"]==ROUTER.lower()
+    assert body["params"]["transaction"]["data"]==unsigned[
+        "unsigned_transaction"]["data"]
+    assert nonce==42 and len(digest)==64
+    with pytest.raises(ValueError):
+        ledger.immutable_native_order_identity(
+            did=DID,asset=asset,side="SELL",stable="USDC",
+            source_wallet=owner_coin(asset),destination_wallet=ETH,
+            amount="50",quote=terms,quote_expires_at=terms["quote_expires_at"],
+            strategy_run_id="strategy_tron_doge_001",
+            signal_event_id="signal_initial_sell_001",
+            budget_revision=2,
+            owner_consent_sha256="a"*64,privy_grant_sha256="b"*64)
+
+
+@pytest.mark.parametrize("asset",["TRX","DOGE"])
+def test_extended_ethereum_source_nonce_recovery_cannot_fake_native_fill(asset):
+    from backend import native_eth_buy_unknown_reconcile as unknown
+    from backend import native_live_order_status as history
+    from backend import native_eth_buy_privy_dispatch as dispatcher
+    from backend.tests.test_native_eth_native_buy_preflight import inspect
+    now=1803000000
+    terms,_,_=original(asset,now=now)
+    unsigned=e.encode_original_eth_native_buy_deposit(
+        terms,asset=asset,stable="USDC",amount="50",now=now)
+    preflight=inspect(unsigned=unsigned,original_quote=terms,now=now)
+    order={
+        "asset":asset,"side":"BUY","stable":"USDC",
+        "chain":"ethereum-mainnet","status":"PREPARED",
+        "source_wallet":ETH,"destination_wallet":owner_coin(asset),
+        "input_amount":Decimal("50"),
+        "quote_expires_at":terms["quote_expires_at"],
+        "immutable_quote_sha256":dispatcher._original_quote_digest(terms),
+        "payload_sha256":"c"*64,
+    }
+    _,_,nonce,digest=dispatcher.bound_original_native_buy_rpc(
+        order,terms,preflight,wallet_id="extended_native_wallet_001",now=now)
+    recorded={**order,
+        "privy_did":DID,"intent_key":"native_"+"a"*64,
+        "status":"RECONCILIATION_REQUIRED","source_tx_hash":None,
+        "source_eth_pending_nonce":Decimal(nonce),
+        "source_rpc_request_sha256":digest,
+        "source_eth_observed_block_number":Decimal(100),
+        "source_eth_scan_next_block":None}
+    tx={"from":ETH,"to":ROUTER.lower(),
+        "hash":"0x"+"d"*64,
+        "input":unsigned["unsigned_transaction"]["data"],
+        "nonce":hex(nonce),"chainId":"0x1","value":"0x0",
+        "blockNumber":"0x66","blockHash":"0x"+"e"*64}
+    observed=unknown._original_eth_buy_candidate(
+        recorded,tx,wallet_id="extended_native_wallet_001",
+        block_number=102,block_hash="0x"+"e"*64)
+    assert observed=="0x"+"d"*64
+    # An Ethereum deposit proves only a source, never a TRX/DOGE receipt.
+    pending={**recorded,"status":"SUBMITTED","source_tx_hash":observed,
+             "budget_revision":2,"created_at":datetime.now(timezone.utc),
+             "updated_at":datetime.now(timezone.utc)}
+    progress=history._original_native_order_row(pending,asset)
+    assert progress["source_tx_hash"]==observed
+    assert progress["destination_wallet_credited"] is False
+    assert progress["performance_fee_assessed"] is False
+    assert progress["automatic_retry_allowed"] is False

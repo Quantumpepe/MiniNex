@@ -29,14 +29,14 @@ from .native_eth_native_buy_preflight import _int_quantity
 from .native_eth_thor_deposit_tx import _SELECTOR, encode_original_eth_native_buy_deposit
 from .native_live_order_journal import _claim_once_locked, _record_send_result_locked
 from .native_live_signed_dispatch import _get_original_prepared_source, _original_quote_digest
-from .native_privy_owner_signer import get_original_native_privy_signer_status
+from .native_thor_swap_quote import _exact_owner_wallets
 from .privy_live_signer import _owned_eth_wallet, _scoped_signer, fetch_privy_wallet_metadata
 from .privy_wallet_verification import fetch_privy_user
 from .shared_evm_execution import bound_evm_wallet_rpc
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .storage import _db_url, _ensure_schema, _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _KEY=re.compile(r"^native_[0-9a-f]{64}$")
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
@@ -63,7 +63,8 @@ def bound_original_native_buy_rpc(
             or quote.get("from_network")!="ethereum-mainnet"
             or quote.get("to_network")!={
                 "BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
-                "XRP":"xrpl-mainnet",
+                "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
+                "DOGE":"dogecoin-mainnet",
             }[order["asset"]]
             or quote.get("quote_expires_at")!=order.get("quote_expires_at")
             or not isinstance(quote.get("quote_expires_at"),datetime)
@@ -233,13 +234,19 @@ async def submit_original_eth_native_buy_once(
             "payload_sha256","owner_consent_sha256","privy_grant_sha256",
             "budget_revision","source_wallet")):
         raise HTTPException(409,"Native BUY grant does not match original order")
-    destination=await get_original_native_privy_signer_status(did,asset=asset)
-    if any(destination.get(k) is not True for k in (
-            "original_wallet_remote_owner_verified",
-            "original_public_key_matches_wallet",
-            "privy_native_wallet_api_supported")):
-        raise HTTPException(409,"Original native receiving wallet unverified")
-    owner=_owned_eth_wallet(await fetch_privy_user(did),did)
+    # Native BUY needs a uniquely linked receiving wallet; it never
+    # asks that wallet to sign. BTC/SOL/XRP/TRX/DOGE may have different
+    # future native SELL signer capabilities, which must not block an
+    # owner-authorized Ethereum stablecoin BUY into the original address.
+    user=await fetch_privy_user(did)
+    try:
+        native,eth=_exact_owner_wallets(user,did,asset)
+    except (ValueError,TypeError,KeyError):
+        raise HTTPException(409,"Original native receiving wallet unverified") from None
+    if (native!=order["destination_wallet"]
+            or eth.lower()!=order["source_wallet"].lower()):
+        raise HTTPException(409,"Original native BUY receiving wallet changed")
+    owner=_owned_eth_wallet(user,did)
     if (owner["delegated"] is not True
             or owner["address"]!=order["source_wallet"].lower()):
         raise HTTPException(409,"Original ETH funding wallet not delegated")

@@ -17,7 +17,7 @@ from psycopg.rows import dict_row
 from .native_live_order_journal import _valid_source_hash
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _STATES=frozenset(("PREPARED","SENDING","SUBMITTED",
     "RECONCILIATION_REQUIRED","SOURCE_FINALIZED",
     "DESTINATION_FINALIZED","REFUNDED_VERIFIED","CANCELLED"))
@@ -33,6 +33,7 @@ def _original_native_order_row(row:object,asset:str)->dict:
     side,state,stable=row.get("side"),row.get("status"),row.get("stable")
     chain=("ethereum-mainnet" if side=="BUY" else {
         "BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet",
+        "TRX":"tron-mainnet","DOGE":"dogecoin-mainnet",
     }[asset])
     known_hash=row.get("source_tx_hash")
     signed_hash=row.get("source_signed_tx_hash")
@@ -50,6 +51,7 @@ def _original_native_order_row(row:object,asset:str)->dict:
     when=row.get("created_at")
     updated=row.get("updated_at")
     if (side not in ("BUY","SELL")
+            or (asset in ("TRX","DOGE") and side!="BUY")
             or stable not in ("USDC","USDT")
             or (asset=="XRP" and stable!="USDC")
             or state not in _STATES

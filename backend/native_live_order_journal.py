@@ -25,7 +25,9 @@ from .native_trade_receipts import _valid_native_hash
 from .manual_swap_live_quotes import THOR_ASSETS
 
 _NATIVE_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
-                 "XRP":"xrpl-mainnet"}
+                 "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
+                 "DOGE":"dogecoin-mainnet"}
+_BUY_ONLY=frozenset(("TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _EVENT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 _MONEY=re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
@@ -56,7 +58,8 @@ def _wallet_matches(network:str,address:object)->bool:
         return bool(ETH_RE.fullmatch(address))
     if network=="bitcoin-mainnet":
         return bool(BTC_RE.fullmatch(address))
-    asset={"solana-mainnet":"SOL","xrpl-mainnet":"XRP"}.get(network)
+    asset={"solana-mainnet":"SOL","xrpl-mainnet":"XRP",
+           "tron-mainnet":"TRX","dogecoin-mainnet":"DOGE"}.get(network)
     return bool(asset and _valid_address(asset,address))
 
 
@@ -84,6 +87,7 @@ def immutable_native_order_identity(
     """
     did=_safe_did(did)
     if (asset not in _NATIVE_NETWORK or side not in ("BUY","SELL")
+            or (side=="SELL" and asset in _BUY_ONLY)
             or stable not in ("USDC","USDT")
             or (asset=="XRP" and stable!="USDC")
             or type(budget_revision) is not int or budget_revision<0
