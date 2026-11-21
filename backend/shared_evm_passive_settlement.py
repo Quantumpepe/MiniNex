@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from threading import Lock
 
 import psycopg
 from psycopg.rows import dict_row
@@ -21,6 +22,8 @@ from .storage import _db_url, _ensure_schema
 LOG=logging.getLogger("mininex.evm_passive_settlement")
 _INTERVAL_SECONDS=30
 _SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_PASSIVE_PAGE_LOCK=Lock()
+_PASSIVE_PAGE_OFFSET=0
 
 
 def _live_worker_configured()->bool:
@@ -46,27 +49,35 @@ def _settlement_enabled()->bool:
 
 
 def _pending_submitted(limit:int=25)->list[dict]:
-    """Scan only unfinalized, known-hash submitted orders.
+    """Rotate every submitted owner hash, also in recovery-only mode.
 
-    The owner DID and original asset/side/stable are taken from trusted
-    durable PostgreSQL records, never from an unauthenticated HTTP caller.
+    Never rebroadcast; this is a work page, not an owner trade cap.
     """
     if type(limit) is not int or not 1<=limit<=100:
         raise ValueError("Invalid settlement scan limit")
     if not _settlement_enabled():
         return []
+    global _PASSIVE_PAGE_OFFSET
     url=_db_url()
     _ensure_schema(url)
-    with psycopg.connect(url,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
-                   FROM mininex_live_evm_auto_broadcasts
-                   WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
-                     AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
-                   ORDER BY created_at ASC LIMIT %s""",
-                (limit,))
-            return list(cur.fetchall())
+    sql="""SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
+           FROM mininex_live_evm_auto_broadcasts
+           WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
+             AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
+           ORDER BY created_at ASC,privy_did,asset,intent_key
+           LIMIT %s OFFSET %s"""
+    with _PASSIVE_PAGE_LOCK:
+        offset=_PASSIVE_PAGE_OFFSET
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _PASSIVE_PAGE_OFFSET=offset+len(page)
+        return page
 
 
 def _valid_pending_row(row:object)->bool:
