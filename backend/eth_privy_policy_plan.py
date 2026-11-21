@@ -163,7 +163,7 @@ def build_verified_eth_policy_candidate(
             or not owner or not executor or owner == executor):
         raise HTTPException(409, "Independent policy owner and signer required")
     caps = derive_policy_atomic_caps(
-        max_order_usd=values["order"], snapshot=snapshot, now=now,
+        max_order_usd=values["capital"], snapshot=snapshot, now=now,
     )
     params = {
         "wallet": values["wallet"],

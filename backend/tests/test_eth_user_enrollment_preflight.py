@@ -135,8 +135,6 @@ def test_missing_or_same_policy_owner_and_backend_executor_cannot_authorize(
 
 @pytest.mark.parametrize("limit", [
     limits(capital="0", order="0", daily="0"),
-    limits(capital="5000", order="6000", daily="10000"),
-    limits(capital="5000", order="0", daily="10000"),
     limits(capital="abc"),
     limits(revision=-1),
     limits(revision=True),

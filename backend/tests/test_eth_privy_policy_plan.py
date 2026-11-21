@@ -138,8 +138,8 @@ def test_invalid_user_live_order_amount_rejected(bad_order):
     {"trading_paused": False},
     {"live_limits_revision": -1},
     {"live_capital_usd": "0"},
-    {"live_max_order_usd": "7000"},
-    {"live_daily_turnover_usd": "0"},
+    {"live_max_order_usd": "not-a-number"},
+    {"live_daily_turnover_usd": "-1"},
 ])
 def test_unverified_wallet_owner_signer_paused_or_caps_fail_closed(bad):
     from fastapi import HTTPException

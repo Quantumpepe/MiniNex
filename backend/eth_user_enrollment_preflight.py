@@ -129,7 +129,7 @@ def assess_eth_enrollment_evidence(
     result["live_capital_usd"] = str(cap)
     result["live_max_order_usd"] = str(max_order)
     result["live_daily_turnover_usd"] = str(max_daily)
-    result["live_limits_nonzero"] = bool(cap and max_order and max_daily)
+    result["live_limits_nonzero"] = bool(cap>0)
     result["trading_paused"] = live_limits.get("trading_paused") is not False
     return result
 

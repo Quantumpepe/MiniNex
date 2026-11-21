@@ -36,10 +36,12 @@ def test_live_amounts_and_caps_are_exact():
     assert result == (Decimal("1500.10"), Decimal("300.05"), Decimal("600.00"))
     assert controls.validate_limits("0", "0", "0") == (
         Decimal("0"), Decimal("0"), Decimal("0"))
+    # Legacy max-order/day fields must never veto user-selected capital.
+    assert controls.validate_limits("100","0","0") == (
+        Decimal("100"),Decimal("0"),Decimal("0"))
+    assert controls.validate_limits("100","150","5") == (
+        Decimal("100"),Decimal("150"),Decimal("5"))
     for bad in (
-        ("100", "0", "10"),
-        ("100", "150", "200"),
-        ("100", "10", "5"),
         ("-1", "1", "1"),
         ("1e6", "1", "1"),
         ("NaN", "1", "1"),

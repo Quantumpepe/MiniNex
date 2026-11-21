@@ -37,17 +37,17 @@ def _money(value: object, *, allow_zero: bool) -> Decimal:
 
 
 def validate_limits(capital: object, order: object, daily: object) -> tuple[Decimal, Decimal, Decimal]:
-    """Inputs are USD *caps*, not balances; no exchange, approval or authorization."""
-    # These legacy fields remain for previously stored account settings,
-    # but runtime trading does NOT enforce an order or daily-turnover limit.
+    """Owner capital plus obsolete, non-enforcing legacy numeric fields.
+
+    The original ETH app required nonzero order/day caps even though its
+    verified LIVE sender does not enforce them. That blocked owner capital
+    settings unnecessarily. Only current owner capital is a spend budget.
+    """
     cap = _money(capital, allow_zero=True)
     per_order = _money(order, allow_zero=True)
     per_day = _money(daily, allow_zero=True)
-    if (cap == 0 or per_order == 0 or per_day == 0):
-        if cap != 0 or per_order != 0 or per_day != 0:
-            raise HTTPException(422, "Live values must be all zero or all nonzero")
-    elif per_order > cap or per_order > per_day:
-        raise HTTPException(422, "Inconsistent legacy values")
+    # These two historical fields are retained for old saved accounts, not
+    # used as additional trading, daily-turnover or approval restrictions.
     return cap, per_order, per_day
 
 
