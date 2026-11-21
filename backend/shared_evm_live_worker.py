@@ -318,6 +318,58 @@ async def execute_owner_evm_live_tick(
         budget_revision=row["budget_revision"],client=client)
 
 
+async def run_owner_evm_live_batch(
+    rows:list[dict],*,market,client:httpx.AsyncClient,
+)->dict:
+    """Parallelize different wallets/chains; serialize a wallet's same chain.
+
+    An Ethereum wallet has one shared nonce for LINK and UNI. Processing
+    their granted sessions concurrently could race two durable claims, even
+    though each trade is owner-authorized. Other wallets (and independent
+    chains) have no such nonce dependency and should not wait on a slow RPC.
+    """
+    groups:dict[tuple[str,int],list[dict]]={}
+    invalid=0
+    for row in rows:
+        if (type(row) is not dict
+                or type(row.get("privy_did")) is not str
+                or type(row.get("chain_id")) is not int):
+            invalid+=1
+            continue
+        groups.setdefault(
+            (row["privy_did"],row["chain_id"]),[]
+        ).append(row)
+
+    async def one_wallet_chain(sessions:list[dict])->tuple[int,int]:
+        attempted=0
+        failures=0
+        for session in sessions:
+            if not evm_auto_worker_enabled():
+                break
+            try:
+                await execute_owner_evm_live_tick(
+                    session,market=market,client=client)
+                attempted+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Fail only this owner/coin, never hold other wallet chains.
+                failures+=1
+                LOG.exception(
+                    "EVM LIVE tick failed; check original submission journal")
+        return attempted,failures
+
+    completed=await asyncio.gather(*(
+        one_wallet_chain(group) for group in groups.values()
+    ))
+    return {
+        "sessions_seen":len(rows),
+        "attempted":sum(n for n,_ in completed),
+        "failed":invalid+sum(n for _,n in completed),
+        "wallet_chain_groups":len(groups),
+    }
+
+
 class SharedEvmLiveWorker:
     """Opt-in owner-controlled worker, disabled unless explicitly configured."""
     def __init__(self,market):
@@ -416,14 +468,7 @@ class SharedEvmLiveWorker:
                     raise
                 except Exception:
                     LOG.exception("Owner-authorized EVM automatic fee batch unavailable")
-                for row in sessions:
-                    if not evm_auto_worker_enabled():
-                        break
-                    try:
-                        await execute_owner_evm_live_tick(
-                            row,market=self.market,client=client)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        # A committed SENDING claim must never be retried.
-                        LOG.exception("EVM LIVE tick failed; check original journal")
+                # Run independent wallets/chains without an unnecessary
+                # global serial wait, but never race a nonce on one chain.
+                await run_owner_evm_live_batch(
+                    sessions,market=self.market,client=client)

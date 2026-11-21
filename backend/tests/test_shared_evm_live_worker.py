@@ -465,3 +465,58 @@ def test_new_owner_wallet_automatically_sends_scoped_approval_before_swap(
                 and a[0]=="original_approval"])==1
     assert not any(isinstance(a,tuple) and
                    a[0]=="original_single_execution" for a in actions)
+
+
+def test_evm_live_batch_runs_separate_wallets_in_parallel_but_serializes_nonce(
+    monkeypatch,
+):
+    monkeypatch.setattr(worker,"evm_auto_worker_enabled",lambda:True)
+    first=session("LINK")
+    same_owner_same_chain=session("UNI")
+    other_owner=session("LINK")
+    other_owner["privy_did"]="did:privy:second"
+    calls=[]
+    other_started=asyncio.Event()
+    async def fake_tick(row,*,market,client):
+        name=(row["privy_did"],row["asset"])
+        calls.append(name)
+        if name==(DID,"LINK"):
+            # A fully serial worker cannot proceed until this unblocks.
+            await asyncio.wait_for(other_started.wait(),timeout=3)
+        elif name==("did:privy:second","LINK"):
+            other_started.set()
+        return {"state":"WAIT"}
+    monkeypatch.setattr(worker,"execute_owner_evm_live_tick",fake_tick)
+    async def do():
+        async with httpx.AsyncClient() as client:
+            return await worker.run_owner_evm_live_batch(
+                [first,same_owner_same_chain,other_owner],
+                market=object(),client=client)
+    outcome=asyncio.run(do())
+    assert outcome=={
+        "sessions_seen":3,"attempted":3,"failed":0,
+        "wallet_chain_groups":2}
+    assert calls==[
+        (DID,"LINK"),("did:privy:second","LINK"),(DID,"UNI")]
+
+
+def test_evm_live_batch_isolates_a_failed_coin_without_rebroadcast(
+    monkeypatch,
+):
+    monkeypatch.setattr(worker,"evm_auto_worker_enabled",lambda:True)
+    good=session("UNI")
+    bad=session("LINK")
+    tried=[]
+    async def fake_tick(row,*,market,client):
+        tried.append(row["asset"])
+        if row["asset"]=="LINK":
+            raise RuntimeError("Original send requires journal reconciliation")
+    monkeypatch.setattr(worker,"execute_owner_evm_live_tick",fake_tick)
+    async def do():
+        async with httpx.AsyncClient() as client:
+            return await worker.run_owner_evm_live_batch(
+                [bad,good],market=object(),client=client)
+    result=asyncio.run(do())
+    assert result["attempted"]==1
+    assert result["failed"]==1
+    assert tried==["LINK","UNI"]
