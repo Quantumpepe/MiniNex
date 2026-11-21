@@ -143,7 +143,7 @@ test('portfolio ALWAYS totals all started coins while ONLY trades follow selecte
 test('independent PAPER cutover leaves LIVE wallet tools and coin settings visible',()=>{
   assert.match(app,/getJson\('\/api\/user-paper\/availability'\)/);
   assert.match(app,/window\.setInterval\(\(\)=>\{/);
-  assert.match(app,/setPaperVisible\(\s*data\?\.paper_available===true/);
+  assert.match(app,/setPaperVisible\(\s*data\?\.paper_available===false/);
   assert.match(mobile,/\{showSimulatedTrades&&<PaperPortfolioCard/);
   assert.match(mobile,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
