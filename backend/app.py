@@ -35,6 +35,9 @@ from .native_live_destination_finality import get_private_native_ethereum_destin
 from .native_live_buy_destination import get_private_original_native_buy_destination
 from .native_live_sell_refund import get_private_original_native_sell_refund
 from .native_live_order_status import get_owner_native_live_order_status
+from .native_live_auto_sessions import (
+    get_owner_native_auto,pause_owner_native_auto,
+)
 from .native_live_eth_buy_source import get_original_eth_buy_source
 from .native_thor_transaction_status import get_private_original_protocol_status
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
@@ -512,6 +515,32 @@ async def authenticated_native_balances(
     """Verified real SOL/XRP/TRX wallet holdings from their own networks."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(await get_native_balances(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/auto-session/{asset}")
+def read_owner_native_auto_session(
+    asset: Literal["BTC","SOL","XRP","TRX","DOGE"],
+    authorization: str | None = Header(default=None),
+):
+    """Per-owner native AUTO status; login never starts a transaction."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(get_owner_native_auto(did,asset),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/native/auto-session/{asset}/pause")
+def pause_owner_native_auto_session(
+    asset: Literal["BTC","SOL","XRP","TRX","DOGE"],
+    authorization: str | None = Header(default=None),
+):
+    """Stop new orders only; do not retry or cancel transactions on-chain."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(pause_owner_native_auto(did,asset),headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })

@@ -1297,6 +1297,29 @@ SCHEMA += (
 )
 
 
+
+# Original five-native-coin owner-started sessions. No grant creation occurs
+# here: owner-only Start must obtain current remote Privy policy evidence first.
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_live_native_auto_sessions (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BTC','SOL','XRP','TRX','DOGE')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL
+            CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision>0),
+        status TEXT NOT NULL DEFAULT 'PAUSED'
+            CHECK(status IN ('ACTIVE','PAUSED','STOPPED')),
+        started_by_owner_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset),
+        CHECK(status!='ACTIVE' OR started_by_owner_at IS NOT NULL),
+        CHECK(asset NOT IN ('XRP','TRX')
+              OR (asset='XRP' AND stable='USDC')
+              OR (asset='TRX' AND stable='USDT'))
+    )""",
+)
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
