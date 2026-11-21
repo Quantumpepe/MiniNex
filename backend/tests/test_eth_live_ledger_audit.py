@@ -83,7 +83,7 @@ def test_empty_live_ledger_does_not_enable_signing():
     assert result["available_capital_after_pending_usd"]=="5000"
     assert result["available_24h_after_pending_usd"]=="unlimited"
     assert result["ready_for_live"] is False
-    assert "LIVE_EXECUTOR_DISABLED" in result["blockers"]
+    assert "LIVE_EXECUTOR_DISABLED" not in result["blockers"]
 
 
 @pytest.mark.parametrize("bad",[
@@ -105,7 +105,7 @@ def test_bad_or_inconsistent_eth_ledger_fails_closed(bad):
 
 @pytest.mark.parametrize("bad",[
     {"revision":True},{"revision":-1},{"trading_paused":"true"},
-    {"max_order_usd":"10000"},{"planned_capital_usd":"NaN"},
+    {"max_order_usd":"NaN"},{"planned_capital_usd":"NaN"},
     {"max_daily_turnover_usd":None},
 ])
 def test_invalid_account_limits_cannot_create_audit_report(bad):

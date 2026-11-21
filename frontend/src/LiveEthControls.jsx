@@ -296,6 +296,92 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
     }catch{setMessage(t.liveEthAutoStartFailed);}
     finally{setBusy(false);}
   };
+  // One Start Trade owner action. The existing server still requires its
+  // own EIP-191 consent and then an explicit Privy scoped-signer grant.
+  // These are separate SDK authorizations until the server-side consent
+  // model is consolidated. Do not make any grant silently on login.
+  const startTradeOnce=async()=>{
+    if(busy||phase!=='ready'||!ownAddress||!limits?.trading_paused||
+       !ethAuto?.worker_deployed||ethAuto?.status==='ACTIVE')return;
+    const payload=validatedLiveEthDraft(draft);
+    if(!payload||usdUnits(payload.planned_capital_usd)<=0n){
+      setMessage(t.liveEthInvalidLimits);
+      return;
+    }
+    setBusy(true);setMessage('');
+    try{
+      let stored=limits;
+      if(changes){
+        const revised=await request('/api/live/eth/limits','PUT',{
+          ...payload,expected_revision:limits.revision,
+        });
+        if(!validLiveEthLimits(revised)||
+           revised.planned_capital_usd!==payload.planned_capital_usd)
+          throw Error('ETH capital revision was not saved');
+        applyLimits(revised);
+        stored=revised;
+      }
+      if(!stored.trading_paused)throw Error('ETH trading must start from pause');
+      let lifecycle=await request('/api/live/eth/policy/lifecycle');
+      if(!validEthPolicyLifecycle(lifecycle))
+        throw Error('ETH owner policy state unavailable');
+      let stage=lifecycle.status;
+      if(stage==='NOT_PREPARED'){
+        // Restricted policy preparation is NOT wallet authorization.
+        // The only user-facing approval in this path is the owner
+        // Privy addSigners prompt after the policy is published.
+        const prepared=await request(
+          '/api/live/eth/policy/prepare-grant','POST');
+        if(prepared?.status!=='PREPARED'||
+           prepared?.execution_enabled!==false)
+          throw Error('ETH original wallet policy could not be prepared');
+        stage='PREPARED';
+      }
+      if(stage==='PREPARED'){
+        // Never retry an ambiguous policy creation; the server owns
+        // the once-only reservation and remote policy reconciliation.
+        const published=await request('/api/live/eth/policy/create','POST');
+        if(published?.status!=='REMOTE_VERIFIED_UNATTACHED'||
+           published?.execution_enabled!==false)
+          throw Error('ETH policy publication needs reconciliation');
+        stage='REMOTE_VERIFIED_UNATTACHED';
+      }
+      if(stage==='REMOTE_VERIFIED_UNATTACHED'){
+        const offer=await request('/api/live/eth/policy/grant-review');
+        if(!validScopedGrantOffer(offer,ownAddress))
+          throw Error('ETH Privy authorization scope changed');
+        await addSigners({
+          address:ownAddress,
+          signers:[{
+            signerId:offer.execution_signer_id,
+            policyIds:[offer.policy_id],
+          }],
+        });
+        const verified=await request('/api/live/eth/policy/confirm-grant','POST');
+        if(verified?.status!=='GRANT_VERIFIED'||
+           verified?.signer_policy_exactly_verified!==true||
+           verified?.execution_enabled!==false)
+          throw Error('ETH Privy grant not independently verified');
+        stage='GRANT_VERIFIED';
+      }
+      if(stage!=='GRANT_VERIFIED')
+        throw Error('ETH trading authorization cannot yet start');
+      const current=await request('/api/live/eth/policy/lifecycle');
+      if(!validEthPolicyLifecycle(current)||current.status!=='GRANT_VERIFIED')
+        throw Error('ETH Privy authorization changed before start');
+      const result=await request('/api/live/eth/auto/start','POST',{
+        stable:compact?stable:(ethAuto?.stable||'USDC'),
+      });
+      if(result?.status!=='ACTIVE')throw Error('ETH LIVE session was not started');
+      setMessage(t.liveEthAutoStarted);
+    }catch{
+      setMessage(t.liveEthAutoStartFailed);
+    }finally{
+      try{await refresh();}catch{setPhase('failed');}
+      setBusy(false);
+    }
+  };
+
   const pauseEthAuto=async()=>{
     if(busy||ethAuto?.status!=='ACTIVE')return;
     setBusy(true);setMessage('');
@@ -333,8 +419,9 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
   const changes=FIELDS.some(f=>draft?.[f]!==limits?.[f]);
   const canSave=phase==='ready'&&!busy&&!!validatedLiveEthDraft(draft)&&changes;
 
-  // Compact variant is shown ONLY inside the existing ETH coin settings.
-  // Keep Privy owner consent explicit; never start live trading on mount.
+  // Compact variant is the single user-facing ETH trading entry point.
+  // Capital is saved automatically on Start Trade; the technical Privy
+  // policy stages remain internal and are not separate user buttons.
   if(compact)return <div className="privy-paper-action" aria-label="ETH LIVE AUTO">
     {phase==='loading'&&<p className="privy-wallet-description">{t.liveEthLoading}</p>}
     {phase==='failed'&&<p role="alert" className="privy-wallet-description">{t.liveEthUnavailable}</p>}
@@ -343,32 +430,47 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         <span>{t.liveEthAutoTitle}</span>
         <strong>{ethAuto?.status||'OFF'}</strong>
       </div>
-      {['NOT_PREPARED','PREPARED'].includes(policyState?.status)&&
-        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
-          disabled={busy||!ownAddress||!limits.trading_paused||
-            usdUnits(limits.max_order_usd)===0n} onClick={setupPolicy}>
-          {t.liveEthPolicySetupButton}</button>}
-      {validScopedGrantOffer(grantOffer,ownAddress)&&<>
-        <p role="alert" className="privy-wallet-description">{t.liveEthPrivyGrantWarning}</p>
-        <button type="button" className="privy-wallet-action"
-          disabled={busy||!limits.trading_paused} onClick={grantPrivySigner}>
-          {t.liveEthGrantButton}</button>
-      </>}
+      {ethAuto?.status!=='ACTIVE'&&<label style={{display:'grid',gap:4}}>
+        <span className="privy-wallet-description">{t.liveEthCapital} (USD)</span>
+        <input type="text" inputMode="decimal" autoComplete="off"
+          value={draft?.planned_capital_usd||''} disabled={busy}
+          onChange={e=>setDraft(current=>({...current,
+            planned_capital_usd:e.target.value}))}
+          aria-label={t.liveEthCapital}/>
+      </label>}
       {ethAuto?.status==='ACTIVE'
         ?<button type="button" className="privy-wallet-action"
             disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
         :<button type="button" className="privy-wallet-action"
             disabled={busy||!ethAuto?.worker_deployed||
-              policyState?.status!=='GRANT_VERIFIED'||
-              !limits.trading_paused||!ownAddress}
-            onClick={startEthAuto}>{t.liveEthAutoStart}</button>}
+              !ownAddress||!limits.trading_paused||
+              !validatedLiveEthDraft(draft)||
+              usdUnits(draft?.planned_capital_usd)<=0n}
+            onClick={startTradeOnce}>Start Trade · ETH</button>}
       {!ethAuto?.worker_deployed&&
         <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
       {message&&<p role="status" className="privy-wallet-description">{message}</p>}
     </>}
   </div>;
 
-  return <details className="privy-disclosure privy-technical-section">
+  return <>
+    {enabled&&<div className="privy-hwm-box" style={{display:'grid',gap:8}}>
+      <strong>ETH · LIVE</strong>
+      <p className="privy-wallet-description">
+        {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
+      </p>
+      {ethAuto?.status==='ACTIVE'
+        ? <button className="privy-wallet-action" type="button"
+            disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
+        : <button className="privy-wallet-action" type="button"
+            disabled={busy||phase!=='ready'||!limits||
+              !ethAuto?.worker_deployed||changes||!ownAddress||
+              !limits.trading_paused}
+            onClick={startTradeOnce}>Start Trade · ETH</button>}
+      {!ethAuto?.worker_deployed&&
+        <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
+    </div>}
+    <details className="privy-disclosure privy-technical-section">
     <summary>
       <span>{t.liveEthTitle}</span>
       <small>{t.liveEthHint}</small>
@@ -405,54 +507,17 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
             <p role="alert" className="privy-wallet-description">{t.liveEthInvalidLimits}</p>}
         </div>
         <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
-          <strong>{t.liveEthPolicyTitle}</strong>
-          <p className="privy-wallet-description">
-            {policyState?.status==='REMOTE_VERIFIED_UNATTACHED'
-              ?t.liveEthPolicyCreated:policyState?.status==='GRANT_VERIFIED'
-              ?t.liveEthGrantVerified:policyState?.status==='PREPARED'
-              ?t.liveEthPolicyPrepared:policyState?.status==='NOT_PREPARED'
-              ?t.liveEthPolicyNotPrepared:t.liveEthPolicyNeedsReview}
-          </p>
-          {['NOT_PREPARED','PREPARED'].includes(policyState?.status)&&
-            <button className="privy-wallet-action privy-wallet-action--secondary"
-              type="button" onClick={setupPolicy}
-              disabled={busy||!ownAddress||!limits.trading_paused||
-                usdUnits(limits.max_order_usd)===0n||changes}>
-              {t.liveEthPolicySetupButton}</button>}
-          {validScopedGrantOffer(grantOffer,ownAddress)&&
-            <>
-              <p role="alert" className="privy-wallet-description">
-                {t.liveEthPrivyGrantWarning}
-              </p>
-              <button type="button" className="privy-wallet-action"
-                disabled={busy||changes||!limits.trading_paused}
-                onClick={grantPrivySigner}>{t.liveEthGrantButton}</button>
-            </>}
-          {!validScopedGrantOffer(grantOffer,ownAddress)&&
-             policyState?.status==='REMOTE_VERIFIED_UNATTACHED'&&
-            <p className="privy-wallet-description">{t.liveEthGrantAuditLocked}</p>}
-        </div>
-        <EthAutoOwnerApproval
-          userId={userId} walletAddress={ownAddress}
-          getAccessToken={getAccessToken} paused={limits?.trading_paused===true}
-          enabled={enabled} t={t}/>
-        <div className="privy-hwm-box" style={{display:'grid',gap:8}}>
           <strong>{t.liveEthAutoTitle}</strong>
           <p className="privy-wallet-description">{t.liveEthAutoDescription}</p>
           <p className="privy-wallet-description">
             {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
           </p>
-          {ethAuto?.status==='ACTIVE'
-            ?<button className="privy-wallet-action" type="button"
-                disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
-            :<button className="privy-wallet-action" type="button"
-                disabled={busy||!ethAuto?.worker_deployed||changes||
-                  policyState?.status!=='GRANT_VERIFIED'||
-                  !limits?.trading_paused||!ownAddress}
-                onClick={startEthAuto}>{t.liveEthAutoStart}</button>}
-          {!ethAuto?.worker_deployed&&
-            <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
+
         </div>
+        <EthAutoOwnerApproval
+          userId={userId} walletAddress={ownAddress}
+          getAccessToken={getAccessToken} paused={limits?.trading_paused===true}
+          enabled={enabled} t={t}/>
         <EthLiveWalletEquity
           walletAddress={ownAddress} userId={userId}
           getAccessToken={getAccessToken} enabled={enabled} t={t}/>
@@ -532,5 +597,6 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         onClick={()=>{setConfirmRevoke(false);setMessage('');setPhase('loading');
           refresh().catch(()=>setPhase('failed'));}}>{t.liveEthRefresh}</button>}
     </div>
-  </details>;
+  </details>
+  </>;
 }

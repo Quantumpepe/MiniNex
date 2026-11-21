@@ -5,7 +5,7 @@ import * as bitcoin from 'bitcoinjs-lib';
 import {secp256k1} from '@noble/curves/secp256k1';
 import {Buffer} from 'buffer';
 import {btcSatoshis,btcOwnedPublicKey,btcOwnerScript,btcRecipientScript,
-  btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,btcSignAndBroadcast,btcRecoverPublicKey,BTC_REVIEW_MAX_AGE_MS}
+  btcFeeRate,btcValidatedUtxos,btcPlan,btcMaxPlan,btcDisplay,btcSignAndBroadcast,btcRecoverPublicKey,BTC_REVIEW_MAX_AGE_MS}
   from '../src/btcSendRules.js';
 
 const source=path=>readFileSync(new URL(path,import.meta.url),'utf8');
@@ -136,4 +136,114 @@ test('real P2WPKH PSBT signs all inputs with Privy-style raw hashes and verifies
     assert.equal(broadcast.outs[0].value,50000);
     assert.equal(broadcast.outs[1].value,Number(plan.change));
   }finally{globalThis.fetch=previous;}
+});
+
+
+test('manual BTC MAX consumes all confirmed inputs, preserving exact sats and reviewed fee',()=>{
+  const two=[
+    {txid:'a'.repeat(64),vout:0,value:100000n},
+    {txid:'b'.repeat(64),vout:1,value:70000n},
+  ];
+  const plan=btcMaxPlan({destination:recipient,utxos:two,
+    feeRate:7,sourceScript:script});
+  assert.ok(plan);
+  assert.equal(plan.utxos.length,2);
+  assert.equal(plan.total,170000n);
+  assert.equal(plan.change,0n);
+  assert.equal(plan.sats+plan.fee,plan.total);
+  assert.equal(btcSatoshis(plan.amount),plan.sats);
+  assert.equal(btcDisplay(plan.sats),plan.amount);
+  assert.equal(btcDisplay(2100000000000000n),'21000000');
+  assert.equal(btcMaxPlan({destination:recipient,utxos:two,
+    feeRate:50000,sourceScript:script}),null);
+  assert.equal(btcMaxPlan({destination:recipient,utxos:[...two,two[0]],
+    feeRate:1,sourceScript:script}),null);
+  const ui=source('../src/BtcWalletSend.jsx');
+  assert.match(ui,/btcMaxPlan\(\{destination,utxos,feeRate:rate/);
+  assert.match(ui,/onClick=\{event=>check\(event,true\)\}/);
+});
+
+test('manual MAX signs all owned Bitcoin inputs and creates a single output',async()=>{
+  const funding=new bitcoin.Transaction();
+  funding.version=2;
+  funding.addInput(Buffer.alloc(32),0xffffffff);
+  funding.addOutput(script,100000);
+  funding.addOutput(script,200000);
+  const txid=funding.getId();
+  const plan=btcMaxPlan({destination:recipient,utxos:[
+    {txid,vout:0,value:100000n},
+    {txid,vout:1,value:200000n}
+  ],feeRate:5,sourceScript:script});
+  assert.ok(plan);
+  const previous=globalThis.fetch;
+  let posted=null;
+  globalThis.fetch=async(url,opts={})=>{
+    if(String(url).endsWith('/tx/'+txid+'/hex')&&opts.method!=='POST')
+      return new Response(funding.toHex(),{status:200});
+    if(String(url).endsWith('/tx')&&opts.method==='POST'){
+      posted=bitcoin.Transaction.fromHex(opts.body);
+      return new Response(posted.getId(),{status:200});
+    }
+    throw Error('Unexpected test provider endpoint');
+  };
+  try{
+    const actual=await btcSignAndBroadcast(plan,{address,pubkey:publicKey,
+      signRawHash:async({hash,chainType})=>{
+        assert.equal(chainType,'bitcoin-segwit');
+        return {signature:'0x'+Buffer.from(secp256k1.sign(
+          Buffer.from(hash.slice(2),'hex'),priv).toCompactRawBytes()).toString('hex')};
+      }});
+    assert.equal(actual,posted.getId());
+    assert.equal(posted.ins.length,2);
+    assert.equal(posted.outs.length,1);
+    assert.equal(BigInt(posted.outs[0].value),plan.sats);
+    assert.deepEqual(Buffer.from(posted.outs[0].script),btcRecipientScript(recipient));
+  }finally{globalThis.fetch=previous;}
+});
+
+
+test('signed Bitcoin TXID is exposed before the broadcast reply becomes uncertain',async()=>{
+  const funding=new bitcoin.Transaction();
+  funding.version=2;
+  funding.addInput(Buffer.alloc(32),0xffffffff);
+  funding.addOutput(script,100000);
+  const txid=funding.getId();
+  const plan=btcMaxPlan({destination:recipient,utxos:[
+    {txid,vout:0,value:100000n}
+  ],feeRate:5,sourceScript:script});
+  assert.ok(plan);
+  const before=globalThis.fetch;
+  let sentHash=null;
+  let attemptedTxid=null;
+  globalThis.fetch=async(url,opts={})=>{
+    if(String(url).endsWith('/tx/'+txid+'/hex')&&opts.method!=='POST')
+      return new Response(funding.toHex(),{status:200});
+    if(String(url).endsWith('/tx')&&opts.method==='POST'){
+      attemptedTxid=bitcoin.Transaction.fromHex(opts.body).getId();
+      throw Error('Network response lost after possible broadcast');
+    }
+    throw Error('Unexpected test provider request');
+  };
+  try{
+    await assert.rejects(()=>btcSignAndBroadcast(plan,{address,pubkey:publicKey,
+      signRawHash:async({hash})=>({signature:'0x'+Buffer.from(
+        secp256k1.sign(Buffer.from(hash.slice(2),'hex'),priv).toCompactRawBytes()
+      ).toString('hex')}),
+      onSigned:hash=>{sentHash=hash}
+    }));
+    assert.equal(sentHash,attemptedTxid);
+    assert.match(sentHash,/^[a-f0-9]{64}$/);
+    assert.match(source('../src/BtcWalletSend.jsx'),/stage==='uncertain'&&txid/);
+  }finally{globalThis.fetch=before;}
+});
+
+
+test('BTC Send persists only a signed public TXID for recovery after OTA reload',()=>{
+  const ui=source('../src/BtcWalletSend.jsx');
+  assert.match(ui,/mininex:last-signed-btc:/);
+  assert.match(ui,/globalThis\.localStorage\?\.setItem\(signedKey,hash\)/);
+  assert.match(ui,/globalThis\.localStorage\?\.getItem\(signedKey\)/);
+  assert.match(ui,/rememberSignedTxid\(hash\)/);
+  assert.match(ui,/lastSignedTxid!==txid/);
+  assert.doesNotMatch(ui,/localStorage\?\.setItem\([^\n]*signedWire/);
 });

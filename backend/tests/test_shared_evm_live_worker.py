@@ -36,6 +36,8 @@ def evidence(asset,side,source="2500",allowance="3000",destination="0"):
         "destination_balance":destination if side=="BUY" else None,
         "native_gas_balance_atomic":"0",
         "source_balance":source,"router_allowance":allowance,
+        "router_allowance_atomic":str(int(Decimal(allowance)*
+                                      Decimal(10)**pair["source_decimals"])),
         "wallet_address":"0x"+"ab"*20,
         "wallet_identity_verified":True,
         "native_gas_available":True,
@@ -52,14 +54,15 @@ def rates(asset,stable):
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
-def test_worker_requires_exact_opt_in_and_database(monkeypatch,asset):
+def test_owner_session_no_longer_needs_operator_live_switch(monkeypatch,asset):
+    monkeypatch.delenv("DATABASE_URL",raising=False)
+    assert worker.evm_auto_worker_enabled() is False
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
-    monkeypatch.setenv("DATABASE_URL","postgres://test.invalid")
-    assert worker.evm_auto_worker_enabled() is False
-    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
     monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
-    assert worker.evm_auto_worker_enabled() is False
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.setenv("DATABASE_URL","postgres://test.invalid")
+    assert worker.evm_auto_worker_enabled() is True
+    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","disabled")
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     assert worker.evm_auto_worker_enabled() is True
     assert worker._trusted_live_session(session(asset))["asset"]==asset
 
@@ -151,6 +154,9 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
 def test_native_evm_sell_never_runs_without_native_receipt_worker(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -199,10 +205,10 @@ def test_worker_scans_only_real_owner_started_current_granted_sessions(monkeypat
     assert "paper" not in db.sql.lower()
 
 
-def test_worker_is_wired_to_lifespan_and_disabled_by_default(monkeypatch):
+def test_worker_is_wired_to_lifespan_and_needs_database(monkeypatch):
     from backend.app import evm_auto_live
     assert isinstance(evm_auto_live,worker.SharedEvmLiveWorker)
-    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     assert worker.evm_auto_worker_enabled() is False
     assert evm_auto_live._task is None
 
@@ -272,6 +278,9 @@ def test_5min_horizon_is_owner_supported_setting():
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
 def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -283,8 +292,19 @@ def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset)
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
-def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(monkeypatch,asset):
-    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+@pytest.mark.parametrize("activation",["read-only","explicit-live"])
+def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(
+    monkeypatch,asset,activation
+):
+    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    if activation=="read-only":
+        monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    else:
+        monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
+        monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -301,6 +321,7 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
     monkeypatch,asset
 ):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def zero_wrapped(did,**kw):
         actions.append("native_wallet_probe")
@@ -334,6 +355,7 @@ def test_native_sell_existing_wrapped_balance_requires_original_deposit_proof(
     monkeypatch,asset
 ):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def should_not_wrap(**kwargs):
         pytest.fail("Existing wrapped source balance must not be deposited again")
@@ -362,12 +384,14 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
         count+=1
         if count>1:raise asyncio.CancelledError()
     monkeypatch.setattr(worker.asyncio,"sleep",one_cycle)
+    async def approvals(*,client):calls.append("approvals")
     async def swaps():calls.append("swaps")
     async def native_buy(*,client):calls.append("native_buy")
     async def native_sell(*,client):calls.append("native_sell")
     async def historical(*,client):calls.append("historical")
     async def treasury_finality():calls.append("treasury_finality")
     async def fee_batch(*,client):calls.append("fee_batch")
+    monkeypatch.setattr(worker,"reconcile_original_router_approvals_once",approvals)
     monkeypatch.setattr(worker,"reconcile_submitted_evm_swaps_once",swaps)
     monkeypatch.setattr(worker,"reconcile_native_buy_cycle_once",native_buy)
     monkeypatch.setattr(worker,"reconcile_native_sell_once",native_sell)
@@ -378,7 +402,7 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
         await worker.SharedEvmLiveWorker(market=object())._run()
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(run())
-    assert calls==["swaps","native_buy","native_sell","historical",
+    assert calls==["approvals","swaps","native_buy","native_sell","historical",
                    "treasury_finality","fee_batch"]
 
 
@@ -411,3 +435,91 @@ def test_shared_live_session_scan_rotates_across_all_six_evm_assets(monkeypatch)
     assert all("g.status='GRANT_VERIFIED'" in sql for sql,args in queries)
     assert all("p.revision=s.budget_revision" in sql for sql,args in queries)
     assert all("LIMIT %s OFFSET %s" in sql for sql,args in queries)
+
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+def test_new_owner_wallet_automatically_sends_scoped_approval_before_swap(
+    monkeypatch,asset,
+):
+    if asset in ("BNB","POL","AVAX"):
+        monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+        monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
+    async def zero_allowance(did,**kw):
+        actions.append(("onchain_source",kw["amount"]))
+        return evidence(asset,"BUY",source="5000",allowance="0")
+    async def approve(**kw):
+        actions.append(("original_approval",kw["amount_atomic"]))
+        assert kw["asset"]==asset
+        assert kw["budget_revision"]==7
+        return {"state":"SUBMITTED","tx_hash":"0x"+"ef"*32}
+    monkeypatch.setattr(worker,"check_evm_source_allowance",zero_allowance)
+    monkeypatch.setattr(worker,"submit_scoped_router_approval_once",approve)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session(asset),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    assert result["state"]=="SUBMITTED"
+    assert result["reason"]=="ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP"
+    assert result["approval_tx_hash"]=="0x"+"ef"*32
+    assert len([a for a in actions if isinstance(a,tuple)
+                and a[0]=="original_approval"])==1
+    assert not any(isinstance(a,tuple) and
+                   a[0]=="original_single_execution" for a in actions)
+
+
+def test_evm_live_batch_runs_separate_wallets_in_parallel_but_serializes_nonce(
+    monkeypatch,
+):
+    monkeypatch.setattr(worker,"evm_auto_worker_enabled",lambda:True)
+    first=session("LINK")
+    same_owner_same_chain=session("UNI")
+    other_owner=session("LINK")
+    other_owner["privy_did"]="did:privy:second"
+    calls=[]
+    other_started=asyncio.Event()
+    async def fake_tick(row,*,market,client):
+        name=(row["privy_did"],row["asset"])
+        calls.append(name)
+        if name==(DID,"LINK"):
+            # A fully serial worker cannot proceed until this unblocks.
+            await asyncio.wait_for(other_started.wait(),timeout=3)
+        elif name==("did:privy:second","LINK"):
+            other_started.set()
+        return {"state":"WAIT"}
+    monkeypatch.setattr(worker,"execute_owner_evm_live_tick",fake_tick)
+    async def do():
+        async with httpx.AsyncClient() as client:
+            return await worker.run_owner_evm_live_batch(
+                [first,same_owner_same_chain,other_owner],
+                market=object(),client=client)
+    outcome=asyncio.run(do())
+    assert outcome=={
+        "sessions_seen":3,"attempted":3,"failed":0,
+        "wallet_chain_groups":2}
+    assert calls==[
+        (DID,"LINK"),("did:privy:second","LINK"),(DID,"UNI")]
+
+
+def test_evm_live_batch_isolates_a_failed_coin_without_rebroadcast(
+    monkeypatch,
+):
+    monkeypatch.setattr(worker,"evm_auto_worker_enabled",lambda:True)
+    good=session("UNI")
+    bad=session("LINK")
+    tried=[]
+    async def fake_tick(row,*,market,client):
+        tried.append(row["asset"])
+        if row["asset"]=="LINK":
+            raise RuntimeError("Original send requires journal reconciliation")
+    monkeypatch.setattr(worker,"execute_owner_evm_live_tick",fake_tick)
+    async def do():
+        async with httpx.AsyncClient() as client:
+            return await worker.run_owner_evm_live_batch(
+                [bad,good],market=object(),client=client)
+    result=asyncio.run(do())
+    assert result["attempted"]==1
+    assert result["failed"]==1
+    assert tried==["LINK","UNI"]

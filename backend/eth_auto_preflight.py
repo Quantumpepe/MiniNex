@@ -42,7 +42,7 @@ def assess_eth_automatic_preflight(*, signer: object, policy: object,
             str(limits.get("max_order_usd", "0")),
             str(limits.get("max_daily_turnover_usd", "0")),
         )
-        valid_limits = all(amount > Decimal("0") for amount in (capital, order, daily))
+        valid_limits = capital > Decimal("0")
     except (ValueError, TypeError, KeyError, AttributeError, HTTPException):
         # Invalid or untrusted persisted limits must never pass readiness.
         valid_limits = False

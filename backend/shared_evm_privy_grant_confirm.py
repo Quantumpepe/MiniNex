@@ -18,7 +18,7 @@ from psycopg.rows import dict_row
 
 from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_owner_consent import _asset
-from .shared_evm_remote_grant_audit import validate_pinned_evm_policy
+from .shared_evm_remote_grant_audit import validate_pinned_evm_policy,_grant_scope_digest
 from .shared_evm_privy_grant_review import verify_exact_remote_evm_policy
 from .privy_live_signer import (
     _owned_eth_wallet,_scoped_signer,fetch_privy_wallet_metadata,
@@ -37,15 +37,21 @@ def _load_owner_grant_candidate_locked(cur,*,did:str,asset:str,now:int)->dict:
                   owner_id,signer_id,policy_id,policy_sha256,
                   remote_policy_sha256,consent_sha256,
                   consent_verified_at,revoked_at,expires_at,status,
-                  budget_revision,candidate_json
+                  budget_revision,candidate_json,authorization_method
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     record=cur.fetchone()
+    single=(type(record) is dict and
+            record.get("authorization_method")=="PRIVY_SCOPED_GRANT")
     if (type(record) is not dict
-            or record.get("status")!="CONSENT_VERIFIED"
+            or not (
+                single and record.get("status")=="DRAFT"
+                and record.get("consent_verified_at") is None
+                and record.get("consent_sha256") is None
+                or not single and record.get("status")=="CONSENT_VERIFIED"
+                and record.get("consent_verified_at") is not None
+                and bool(record.get("consent_sha256")))
             or record.get("revoked_at") is not None
-            or record.get("consent_verified_at") is None
-            or not record.get("consent_sha256")
             or type(record.get("policy_id")) is not str
             or record.get("remote_policy_sha256")!=record.get("policy_sha256")):
         raise HTTPException(409,"An unattached owner-approved Privy policy is required")
@@ -63,24 +69,25 @@ def _load_owner_grant_candidate_locked(cur,*,did:str,asset:str,now:int)->dict:
             or publication.get("policy_id")!=record["policy_id"]
             or publication.get("policy_sha256")!=record["policy_sha256"]):
         raise HTTPException(409,"Unverified or uncertain Privy policy publication")
+    if not single:
+        cur.execute(
+            """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                      budget_revision,message_sha256,confirmed_at
+               FROM mininex_live_evm_consent_challenges
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        consent=cur.fetchone()
+        if (type(consent) is not dict
+                or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("confirmed_at") is None
+                or consent.get("wallet_id")!=record["wallet_id"]
+                or consent.get("wallet_address")!=record["wallet_address"]
+                or consent.get("chain_id")!=record["chain_id"]
+                or consent.get("stable")!=record["stable"]
+                or consent.get("budget_revision")!=record["budget_revision"]
+                or consent.get("message_sha256")!=record["consent_sha256"]):
+            raise HTTPException(409,"Current wallet-signed per-coin consent required")
     cur.execute(
-        """SELECT status,wallet_id,wallet_address,chain_id,stable,
-                  budget_revision,message_sha256,confirmed_at
-           FROM mininex_live_evm_consent_challenges
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    consent=cur.fetchone()
-    if (type(consent) is not dict
-            or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("confirmed_at") is None
-            or consent.get("wallet_id")!=record["wallet_id"]
-            or consent.get("wallet_address")!=record["wallet_address"]
-            or consent.get("chain_id")!=record["chain_id"]
-            or consent.get("stable")!=record["stable"]
-            or consent.get("budget_revision")!=record["budget_revision"]
-            or consent.get("message_sha256")!=record["consent_sha256"]):
-        raise HTTPException(409,"Current wallet-signed per-coin consent required")
-    cur.execute(
-        """SELECT stable,revision
+        """SELECT stable,revision,budget_usd
            FROM mininex_extra_coin_preferences
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     settings=cur.fetchone()
@@ -88,6 +95,10 @@ def _load_owner_grant_candidate_locked(cur,*,did:str,asset:str,now:int)->dict:
             or settings.get("stable")!=record["stable"]
             or settings.get("revision")!=record["budget_revision"]):
         raise HTTPException(409,"Coin budget changed since the signed approval")
+    if single:
+        if type(settings.get("budget_usd")) is not int or settings["budget_usd"]<=0:
+            raise HTTPException(409,"Original per-coin budget unavailable")
+        record["approved_budget_usd"]=settings["budget_usd"]
     return record
 
 
@@ -143,15 +154,29 @@ def _commit_owner_grant_locked(
                 "wallet_id","wallet_address","policy_id",
                 "policy_sha256","budget_revision"))):
         raise HTTPException(409,"Owner Privy consent or grant changed during audit")
+    single=current.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+    # A SHA is an audit commitment, never consent by itself. Permission
+    # is promoted only AFTER fresh remote owner+policy+signer verification.
+    digest=_grant_scope_digest(
+        did=did,record=current,budget_usd=current["approved_budget_usd"],
+    ) if single else None
+    expected="DRAFT" if single else "CONSENT_VERIFIED"
     cur.execute(
         """UPDATE mininex_live_evm_owner_permissions
            SET status='GRANT_VERIFIED',grant_verified_at=now(),
+               consent_sha256=CASE WHEN
+                 authorization_method='PRIVY_SCOPED_GRANT'
+                 THEN %s ELSE consent_sha256 END,
+               consent_verified_at=CASE WHEN
+                 authorization_method='PRIVY_SCOPED_GRANT'
+                 THEN now() ELSE consent_verified_at END,
                updated_at=now(),revision=revision+1
-           WHERE privy_did=%s AND asset=%s AND status='CONSENT_VERIFIED'
+           WHERE privy_did=%s AND asset=%s AND status=%s
              AND revoked_at IS NULL AND policy_id=%s
              AND policy_sha256=%s
            RETURNING status""",
-        (did,asset,proof["policy_id"],proof["policy_sha256"]))
+        (digest,did,asset,expected,
+         proof["policy_id"],proof["policy_sha256"]))
     updated=cur.fetchone()
     if type(updated) is not dict or updated.get("status")!="GRANT_VERIFIED":
         raise HTTPException(409,"Concurrent EVM wallet grant confirmation")

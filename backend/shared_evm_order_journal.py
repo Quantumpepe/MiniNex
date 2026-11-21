@@ -88,8 +88,16 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
              + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
               WHERE privy_did=%s AND chain_id=%s
                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
+              WHERE privy_did=%s AND chain_id=%s
+                AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND chain='ethereum-mainnet'
+                  AND side='BUY' AND %s=1 AND status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
-        (did,pair["chain_id"],did,pair["chain_id"]))
+        (did,pair["chain_id"],did,pair["chain_id"],
+         did,pair["chain_id"],did,pair["chain_id"]))
     row=cur.fetchone()
     if type(row) is not dict or type(row.get("pending")) is not int:
         raise HTTPException(503,"Cannot verify pending EVM submissions")
@@ -218,7 +226,8 @@ def _claim_authorized_evm_order_locked(
     cur.execute(
         """SELECT status,stable,chain_id,wallet_id,wallet_address,
                   policy_id,remote_policy_sha256,policy_sha256,
-                  consent_sha256,expires_at,revoked_at,budget_revision
+                  consent_sha256,expires_at,revoked_at,budget_revision,
+                  authorization_method,owner_id,signer_id,asset
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     policy=cur.fetchone()
@@ -238,30 +247,50 @@ def _claim_authorized_evm_order_locked(
             or policy["expires_at"].tzinfo is None
             or policy["expires_at"]<=datetime.now(timezone.utc)):
         raise HTTPException(409,"Current owner-approved EVM signer grant required")
+    single=policy.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+    if not single:
+        # Legacy authorization retains its original independent EIP-191
+        # proof. A scoped Privy owner grant never inherits that pathway.
+        cur.execute(
+            """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                      budget_revision,message_sha256,confirmed_at
+               FROM mininex_live_evm_consent_challenges
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        consent=cur.fetchone()
+        if (type(consent) is not dict
+                or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("confirmed_at") is None
+                or consent.get("wallet_id")!=policy["wallet_id"]
+                or consent.get("wallet_address")!=policy["wallet_address"]
+                or consent.get("chain_id")!=pair["chain_id"]
+                or consent.get("stable")!=identity["stable"]
+                or consent.get("budget_revision")!=budget_revision
+                or consent.get("message_sha256")!=policy["consent_sha256"]):
+            raise HTTPException(409,"Matching signed coin consent required")
     cur.execute(
-        """SELECT status,wallet_id,wallet_address,chain_id,stable,
-                  budget_revision,message_sha256,confirmed_at
-           FROM mininex_live_evm_consent_challenges
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    consent=cur.fetchone()
-    if (type(consent) is not dict
-            or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("confirmed_at") is None
-            or consent.get("wallet_id")!=policy["wallet_id"]
-            or consent.get("wallet_address")!=policy["wallet_address"]
-            or consent.get("chain_id")!=pair["chain_id"]
-            or consent.get("stable")!=identity["stable"]
-            or consent.get("budget_revision")!=budget_revision
-            or consent.get("message_sha256")!=policy["consent_sha256"]):
-        raise HTTPException(409,"Matching signed coin consent required")
-    cur.execute(
-        """SELECT stable,revision FROM mininex_extra_coin_preferences
+        """SELECT stable,revision,budget_usd FROM mininex_extra_coin_preferences
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     settings=cur.fetchone()
     if (type(settings) is not dict
             or settings.get("revision")!=budget_revision
             or settings.get("stable")!=identity["stable"]):
         raise HTTPException(409,"Coin settings changed since signed approval")
+    if single:
+        # The only authorization is the actual remotely audited wallet-owner
+        # addSigners approval. This digest binds that exact policy, signer,
+        # wallet, asset and immutable per-coin budget to the SENDING claim.
+        from .shared_evm_remote_grant_audit import _grant_scope_digest
+        from .shared_evm_remote_grant_audit import validate_pinned_evm_policy
+        if (policy.get("asset")!=asset or not policy.get("consent_sha256")
+                or policy.get("owner_id")==policy.get("signer_id")):
+            raise HTTPException(409,"Original owner scoped grant unavailable")
+        try:
+            expected=_grant_scope_digest(
+                did=did,record=policy,budget_usd=settings["budget_usd"])
+        except (ValueError,TypeError,KeyError):
+            raise HTTPException(409,"Original Privy budget scope unavailable") from None
+        if policy["consent_sha256"]!=expected:
+            raise HTTPException(409,"Privy owner grant or capital changed")
     cur.execute(
         """SELECT state,side,stable,budget_revision,quote_sha256
            FROM mininex_live_evm_budget_reservations

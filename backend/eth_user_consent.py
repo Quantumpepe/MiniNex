@@ -79,8 +79,8 @@ def _require_enrollment_evidence(evidence: object) -> dict:
         cap, order, daily = validate_limits(*values)
     except (HTTPException, TypeError, ValueError):
         raise HTTPException(409, "LIVE limits invalid") from None
-    if min(cap, order, daily) <= 0:
-        raise HTTPException(409, "Nonzero LIVE limits required")
+    if cap <= 0:
+        raise HTTPException(409, "Positive owner-selected LIVE capital required")
     return {
         "wallet": wallet.lower(),
         "revision": revision,

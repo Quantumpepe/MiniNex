@@ -37,17 +37,14 @@ def build_owner_approval_plan(*,token:str,wallet:str,limits:dict,
         raise ValueError("Pause ETH AUTO before changing token allowances")
     try:
         capital=Decimal(str(limits["planned_capital_usd"]))
-        daily=Decimal(str(limits["max_daily_turnover_usd"]))
-        each=Decimal(str(limits["max_order_usd"]))
     except (InvalidOperation,KeyError,TypeError):
-        raise ValueError("Invalid ETH LIVE limits") from None
-    if (not all(v.is_finite() and v>0 for v in (capital,daily,each))
-            or each>capital or daily<each):
-        raise ValueError("ETH LIVE limits not fully configured")
-    # Cumulative allowance never exceeds the owner's selected session capital
-    # or the daily turnover budget. Every AUTO order separately observes its
-    # per-order limits and Privy restricted policy.
-    ceiling=min(capital,daily)
+        raise ValueError("Invalid ETH owner capital") from None
+    if not capital.is_finite() or capital<=0:
+        raise ValueError("Owner must select positive ETH trading capital")
+    # No extra order/day ceiling: permit a finite router allowance up to
+    # the exact owner's own chosen capital. The remote Privy grant and
+    # every actual source wallet balance still bind signed transactions.
+    ceiling=capital
     caps=derive_policy_atomic_caps(
         max_order_usd=format(ceiling,"f"),snapshot=prices,now=now)
     field={"USDC":"usdc_max_input_micro","USDT":"usdt_max_input_micro",

@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import re
+from threading import Lock
 
 import httpx
 import psycopg
@@ -20,6 +21,7 @@ from psycopg.rows import dict_row
 
 from .eth_privy_native_rpc import send_privy_native_weth9
 from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .eth_privy_user_grant import eth_grant_budget_digest
 from .eth_weth9_receipts import check_user_weth9_receipt
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import (
@@ -32,6 +34,11 @@ from .real_eth_trade_legs import save_verified_leg,validated_finalized_leg
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.eth_native_auto")
+# A long-pending original hash must not starve newer native ETH receipts.
+_NATIVE_RECEIPT_SCAN_LOCK=Lock()
+_NATIVE_RECEIPT_SCAN_OFFSET=0
+_NATIVE_BUY_SCAN_LOCK=Lock()
+_NATIVE_BUY_SCAN_OFFSET=0
 _KEY=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{7,95}$")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 
@@ -69,8 +76,15 @@ def _assert_no_pending_ethereum_token_send(cur, did:str)->None:
              + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
                WHERE privy_did=%s AND chain_id=1 AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
+               WHERE privy_did=%s AND chain_id=1 AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND chain='ethereum-mainnet'
+                  AND side='BUY' AND status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
-        (did,did))
+        (did,did,did,did))
     row=cur.fetchone()
     if (type(row) is not dict
             or type(row.get("pending")) is not int
@@ -90,7 +104,9 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
     if type(amount_wei) is not int or not 0<amount_wei<10**45:
         raise ValueError("Invalid WETH9 amount")
     cur.execute(
-        """SELECT trading_paused,revision FROM mininex_live_eth_limits
+        """SELECT trading_paused,revision,planned_capital_usd,
+                  max_order_usd,max_daily_turnover_usd
+           FROM mininex_live_eth_limits
            WHERE privy_did=%s FOR UPDATE""",(did,))
     limits=cur.fetchone()
     if type(limits) is not dict or limits.get("trading_paused") is not False:
@@ -105,6 +121,7 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
     cur.execute(
         """SELECT status,policy_id,wallet_address,execution_signer_id,
                   limits_revision,remote_policy_sha256,candidate_sha256,
+                  policy_owner_id,authorization_method,grant_budget_sha256,
                   extract(epoch FROM policy_expires_at)::bigint AS expiry
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""",(did,))
@@ -119,15 +136,23 @@ def _native_claim_locked(cur, *, did:str, source_key:str,
             or type(policy.get("expiry")) is not int
             or policy["expiry"]<int(time.time())+30):
         raise HTTPException(409,"Native WETH9 grant expired or revoked")
-    cur.execute(
-        """SELECT status,revoked_at,limits_revision
-           FROM mininex_live_eth_consent_intents
-           WHERE privy_did=%s FOR UPDATE""",(did,))
-    consent=cur.fetchone()
-    if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("revoked_at") is not None
-            or consent.get("limits_revision")!=limits["revision"]):
-        raise HTTPException(409,"Native conversion no longer authorized")
+    if policy.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        try:
+            digest=eth_grant_budget_digest(did=did,policy=policy,limits=limits)
+        except (ValueError,TypeError,KeyError):
+            raise HTTPException(409,"Original ETH native owner grant invalid") from None
+        if policy.get("grant_budget_sha256")!=digest:
+            raise HTTPException(409,"ETH native conversion budget grant changed")
+    else:
+        cur.execute(
+            """SELECT status,revoked_at,limits_revision
+               FROM mininex_live_eth_consent_intents
+               WHERE privy_did=%s FOR UPDATE""",(did,))
+        consent=cur.fetchone()
+        if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("revoked_at") is not None
+                or consent.get("limits_revision")!=limits["revision"]):
+            raise HTTPException(409,"Native conversion no longer authorized")
     # ETH, LINK, UNI and ETH native conversions share the same wallet nonce.
     # Lock the SAME owner account row as the common EVM order claim before
     # checking pending transactions. This closes concurrent check/insert races.
@@ -279,16 +304,28 @@ async def send_eth_auto_native_leg(did:str, *, source_key:str,operation:str,
 
 
 def submitted_native_steps(limit:int=25)->list[dict]:
-    url=_db_url();_ensure_schema(url)
-    with psycopg.connect(url,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,source_key,operation,stable,amount_wei,tx_hash
-                   FROM mininex_live_eth_auto_native_steps
-                   WHERE status='SUBMITTED'
-                   ORDER BY updated_at ASC LIMIT %s""",(max(1,min(limit,25)),))
-            return cur.fetchall()
-
+    """Cycle through all SUBMITTED WETH9 conversions, read-only."""
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid original native receipt work page")
+    global _NATIVE_RECEIPT_SCAN_OFFSET
+    sql="""SELECT privy_did,source_key,operation,stable,amount_wei,tx_hash
+           FROM mininex_live_eth_auto_native_steps
+           WHERE status='SUBMITTED'
+           ORDER BY updated_at ASC,privy_did,source_key,operation
+           LIMIT %s OFFSET %s"""
+    with _NATIVE_RECEIPT_SCAN_LOCK:
+        offset=_NATIVE_RECEIPT_SCAN_OFFSET
+        url=_db_url();_ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _NATIVE_RECEIPT_SCAN_OFFSET=offset+len(page)
+        return page
 
 async def finalize_native_step(row:dict)->str:
     did=_safe_did(row["privy_did"])
@@ -333,27 +370,38 @@ def _finalize_native_record(did:str,source_key:str,operation:str,
 
 
 def confirmed_buy_native_conversions(limit:int=15)->list[dict]:
-    """Owner-sourced completed BUY fills still holding purchased WETH."""
-    url=_db_url();_ensure_schema(url)
-    with psycopg.connect(url,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT o.privy_did,o.intent_key AS source_key,o.stable,
-                          l.destination_amount
-                   FROM mininex_live_order_intents o
-                   JOIN mininex_live_eth_verified_legs l
-                     ON l.privy_did=o.privy_did AND l.tx_hash=o.tx_hash
-                   JOIN mininex_live_eth_auto_sessions s
-                     ON s.privy_did=o.privy_did
-                   JOIN mininex_live_eth_limits cap
-                     ON cap.privy_did=o.privy_did
-                   LEFT JOIN mininex_live_eth_auto_native_steps n
-                     ON n.privy_did=o.privy_did
-                       AND n.source_key=o.intent_key AND n.operation='WITHDRAW'
-                   WHERE o.asset='ETH' AND o.state='CONFIRMED'
-                     AND o.side='BUY' AND l.kind='SWAP'
-                     AND n.intent_key IS NULL AND s.status='ACTIVE'
-                     AND cap.trading_paused=FALSE
-                   ORDER BY o.finalized_at ASC LIMIT %s""",
-                    (max(1,min(limit,20)),))
-            return cur.fetchall()
+    """Fairly resume every completed BUY's original unwrapping step."""
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid original native BUY completion work page")
+    global _NATIVE_BUY_SCAN_OFFSET
+    sql="""SELECT o.privy_did,o.intent_key AS source_key,o.stable,
+                  l.destination_amount
+           FROM mininex_live_order_intents o
+           JOIN mininex_live_eth_verified_legs l
+             ON l.privy_did=o.privy_did AND l.tx_hash=o.tx_hash
+           JOIN mininex_live_eth_auto_sessions s
+             ON s.privy_did=o.privy_did
+           JOIN mininex_live_eth_limits cap
+             ON cap.privy_did=o.privy_did
+           LEFT JOIN mininex_live_eth_auto_native_steps n
+             ON n.privy_did=o.privy_did
+               AND n.source_key=o.intent_key AND n.operation='WITHDRAW'
+           WHERE o.asset='ETH' AND o.state='CONFIRMED'
+             AND o.side='BUY' AND l.kind='SWAP'
+             AND n.intent_key IS NULL AND s.status='ACTIVE'
+             AND cap.trading_paused=FALSE
+           ORDER BY o.finalized_at ASC,o.privy_did,o.intent_key
+           LIMIT %s OFFSET %s"""
+    with _NATIVE_BUY_SCAN_LOCK:
+        offset=_NATIVE_BUY_SCAN_OFFSET
+        url=_db_url();_ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _NATIVE_BUY_SCAN_OFFSET=offset+len(page)
+        return page

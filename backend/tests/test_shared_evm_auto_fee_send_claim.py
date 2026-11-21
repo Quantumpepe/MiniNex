@@ -63,7 +63,7 @@ def cur_for(asset,grant=None,trade_pending=0,existing_fee=None):
     if grant is not None:g.update(grant)
     vals=[
         {"privy_did":DID},g,{"pending":trade_pending},
-        {"pending":0},{"pending":0},{"pending":0},existing_fee,
+        {"pending":0},{"pending":0},{"pending":0},{"pending":0},existing_fee,
     ]
     return Cur(vals)
 
@@ -173,3 +173,71 @@ def test_mined_fee_hash_remains_only_submitted_until_canonical_finality():
         digest="a"*64,tx_hash="0x"+"ed"*32)
     assert state=="SUBMITTED"
     assert not any("PAID_VERIFIED" in q for q,_ in cur.sql)
+
+
+
+def test_verified_one_privy_grant_automatically_claims_original_hwm_fee(
+    monkeypatch,
+):
+    """The same wallet owner's single consent covers bounded 5% fee transfers."""
+    import hashlib,json
+    from backend.shared_evm_single_grant_policy import build_single_grant_evm_policy
+    from backend.shared_evm_remote_grant_audit import _grant_scope_digest
+
+    asset="LINK"
+    candidate=build_single_grant_evm_policy(
+        asset=asset,stable="USDC",wallet=WALLET,treasury=TREASURY,
+        owner_id="owner_123456",executor_id="signer_123456",
+        buy_source_atomic_cap="20000000",
+        sell_source_atomic_cap="1000000000000000000",
+        native_wrap_atomic_cap=None,owner_max_fee_atomic="10000000",
+        expires_at=NOW+86400,now=NOW,
+    )
+    digest=hashlib.sha256(json.dumps(
+        candidate,sort_keys=True,separators=(",",":"),
+    ).encode()).hexdigest()
+    trade={
+        "asset":asset,"stable":"USDC","chain_id":1,
+        "wallet_id":"wallet_12345678","wallet_address":WALLET,
+        "owner_id":"owner_123456","signer_id":"signer_123456",
+        "policy_id":POLICY,"policy_sha256":digest,
+        "remote_policy_sha256":digest,
+        "authorization_method":"PRIVY_SCOPED_GRANT",
+        "status":"GRANT_VERIFIED","revoked_at":None,
+        "consent_verified_at":datetime.fromtimestamp(NOW,timezone.utc),
+        "grant_verified_at":datetime.fromtimestamp(NOW,timezone.utc),
+        "expires_at":datetime.fromtimestamp(NOW+86400,timezone.utc),
+        "budget_revision":3,"candidate_json":candidate,
+    }
+    trade["consent_sha256"]=_grant_scope_digest(
+        did=DID,record=trade,budget_usd=1500)
+    monkeypatch.setattr(
+        "backend.shared_evm_remote_grant_audit.owner_fee_treasury",
+        lambda **kw:TREASURY,
+    )
+    monkeypatch.setattr(claim,"_prepare_locked",
+                        lambda cur,**kw:draft(asset))
+    remote={
+        "source":"ONE_PRIVY_OWNER_GRANT",
+        "asset":asset,"chain_id":1,"stable":"USDC",
+        "wallet_id":"wallet_12345678","owner_wallet":WALLET,
+        "treasury_wallet":TREASURY,"policy_id":POLICY,
+        "policy_sha256":digest,
+        "owner_fee_grant_remotely_verified":True,
+        "signer_quorum_remotely_verified":True,
+    }
+    cur=Cur([
+        {"privy_did":DID},None,trade,
+        {"stable":"USDC","revision":3,"budget_usd":1500},
+        {"pending":0},{"pending":0},{"pending":0},
+        {"pending":0},{"pending":0},None,
+    ])
+    result=claim._claim_single_auto_fee_locked(
+        cur,did=DID,asset=asset,key=KEY,
+        remote=remote,stable_usd=Decimal("1"),
+        treasury=TREASURY,now=NOW)
+    assert result["asset"]==asset
+    assert result["amount_atomic"]=="5000000"
+    assert any("INSERT INTO mininex_evm_auto_fee_sends" in sql
+               for sql,_ in cur.sql)
+    assert not any("consent_challenges" in sql for sql,_ in cur.sql)

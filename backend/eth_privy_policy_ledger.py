@@ -144,6 +144,7 @@ def _require_signed_intent(cur, *, did: str, values: dict, owner: str,
 def _stage_locked(
     cur, *, did: str, evidence: dict, plan: dict,
     owner: str, executor: str, now: int,
+    single_privy_grant: bool = False,
 ) -> dict:
     """One atomic DB transaction under live-limits, consent, policy locks.
 
@@ -153,9 +154,10 @@ def _stage_locked(
     """
     values = _require_enrollment_evidence(evidence)
     _check_locked_limits(cur, did, values)
-    _require_signed_intent(
-        cur, did=did, values=values, owner=owner, executor=executor,
-    )
+    if not single_privy_grant:
+        _require_signed_intent(
+            cur, did=did, values=values, owner=owner, executor=executor,
+        )
     if type(plan) is not dict or type(plan.get("policy")) is not dict:
         raise HTTPException(409, "Audited policy candidate missing")
     info = plan.get("snapshot")
@@ -185,7 +187,8 @@ def _stage_locked(
     cur.execute(
         """SELECT wallet_address,limits_revision,policy_owner_id,
                   execution_signer_id,candidate_sha256,idempotency_key,
-                  status,policy_id,extract(epoch FROM policy_expires_at)::bigint
+                  status,policy_id,authorization_method,
+                  extract(epoch FROM policy_expires_at)::bigint
                       AS expires_at_unix
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""", (did,),
@@ -198,6 +201,9 @@ def _stage_locked(
             and row.get("policy_owner_id") == owner
             and row.get("execution_signer_id") == executor
             and row.get("candidate_sha256") == info["sha256"]
+            and row.get("authorization_method","EIP191_AND_PRIVY")==(
+                "PRIVY_SCOPED_GRANT" if single_privy_grant
+                else "EIP191_AND_PRIVY")
             and row.get("idempotency_key") == prepared["idempotency_key"]
             and row.get("expires_at_unix") == info["expires_at_unix"]
         )
@@ -207,19 +213,37 @@ def _stage_locked(
             )
         return _snapshot(row, current_revision=values["revision"])
 
-    cur.execute(
-        """INSERT INTO mininex_live_eth_policy_enrollments
-              (privy_did,wallet_address,limits_revision,policy_owner_id,
-               execution_signer_id,candidate_sha256,idempotency_key,
-               candidate_json,policy_expires_at,status)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,to_timestamp(%s),'PREPARED')""",
-        (
-            did, values["wallet"], values["revision"], owner, executor,
-            info["sha256"], prepared["idempotency_key"],
-            json.dumps(prepared["candidate"], sort_keys=True),
-            info["expires_at_unix"],
-        ),
+    params=(
+        did, values["wallet"], values["revision"], owner, executor,
+        info["sha256"], prepared["idempotency_key"],
+        json.dumps(prepared["candidate"], sort_keys=True),
+        info["expires_at_unix"],
     )
+    if single_privy_grant:
+        # New mode stores an explicit authorization method with NO owner
+        # EIP191 signature. The future Privy addSigners action is its sole
+        # owner authorization.
+        cur.execute(
+            """INSERT INTO mininex_live_eth_policy_enrollments
+                 (privy_did,wallet_address,limits_revision,policy_owner_id,
+                  execution_signer_id,candidate_sha256,idempotency_key,
+                  candidate_json,policy_expires_at,status,
+                  authorization_method)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,to_timestamp(%s),
+                       'PREPARED',%s)""",
+            params+("PRIVY_SCOPED_GRANT",),
+        )
+    else:
+        # Keep the existing, already approved EIP191 path unchanged.
+        cur.execute(
+            """INSERT INTO mininex_live_eth_policy_enrollments
+                 (privy_did,wallet_address,limits_revision,policy_owner_id,
+                  execution_signer_id,candidate_sha256,idempotency_key,
+                  candidate_json,policy_expires_at,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,
+                       to_timestamp(%s),'PREPARED')""",
+            params,
+        )
     return _snapshot({
         "wallet_address": values["wallet"],
         "limits_revision": values["revision"],
@@ -232,7 +256,7 @@ def _stage_locked(
 
 def _reuse_prepared_locked(
     cur, *, did: str, evidence: dict, owner: str,
-    executor: str, now: int,
+    executor: str, now: int,single_privy_grant:bool=False,
 ) -> dict | None:
     """Return the original SAME prepared record across repeat requests.
 
@@ -242,13 +266,15 @@ def _reuse_prepared_locked(
     """
     values = _require_enrollment_evidence(evidence)
     _check_locked_limits(cur, did, values)
-    _require_signed_intent(
-        cur, did=did, values=values, owner=owner, executor=executor,
-    )
+    if not single_privy_grant:
+        _require_signed_intent(
+            cur, did=did, values=values, owner=owner, executor=executor,
+        )
     cur.execute(
         """SELECT wallet_address,limits_revision,policy_owner_id,
                   execution_signer_id,candidate_sha256,idempotency_key,
-                  status,policy_id,extract(epoch FROM policy_expires_at)::bigint
+                  status,policy_id,authorization_method,
+                  extract(epoch FROM policy_expires_at)::bigint
                       AS expires_at_unix
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""", (did,),
@@ -258,6 +284,9 @@ def _reuse_prepared_locked(
         return None
     if (type(row) is not dict
             or row.get("status") != "PREPARED"
+            or row.get("authorization_method","EIP191_AND_PRIVY")!=(
+                "PRIVY_SCOPED_GRANT" if single_privy_grant
+                else "EIP191_AND_PRIVY")
             or row.get("wallet_address") != values["wallet"]
             or row.get("limits_revision") != values["revision"]
             or row.get("policy_owner_id") != owner
@@ -277,6 +306,7 @@ def _reuse_prepared_locked(
 
 def _load_existing_prepared(
     did: str, evidence: dict, owner: str, executor: str, now: int,
+    single_privy_grant:bool=False,
 ) -> dict | None:
     try:
         url = _db_url()
@@ -287,6 +317,7 @@ def _load_existing_prepared(
                 return _reuse_prepared_locked(
                     cur, did=did, evidence=evidence,
                     owner=owner, executor=executor, now=now,
+                    single_privy_grant=single_privy_grant,
                 )
     except psycopg.Error:
         LOG.warning("ETH Privy policy ledger reuse unavailable")
@@ -353,7 +384,8 @@ def _reserve_one_remote_attempt_locked(
 
 
 def _store_prepared(did: str, evidence: dict, plan: dict,
-                    owner: str, executor: str, now: int) -> dict:
+                    owner: str, executor: str, now: int,
+                    single_privy_grant:bool=False) -> dict:
     try:
         url = _db_url()
         _ensure_schema(url)
@@ -363,13 +395,16 @@ def _store_prepared(did: str, evidence: dict, plan: dict,
                 return _stage_locked(
                     cur, did=did, evidence=evidence, plan=plan,
                     owner=owner, executor=executor, now=now,
+                    single_privy_grant=single_privy_grant,
                 )
     except psycopg.Error:
         LOG.warning("ETH Privy policy ledger unavailable")
         raise HTTPException(503, "Policy preparation storage unavailable") from None
 
 
-async def prepare_eth_policy_record(did: str) -> dict:
+async def prepare_eth_policy_record(
+    did: str, *, single_privy_grant:bool=False,
+) -> dict:
     """Authenticated *user-initiated* local prepare. NO Privy write or grant."""
     did = _safe_did(did)
     evidence = await get_eth_user_enrollment_preflight(did)
@@ -378,9 +413,12 @@ async def prepare_eth_policy_record(did: str) -> dict:
     now = int(time.time())
     # Return the original already-checked row before recalculating prices
     # or a 24-hour expiry. No remote calls, no duplicate local policy IDs.
-    existing = await asyncio.to_thread(
+    existing = (await asyncio.to_thread(
         _load_existing_prepared, did, evidence, owner, executor, now,
-    )
+        True,
+    ) if single_privy_grant else await asyncio.to_thread(
+        _load_existing_prepared, did, evidence, owner, executor, now,
+    ))
     if existing is not None:
         return existing
     # Fetch from a fixed independent HTTPS source; never browser prices.
@@ -389,6 +427,10 @@ async def prepare_eth_policy_record(did: str) -> dict:
         evidence=evidence, snapshot=prices, owner=owner,
         executor=executor, now=now,
     )
+    if single_privy_grant:
+        return await asyncio.to_thread(
+            _store_prepared, did, evidence, plan, owner, executor, now, True,
+        )
     return await asyncio.to_thread(
         _store_prepared, did, evidence, plan, owner, executor, now,
     )
@@ -460,8 +502,10 @@ def verify_revocation_remote_absence(
             or wallet_metadata.get("id") != owned["wallet_id"]
             or wallet_metadata.get("chain_type") != "ethereum"
             or str(wallet_metadata.get("address", "")).lower() != owned["address"]
-            or type(wallet_metadata.get("owner")) is not dict
-            or wallet_metadata["owner"].get("user_id") != did):
+            or type(wallet_metadata.get("entity")) is not dict
+            or wallet_metadata["entity"].get("type") != "user"
+            or wallet_metadata["entity"].get("id") != did
+            or wallet_metadata.get("archived_at") is not None):
         return result
     result["remote_wallet_metadata_verified"] = True
     signers = wallet_metadata.get("additional_signers")

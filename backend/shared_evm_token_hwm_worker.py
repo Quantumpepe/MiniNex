@@ -26,44 +26,58 @@ from .storage import _db_url,_ensure_schema
 LOG=logging.getLogger("mininex.evm_token_fee_reconciliation")
 
 
+_USD_FILL_PAGE_LOCK = Lock()
+_USD_FILL_PAGE_OFFSET = 0
+
+
 def _read_pending_original_usd_fills(limit:int=40)->list[dict]:
-    """Work page only; never a per-trade/per-day artificial system cap."""
+    """Rotate unfinished historical pricing for every finalized owner fill.
+
+    This work page is not a trading limit. A stale missing-price receipt
+    must not starve other wallets or expire after an arbitrary 20 hours.
+    """
+    global _USD_FILL_PAGE_OFFSET
     if type(limit) is not int or not 1<=limit<=500:
         raise ValueError("Invalid temporary audit batch size")
     db=_db_url()
     _ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT f.privy_did,f.asset,f.chain_id,f.intent_key,
-                          f.tx_hash,f.wallet_address,f.side,f.stable,
-                          f.source_amount,f.destination_amount,
-                          f.network_fee_native,f.created_at,
-                          b.status AS broadcast_status,
-                          b.tx_hash AS broadcast_tx_hash,
-                          b.side AS broadcast_side,
-                          b.stable AS broadcast_stable,
-                          b.wallet_address AS broadcast_wallet_address
-                   FROM mininex_live_evm_verified_fills f
-                   JOIN mininex_live_evm_auto_broadcasts b
-                     ON b.privy_did=f.privy_did AND b.asset=f.asset
-                    AND b.intent_key=f.intent_key
-                   LEFT JOIN mininex_evm_immutable_fill_usd_prices s
-                     ON s.privy_did=f.privy_did AND s.asset=f.asset
-                    AND s.tx_hash=f.tx_hash AND s.quoted_asset=f.stable
-                   LEFT JOIN mininex_evm_immutable_fill_usd_prices n
-                     ON n.privy_did=f.privy_did AND n.asset=f.asset
-                    AND n.tx_hash=f.tx_hash AND n.quoted_asset='ETH'
-                   WHERE f.asset IN ('LINK','UNI','ARB')
-                     AND f.created_at >= now() - INTERVAL '20 hours'
-                     AND b.status='FINALIZED_SUCCESS'
-                     AND (s.tx_hash IS NULL OR n.tx_hash IS NULL)
-                   ORDER BY f.created_at DESC,f.privy_did ASC,f.asset ASC,f.tx_hash ASC
-                   LIMIT %s""",(limit,))
-            rows=list(cur.fetchall())
+    sql="""SELECT f.privy_did,f.asset,f.chain_id,f.intent_key,
+                  f.tx_hash,f.wallet_address,f.side,f.stable,
+                  f.source_amount,f.destination_amount,
+                  f.network_fee_native,f.created_at,
+                  b.status AS broadcast_status,
+                  b.tx_hash AS broadcast_tx_hash,
+                  b.side AS broadcast_side,
+                  b.stable AS broadcast_stable,
+                  b.wallet_address AS broadcast_wallet_address
+           FROM mininex_live_evm_verified_fills f
+           JOIN mininex_live_evm_auto_broadcasts b
+             ON b.privy_did=f.privy_did AND b.asset=f.asset
+            AND b.intent_key=f.intent_key
+           LEFT JOIN mininex_evm_immutable_fill_usd_prices s
+             ON s.privy_did=f.privy_did AND s.asset=f.asset
+            AND s.tx_hash=f.tx_hash AND s.quoted_asset=f.stable
+           LEFT JOIN mininex_evm_immutable_fill_usd_prices n
+             ON n.privy_did=f.privy_did AND n.asset=f.asset
+            AND n.tx_hash=f.tx_hash AND n.quoted_asset='ETH'
+           WHERE f.asset IN ('LINK','UNI','ARB')
+             AND b.status='FINALIZED_SUCCESS'
+             AND (s.tx_hash IS NULL OR n.tx_hash IS NULL)
+           ORDER BY f.created_at DESC,f.privy_did,f.asset,f.tx_hash
+           LIMIT %s OFFSET %s"""
+    with _USD_FILL_PAGE_LOCK:
+        offset=_USD_FILL_PAGE_OFFSET
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                rows=list(cur.fetchall())
+                if not rows and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    rows=list(cur.fetchall())
+        _USD_FILL_PAGE_OFFSET=offset+len(rows)
     return [dict(did=row["privy_did"],
                  fill=_verified_account_fill(row,row["asset"])) for row in rows]
-
 
 _OWNER_RECONCILE_PAGE_LOCK = Lock()
 _OWNER_RECONCILE_PAGE_OFFSET = 0
@@ -112,7 +126,13 @@ def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
 async def reconcile_verified_erc20_fees_once(
     *,client:httpx.AsyncClient,
 )->dict:
-    """Keep trading fast: this does not touch the wallet send loop."""
+    """Reconcile independently owned ERC20 histories without serial RPC delay.
+
+    One owner's one coin is handled in original work-page order, and all
+    immutable historic USD evidence is written before that owner's HWM
+    is assessed. Distinct users can progress despite an old slow RPC.
+    This never transfers, signs, approves or creates an order.
+    """
     if type(client) is not httpx.AsyncClient:
         raise ValueError("Original internal HTTP client required")
     result={"prices_recorded":0,"token_accounts_reconciled":0,
@@ -123,29 +143,71 @@ async def reconcile_verified_erc20_fees_once(
     except psycopg.Error:
         LOG.warning("Historical real owner fill scan unavailable")
         return result
+
+    # Same owner+asset may contain several immutable filled trades. Price
+    # those serially, but never hold unrelated owners behind a slow oracle.
+    buckets:dict[tuple[str,str],list[dict]]={}
     for item in pending:
-        try:
-            proof=await independently_price_stored_evm_fill(
-                did=item["did"],row=item["fill"],client=client,
-                durable_rates=True)
-            if proof.get("historic_usd_priced") is True:
-                result["prices_recorded"]+=1
-        except asyncio.CancelledError:
-            raise
-        except (ValueError,HTTPException,psycopg.Error):
+        if (type(item) is not dict
+                or type(item.get("did")) is not str
+                or type(item.get("fill")) is not dict
+                or item["fill"].get("asset") not in ("LINK","UNI","ARB")):
             result["accounts_needing_manual_evidence"]+=1
+            continue
+        buckets.setdefault((item["did"],item["fill"]["asset"]),[]).append(item)
+    # Network-provider concurrency is bounded, not a user trade or fee limit.
+    oracle_slots=asyncio.Semaphore(8)
+
+    async def price_one_owner(items:list[dict])->tuple[int,int]:
+        recorded=unavailable=0
+        async with oracle_slots:
+            for item in items:
+                try:
+                    proof=await independently_price_stored_evm_fill(
+                        did=item["did"],row=item["fill"],client=client,
+                        durable_rates=True)
+                    if type(proof) is not dict:
+                        raise ValueError("Original historic fill price proof unavailable")
+                    if proof.get("historic_usd_priced") is True:
+                        recorded+=1
+                except asyncio.CancelledError:
+                    raise
+                except (ValueError,HTTPException,psycopg.Error,
+                        httpx.HTTPError,KeyError,TypeError):
+                    unavailable+=1
+        return recorded,unavailable
+
+    prices=await asyncio.gather(*(price_one_owner(items)
+                                  for items in buckets.values()))
+    result["prices_recorded"]+=sum(good for good,_ in prices)
+    result["accounts_needing_manual_evidence"]+=sum(bad for _,bad in prices)
+
     try:
         owners=await asyncio.to_thread(_read_unaccounted_token_sell_owners)
     except psycopg.Error:
         LOG.warning("Unaccounted finalized EVM SELL scan unavailable")
         return result
-    for owner in owners:
-        try:
-            await reconcile_owner_erc20_hwm_after_verified_sell(
-                did=owner["privy_did"],asset=owner["asset"],client=client)
-            result["token_accounts_reconciled"]+=1
-        except asyncio.CancelledError:
-            raise
-        except (ValueError,HTTPException,psycopg.Error):
-            result["accounts_needing_manual_evidence"]+=1
+
+    # This is accounting only. Every independent original owner/coin
+    # reconciles HWM exactly once under its own database ledger locks.
+    async def account_one_owner(owner:dict)->tuple[int,int]:
+        if (type(owner) is not dict
+                or type(owner.get("privy_did")) is not str
+                or owner.get("asset") not in ("LINK","UNI","ARB")):
+            return 0,1
+        async with oracle_slots:
+            try:
+                await reconcile_owner_erc20_hwm_after_verified_sell(
+                    did=owner["privy_did"],asset=owner["asset"],client=client)
+                return 1,0
+            except asyncio.CancelledError:
+                raise
+            except (ValueError,HTTPException,psycopg.Error,
+                    httpx.HTTPError,KeyError,TypeError):
+                return 0,1
+
+    accounts=await asyncio.gather(*(account_one_owner(owner)
+                                    for owner in owners))
+    result["token_accounts_reconciled"]+=sum(good for good,_ in accounts)
+    result["accounts_needing_manual_evidence"]+=sum(bad for _,bad in accounts)
     return result

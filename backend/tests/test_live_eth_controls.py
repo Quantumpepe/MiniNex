@@ -36,10 +36,12 @@ def test_live_amounts_and_caps_are_exact():
     assert result == (Decimal("1500.10"), Decimal("300.05"), Decimal("600.00"))
     assert controls.validate_limits("0", "0", "0") == (
         Decimal("0"), Decimal("0"), Decimal("0"))
+    # Legacy max-order/day fields must never veto user-selected capital.
+    assert controls.validate_limits("100","0","0") == (
+        Decimal("100"),Decimal("0"),Decimal("0"))
+    assert controls.validate_limits("100","150","5") == (
+        Decimal("100"),Decimal("150"),Decimal("5"))
     for bad in (
-        ("100", "0", "10"),
-        ("100", "150", "200"),
-        ("100", "10", "5"),
         ("-1", "1", "1"),
         ("1e6", "1", "1"),
         ("NaN", "1", "1"),
@@ -86,6 +88,27 @@ def test_spend_guard_defaults_to_closed_even_with_saved_budget():
     with pytest.raises(HTTPException):
         controls.validate_spend_limits(
             budget=fields, order_usd="NaN", reserved_usd="0", spent_today_usd="0")
+
+
+def test_eth_sell_does_not_get_blocked_by_appreciation_above_owner_buy_budget():
+    fields={
+        "planned_capital_usd":Decimal("200"),
+        "max_order_usd":Decimal("100"),
+        "max_daily_turnover_usd":Decimal("200"),
+        "trading_paused":False,"privy_grant_verified":True,
+    }
+    assert controls.validate_spend_limits(
+        budget=fields,order_usd="375",reserved_usd="200",
+        spent_today_usd="1000",side="SELL")==Decimal("375")
+    with pytest.raises(HTTPException):
+        controls.validate_spend_limits(
+            budget=fields,order_usd="375",reserved_usd="0",
+            spent_today_usd="0",side="BUY")
+    fields["trading_paused"]=True
+    with pytest.raises(HTTPException):
+        controls.validate_spend_limits(
+            budget=fields,order_usd="375",reserved_usd="0",
+            spent_today_usd="0",side="SELL")
 
 
 def test_idempotency_key_is_strict():

@@ -81,8 +81,6 @@ def test_privy_verified_and_configured_limits_still_cannot_enable_execution():
 
 @pytest.mark.parametrize("bad_limits", [
     limits(), limits(order="0", daily="0", capital="0"),
-    limits(paused=False, order="501"),
-    limits(paused=False, order="999999999999"),
     limits(paused=False, capital="-1"),
     limits(paused=False, order="NaN"),
     limits(paused=False, order=True),

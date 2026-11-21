@@ -25,6 +25,9 @@ from psycopg.rows import dict_row
 
 from .eth_live_strategy_tick import verified_live_evm_momentum
 from .shared_evm_allowance import check_evm_source_allowance
+from .shared_evm_router_approval_send import submit_scoped_router_approval_once
+from .shared_evm_router_approval_finality import reconcile_original_router_approvals_once
+from .live_eth_quotes import _quantity
 from .shared_evm_policy_reference_rates import (
     _price,fetch_evm_policy_reference_rates,
 )
@@ -34,6 +37,7 @@ from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
 from .shared_evm_token_hwm_worker import reconcile_verified_erc20_fees_once
 from .shared_evm_passive_finality_worker import reconcile_submitted_evm_swaps_once
+from .shared_evm_passive_settlement import _settlement_enabled
 from .shared_evm_auto_fee_finality import reconcile_auto_fee_receipts_once
 from .shared_evm_auto_fee_worker import run_owner_approved_auto_fee_batch
 from .shared_evm_native_sell_deposit import (
@@ -53,11 +57,26 @@ _EVM_SESSION_PAGE_OFFSET=0
 
 
 def evm_auto_worker_enabled()->bool:
-    return (
-        os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
-        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        and bool(os.getenv("DATABASE_URL","").strip())
-    )
+    """No operator feature switch beyond each owner's actual trade grant.
+
+    Every user must explicitly start their own session with current remote
+    Privy authorization. The database is the only service dependency.
+    """
+    return bool(os.getenv("DATABASE_URL","").strip())
+
+
+def _persist_evm_worker_heartbeat()->None:
+    """Record an actual current worker poll, never infer it from an env flag."""
+    db=_db_url()
+    _ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """INSERT INTO mininex_live_worker_heartbeats
+                       (worker_name,last_poll_at,status)
+                   VALUES ('shared_evm_auto',now(),'RUNNING')
+                   ON CONFLICT(worker_name) DO UPDATE
+                   SET last_poll_at=now(),status='RUNNING'""")
 
 
 def owner_started_evm_sessions(limit:int=20)->list[dict]:
@@ -142,6 +161,7 @@ def exact_user_coin_live_amount(
     *,asset:str,side:str,stable:str,budget_usd:int,
     source_evidence:dict,prices:dict,now:int,
     pending_buy_usd:object=Decimal(0),
+    ignore_allowance:bool=False,
 )->str|None:
     """Exact user-budget BUY or owner-held SELL from real onchain evidence.
 
@@ -166,7 +186,7 @@ def exact_user_coin_live_amount(
         source=Decimal(source_evidence["source_balance"])
         allowance=Decimal(source_evidence["router_allowance"])
         if (not source.is_finite() or not allowance.is_finite()
-                or source<=0 or allowance<=0):
+                or source<=0 or allowance<0):
             return None
         if side=="BUY":
             if (source_evidence.get("destination_token_address")
@@ -189,9 +209,11 @@ def exact_user_coin_live_amount(
             available_budget=max(Decimal(0),
                                  Decimal(budget_usd)-existing_exposure-pending)
             stable_usd=_price(prices,stable,now)
-            amount=min(source,allowance,available_budget/stable_usd)
+            amount=min(source,available_budget/stable_usd)
+            if not ignore_allowance:
+                amount=min(amount,allowance)
         else:
-            amount=min(source,allowance)
+            amount=source if ignore_allowance else min(source,allowance)
         quantum=Decimal(1).scaleb(-pair["source_decimals"])
         amount=amount.quantize(quantum,rounding=ROUND_DOWN)
         return format(amount,"f") if amount>0 else None
@@ -215,8 +237,7 @@ async def execute_owner_evm_live_tick(
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
-    if (asset in _NATIVE
-            and os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")!="explicit-readonly"):
+    if asset in _NATIVE and not _settlement_enabled():
         # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
         # a prior DEPOSIT. Both require the original receipt reconciler.
         return {"asset":asset,"state":"WAIT",
@@ -263,10 +284,32 @@ async def execute_owner_evm_live_tick(
         asset=asset,side=side,stable=stable,
         budget_usd=row["budget_usd"],source_evidence=evidence,
         prices=prices,now=int(current),
-        pending_buy_usd=row["pending_buy_usd"])
+        pending_buy_usd=row["pending_buy_usd"],
+        ignore_allowance=True)
     if amount is None:
         return {"asset":asset,"state":"WAIT",
-                "reason":"NO_APPROVED_VERIFIED_SOURCE_BALANCE"}
+                "reason":"NO_VERIFIED_SOURCE_BALANCE_OR_BUDGET"}
+    # The user's existing ONE scoped Privy grant includes bounded Router02
+    # approve calldata. A new wallet normally has zero token allowance.
+    # Submit and finalize that ONE on-chain approval first, without any
+    # additional user-facing signature. Never reserve/spend a swap before
+    # its real allowance exists onchain.
+    pair=_pair(asset,stable,side)
+    _,required_atomic=_quantity(amount,pair["source_decimals"])
+    try:
+        allowance_atomic=int(evidence["router_allowance_atomic"])
+    except (KeyError,ValueError,TypeError):
+        return {"asset":asset,"state":"WAIT",
+                "reason":"TOKEN_ROUTER_ALLOWANCE_UNVERIFIED"}
+    if allowance_atomic<int(required_atomic):
+        submitted=await submit_scoped_router_approval_once(
+            did=did,asset=asset,side=side,stable=stable,
+            amount_atomic=int(required_atomic),
+            budget_revision=row["budget_revision"],
+            signal_event_id=event,client=client)
+        return {"asset":asset,"state":submitted["state"],
+                "reason":"ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP",
+                "approval_tx_hash":submitted.get("tx_hash")}
     # The coordinator fetches a fresh Router02 quote AND checks exact full
     # source/allowance/gas atomics once more before any budget claim/send.
     # Do not repeat the identical RPC here just to delay order execution.
@@ -274,6 +317,58 @@ async def execute_owner_evm_live_tick(
         did=did,asset=asset,strategy_run_id=run,
         signal_event_id=event,side=side,stable=stable,amount=amount,
         budget_revision=row["budget_revision"],client=client)
+
+
+async def run_owner_evm_live_batch(
+    rows:list[dict],*,market,client:httpx.AsyncClient,
+)->dict:
+    """Parallelize different wallets/chains; serialize a wallet's same chain.
+
+    An Ethereum wallet has one shared nonce for LINK and UNI. Processing
+    their granted sessions concurrently could race two durable claims, even
+    though each trade is owner-authorized. Other wallets (and independent
+    chains) have no such nonce dependency and should not wait on a slow RPC.
+    """
+    groups:dict[tuple[str,int],list[dict]]={}
+    invalid=0
+    for row in rows:
+        if (type(row) is not dict
+                or type(row.get("privy_did")) is not str
+                or type(row.get("chain_id")) is not int):
+            invalid+=1
+            continue
+        groups.setdefault(
+            (row["privy_did"],row["chain_id"]),[]
+        ).append(row)
+
+    async def one_wallet_chain(sessions:list[dict])->tuple[int,int]:
+        attempted=0
+        failures=0
+        for session in sessions:
+            if not evm_auto_worker_enabled():
+                break
+            try:
+                await execute_owner_evm_live_tick(
+                    session,market=market,client=client)
+                attempted+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Fail only this owner/coin, never hold other wallet chains.
+                failures+=1
+                LOG.exception(
+                    "EVM LIVE tick failed; check original submission journal")
+        return attempted,failures
+
+    completed=await asyncio.gather(*(
+        one_wallet_chain(group) for group in groups.values()
+    ))
+    return {
+        "sessions_seen":len(rows),
+        "attempted":sum(n for n,_ in completed),
+        "failed":invalid+sum(n for _,n in completed),
+        "wallet_chain_groups":len(groups),
+    }
 
 
 class SharedEvmLiveWorker:
@@ -299,6 +394,12 @@ class SharedEvmLiveWorker:
             if not evm_auto_worker_enabled():
                 continue
             try:
+                await asyncio.to_thread(_persist_evm_worker_heartbeat)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("LIVE EVM worker heartbeat persistence failed")
+            try:
                 sessions=await asyncio.to_thread(owner_started_evm_sessions)
             except asyncio.CancelledError:
                 raise
@@ -310,6 +411,14 @@ class SharedEvmLiveWorker:
                 sessions=[]
             async with httpx.AsyncClient(
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                try:
+                    # Restore spending rights ONLY after original approval
+                    # transaction was finalized, never after an RPC timeout.
+                    await reconcile_original_router_approvals_once(client=client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    LOG.exception("Original router allowance finality unavailable")
                 try:
                     # Finalize the exact original Router02 submissions first.
                     # Never rebroadcast and never require an ACTIVE session.
@@ -360,14 +469,7 @@ class SharedEvmLiveWorker:
                     raise
                 except Exception:
                     LOG.exception("Owner-authorized EVM automatic fee batch unavailable")
-                for row in sessions:
-                    if not evm_auto_worker_enabled():
-                        break
-                    try:
-                        await execute_owner_evm_live_tick(
-                            row,market=self.market,client=client)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        # A committed SENDING claim must never be retried.
-                        LOG.exception("EVM LIVE tick failed; check original journal")
+                # Run independent wallets/chains without an unnecessary
+                # global serial wait, but never race a nonce on one chain.
+                await run_owner_evm_live_batch(
+                    sessions,market=self.market,client=client)

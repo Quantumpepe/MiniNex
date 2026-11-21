@@ -100,3 +100,16 @@ def test_live_history_endpoint_requires_privy_bearer_and_no_write():
     assert "send_privy" not in text
     assert all("verified-fills" not in r.path or "GET" in r.methods
                for r in app.routes)
+
+
+def test_tiny_confirmed_quantities_are_exact_plain_decimals():
+    row=record("LINK")
+    row["source_amount"]=Decimal("1E-18")
+    row["destination_amount"]=Decimal("2.500000000000000001E-9")
+    row["network_fee_native"]=Decimal("5E-18")
+    fill=h._verified_fill_row(row,"LINK")
+    assert fill["spent_amount"]=="0.000000000000000001"
+    assert fill["received_amount"]=="0.000000002500000000000000001"
+    assert fill["network_fee_native"]=="0.000000000000000005"
+    assert "E" not in fill["spent_amount"]
+    assert "E" not in fill["received_amount"]

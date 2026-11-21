@@ -40,15 +40,39 @@ def test_invalid_pending_claim_rejected_before_network(change):
     assert m._valid_pending_row(row) is False
 
 
-def test_worker_defaults_off_without_explicit_opt_in(monkeypatch):
-    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
-    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+def test_passive_receipt_worker_needs_only_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     assert m._settlement_enabled() is False
     assert asyncio.run(m.reconcile_submitted_evm_once())=={
         "worker_enabled":False,"scanned":0,
         "finalized":0,"pending":0,"errors":0,
         "new_transactions_sent":0,
     }
+
+
+def test_receipts_do_not_depend_on_any_operator_trading_flag(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    assert m._settlement_enabled() is True
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
+    assert m._settlement_enabled() is True
+    monkeypatch.delenv("DATABASE_URL")
+    assert m._settlement_enabled() is False
+
+
+def test_live_worker_owns_finality_poll_without_duplicate_passive_task(monkeypatch):
+    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    async def check():
+        worker=m.PassiveEvmSettlementWorker()
+        await worker.start()
+        assert worker._task is None
+        await worker.stop()
+    asyncio.run(check())
 
 
 def test_completed_pending_and_bad_rows_are_separately_counted(monkeypatch):
@@ -86,3 +110,27 @@ def test_no_background_ability_to_resend_unknown_or_uncertain_claim():
     assert "WHERE status='SUBMITTED' AND tx_hash IS NOT NULL" in source
     from backend.app import app
     assert all("evm-passive-settlement" not in r.path for r in app.routes)
+
+
+def test_readonly_original_receipt_scan_rotates_all_wallets(monkeypatch):
+    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://test.invalid")
+    monkeypatch.setattr(m,"_PASSIVE_PAGE_OFFSET",0)
+    monkeypatch.setattr(m,"_db_url",lambda:"postgresql://test.invalid")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    records=[pending("LINK")|{"intent_key":f"sig_abcdef0{i}"} for i in range(5)]
+    sql_calls=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,args):
+            self.limit,self.offset=args
+            sql_calls.append((sql,args))
+        def fetchall(self):return records[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kwargs:DB())
+    pages=[m._pending_submitted(limit=2) for _ in range(4)]
+    assert pages==[records[:2],records[2:4],records[4:],records[:2]]
+    assert [args for _,args in sql_calls]==[
+        (2,0),(2,2),(2,4),(2,5),(2,0)]
+    assert all("LIMIT %s OFFSET %s" in sql for sql,_ in sql_calls)

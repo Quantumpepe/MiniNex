@@ -66,6 +66,7 @@ def test_six_assets_two_sides_verify_real_finalized_owner_erc20_flows(
         HASH,asset=asset,stable=stable,side=side,wallet=WALLET,
         chain_id=hex(pair["chain_id"]),transaction=tx,receipt=receipt,
         latest="0x70",finalized={"number":"0x68"},
+        canonical={"number":"0x64","hash":BLOCK},
     )
     assert result["asset"]==asset
     assert result["wallet_address"]==WALLET.lower()
@@ -89,6 +90,7 @@ def test_wrong_network_cannot_credit_a_different_chain(asset,stable):
             chain_id="0x1" if pair["chain_id"]!=1 else "0x38",
             transaction=tx,receipt=receipt,latest="0x70",
             finalized={"number":"0x68"},
+        canonical={"number":"0x64","hash":BLOCK},
         )
 
 
@@ -113,6 +115,7 @@ def test_unowned_or_inconsistent_token_fills_are_rejected(mutation):
             HASH,asset="BNB",stable="USDT",side="BUY",wallet=WALLET,
             chain_id="0x38",transaction=tx,receipt=receipt,latest="0x70",
             finalized={"number":"0x68"},
+        canonical={"number":"0x64","hash":BLOCK},
         )
 
 
@@ -122,6 +125,7 @@ def test_pending_and_included_not_treated_as_finalized_swap():
         HASH,asset="POL",stable="USDC",side="SELL",wallet=WALLET,
         chain_id="0x89",transaction=tx,receipt=receipt,
         latest="0x65",finalized={"number":"0x63"},
+        canonical=None,
     )
     assert result["state"]=="INCLUDED_SUCCESS"
     assert result["swap_erc20_leg_verified"] is False
@@ -135,9 +139,24 @@ def test_reverted_transaction_never_credited_to_user():
         HASH,asset="AVAX",stable="USDC",side="SELL",wallet=WALLET,
         chain_id="0xa86a",transaction=tx,receipt=receipt,
         latest="0x70",finalized={"number":"0x68"},
+        canonical={"number":"0x64","hash":BLOCK},
     )
     assert result["state"]=="FINALIZED_REVERTED"
     assert result["swap_erc20_leg_verified"] is False
+
+
+def test_canonical_chain_hash_required_for_finalized_erc20_swap():
+    pair,tx,receipt=witness("LINK","BUY","USDC")
+    fixed=dict(asset="LINK",stable="USDC",side="BUY",wallet=WALLET,
+               chain_id=hex(pair["chain_id"]),transaction=tx,receipt=receipt,
+               latest="0x70",finalized={"number":"0x68"})
+    report=inspect_finalized_evm_swap(HASH,**fixed,canonical=None)
+    assert report["state"]=="INCLUDED_SUCCESS"
+    assert report["transaction_finalized"] is False
+    with pytest.raises(ValueError):
+        inspect_finalized_evm_swap(
+            HASH,**fixed,canonical={"number":"0x64",
+                                    "hash":"0x"+"ef"*32})
 
 
 def test_unverified_settlement_is_rejected_before_network_access():

@@ -80,13 +80,10 @@ def _claim_prepared_locked(
     """
     values = _require_enrollment_evidence(evidence)
     _check_locked_limits(cur, did, values)
-    _require_signed_intent(
-        cur, did=did, values=values, owner=owner, executor=executor,
-    )
     cur.execute(
         """SELECT wallet_address,limits_revision,policy_owner_id,
                   execution_signer_id,candidate_json,candidate_sha256,
-                  idempotency_key,status,policy_id,
+                  idempotency_key,status,policy_id,authorization_method,
                   extract(epoch FROM policy_expires_at)::bigint AS expires_at_unix,
                   created_at
            FROM mininex_live_eth_policy_enrollments
@@ -94,6 +91,11 @@ def _claim_prepared_locked(
         (did,),
     )
     row = cur.fetchone()
+    if type(row) is dict and row.get("authorization_method",
+            "EIP191_AND_PRIVY")!="PRIVY_SCOPED_GRANT":
+        _require_signed_intent(
+            cur, did=did, values=values, owner=owner, executor=executor,
+        )
     if (
         type(row) is not dict or row.get("status") != "PREPARED"
         or row.get("policy_id") is not None

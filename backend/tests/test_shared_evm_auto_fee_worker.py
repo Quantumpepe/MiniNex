@@ -29,6 +29,8 @@ def test_verified_hwm_debt_is_processed_only_once_per_original_execution(monkeyp
     ]
     monkeypatch.setattr(worker,"_pending_owner_auto_fee_obligations",
                         lambda:original)
+    monkeypatch.setattr(worker,"_pending_combined_grant_fee_obligations",
+                        lambda:[])
     sent=[]
     async def send(**kw):
         sent.append((kw["did"],kw["asset"],kw["execution_id"]))
@@ -53,6 +55,8 @@ def test_failed_owner_privy_send_does_not_retry_original(monkeypatch):
     ]
     monkeypatch.setattr(worker,"_pending_owner_auto_fee_obligations",
                         lambda:original)
+    monkeypatch.setattr(worker,"_pending_combined_grant_fee_obligations",
+                        lambda:[])
     calls=[]
     async def fail(**kw):
         calls.append(kw)
@@ -112,3 +116,30 @@ def test_disabled_fee_worker_does_not_scan_privy_debt(monkeypatch):
     monkeypatch.setattr(worker,"automatic_fee_transfer_worker_enabled",lambda:False)
     monkeypatch.setattr(worker,"_db_url",lambda:pytest.fail("No database on disabled fee worker"))
     assert worker._pending_owner_auto_fee_obligations()==[]
+
+
+
+def test_original_single_grant_hwm_debt_is_scanned_without_second_fee_signup(
+    monkeypatch,
+):
+    monkeypatch.setattr(worker,"automatic_fee_transfer_worker_enabled",lambda:True)
+    monkeypatch.setattr(worker,"_COMBINED_FEE_PAGE_OFFSET",0)
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgres://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda _:None)
+    inspected=[]
+    class Cur:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,sql,args):
+            inspected.append(sql)
+            assert "g.authorization_method='PRIVY_SCOPED_GRANT'" in sql
+            assert "separate.privy_did IS NULL" in sql
+            assert "o.fee_due_usd=e.fee_assessed_usd" in sql
+        def fetchall(self):return []
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return Cur()
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *a,**kw:DB())
+    assert worker._pending_combined_grant_fee_obligations()==[]
+    assert len(inspected)==1

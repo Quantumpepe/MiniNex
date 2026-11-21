@@ -40,7 +40,6 @@ def test_weth_price_converts_usd_to_exact_wei():
 
 @pytest.mark.parametrize("change",[
     {"trading_paused":False},{"planned_capital_usd":"0"},
-    {"max_order_usd":"200"},{"max_daily_turnover_usd":"30"},
 ])
 def test_nonpaused_or_unfunded_live_limits_do_not_grant_approval(change):
     values=limits();values.update(change)
@@ -69,3 +68,13 @@ def test_malformed_token_fails_before_any_wallet_lookup():
         asyncio.run(m.make_eth_owner_approval_plan(
             "did:privy:mine",token="UNSAFE"))
     assert e.value.status_code==422
+
+
+def test_unneeded_legacy_order_and_daily_limit_fields_do_not_block_approval():
+    values=limits()
+    values.update({"max_order_usd":"0","max_daily_turnover_usd":"0"})
+    result=m.build_owner_approval_plan(
+        token="USDC",wallet=WALLET,limits=values,
+        prices=prices(),now=NOW)
+    assert result["approval_cap_usd"]=="100"
+    assert result["requires_explicit_owner_privy_confirmation"] is True
