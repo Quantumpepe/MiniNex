@@ -20,6 +20,10 @@ from psycopg.rows import dict_row
 from .blockchain_preview import BTC_RE
 from .live_btc_receipts import check_native_btc_transaction
 from .native_coin_balances import _rpc_url,_valid_address
+from .native_trx_doge_buy_receipts import (
+    inspect_original_tron_credit,inspect_original_doge_credit,
+    get_original_trx_doge_receipt,
+)
 from .native_thor_swap_quote import _exact_owner_wallets
 from .native_thor_transaction_status import (
     _VALID_INTENT,get_private_original_protocol_status,
@@ -28,7 +32,7 @@ from .native_trade_receipts import _valid_native_hash
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _DECIMAL=re.compile(r"^[1-9][0-9]{0,34}$")
 _BTC_HASH=re.compile(r"^[a-f0-9]{64}$")
@@ -41,6 +45,10 @@ def _verified_native_credit(
     if (asset not in _ASSETS or type(wallet) is not str
             or type(expected_atomic) is not int or expected_atomic<=0):
         raise ValueError("Unsupported original native destination")
+    if asset=="TRX":
+        return inspect_original_tron_credit(wallet,hash_,expected_atomic,receipt)
+    if asset=="DOGE":
+        return inspect_original_doge_credit(wallet,hash_,expected_atomic,receipt)
     if asset=="BTC":
         if (not BTC_RE.fullmatch(wallet)
                 or not _BTC_HASH.fullmatch(hash_)):
@@ -197,13 +205,13 @@ def inspect_original_native_buy_destination(
             or not _DECIMAL.fullmatch(amounts[0])):
         raise ValueError("Single original native outbound unavailable")
     quantity=int(amounts[0])
-    if asset=="BTC":
+    if asset in ("BTC","DOGE"):
         expected=quantity
     elif asset=="SOL":
         expected=quantity*10
     else:
         if quantity%100:
-            raise ValueError("THORChain XRP output has sub-drop precision")
+            raise ValueError("THORChain native output has sub-atomic precision")
         expected=quantity//100
     receipt_proof=_verified_native_credit(
         asset,original["destination_wallet"],hashes[0],expected,receipt)
@@ -229,7 +237,7 @@ def inspect_original_native_buy_destination(
         "destination_received_atomic":str(expected),
         "destination_received_amount":format(
             Decimal(expected)/Decimal(
-                10**(8 if asset=="BTC" else 9 if asset=="SOL" else 6)),"f",
+                10**(8 if asset in ("BTC","DOGE") else 9 if asset=="SOL" else 6)),"f",
         ),
         "destination_chain_checkpoint":receipt_proof["chain_height"],
         "destination_chain_finality":receipt_proof["chain_finality"],
@@ -290,6 +298,12 @@ async def get_private_original_native_buy_destination(
     hash_=hashes[0]
     if asset=="BTC":
         receipt=await check_native_btc_transaction(did,hash_)
+    elif asset in ("TRX","DOGE"):
+        try:
+            receipt=await get_original_trx_doge_receipt(asset,hash_)
+        except (ValueError,TypeError,KeyError,httpx.HTTPError):
+            raise HTTPException(
+                503,"Original native BUY receiving chain data unavailable") from None
     else:
         if asset=="SOL":
             payload={
@@ -358,14 +372,14 @@ def _persist_original_native_buy_locked(
     atomic=verified.get("destination_received_atomic")
     amount=verified.get("destination_received_amount")
     tx_is_valid=(type(tx) is str and
-                 (_BTC_HASH.fullmatch(tx) if asset=="BTC"
+                 (_BTC_HASH.fullmatch(tx) if asset in ("BTC","DOGE","TRX")
                   else _valid_native_hash(asset,tx)))
     if (not tx_is_valid
             or type(digest) is not str or not _SHA.fullmatch(digest)
             or type(atomic) is not str or not _DECIMAL.fullmatch(atomic)
             or type(amount) is not str):
         raise ValueError("Cannot durably persist unverified native BUY credit")
-    divisor=Decimal(10**(8 if asset=="BTC" else 9 if asset=="SOL" else 6))
+    divisor=Decimal(10**(8 if asset in ("BTC","DOGE") else 9 if asset=="SOL" else 6))
     if amount!=format(Decimal(atomic)/divisor,"f"):
         raise ValueError("Native BUY atomic credit does not equal reported quantity")
     cur.execute(

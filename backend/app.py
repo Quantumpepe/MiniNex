@@ -609,7 +609,7 @@ async def read_owner_native_protocol_progress(
 
 @app.get("/api/live/native/buy-settlement/{asset}/{intent_key}")
 async def read_owner_original_native_buy_settlement(
-    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    asset: Literal["BTC","SOL","XRP","TRX","DOGE"],intent_key: str,
     authorization: str | None = Header(default=None),
 ):
     """Owner-only destination-chain BUY readback; never a signing endpoint."""

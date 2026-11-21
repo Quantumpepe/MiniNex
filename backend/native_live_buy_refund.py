@@ -28,7 +28,7 @@ from .native_thor_swap_quote import _exact_owner_wallets
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url, _ensure_schema, _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-fA-F]{40}$")
 _HASH=re.compile(r"^0x[0-9a-fA-F]{64}$")

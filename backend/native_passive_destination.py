@@ -36,7 +36,7 @@ from .native_live_sell_refund import (
 from .storage import _db_url, _ensure_schema, _safe_did
 
 LOG = logging.getLogger("mininex.native_original_destination_finality")
-_ASSETS = frozenset(("BTC", "SOL", "XRP"))
+_ASSETS = frozenset(("BTC", "SOL", "XRP", "TRX", "DOGE"))
 _KEY = re.compile(r"^native_[0-9a-f]{64}$")
 _WORK_PAGE_LOCK = Lock()
 _WORK_PAGE_CURSOR: tuple[datetime,str,str,str]|None = None
@@ -62,7 +62,7 @@ def original_native_sources_awaiting_destination(limit: int = 24) -> list[dict]:
                      source_finalized_at
               FROM mininex_live_native_order_intents
               WHERE status='SOURCE_FINALIZED' AND side IN ('BUY','SELL')
-                AND asset IN ('BTC','SOL','XRP')
+                AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
                 AND source_proof_sha256 IS NOT NULL
                 AND source_tx_hash IS NOT NULL
                 AND source_finalized_at IS NOT NULL"""
@@ -106,6 +106,8 @@ def _persist_original_verified_destination(*, original: dict,
     if (type(original) is not dict or type(proof) is not dict
             or original.get("asset") not in _ASSETS
             or original.get("status") != "SOURCE_FINALIZED"
+            or (original.get("asset") in ("TRX","DOGE") and
+                original.get("side")!="BUY")
             or type(original.get("intent_key")) is not str
             or not _KEY.fullmatch(original["intent_key"])
             or kind not in ("BUY", "SELL", "REFUND", "BUY_REFUND")):
@@ -158,6 +160,8 @@ async def reconcile_original_native_destinations_once(
             if (type(row) is not dict or row.get("asset") not in _ASSETS
                     or row.get("status") != "SOURCE_FINALIZED"
                     or row.get("side") not in ("BUY", "SELL")
+                    or (row.get("asset") in ("TRX","DOGE") and
+                        row.get("side")!="BUY")
                     or type(row.get("intent_key")) is not str
                     or not _KEY.fullmatch(row["intent_key"])):
                 raise ValueError("Unverified original native source row")
