@@ -4,7 +4,6 @@ import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
 import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
 import LiveBtcControls from './LiveBtcControls.jsx';
-import LiveTradePlan from './LiveTradePlan.jsx';
 import ExtraPaperComparison from './ExtraPaperComparison.jsx';
 import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
 import {validSavedExtraCoinPreferences,savedExtraOptions,coinPreferenceChanged}
@@ -254,10 +253,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
         preferenceSaved={savedExtra?.[opened]||null}
         preferenceSaving={extraSaving===opened}
         onRetryPreference={()=>setExtraRefresh(n=>n+1)}/> : null}
-      {!selectedCoin.inProgress&&<LiveTradePlan
-        key={opened} asset={opened} enabled={enabled} userId={userId}
-        getAccessToken={getAccessToken} t={t}
-        defaultStable={selectedSettings?.stable||replayOptions[opened]?.stable||'USDC'}/>}
+      
     </section>}
     {paperAvailable&&status==='failed'&&<div role="alert" className="privy-wallet-description">{t.tradeSettingsFailed}</div>}
     {paperAvailable&&status==='failed'&&<button type="button" className="privy-wallet-action privy-wallet-action--secondary"
