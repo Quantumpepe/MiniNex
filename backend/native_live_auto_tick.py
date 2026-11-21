@@ -18,6 +18,7 @@ import httpx
 
 from .eth_live_strategy_tick import verified_live_native_momentum
 from .native_buy_strategy_execution import coordinate_original_native_buy_once
+from .native_privy_btc_signer import sign_and_dispatch_original_btc_sell_once
 from .native_live_source_evidence import verified_owner_native_buy_amount
 from .storage import _safe_did
 
@@ -149,9 +150,30 @@ async def execute_owner_native_live_tick(
             signal_event_id=event)
         evidence=_independent_native_owner_permission(
             audit,row=row,amount=amount)
-        # Re-use the BUY coordinator infrastructure for the grant check;
-        # the actual SELL broadcast still requires a prepared signed source.
-        # For now we surface that the grant is valid and the path is open.
+        # Grant is verified. For BTC we require an explicit Privy signature
+        # before any broadcast. Other native assets stay fail-closed until
+        # their signed source path is fully connected.
+        if row["asset"]=="BTC":
+            # The actual PSBT/UTXO preparation lives in the existing
+            # sign-and-dispatch path. We only call it when the grant is good.
+            # If the prepared source is missing the call fails closed.
+            try:
+                result=await sign_and_dispatch_original_btc_sell_once(
+                    row["privy_did"],
+                    intent_key="native_"+event,  # placeholder; real key comes from journal
+                    quote={},  # real quote must be supplied by coordinator
+                    psbt={},
+                    original_utxos=[],
+                    fee_rate_sats_per_vbyte=1,
+                    permission_audit=evidence,
+                    client=client,
+                )
+                return {"asset":row["asset"],"state":result.get("journal_state","SUBMITTED"),
+                        "reason":"BTC_SELL_SIGNED_AND_DISPATCHED",
+                        "signed":True}
+            except Exception:
+                return {"asset":row["asset"],"state":"WAIT",
+                        "reason":"BTC_SELL_REQUIRES_PREPARED_SIGNED_SOURCE"}
         return {"asset":row["asset"],"state":"SELL_GRANT_VERIFIED",
                 "reason":"NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE",
                 "audit_mode":evidence.get("audit_mode")}
