@@ -112,7 +112,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
     <PaperPortfolioCard t={t} lang={lang}
       summary={portfolioSummary} samples={portfolioSamples}
       authenticated={portfolioAuthenticated} status={portfolioStatus}
-      scope="ALL" goTo={goTo}/>}
+      scope="ALL" goTo={goTo}/>
     <CoinGrid t={t} lang={lang} selected={asset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="home"
       onSelect={symbol=>{
