@@ -709,19 +709,19 @@ export const DICTIONARY = {
     helpModesTitle: 'Long und Abwärtsphase',
     helpModesText: 'Long nutzt Aufwärtstrends und DCA. Abwärtsphase verkauft bereits vorhandene Coins und kauft bei Erholung günstiger zurück. AUTO kombiniert Long, DCA und defensive Spot-Verkäufe bei bestätigtem Abwärtstrend. Das ist kein gehebelter Short.',
     helpSettlementTitle: 'USDC / USDT',
-    helpSettlementText: 'Die Handelswährung legt den Stablecoin für den geplanten Ablauf fest. BTC und ETH bleiben unabhängig. Die echten Handelswege sind noch nicht freigeschaltet.',
+    helpSettlementText: 'Die Handelswährung legt den Stablecoin für den Coin fest. Änderungen werden automatisch gespeichert.'
     helpHorizonTitle: 'Signal-Zeitraum',
-    helpHorizonText: 'Wähle 5 Minuten, 15 Minuten, 1 Stunde oder 24 Stunden für jeden Coin einzeln. Jeder Coin hat auch einen eigenen Long-, Abwärts- oder AUTO-Modus und ein eigenes Budget. Laufende Sitzungen bleiben unverändert. Damit werden keine echten Trades aktiviert.',
+    helpHorizonText: 'Wähle 5 Minuten, 15 Minuten, 1 Stunde oder 24 Stunden pro Coin. Jeder Coin hat eigenen Modus (Long, Spot-Abwärtstrend oder AUTO). Änderungen werden automatisch gespeichert.'
     helpTradingTitle: 'Automatischer Handel',
-    helpTradingText: 'Die Marktüberwachung und Teststrategien führen keine echten Wallet-Trades aus. Transfers, echte Swaps und automatische Signaturen werden erst nach Implementierung und Sicherheitsprüfung aktiviert.',
+    helpTradingText: 'Mit dem Simulations-Schalter kannst du Strategien zuerst mit Paper-Trades testen. Wenn du bereit bist, schalte auf Live. Strategie starten im Live-Modus aktiviert die Live-Session für diesen Coin. Jeder Live-Trade benötigt eine Privy-Signatur.'
     helpFeesTitle: 'Erfolgsgebühr',
-    helpFeesText: 'Geplant sind 5 % auf neue realisierte Nettogewinne nach dem High-Water-Mark-Prinzip. Frühere Verluste müssen zuerst aufgeholt sein. Zurzeit wird keine echte Gebühr erhoben.',
+    helpFeesText: 'Die Performance-Gebühr beträgt 5% des neuen realisierten Nettogewinns mit High-Water-Mark. Vorherige Verluste müssen zuerst ausgeglichen werden.'
     helpMarketTitle: 'Kurse und Charts',
     helpMarketText: 'Kurse, Tagesveränderungen, Referenzwerte und Charts sind Marktdaten und kein persönliches Wallet-Guthaben. Daten können verspätet eintreffen oder fehlen.',
     helpHistoryTitle: 'Verlauf und Steuerunterlagen',
     helpHistoryText: 'PDF-/CSV-Jahresberichte sind für bestätigte Kontotransaktionen verfügbar. Nur unabhängig geprüfte und archivierte Blockchain-Seiten erscheinen; Bewertungen in der jeweiligen Landeswährung und vollständige Steuerabstimmung fehlen noch. Simulationen sind ausgeschlossen.',
-    helpSecurityTitle: 'Entwicklungsstand',
-    helpSecurityText: 'MiniNex befindet sich noch in Entwicklung. Keine echten Coins an die in dieser Testversion angezeigten Adressen senden, solange Ein- und Auszahlungen sowie Schutzmechanismen nicht ausdrücklich freigeschaltet sind.',
+    helpSecurityTitle: 'Sicherheit'
+    helpSecurityText: 'Live-Handel nutzt deine Privy-Wallet. Prüfe Beträge und Ziele immer. Signiere nur Transaktionen, die du ausführen willst.'
     infoLabel: 'Information',
     noRealTrades: 'Noch keine Transaktionen',
     tradingUnavailable: 'Handel noch nicht aktiviert',
