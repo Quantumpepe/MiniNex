@@ -15,6 +15,8 @@ import time
 import httpx
 from fastapi import HTTPException
 
+from .coingecko_provider import coingecko_request_settings
+
 _IDS={
     "ETH":"ethereum","BNB":"binancecoin",
     "POL":"polygon-ecosystem-token","AVAX":"avalanche-2",
@@ -91,11 +93,13 @@ async def fetch_recent_historical_usd_observation(
     end=min(current,block_unix+3600)
     if end<=start:
         raise ValueError("Historical market range unavailable")
+    endpoint, auth_headers, _ = coingecko_request_settings(
+        f"/coins/{_IDS[asset]}/market_chart/range")
     try:
         res=await client.get(
-            f"{_BASE}/{_IDS[asset]}/market_chart/range",
+            endpoint,
             params={"vs_currency":"usd","from":start,"to":end},
-            headers={"Accept":"application/json"})
+            headers={"Accept":"application/json", **auth_headers})
         res.raise_for_status()
         if len(res.content)>120000:
             raise ValueError("Oversized historical provider data")
