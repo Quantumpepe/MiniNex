@@ -31,9 +31,23 @@ def test_exact_original_allowance_finality_and_reorg_guards(asset,stable):
     })
     check=lambda t,r,final:_verify_approval_finality(
         row,chain_id=hex(pair["chain_id"]),tx=t,receipt=r,
-        finalized={"number":final})
+        finalized={"number":final},
+        canonical={"number":"0x64","hash":BLOCK})
     assert check(tx,receipt,"0x63") is None
     assert check(tx,receipt,"0x64")=="FINALIZED_SUCCESS"
+    assert _verify_approval_finality(
+        {**row,"wallet_address":"0x"+("Ab"*20)},
+        chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
+        finalized={"number":"0x64"},
+        canonical={"number":"0x64","hash":BLOCK})=="FINALIZED_SUCCESS"
+    assert _verify_approval_finality(
+        row,chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
+        finalized={"number":"0x64"},canonical=None) is None
+    with pytest.raises(ValueError):
+        _verify_approval_finality(
+            row,chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
+            finalized={"number":"0x64"},
+            canonical={"number":"0x64","hash":"0x"+"12"*32})
     assert check(tx,{**receipt,"status":"0x0"},"0x64")=="FINALIZED_REVERTED"
     with pytest.raises(ValueError):
         check({**tx,"input":"0x095ea7b3"+"f"*128},receipt,"0x64")
@@ -43,12 +57,14 @@ def test_exact_original_allowance_finality_and_reorg_guards(asset,stable):
         _verify_approval_finality(
             {**row,"router_address":"0x"+"dc"*20},
             chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
-            finalized={"number":"0x64"})
+            finalized={"number":"0x64"},
+            canonical={"number":"0x64","hash":BLOCK})
     with pytest.raises(ValueError):
         _verify_approval_finality(
             {**row,"token_address":"0x"+"dc"*20},
             chain_id=hex(pair["chain_id"]),tx=tx,receipt=receipt,
-            finalized={"number":"0x64"})
+            finalized={"number":"0x64"},
+            canonical={"number":"0x64","hash":BLOCK})
 
 def test_second_unrelated_market_event_has_independent_approval_nonce():
     args=dict(did="did:privy:user",asset="LINK",side="BUY",

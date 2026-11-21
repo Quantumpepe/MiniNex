@@ -55,7 +55,7 @@ def _pending_approvals(limit:int=100)->list[dict]:
 
 def _verify_approval_finality(row:dict,*,chain_id:object,
                               tx:object,receipt:object,
-                              finalized:object)->str|None:
+                              finalized:object,canonical:object=None)->str|None:
     if type(row) is not dict or row.get("asset") not in (
             "BNB","POL","AVAX","LINK","UNI","ARB"):
         raise ValueError("Unsupported originally submitted approval")
@@ -83,11 +83,11 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
     expected="0x095ea7b3"+f"{int(spender,16):064x}"+f"{amount:064x}"
     if (str(tx.get("hash","")).lower()!=hash_
             or str(receipt.get("transactionHash","")).lower()!=hash_
-            or str(tx.get("from","")).lower()!=wallet
-            or str(receipt.get("from","")).lower()!=wallet
+            or str(tx.get("from","")).lower()!=wallet.lower()
+            or str(receipt.get("from","")).lower()!=wallet.lower()
             or str(tx.get("to","")).lower()!=token
             or str(receipt.get("to","")).lower()!=token
-            or tx.get("input","").lower()!=expected
+            or str(tx.get("input","")).lower()!=expected
             or _num(tx.get("chainId"))!=row["chain_id"]
             or _num(tx.get("value"))!=0):
         raise ValueError("Original router approval transaction was substituted")
@@ -98,6 +98,13 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
         raise ValueError("Approval transaction and receipt have different blocks")
     if _num(finalized.get("number"))<block:
         return None
+    if canonical is None:
+        return None
+    if (type(canonical) is not dict
+            or _num(canonical.get("number"))!=block
+            or type(canonical.get("hash")) is not str
+            or canonical["hash"].lower()!=str(receipt.get("blockHash","")).lower()):
+        raise ValueError("Router approval is not in the canonical mined block")
     state=_num(receipt.get("status"))
     if state not in (0,1):
         raise ValueError("Invalid original approval execution result")
@@ -149,8 +156,16 @@ async def reconcile_original_router_approvals_once(
                 _receipt_rpc(client,url,"eth_getTransactionReceipt",[h],3),
                 _receipt_rpc(client,url,"eth_getBlockByNumber",["finalized",False],4),
             )
+            canonical=(await _receipt_rpc(
+                client,url,"eth_getBlockByNumber",
+                [hex(_num(receipt["blockNumber"])),False],5)
+                if type(receipt) is dict and receipt.get("blockNumber") is not None
+                and type(finalized) is dict
+                and _num(finalized.get("number"))>=_num(receipt["blockNumber"])
+                else None)
             state=_verify_approval_finality(
-                row,chain_id=cid,tx=tx,receipt=receipt,finalized=finalized)
+                row,chain_id=cid,tx=tx,receipt=receipt,
+                finalized=finalized,canonical=canonical)
             result["checked"]+=1
             if state is None:
                 result["pending"]+=1
