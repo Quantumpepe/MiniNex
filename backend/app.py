@@ -33,6 +33,7 @@ from .native_source_readiness import read_original_native_source_readiness
 from .native_live_destination_finality import get_private_native_ethereum_destination
 from .native_live_buy_destination import get_private_original_native_buy_destination
 from .native_live_sell_refund import get_private_original_native_sell_refund
+from .native_live_order_status import get_owner_native_live_order_status
 from .native_live_eth_buy_source import get_original_eth_buy_source
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
@@ -509,6 +510,21 @@ async def authenticated_native_balances(
     """Verified real SOL/XRP/TRX wallet holdings from their own networks."""
     did=verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(await get_native_balances(did),headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/native/order-status/{asset}")
+async def read_owner_native_live_original_orders(
+    asset: Literal["BTC","SOL","XRP"],
+    limit: int = 20,
+    authorization: str | None = Header(default=None),
+):
+    """Current original owner journal status; never a paper trade or signer."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=get_owner_native_live_order_status(did,asset=asset,limit=limit)
+    return JSONResponse(report,headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
