@@ -398,11 +398,16 @@ export default function App() {
   // Simulation display is intentionally off. Live trading is the active path.
   const [paperVisible,setPaperVisible]=useState(false);
   useEffect(()=>{
-    // Keep the effect so the component structure stays stable,
-    // but never turn the simulation UI back on.
-    setPaperVisible(false);
-    const timer=window.setInterval(()=>{},20000);
-    return()=>{window.clearInterval(timer);};
+    let active=true;
+    const verifyMode=()=>{
+      // Always keep simulation UI off, regardless of backend flag.
+      if(active)setPaperVisible(false);
+    };
+    verifyMode();
+    const timer=window.setInterval(()=>{
+      if(!document.hidden)verifyMode();
+    },20000);
+    return()=>{active=false;window.clearInterval(timer);};
   },[]);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
