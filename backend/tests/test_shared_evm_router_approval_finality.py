@@ -102,3 +102,62 @@ def test_finality_poll_rotates_past_stuck_earliest_approvals(monkeypatch):
     pages=[finality._pending_approvals(limit=2) for _ in range(4)]
     assert pages==[records[:2],records[2:4],records[4:],records[:2]]
     assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+
+
+@pytest.mark.parametrize("asset,stable,mode,value",[
+    ("BTC","USDC","THOR_FINITE",50_000_000),
+    ("SOL","USDT","THOR_USDT_ZERO",0),
+    ("SOL","USDT","THOR_FINITE",50_000_000),
+    ("XRP","USDC","THOR_FINITE",50_000_000),
+])
+def test_native_thor_approval_requires_canonical_receipt_and_exact_spender(
+    asset,stable,mode,value,
+):
+    from backend.live_eth_quotes import STABLES
+    router="0x"+"12"*20
+    row=dict(
+        asset=asset,stable=stable,side="BUY",chain_id=1,
+        approval_mode=mode,wallet_address=WALLET,
+        token_address=STABLES[stable].lower(),router_address=router,
+        amount_atomic=50_000_000,tx_hash=HASH)
+    tx=dict(hash=HASH,**{"from":WALLET,"to":STABLES[stable].lower()},
+            chainId="0x1",value="0x0",
+            input="0x095ea7b3"+f"{int(router,16):064x}"+f"{value:064x}",
+            blockNumber="0x64",blockHash=BLOCK)
+    receipt=dict(transactionHash=HASH,**{"from":WALLET,
+        "to":STABLES[stable].lower()},
+        blockNumber="0x64",blockHash=BLOCK,status="0x1")
+    kw=dict(chain_id="0x1",tx=tx,receipt=receipt,
+            finalized={"number":"0x64"},
+            canonical={"number":"0x64","hash":BLOCK})
+    assert _verify_approval_finality(row,**kw)=="FINALIZED_SUCCESS"
+    assert _verify_approval_finality(row,**{**kw,
+        "finalized":{"number":"0x63"}}) is None
+    assert _verify_approval_finality(row,**{**kw,
+        "receipt":{**receipt,"status":"0x0"}})=="FINALIZED_REVERTED"
+    with pytest.raises(ValueError):
+        _verify_approval_finality(row,**{**kw,
+            "tx":{**tx,"input":"0x095ea7b3"+"f"*128}})
+    with pytest.raises(ValueError):
+        _verify_approval_finality({**row,"token_address":"0x"+"de"*20},**kw)
+    with pytest.raises(ValueError):
+        _verify_approval_finality({**row,"chain_id":56},**kw)
+    with pytest.raises(ValueError):
+        _verify_approval_finality({**row,"approval_mode":"ROUTER02_FINITE"},**kw)
+
+
+def test_native_xrp_usdt_or_reset_without_usdt_never_finalizes():
+    from backend.live_eth_quotes import STABLES
+    base=dict(asset="XRP",stable="USDT",side="BUY",chain_id=1,
+        approval_mode="THOR_FINITE",wallet_address=WALLET,
+        token_address=STABLES["USDT"].lower(),
+        router_address="0x"+"12"*20,amount_atomic=50_000_000,tx_hash=HASH)
+    with pytest.raises(ValueError):
+        _verify_approval_finality(
+            base,chain_id="0x1",tx=None,receipt=None,
+            finalized=None)
+    with pytest.raises(ValueError):
+        _verify_approval_finality(
+            {**base,"asset":"BTC","approval_mode":"THOR_USDT_ZERO",
+             "stable":"USDC","token_address":STABLES["USDC"].lower()},
+            chain_id="0x1",tx=None,receipt=None,finalized=None)

@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 
 from .shared_evm_swap_receipts import _pair,_receipt_rpc
 from .multicoin_evm_balances import _RPC
+from .live_eth_quotes import STABLES
 from .live_eth_receipts import _num
 from .storage import _db_url,_ensure_schema
 
@@ -37,7 +38,7 @@ def _pending_approvals(limit:int=100)->list[dict]:
         with conn.cursor(row_factory=dict_row) as cur:
             sql="""SELECT privy_did,asset,side,stable,chain_id,wallet_address,
                           token_address,router_address,amount_atomic,
-                          idempotency_key,tx_hash
+                          idempotency_key,tx_hash,approval_mode
                    FROM mininex_live_evm_router_approval_sends
                    WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
                    ORDER BY created_at,privy_did,asset,idempotency_key
@@ -57,11 +58,27 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
                               tx:object,receipt:object,
                               finalized:object,canonical:object=None)->str|None:
     if type(row) is not dict or row.get("asset") not in (
-            "BNB","POL","AVAX","LINK","UNI","ARB"):
+            "BNB","POL","AVAX","LINK","UNI","ARB","BTC","SOL","XRP"):
         raise ValueError("Unsupported originally submitted approval")
-    route=_pair(row["asset"],row["stable"],row["side"])
-    if route["chain_id"]!=row["chain_id"] or _num(chain_id)!=row["chain_id"]:
-        raise ValueError("Wrong approval chain")
+    mode=row.get("approval_mode","ROUTER02_FINITE")
+    native=row["asset"] in ("BTC","SOL","XRP")
+    if native:
+        if (mode not in ("THOR_FINITE","THOR_USDT_ZERO")
+                or row.get("side")!="BUY" or row.get("stable") not in STABLES
+                or (row["asset"]=="XRP" and row["stable"]!="USDC")
+                or (mode=="THOR_USDT_ZERO" and row["stable"]!="USDT")
+                or row.get("chain_id")!=1 or _num(chain_id)!=1):
+            raise ValueError("Native THOR approval source chain invalid")
+        # The THOR router was independently validated and pinned at first
+        # send, not substituted with the unrelated Uniswap Router02.
+        route={"chain_id":1,"source_token":STABLES[row["stable"]],
+               "router":row.get("router_address")}
+    else:
+        if mode!="ROUTER02_FINITE":
+            raise ValueError("Unexpected shared EVM approval mode")
+        route=_pair(row["asset"],row["stable"],row["side"])
+        if route["chain_id"]!=row["chain_id"] or _num(chain_id)!=row["chain_id"]:
+            raise ValueError("Wrong approval chain")
     hash_=row.get("tx_hash")
     if type(hash_) is not str or not _HASH.fullmatch(hash_):
         raise ValueError("No original approval transaction")
@@ -80,7 +97,10 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
     amount=int(row["amount_atomic"])
     if not 0<amount<10**45:
         raise ValueError("Original approved amount not finite")
-    expected="0x095ea7b3"+f"{int(spender,16):064x}"+f"{amount:064x}"
+    if not re.fullmatch(r"0x[0-9a-f]{40}",spender):
+        raise ValueError("Invalid original approved spender")
+    approved_value=0 if mode=="THOR_USDT_ZERO" else amount
+    expected="0x095ea7b3"+f"{int(spender,16):064x}"+f"{approved_value:064x}"
     if (str(tx.get("hash","")).lower()!=hash_
             or str(receipt.get("transactionHash","")).lower()!=hash_
             or str(tx.get("from","")).lower()!=wallet.lower()
@@ -138,7 +158,7 @@ async def reconcile_original_router_approvals_once(
     for row in rows:
         try:
             asset=row["asset"]
-            if asset in ("LINK","UNI"):
+            if asset in ("LINK","UNI","BTC","SOL","XRP"):
                 chain,network,fallback,env=_RPC["ETH_TOKENS"]
             elif asset=="ARB":
                 chain,network,fallback,env=_RPC["ARB_TOKENS"]

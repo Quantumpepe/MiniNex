@@ -1067,10 +1067,13 @@ SCHEMA = (
 SCHEMA += (
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_router_approval_sends (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
-        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB','BTC','SOL','XRP')),
         side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
         stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
         chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        approval_mode TEXT NOT NULL DEFAULT 'ROUTER02_FINITE'
+          CHECK(approval_mode IN ('ROUTER02_FINITE','THOR_FINITE','THOR_USDT_ZERO')),
+        owner_eth_pending_nonce NUMERIC(78,0) CHECK(owner_eth_pending_nonce>=0),
         wallet_id TEXT NOT NULL,
         wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
         token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
@@ -1089,6 +1092,29 @@ SCHEMA += (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY(privy_did,asset,idempotency_key)
     )""",
+    """ALTER TABLE mininex_live_evm_router_approval_sends
+       ADD COLUMN IF NOT EXISTS approval_mode TEXT NOT NULL
+       DEFAULT 'ROUTER02_FINITE'
+       CHECK(approval_mode IN ('ROUTER02_FINITE','THOR_FINITE','THOR_USDT_ZERO'))""",
+    """ALTER TABLE mininex_live_evm_router_approval_sends
+       ADD COLUMN IF NOT EXISTS owner_eth_pending_nonce NUMERIC(78,0)
+       CHECK (owner_eth_pending_nonce>=0)""",
+    """DO $native_thor_allowance$
+       BEGIN
+         IF NOT EXISTS(
+           SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
+             AND conname='mininex_native_thor_allowance_asset_v1'
+         ) THEN
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              DROP CONSTRAINT IF EXISTS
+              mininex_live_evm_router_approval_sends_asset_check;
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              ADD CONSTRAINT mininex_native_thor_allowance_asset_v1
+              CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB',
+                              'BTC','SOL','XRP'));
+         END IF;
+       END $native_thor_allowance$""",
 )
 
 
