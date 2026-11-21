@@ -78,3 +78,16 @@ def test_outdated_first_buy_cannot_be_silently_repriced_at_current_spot():
                 asset="BNB",block_unix=NOW-100000,client=client,now=NOW)
     with pytest.raises(ValueError):
         asyncio.run(run())
+
+def test_historical_lookup_uses_paid_key_after_basic_or_analyst_upgrade(monkeypatch):
+    monkeypatch.setenv("MININEX_COINGECKO_PRO_API_KEY", "existing-nexus-plan-key")
+    async def handle(req):
+        assert req.url.host == "pro-api.coingecko.com"
+        assert req.headers["x-cg-pro-api-key"] == "existing-nexus-plan-key"
+        assert "existing-nexus-plan-key" not in str(req.url)
+        return httpx.Response(200, json={"prices":[[BLOCK * 1000, 300.5]]})
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            return await fetch_recent_historical_usd_observation(
+                asset="BNB", block_unix=BLOCK, client=client, now=NOW)
+    assert Decimal(asyncio.run(run())["usd_price"]) == Decimal("300.5")

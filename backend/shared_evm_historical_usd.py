@@ -15,14 +15,12 @@ import time
 import httpx
 from fastapi import HTTPException
 
-from .coingecko_provider import coingecko_request_settings
+from .coingecko_provider import coingecko_request_settings, COIN_IDS
 
-_IDS={
-    "ETH":"ethereum","BNB":"binancecoin",
-    "POL":"polygon-ecosystem-token","AVAX":"avalanche-2",
-    "LINK":"chainlink","UNI":"uniswap","ARB":"arbitrum",
-    "USDC":"usd-coin","USDT":"tether",
-}
+# Keep the historical EVM-asset allowlist; resolve IDs centrally.
+_IDS={asset: COIN_IDS[asset] for asset in (
+    "ETH", "BNB", "POL", "AVAX", "LINK", "UNI", "ARB", "USDC", "USDT"
+)}
 LOG=logging.getLogger("mininex.real_historical_usd")
 _BASE="https://api.coingecko.com/api/v3/coins"
 _MAX_QUOTE_GAP=180
