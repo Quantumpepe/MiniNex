@@ -109,7 +109,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         <button className="icon-btn compact-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>goTo('settings')}><Settings2 size={17}/></button>
       </div>
     </div>
-    {showSimulatedTrades&&<PaperPortfolioCard t={t} lang={lang}
+    <PaperPortfolioCard t={t} lang={lang}
       summary={portfolioSummary} samples={portfolioSamples}
       authenticated={portfolioAuthenticated} status={portfolioStatus}
       scope="ALL" goTo={goTo}/>}
