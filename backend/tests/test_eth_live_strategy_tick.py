@@ -24,7 +24,10 @@ def allowance(side="BUY"):
     return {"wallet_identity_verified":True,"side":side,"stable":"USDC",
       "router_allowance_sufficient":True,"source_funds_sufficient":True,
       "conservative_native_gas_reserve_met":True,
-      "verified_source_balance":"1.5"}
+      "verified_source_balance":"1.5",
+      "verified_destination_token":"WETH",
+      "verified_destination_balance":"0",
+      "native_eth_gas_balance":"0.005"}
 
 def balance():
     return {"wallet_ownership_verified":True,"balances":{
@@ -103,6 +106,33 @@ def test_owner_selected_budget_controls_all_in_cash():
         decision=decision,live_limits=limits(),
         balances=cash,allowance=allowance())
     assert result=="200.000000"
+
+
+def test_eth_buy_counts_existing_native_and_wrapped_inventory_against_user_budget():
+    cash=balance()
+    cash["balances"]["USDC"]["balance"]="1000"
+    decision={"action":"BUY","market_price":"100"}
+    # $150 held WETH plus $50 tradable native ETH leaves no new BUY capital.
+    full={**allowance(),"verified_destination_balance":"1.5",
+          "native_eth_gas_balance":"0.505"}
+    assert live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=cash,allowance=full) is None
+    # With only 1 WETH and ETH gas reserve, the user can buy the remaining $100.
+    partial={**full,"verified_destination_balance":"1",
+             "native_eth_gas_balance":"0.005"}
+    assert live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=cash,allowance=partial)=="100.000000"
+    # An unverifiable wrapped holding is never silently treated as zero.
+    partial["verified_destination_balance"]="unknown"
+    try:
+        live.live_trade_quantity(
+            decision=decision,live_limits=limits(),
+            balances=cash,allowance=partial)
+        assert False,"An unavailable chain balance cannot authorize BUY"
+    except ValueError:
+        pass
 
 
 def test_profitable_eth_position_can_sell_full_verified_weth_not_just_entry_budget():

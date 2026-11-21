@@ -28,6 +28,7 @@ def rpc(monkeypatch):
         "chain":"0x1","allowance":100_000_000,
         "source_balance":120_000_000,
         "native_balance":10**18,
+        "destination_balance":5*10**16,
     }
     calls=[]
     async def owner(did):
@@ -51,8 +52,11 @@ def rpc(monkeypatch):
             assert call["data"][10:74]==WALLET[2:].rjust(64,"0")
             assert call["data"][74:]==SWAPROUTER02_MAINNET[2:].lower().rjust(64,"0")
             return encoded(state["allowance"])
-        assert req_id==3
+        assert req_id in (3,5)
         assert call["data"].startswith("0x70a08231")
+        if req_id==5:
+            assert call["to"]==WETH_MAINNET
+            return encoded(state["destination_balance"])
         return encoded(state["source_balance"])
     monkeypatch.setattr(allowed,"fetch_privy_user",owner)
     monkeypatch.setattr(allowed,"_rpc",query)
@@ -67,6 +71,9 @@ def test_eth_buy_reads_real_stable_allowance_and_verifies_gas(rpc,stable):
     assert result["source_token"]==stable
     assert result["input_amount"]=="100"
     assert result["verified_source_balance"]=="120"
+    assert result["verified_destination_token"]=="WETH"
+    assert result["verified_destination_balance"]=="0.05"
+    assert result["verified_destination_balance_atomic"]==str(5*10**16)
     assert result["existing_router_allowance"]=="100"
     assert result["router_allowance_sufficient"] is True
     assert result["source_funds_sufficient"] is True
@@ -88,6 +95,7 @@ def test_weth_sell_never_confuses_native_eth_with_weth_balance(rpc):
         DID,side="SELL",stable="USDC",amount="0.1"))
     assert result["source_token"]=="WETH"
     assert result["verified_source_balance"]=="0.1"
+    assert result["verified_destination_balance"] is None
     assert result["native_eth_gas_balance"]=="1"
     assert result["router_allowance_sufficient"] is False
     assert result["manual_token_approval_would_be_required"] is True
