@@ -115,7 +115,7 @@ export function validEvmFinalizedFills(data,asset){
        fill.received_asset!==(fill.side==='BUY'?asset:fill.stable)||
        ![fill.spent_amount,fill.received_amount].every(v=>
           typeof v==='string'&&v.length<=96&&
-          /^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$/.test(v)&&
+          /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(v)&&
           /[1-9]/.test(v)))return false;
     seen.add(fill.intent_key);
   }

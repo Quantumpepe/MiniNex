@@ -4,6 +4,7 @@ import {API_BASE} from './data.js';
 import {
   LIVE_EVM_ASSETS,validEvmTradeChallenge,validEvmTradeSignerOffer,
   validEvmTradePermission,validEvmAutoSession,validEvmOrderHistory,
+  validEvmFinalizedFills,
 } from './evmLiveOwnerRules.js';
 
 const WORDS={
@@ -28,7 +29,8 @@ const WORDS={
     unproven:'Bestätigung offen',notSent:'Sendestatus noch nicht bestätigt',
     uncertain:'Sendeergebnis unklar',filled:'Swap finalisiert',
     native:'Nativer Handelszyklus bestätigt',failedOrder:'Swap fehlgeschlagen',
-    fee:'5-%-Gebühr bezahlt',
+    fee:'5-%-Gebühr bezahlt',spent:'Eingesetzt',received:'Erhalten',
+    verifiedFill:'Blockchain-bestätigte Mengen',
     note:'Pausieren verhindert neue Trades, schliesst aber nicht automatisch eine offene Position. Bereits gesendete Transaktionen können nicht rückgängig gemacht werden.',
   },
   en:{
@@ -52,7 +54,8 @@ const WORDS={
     unproven:'Confirmation pending',notSent:'Submission not yet verified',
     uncertain:'Send result uncertain',filled:'Swap finalized',
     native:'Native trade cycle verified',failedOrder:'Swap reverted',
-    fee:'5% fee paid',
+    fee:'5% fee paid',spent:'Spent',received:'Received',
+    verifiedFill:'Blockchain-confirmed amounts',
     note:'Pause prevents new trades but does not automatically sell an open position. Previously sent transactions cannot be undone.',
   },
 };
@@ -65,6 +68,7 @@ export default function EvmLiveOwnerControls({
   const [permission,setPermission]=useState(null);
   const [session,setSession]=useState(null);
   const [orders,setOrders]=useState(null);
+  const [fills,setFills]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [offeredFeeScope,setOfferedFeeScope]=useState(null);
@@ -98,10 +102,13 @@ export default function EvmLiveOwnerControls({
     void request(path+'/order-status/'+asset+'?limit=20')
       .then(h=>setOrders(validEvmOrderHistory(h,asset)?h:null))
       .catch(()=>setOrders(null));
+    void request(path+'/verified-fills/'+asset+'?limit=20')
+      .then(h=>setFills(validEvmFinalizedFills(h,asset)?h:null))
+      .catch(()=>setFills(null));
   };
   useEffect(()=>{
     let active=true;
-    setPermission(null);setSession(null);setOrders(null);
+    setPermission(null);setSession(null);setOrders(null);setFills(null);
     setBusy(false);setError('');
     setOfferedFeeScope(null);
     if(!allowed)return()=>{active=false;};
@@ -118,6 +125,9 @@ export default function EvmLiveOwnerControls({
         void request(path+'/order-status/'+asset+'?limit=20')
           .then(h=>{if(active)setOrders(validEvmOrderHistory(h,asset)?h:null);})
           .catch(()=>{if(active)setOrders(null);});
+        void request(path+'/verified-fills/'+asset+'?limit=20')
+          .then(h=>{if(active)setFills(validEvmFinalizedFills(h,asset)?h:null);})
+          .catch(()=>{if(active)setFills(null);});
       }catch{if(active)setError(t.failed);}
     };
     void poll();
@@ -272,6 +282,12 @@ export default function EvmLiveOwnerControls({
             order.status==='RECONCILIATION_REQUIRED'?t.uncertain:t.unproven}
           {order.fee_transferred?' · '+t.fee:''}
         </span>
+        {fills?.fills?.find(fill=>fill.intent_key===order.intent_key&&
+          fill.tx_hash===order.tx_hash)&&((fill)=>
+          <span>{t.spent}: {fill.spent_amount} {fill.spent_asset}
+            {' · '}{t.received}: {fill.received_amount} {fill.received_asset}
+          </span>)(fills.fills.find(fill=>fill.intent_key===order.intent_key&&
+          fill.tx_hash===order.tx_hash))}
         {order.tx_hash&&<code style={{overflowWrap:'anywhere'}}>
           {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
         </code>}

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validEvmTradeChallenge,validEvmTradeSignerOffer,
-  validEvmTradePermission,validEvmAutoSession,validEvmOrderHistory,LIVE_EVM_ASSETS,
+  validEvmTradePermission,validEvmAutoSession,validEvmOrderHistory,
+  validEvmFinalizedFills,LIVE_EVM_ASSETS,
 } from '../src/evmLiveOwnerRules.js';
 
 const WALLET='0x'+'ab'.repeat(20);
@@ -145,4 +146,30 @@ test('native settlement and real on-chain swap remain distinct',()=>{
     ...report,orders:[{...order,status:'SUBMITTED',
       swap_erc20_leg_finalized:false,native_trade_cycle_settled:true}]
   },'BNB'),false);
+});
+
+test('finalized on-chain quantities match the selected coin and exclude fabricated PnL',()=>{
+  const fill={
+    asset:'LINK',chain_id:1,intent_key:'sig_link_123456789',
+    tx_hash:'0x'+'a'.repeat(64),side:'BUY',stable:'USDC',
+    spent_asset:'USDC',received_asset:'LINK',
+    spent_amount:'100.000001',received_amount:'1.234567890000000001',
+    created_at:'2026-11-21T07:30:00+00:00',
+    onchain_finalized:true,native_coin_cycle_complete:false,
+    realized_net_usd:null,performance_fee_paid:false,
+  };
+  const report={
+    mode:'FINALIZED_EVM_REAL_FILLS_ONLY',asset:'LINK',
+    includes_simulation:false,wallet_signing_authorized:false,
+    full_native_order_settlement_verified:false,
+    realized_net_pnl_calculated:false,performance_fee_settled:false,
+    history_truncated:false,fills:[fill],
+  };
+  assert.equal(validEvmFinalizedFills(report,'LINK'),true);
+  assert.equal(validEvmFinalizedFills(report,'UNI'),false);
+  assert.equal(validEvmFinalizedFills({...report,includes_simulation:true},'LINK'),false);
+  assert.equal(validEvmFinalizedFills({...report,fills:[{...fill,realized_net_usd:'1'}]},'LINK'),false);
+  assert.equal(validEvmFinalizedFills({...report,fills:[{...fill,asset:'UNI'}]},'LINK'),false);
+  assert.equal(validEvmFinalizedFills({...report,fills:[{...fill,spent_amount:'NaN'}]},'LINK'),false);
+  assert.equal(validEvmFinalizedFills({...report,fills:[{...fill,received_amount:'0'}]},'LINK'),false);
 });
