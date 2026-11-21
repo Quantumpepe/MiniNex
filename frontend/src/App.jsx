@@ -395,30 +395,14 @@ export default function App() {
   const [helpOpen,setHelpOpen]=useState(false);
   helpRef.current=helpOpen;
   const [refreshNonce,setRefreshNonce]=useState(0);
-  // Keep BTC/ETH paper visible unless the backend explicitly confirms its
-  // cutover; transient availability errors must not remove Wallet controls.
-  const [paperVisible,setPaperVisible]=useState(true);
+  // Simulation display is intentionally off. Live trading is the active path.
+  const [paperVisible,setPaperVisible]=useState(false);
   useEffect(()=>{
-    let active=true;
-    const verifyMode=()=>{
-      getJson('/api/user-paper/availability')
-        .then(data=>{
-          if(active)setPaperVisible(
-            data?.paper_available===true
-          );
-        })
-        .catch(()=>{
-          // Keep the last confirmed mode on a temporary API failure.
-          // The backend separately rejects PAPER actions if explicitly off.
-        });
-    };
-    verifyMode();
-    // Only the independent PAPER availability flag controls simulation UI.
-    // ETH LIVE readiness never implicitly hides the still-running simulation.
-    const timer=window.setInterval(()=>{
-      if(!document.hidden)verifyMode();
-    },20000);
-    return()=>{active=false;window.clearInterval(timer);};
+    // Keep the effect so the component structure stays stable,
+    // but never turn the simulation UI back on.
+    setPaperVisible(false);
+    const timer=window.setInterval(()=>{},20000);
+    return()=>{window.clearInterval(timer);};
   },[]);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
