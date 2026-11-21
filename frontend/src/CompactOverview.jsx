@@ -136,10 +136,10 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
       </div>
     </section>
     {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{lang==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
-    {showSimulatedTrades&&<section className="compact-recent-trades" aria-label={t.recentTrades}>
+    <section className="compact-recent-trades" aria-label={t.recentTrades}>
       <div className="compact-recent-heading">
         <strong>{t.recentTrades} · {showAllTrades?t.homeAllCoins:asset}
-          <small className="home-history-paper-label">{t.simulatedTradeLabel}</small>
+          <small className="home-history-paper-label">{showSimulatedTrades?t.simulatedTradeLabel:'LIVE'}</small>
         </strong>
         <button type="button" className="home-history-filter"
           aria-pressed={showAllTrades} onClick={onToggleAllTrades}>
