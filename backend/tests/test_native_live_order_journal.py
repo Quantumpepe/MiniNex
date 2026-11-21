@@ -190,9 +190,11 @@ def test_atomic_one_shot_claim_requires_privy_and_stable_owner_intent():
               "source_wallet":row["source_wallet"],
               "owner_consent_sha256":row["owner_consent_sha256"],
               "privy_grant_sha256":row["privy_grant_sha256"],
-              "budget_revision":row["budget_revision"]}
-    cur=Cursor([{"privy_did":DID},original,{"pending":0},
-                {"status":"SENDING"}])
+              "budget_revision":row["budget_revision"],
+              "side":"SELL","stable":"USDC"}
+    cur=Cursor([{"privy_did":DID},original,
+                {"revision":3,"stable":"USDC","percent":100},
+                {"pending":0},{"status":"SENDING"}])
     result=journal._claim_once_locked(
         cur,did=DID,asset="BTC",key=row["intent_key"],
         digest=row["payload_sha256"],permission_audit=audit(row))
@@ -230,7 +232,9 @@ def test_existing_unresolved_wallet_send_serializes_next_source_nonce():
          "source_wallet":row["source_wallet"],
          "owner_consent_sha256":row["owner_consent_sha256"],
          "privy_grant_sha256":row["privy_grant_sha256"],
-         "budget_revision":row["budget_revision"]},
+         "budget_revision":row["budget_revision"],
+         "side":"SELL","stable":"USDC"},
+        {"revision":3,"stable":"USDC","percent":100},
         {"pending":1},
     ])
     with pytest.raises(HTTPException):
@@ -449,8 +453,11 @@ def test_native_eth_buy_checks_existing_owner_ethereum_nonce():
             "source_wallet":row["source_wallet"],
             "owner_consent_sha256":row["owner_consent_sha256"],
             "privy_grant_sha256":row["privy_grant_sha256"],
-            "budget_revision":row["budget_revision"]}
-    cur=Cursor([{"privy_did":DID},stored,{"pending":0},{"pending":1}])
+            "budget_revision":row["budget_revision"],
+            "side":"BUY","stable":"USDC"}
+    cur=Cursor([{"privy_did":DID},stored,
+                {"revision":3,"stable":"USDC","percent":100},
+                {"pending":0},{"pending":1}])
     with pytest.raises(HTTPException):
         journal._claim_once_locked(cur,did=DID,asset="BTC",
             key=row["intent_key"],digest=row["payload_sha256"],
@@ -477,10 +484,16 @@ def test_finalized_source_waiting_for_other_chain_is_not_a_wallet_nonce_block(as
         "owner_consent_sha256":row["owner_consent_sha256"],
         "privy_grant_sha256":row["privy_grant_sha256"],
         "budget_revision":row["budget_revision"],
+        "side":side,"stable":"USDC",
     }
     # At this point the SQL source-nonce query excludes SOURCE_FINALIZED.
     # The destination receipt worker will still keep and reconcile that row.
-    query_results=[{"privy_did":DID},original,{"pending":0}]
+    prefs={"revision":3,"stable":"USDC"}
+    if asset=="BTC":
+        prefs["percent"]=100
+    else:
+        prefs["budget_usd"]=500
+    query_results=[{"privy_did":DID},original,prefs,{"pending":0}]
     if side=="BUY":
         query_results.append({"pending":0})
     query_results.append({"status":"SENDING"})
@@ -489,7 +502,7 @@ def test_finalized_source_waiting_for_other_chain_is_not_a_wallet_nonce_block(as
         key=row["intent_key"],digest=row["payload_sha256"],
         permission_audit=audit(row))
     assert status=="SENDING"
-    nonce_sql=cur.queries[2][0]
+    nonce_sql=cur.queries[3][0]
     assert "SENDING" in nonce_sql
     assert "SUBMITTED" in nonce_sql
     assert "RECONCILIATION_REQUIRED" in nonce_sql
@@ -506,11 +519,43 @@ def test_uncertain_original_source_send_still_blocks_second_claim():
         "owner_consent_sha256":row["owner_consent_sha256"],
         "privy_grant_sha256":row["privy_grant_sha256"],
         "budget_revision":row["budget_revision"],
+        "side":"SELL","stable":"USDC",
     }
-    cur=Cursor([{"privy_did":DID},original,{"pending":1}])
+    cur=Cursor([{"privy_did":DID},original,
+                {"revision":3,"stable":"USDC","budget_usd":500},
+                {"pending":1}])
     with pytest.raises(HTTPException) as exc:
         journal._claim_once_locked(cur,did=DID,asset="SOL",
             key=row["intent_key"],digest=row["payload_sha256"],
             permission_audit=audit(row))
     assert exc.value.status_code==409
     assert not any("SET status='SENDING'" in sql for sql,_ in cur.queries)
+
+
+@pytest.mark.parametrize("asset,prefs",[
+    ("BTC",{"revision":4,"stable":"USDC","percent":100}),
+    ("BTC",{"revision":3,"stable":"USDT","percent":100}),
+    ("BTC",{"revision":3,"stable":"USDC","percent":0}),
+    ("SOL",{"revision":4,"stable":"USDC","budget_usd":500}),
+    ("SOL",{"revision":3,"stable":"USDT","budget_usd":500}),
+    ("SOL",{"revision":3,"stable":"USDC","budget_usd":0}),
+])
+def test_native_source_refuses_stale_owner_budget_or_settlement(asset,prefs):
+    row=identity(asset=asset,side="BUY",amount="10")
+    original={
+        "status":"PREPARED","chain":"ethereum-mainnet",
+        "side":"BUY","stable":"USDC",
+        "payload_sha256":row["payload_sha256"],
+        "source_wallet":row["source_wallet"],
+        "owner_consent_sha256":row["owner_consent_sha256"],
+        "privy_grant_sha256":row["privy_grant_sha256"],
+        "budget_revision":row["budget_revision"],
+    }
+    cur=Cursor([{"privy_did":DID},original,prefs])
+    with pytest.raises(HTTPException) as err:
+        journal._claim_once_locked(
+            cur,did=DID,asset=asset,key=row["intent_key"],
+            digest=row["payload_sha256"],permission_audit=audit(row))
+    assert err.value.status_code==409
+    assert not any("SET status='SENDING'" in q for q,args in cur.queries)
+    assert "FOR UPDATE" in cur.queries[-1][0]

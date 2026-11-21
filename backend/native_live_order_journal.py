@@ -235,6 +235,47 @@ def _persist_locked(cur,identity:dict)->str:
     return "PREPARED"
 
 
+def _assert_native_owner_budget_current_locked(
+    cur,*,did:str,asset:str,revision:int,stable:str,
+)->None:
+    """Lock user-selected revision and settlement before signing.
+
+    A changed user preference invalidates the previous signed owner
+    budget. There are no platform-specific order or daily trade caps.
+    """
+    if (asset not in _NATIVE_NETWORK or type(revision) is not int
+            or revision<=0 or stable not in ("USDC","USDT")
+            or (asset=="XRP" and stable!="USDC")
+            or (asset=="TRX" and stable!="USDT")):
+        raise HTTPException(409,"Original coin budget or settlement invalid")
+    if asset=="BTC":
+        cur.execute(
+            """SELECT b.revision,b.percent,t.stable
+               FROM mininex_budget_preferences b
+               JOIN mininex_trade_preferences t
+                 ON t.privy_did=b.privy_did AND t.asset=b.asset
+               WHERE b.privy_did=%s AND b.asset='BTC'
+               FOR UPDATE OF b,t""",(did,))
+        row=cur.fetchone()
+        ok=(type(row) is dict and row.get("revision")==revision
+            and row.get("stable")==stable
+            and type(row.get("percent")) is int
+            and 0<row["percent"]<=100)
+    else:
+        cur.execute(
+            """SELECT revision,budget_usd,stable
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+            (did,asset))
+        row=cur.fetchone()
+        ok=(type(row) is dict and row.get("revision")==revision
+            and row.get("stable")==stable
+            and type(row.get("budget_usd")) is int
+            and row["budget_usd"]>0)
+    if not ok:
+        raise HTTPException(409,"Original owner coin settings changed")
+
+
 def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
                        permission_audit:dict)->str:
     """Called only by a future fully signed native executor, never public API.
@@ -257,7 +298,7 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
     if cur.fetchone()!={"privy_did":did}:
         raise HTTPException(409,"Native owner not durably verified")
     cur.execute(
-        """SELECT chain,source_wallet,quote_expires_at,status,payload_sha256,
+        """SELECT chain,side,stable,source_wallet,quote_expires_at,status,payload_sha256,
                   owner_consent_sha256,privy_grant_sha256,budget_revision
            FROM mininex_live_native_order_intents
            WHERE privy_did=%s AND asset=%s AND intent_key=%s
@@ -272,8 +313,13 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
             or original.get("budget_revision")!=
                permission_audit.get("budget_revision")
             or original.get("source_wallet")!=
-               permission_audit.get("source_wallet")):
+               permission_audit.get("source_wallet")
+            or original.get("side") not in ("BUY","SELL")
+            or (asset in _BUY_ONLY and original.get("side")!="BUY")):
         raise HTTPException(409,"Native original send already claimed or changed")
+    _assert_native_owner_budget_current_locked(
+        cur,did=did,asset=asset,
+        revision=original["budget_revision"],stable=original["stable"])
     # Source-chain finalization means the original transaction is mined
     # and its source nonce/UTXO can no longer be reused. The cross-chain
     # destination may still take a long time, but should not freeze
