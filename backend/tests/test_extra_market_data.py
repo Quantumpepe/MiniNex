@@ -309,3 +309,21 @@ def test_arb_history_and_price_snapshot_http_endpoints_no_longer_return_404():
     assert "ARB" in prices.json()["markets"]
     assert "ADA" not in prices.json()["markets"]
     assert client.get("/api/market/history/ADA").status_code==404
+
+
+def test_shared_coingecko_provider_supports_all_twelve_assets_and_paid_key():
+    from backend.coingecko_provider import COIN_IDS, coingecko_request_settings
+    assert set(COIN_IDS) >= {"BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB"}
+    pro = {"MININEX_COINGECKO_PRO_API_KEY": "server-secret"}
+    url, headers, interval = coingecko_request_settings("/simple/price", pro)
+    assert url == "https://pro-api.coingecko.com/api/v3/simple/price"
+    assert headers == {"x-cg-pro-api-key": "server-secret"}
+    assert "server-secret" not in url
+    assert interval == 60
+    url, headers, _ = coingecko_request_settings("/coins/ethereum/market_chart/range", pro)
+    assert url == "https://pro-api.coingecko.com/api/v3/coins/ethereum/market_chart/range"
+    assert headers == {"x-cg-pro-api-key": "server-secret"}
+    with pytest.raises(ValueError):
+        coingecko_request_settings("/coins/unknown-token/market_chart/range", pro)
+    with pytest.raises(ValueError):
+        coingecko_request_settings("/users/private", pro)
