@@ -247,7 +247,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
 
       </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
-      </p> : paperAvailable ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled}
+      </p> : paperAvailable ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled} liveMode={!paperAvailable}
         t={t} getAccessToken={getAccessToken} options={replayOptions[opened]||defaultReplayOption()}
         onChange={changeReplay} onSavePreference={saveExtra}
         preferenceStatus={extraSettingsStatus}
