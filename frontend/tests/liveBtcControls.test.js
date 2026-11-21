@@ -87,8 +87,12 @@ test('PAPER remains visible while independently authorized LIVE engine is enable
   assert.doesNotMatch(paper,/availability\?\.live_trading_enabled!==false/);
   assert.match(backend,/MININEX_PAPER_ENABLED/);
   assert.match(backend,/if _paper_visible\(\):\s*await personal_paper.start\(\)/);
-  assert.match(ethAuto,/MININEX_LIVE_TRADING_ENABLED/);
-  assert.match(ethAuto,/MININEX_ETH_AUTO_WORKER_ENABLED/);
+  // An ETH owner's real ACTIVE session and verified Privy grant, not
+  // extra operator flags, decide whether their wallet can trade.
+  assert.doesNotMatch(ethAuto,/MININEX_LIVE_TRADING_ENABLED/);
+  assert.doesNotMatch(ethAuto,/MININEX_ETH_AUTO_WORKER_ENABLED/);
+  assert.match(ethAuto,/s\.status='ACTIVE'/);
+  assert.match(ethAuto,/p\.status='GRANT_VERIFIED'/);
   const settings=read('../src/TradingSetupPreview.jsx');
   assert.match(settings,/\{selectedSettings \? <>/);
   assert.match(settings,/paperAvailable&&renderSessionControls\?\.\(opened\)/);

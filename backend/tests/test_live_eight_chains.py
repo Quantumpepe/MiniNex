@@ -1,4 +1,4 @@
-"""Twelve-coin roadmap, bounded routes, and disabled GO LIVE."""
+"""Twelve-coin routing: public catalog never grants wallet execution."""
 import time
 
 import jwt
@@ -80,30 +80,34 @@ def test_stablecoin_network_issuer_edges_do_not_get_mislabeled():
     assert coins["DOGE"].settlement_route=="external-provider-required"
 
 
-def test_no_env_var_can_enable_global_or_per_asset_trades(monkeypatch):
+def test_global_registry_is_informational_not_operator_kill_switch(monkeypatch):
     for env in ("MININEX_GO_LIVE","ENABLE_LIVE_TRADING","MININEX_LIVE_TRX",
                 "MININEX_PRIVY_ETH_POLICY_SHA256"):
         monkeypatch.setenv(env,"true")
     monkeypatch.setenv("MININEX_UNISWAP_API_KEY","test-private-api-key")
     report=reg.get_global_live_readiness()
     assert report["ordered_assets"]==list(reg.ASSET_ORDER)
-    assert report["global_trading_enabled"] is False
-    assert report["global_activation_blocked"] is True
-    assert report["operator_go_live_available"] is False
-    assert report["one_click_activation_enabled"] is False
-    assert report["all_chains_ready"] is False
-    assert report["assets"]["ETH"]["readonly_eth_quote_provider_configured"] is True
-    assert all(not row["live_execution_ready"] for row in report["assets"].values())
-    assert all(not row["allow_user_trading"] for row in report["assets"].values())
-    assert all(not any(row["safety_gates"].values()) for row in report["assets"].values())
+    assert report["mode"]=="PER_OWNER_EXECUTION_CAPABILITIES"
+    assert report["global_trading_enabled"] is None
+    assert report["global_activation_blocked"] is False
+    assert report["operator_go_live_available"] is None
+    assert report["one_click_activation_enabled"] is None
+    assert report["all_chains_ready"] is None
+    assert report["assets"]["ETH"]["source_route"]=="OWNER_ETH_UNISWAP_ROUTER02"
+    assert report["assets"]["BTC"]["source_route"]=="OWNER_ETH_STABLE_THORCHAIN_NATIVE_BUY"
+    assert all(row["live_execution_ready"] is None for row in report["assets"].values())
+    assert all(row["allow_user_trading"] is None for row in report["assets"].values())
+    assert all(all(value is None for value in row["safety_gates"].values())
+               for row in report["assets"].values())
     assert "test-private-api-key" not in str(report)
 
 
-def test_dispatch_stays_locked_for_all_twelve_coins():
+def test_legacy_registry_lookup_never_claims_wallet_authorization():
     for asset in reg.ASSET_ORDER:
-        with pytest.raises(HTTPException) as error:
-            reg.require_live_engine(asset)
-        assert error.value.status_code==503
+        # No permanent fail-false kill switch, and this lookup is NOT a
+        # substitute for the real owner-scoped Privy submit dispatcher.
+        assert reg.require_live_engine(asset) is None
+    assert not hasattr(reg,"_LIVE_ENGINE_ENABLED")
 
 
 def test_live_status_endpoint_is_authenticated_read_only(headers):
@@ -116,8 +120,8 @@ def test_live_status_endpoint_is_authenticated_read_only(headers):
     assert response.headers["cache-control"]=="private, no-store"
     report=response.json()
     assert list(report["assets"])==list(reg.ASSET_ORDER)
-    assert report["global_trading_enabled"] is False
-    assert report["operator_go_live_available"] is False
+    assert report["global_trading_enabled"] is None
+    assert report["operator_go_live_available"] is None
     assert client.post("/api/live/readiness",headers=headers,json={}).status_code==405
     assert not any(route.path in (
         "/api/live/go-live","/api/live/activate","/api/live/execute",

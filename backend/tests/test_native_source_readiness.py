@@ -182,7 +182,7 @@ def test_wrong_coin_or_stable_never_calls_sources(monkeypatch,asset,side,stable)
     ("original_wallet_remote_owner_verified", False),
     ("original_public_key_matches_wallet", False),
     ("privy_native_wallet_api_supported", False),
-    ("asset", "XRP"), ("can_submit", True), ("execution_enabled", True),
+    ("asset", "XRP"),
 ])
 def test_wallet_must_be_verified_and_never_claim_execution(monkeypatch,field,value):
     calls = _install(monkeypatch,changed_owner=lambda x:x.update({field:value}))
@@ -191,6 +191,22 @@ def test_wallet_must_be_verified_and_never_claim_execution(monkeypatch,field,val
             DID,asset="BTC",side="SELL",stable="USDC",amount="0.1"))
     assert exc.value.status_code == 409
     assert not any(call[0] == "source" for call in calls)
+
+
+
+@pytest.mark.parametrize("field",["can_submit","execution_enabled"])
+def test_executable_owner_signer_is_not_rejected_by_readonly_preflight(
+    monkeypatch,field,
+):
+    calls=_install(monkeypatch,changed_owner=lambda x:x.update({field:True}))
+    preview=asyncio.run(m.read_original_native_source_readiness(
+        DID,asset="BTC",side="SELL",stable="USDC",amount="0.1"))
+    assert preview["original_source_preflight_verified"] is True
+    # A read-only query remains non-sending even if its signer is
+    # independently capable of submitting through the actual adapter.
+    assert preview["can_submit"] is False
+    assert any(call[0]=="source" for call in calls)
+
 
 
 @pytest.mark.parametrize("field,value", [

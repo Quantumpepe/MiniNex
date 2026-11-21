@@ -14,17 +14,17 @@ from backend.fees import RATE, assess_realized_gain
 
 
 @pytest.mark.parametrize("asset", registry.ASSET_ORDER)
-def test_each_coin_has_explicit_non_executable_route(asset):
+def test_each_coin_has_independent_owner_scoped_execution_capabilities(asset):
     readiness = registry.get_global_live_readiness()
     row = readiness["assets"][asset]
     assert row["symbol"] == asset
-    assert row["live_execution_ready"] is False
-    assert row["allow_user_trading"] is False
-    assert all(value is False for value in row["safety_gates"].values())
-    assert readiness["global_trading_enabled"] is False
-    with pytest.raises(HTTPException) as error:
-        registry.require_live_engine(asset)
-    assert error.value.status_code == 503
+    assert row["live_execution_ready"] is None
+    assert row["allow_user_trading"] is None
+    assert row["checks_evaluated_at"]=="OWNER_AUTHORIZED_SEND_AND_RECEIPT"
+    assert all(value is None for value in row["safety_gates"].values())
+    assert readiness["global_activation_blocked"] is False
+    assert readiness["global_trading_enabled"] is None
+    assert registry.require_live_engine(asset) is None
 
 
 @pytest.mark.parametrize("asset", registry.ASSET_ORDER)
@@ -69,4 +69,4 @@ def test_hwm_fee_does_not_charge_recovered_loss_twice():
 def test_no_wallet_funds_needed_for_audit():
     assert len(registry.ASSET_ORDER) == 12
     assert len(registry.REGISTRY) == 12
-    assert registry.get_global_live_readiness()["one_click_activation_enabled"] is False
+    assert registry.get_global_live_readiness()["one_click_activation_enabled"] is None
