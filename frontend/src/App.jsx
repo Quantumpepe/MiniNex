@@ -13,6 +13,7 @@ import {
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
 import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
+import useLiveHomeTrades from './useLiveHomeTrades.js';
 import {summarizeHomePaperPortfolio,HOME_PAPER_PORTFOLIO_COINS} from './paperPortfolio.js';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
@@ -401,6 +402,7 @@ export default function App() {
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
   const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
+  const homeLiveTrades=useLiveHomeTrades(!paperVisible,page==='overview',refreshNonce,asset);
   // The capital card is ALWAYS the total across started PAPER coins.
   // Only the trade HISTORY follows the selected coin / optional ALL toggle.
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce,'ALL',page==='overview');
@@ -453,7 +455,7 @@ export default function App() {
              setAsset={symbol=>{setShowAllPaperHistory(false);setAsset(symbol);}}
              showAllTrades={showAllPaperHistory} onToggleAllTrades={()=>setShowAllPaperHistory(v=>!v)}
              period={period} setPeriod={setPeriod}
-            history={history} trades={homePaperTrades.trades} tradesStatus={homePaperTrades.status} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
+            history={history} trades={paperVisible?homePaperTrades.trades:homeLiveTrades.trades} tradesStatus={paperVisible?homePaperTrades.status:homeLiveTrades.status} liveMode={!paperVisible} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
              portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
              portfolioStatus={paperHome.status}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
