@@ -146,12 +146,24 @@ def test_once_only_original_event_passed_to_final_router02_sell(monkeypatch):
         assert kw["budget_revision"]==7
         return {"state":"SUBMITTED"}
     monkeypatch.setattr(rec,"execute_internal_evm_strategy_signal",only_send)
+    async def approved(did,**kw):
+        phases.append("allowance")
+        assert kw["side"]=="SELL" and kw["amount"]=="1"
+        pair=_pair(base["asset"],base["stable"],"SELL")
+        return {
+            "wallet_identity_verified":True,"asset":base["asset"],
+            "side":"SELL","stable":base["stable"],"chain_id":base["chain_id"],
+            "source_token_address":pair["source_token"],
+            "native_gas_available":True,"source_funds_sufficient":True,
+            "router_allowance_sufficient":True}
+    monkeypatch.setattr(rec,"check_evm_source_allowance",approved)
     async def go():
         async with httpx.AsyncClient() as client:
             return await rec.reconcile_native_sell_once(client=client)
     outcome=asyncio.run(go())
     assert outcome["original_swaps_submitted"]==1
-    assert phases==["read_deposits","read_cycles","read_ready","single_sell"]
+    assert phases==["read_deposits","read_cycles","read_ready",
+                    "allowance","single_sell"]
 
 
 @pytest.mark.parametrize("asset",list(ASSETS))
@@ -219,3 +231,45 @@ def test_downstream_native_reconciliation_pages_are_fair(monkeypatch,function,of
     pages=[scan(limit=2) for _ in range(4)]
     assert pages==[history[:2],history[2:4],history[4:],history[:2]]
     assert calls==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+
+
+@pytest.mark.parametrize("asset",list(ASSETS))
+def test_finalized_native_sell_can_submit_original_scoped_wrapped_approval(
+    monkeypatch,asset,
+):
+    pair=_pair(asset,ASSETS[asset],"SELL")
+    base={"asset":asset,"stable":ASSETS[asset],
+          "chain_id":pair["chain_id"],"privy_did":DID,
+          "intent_key":KEY,"strategy_run_id":"owner_20261117T160000",
+          "signal_event_id":"market_12345","budget_revision":7,
+          "amount_wei":10**18}
+    monkeypatch.setattr(rec,"pending_native_sell_deposits",lambda limit:[])
+    monkeypatch.setattr(rec,"original_native_sells_needing_cycle",lambda limit:[])
+    monkeypatch.setattr(rec,"original_native_sells_ready_for_swap",lambda limit:[base])
+    async def evidence(did,**kw):
+        assert did==DID and kw["amount"]=="1" and kw["side"]=="SELL"
+        return {
+            "wallet_identity_verified":True,"asset":asset,"side":"SELL",
+            "stable":ASSETS[asset],"chain_id":pair["chain_id"],
+            "source_token_address":pair["source_token"],
+            "native_gas_available":True,"source_funds_sufficient":True,
+            "router_allowance_sufficient":False}
+    monkeypatch.setattr(rec,"check_evm_source_allowance",evidence)
+    calls=[]
+    async def one_owner_approval(**kw):
+        calls.append(kw)
+        return {"state":"SUBMITTED","tx_hash":"0x"+"a"*64}
+    async def never_swap(**kw):
+        pytest.fail("No original swap before allowance is finalized")
+    monkeypatch.setattr(rec,"submit_scoped_router_approval_once",one_owner_approval)
+    monkeypatch.setattr(rec,"execute_internal_evm_strategy_signal",never_swap)
+    async def go():
+        async with httpx.AsyncClient() as client:
+            return await rec.reconcile_native_sell_once(client=client)
+    completed=asyncio.run(go())
+    assert completed["original_swaps_submitted"]==0
+    assert completed["pending"]==1
+    assert len(calls)==1
+    assert calls[0]["signal_event_id"]==base["signal_event_id"]
+    assert calls[0]["amount_atomic"]==10**18
+    assert calls[0]["budget_revision"]==7
