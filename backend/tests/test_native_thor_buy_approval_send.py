@@ -108,3 +108,43 @@ def test_missing_user_signed_policy_never_reaches_privy_or_owner_network(monkeyp
     with pytest.raises(HTTPException) as err:
         asyncio.run(attempt())
     assert err.value.status_code==409
+
+
+def test_internal_owner_thor_approval_reuses_original_quote_not_another_venue(monkeypatch):
+    from backend.tests.test_native_eth_thor_deposit_tx import quote
+    source=quote(asset="BTC",stable="USDC",amount="50")
+    calls=[]
+    async def unnecessary(*args,**kwargs):
+        raise AssertionError("A second original THORChain quote must not be fetched")
+    async def verify(did,**kwargs):
+        calls.append((did,kwargs))
+        return {"owner_wallet_needs_erc20_approval":False}
+    monkeypatch.setattr(m,"read_original_thor_buy_allowance",unnecessary)
+    monkeypatch.setattr(m,"_read_original_thor_buy_allowance_from_quote",verify)
+    async def run(q):
+        async with httpx.AsyncClient() as client:
+            return await m.submit_original_thor_approval_once(
+                "did:privy:owner",asset="BTC",stable="USDC",
+                amount="50",signal_event_id="strategy_123",
+                permission_audit={
+                    "did":"did:privy:owner","asset":"BTC","stable":"USDC",
+                    "source_amount":"50","source_wallet":source["source_wallet"],
+                    "budget_revision":1,"policy_sha256":"a"*64,
+                    "owner_wallet_current":True,
+                    "exact_remote_policy_verified":True,
+                    "backend_quorum_current":True,
+                    "owner_signed_budget_current":True,
+                },client=client,original_quote=q)
+    assert asyncio.run(run(source))["state"]=="ALREADY_APPROVED"
+    assert len(calls)==1
+    assert calls[0][1]["quote"] is source
+    for bad in (
+        {**source,"source_wallet":"0x"+"f"*40},
+        {**source,"destination_asset":"ETH"},
+        {**source,"mode":"INDICATIVE_PUBLIC_PRICE"},
+        {**source,"amount":"100"},
+    ):
+        with pytest.raises(HTTPException) as err:
+            asyncio.run(run(bad))
+        assert err.value.status_code==409
+    assert len(calls)==1

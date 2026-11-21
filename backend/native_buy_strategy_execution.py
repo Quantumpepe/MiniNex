@@ -96,7 +96,8 @@ async def coordinate_original_native_buy_once(
         sent=await submit_original_thor_approval_once(
             did,asset=asset,stable=stable,amount=amount,
             signal_event_id=signal_event_id,
-            permission_audit=permission_audit,client=client)
+            permission_audit=permission_audit,client=client,
+            original_quote=quote)
         return {
             "mode":"ORIGINAL_NATIVE_BUY_AWAITING_APPROVAL_FINALITY",
             "asset":asset,"side":"BUY","stable":stable,

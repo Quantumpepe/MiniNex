@@ -26,7 +26,10 @@ from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .eth_router02_live_quote import _rpc
 from .live_eth_quotes import STABLES
 from .native_eth_native_buy_preflight import _int_quantity
-from .native_thor_buy_approval_plan import read_original_thor_buy_allowance
+from .native_thor_buy_approval_plan import (
+    read_original_thor_buy_allowance,
+    _read_original_thor_buy_allowance_from_quote,
+)
 from .privy_live_signer import (
     _owned_eth_wallet, _scoped_signer, fetch_privy_wallet_metadata,
 )
@@ -217,6 +220,7 @@ def _claim_original_thor_approval(
 async def submit_original_thor_approval_once(
     did:str,*,asset:str,stable:str,amount:str,
     signal_event_id:str,permission_audit:dict,client:httpx.AsyncClient,
+    original_quote:dict|None=None,
 )->dict:
     """One owner-granted original THOR buy allowance send, never called by API.
 
@@ -241,8 +245,28 @@ async def submit_original_thor_approval_once(
             or not _SHA.fullmatch(permission_audit["policy_sha256"])
             or any(permission_audit.get(k) is not True for k in _NEEDED)):
         raise HTTPException(409,"Original native owner budget and Privy grant required")
-    plan=await read_original_thor_buy_allowance(
-        did,asset=asset,stable=stable,amount=amount)
+    # When the trusted strategy coordinator already obtained the exact
+    # owner-bound THORChain quote, reuse it rather than requesting a second
+    # (potentially different) router and memo in the same strategy tick.
+    # Allowance, token balance and gas are still freshly read on Ethereum.
+    if original_quote is not None:
+        q=original_quote
+        if (type(q) is not dict
+                or q.get("mode")!="THORCHAIN_DESTINATION_BOUND_READ_ONLY"
+                or q.get("source_asset")!=stable
+                or q.get("destination_asset")!=asset
+                or q.get("amount")!=amount
+                or q.get("from_network")!="ethereum-mainnet"
+                or q.get("source_wallet")!=permission_audit.get("source_wallet")
+                or q.get("original_vault_verified") is not True
+                or q.get("refund_path_verified") is not True
+                or q.get("required_chain_memo_verified") is not True):
+            raise HTTPException(409,"Original owner-bound THOR BUY quote changed")
+        plan=await _read_original_thor_buy_allowance_from_quote(
+            did,asset=asset,stable=stable,amount=amount,quote=q)
+    else:
+        plan=await read_original_thor_buy_allowance(
+            did,asset=asset,stable=stable,amount=amount)
     if plan.get("owner_wallet_needs_erc20_approval") is False:
         return {"state":"ALREADY_APPROVED","sent":False,
                 "owner_grant_modified":False,"may_retry":False}

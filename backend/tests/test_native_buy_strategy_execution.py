@@ -62,6 +62,7 @@ def test_missing_first_buy_allowance_claims_one_approval_not_native_source(monke
     async def approve(did,**kwargs):
         calls.append("one-approval")
         assert kwargs["permission_audit"] is audit
+        assert kwargs["original_quote"] is q
         return {"mode":"THOR_USDT_ZERO",
                 "state":"SUBMITTED","tx_hash":"0x"+"d"*64}
     async def bad(*args,**kwargs):
