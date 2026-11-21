@@ -150,7 +150,12 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
     const accepted=field==='mode'?MODES:field==='stable'?STABLES:
       field==='horizon'?HORIZONS:[];
     if(status!=='ready' || busy || !['BTC','ETH'].includes(asset) || !accepted.includes(value))return;
-    setSettings(old=>({...old,[asset]:{...old[asset],[field]:value}}));
+    setSettings(old=>{
+      const next={...old,[asset]:{...old[asset],[field]:value}};
+      // Auto-save on change so the user doesn't need a separate save click.
+      setTimeout(()=>save(asset),0);
+      return next;
+    });
   };
 
   const save=async asset=>{
@@ -234,10 +239,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
             </select>
           </label>
         </div>
-        <button className="privy-wallet-action privy-wallet-action--secondary"
-          type="button" disabled={status!=='ready'||busy||!saved?.[opened]||
-            ['mode','stable','horizon'].every(key=>selectedSettings[key]===saved[opened][key])}
-          onClick={()=>save(opened)}>{t.privyBudgetSave} {opened}</button>
+        
         {renderBudget?.(opened)}
         {renderSessionControls?.(opened)}
         {renderLiveControls?.(opened,selectedSettings.stable)}
