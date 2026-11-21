@@ -39,7 +39,6 @@ def _native_source_receipt_work_page(
     """Keyset scan against mutable receipt statuses, never a trade cap."""
     if kind not in _RECEIPT_PAGE_CURSORS or type(limit) is not int or not 0<limit<=256:
         raise ValueError("Invalid original native receipt page")
-    global _RECEIPT_PAGE_CURSORS
     db=_db_url()
     _ensure_schema(db)
     suffix=""" ORDER BY created_at ASC,privy_did,asset,intent_key LIMIT %s"""
