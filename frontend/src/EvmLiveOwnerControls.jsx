@@ -25,7 +25,8 @@ const WORDS={
     signing:'Wallet-Freigabe wird geprüft …',
     history:'Echte LIVE-Trades',buy:'Kauf',sell:'Verkauf',
     empty:'Noch keine gesendeten echten Trades.',
-    unproven:'Bestätigung offen',filled:'Swap finalisiert',
+    unproven:'Bestätigung offen',notSent:'Noch nicht gesendet',
+    uncertain:'Sendeergebnis unklar',filled:'Swap finalisiert',
     native:'Native Auszahlung bestätigt',failedOrder:'Swap fehlgeschlagen',
     fee:'5-%-Gebühr bezahlt',
     note:'Pausieren verhindert neue Trades, schliesst aber nicht automatisch eine offene Position. Bereits gesendete Transaktionen können nicht rückgängig gemacht werden.',
@@ -48,7 +49,8 @@ const WORDS={
     signing:'Checking wallet grant …',
     history:'Real LIVE trades',buy:'Buy',sell:'Sell',
     empty:'No submitted real trades yet.',
-    unproven:'Confirmation pending',filled:'Swap finalized',
+    unproven:'Confirmation pending',notSent:'Not sent',
+    uncertain:'Send result uncertain',filled:'Swap finalized',
     native:'Native payout confirmed',failedOrder:'Swap reverted',
     fee:'5% fee paid',
     note:'Pause prevents new trades but does not automatically sell an open position. Previously sent transactions cannot be undone.',
@@ -265,7 +267,9 @@ export default function EvmLiveOwnerControls({
         <span>{order.side==='BUY'?t.buy:t.sell} · {order.stable}
           {' · '}{order.native_trade_cycle_settled?t.native:
             order.status==='FINALIZED_SUCCESS'?t.filled:
-            order.status==='FINALIZED_REVERTED'?t.failedOrder:t.unproven}
+            order.status==='FINALIZED_REVERTED'?t.failedOrder:
+            order.status==='SENDING'?t.notSent:
+            order.status==='RECONCILIATION_REQUIRED'?t.uncertain:t.unproven}
           {order.fee_transferred?' · '+t.fee:''}
         </span>
         {order.tx_hash&&<code style={{overflowWrap:'anywhere'}}>
