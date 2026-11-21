@@ -131,11 +131,21 @@ def _claim_once_locked(
     for table in tables:
         where=("WHERE privy_did=%s" if pair["chain_id"]==1
                else "WHERE privy_did=%s AND chain_id=%s")
+        # The source transaction for native BTC/SOL/XRP BUY uses the same
+        # Ethereum owner nonce as ERC20 router approvals.
+        extra=(
+            " + (SELECT COUNT(*) FROM mininex_live_native_order_intents "
+            "WHERE privy_did=%s AND chain='ethereum-mainnet' AND side='BUY' "
+            "AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))"
+            if pair["chain_id"]==1 and
+               table=="mininex_live_eth_auto_broadcasts" else "")
         cur.execute(
-            f"""SELECT COUNT(*) AS pending FROM {table}
+            f"""SELECT (SELECT COUNT(*) FROM {table}
                 {where} AND status IN
-                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-            (did,) if pair["chain_id"]==1 else (did,pair["chain_id"]))
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))"""
+            +extra+" AS pending",
+            ((did,did) if extra else (did,)) if pair["chain_id"]==1
+            else (did,pair["chain_id"]))
         pending=cur.fetchone()
         if type(pending) is not dict or pending.get("pending")!=0:
             raise HTTPException(409,"Earlier native/Ethereum send unresolved")

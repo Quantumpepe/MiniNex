@@ -240,3 +240,14 @@ def test_one_signature_send_rejects_changed_capital_before_claim():
     assert exc.value.status_code==409
     assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
                    for sql,_ in cur.sql)
+
+
+def test_erc20_ethereum_claim_checks_original_native_buy_nonce():
+    for asset in ("LINK","UNI"):
+        cur=Cursor([{"privy_did":DID},{"pending":1}])
+        with pytest.raises(HTTPException):
+            _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+        sql,args=cur.sql[1]
+        assert "mininex_live_native_order_intents" in sql
+        assert "chain='ethereum-mainnet'" in sql
+        assert args[-2:]==(DID,1)

@@ -91,9 +91,13 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
              + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
               WHERE privy_did=%s AND chain_id=%s
                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND chain='ethereum-mainnet'
+                  AND side='BUY' AND %s=1 AND status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
         (did,pair["chain_id"],did,pair["chain_id"],
-         did,pair["chain_id"]))
+         did,pair["chain_id"],did,pair["chain_id"]))
     row=cur.fetchone()
     if type(row) is not dict or type(row.get("pending")) is not int:
         raise HTTPException(503,"Cannot verify pending EVM submissions")

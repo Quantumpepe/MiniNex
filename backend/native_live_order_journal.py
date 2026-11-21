@@ -281,6 +281,31 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
     if (type(pending) is not dict or type(pending.get("pending")) is not int
             or pending["pending"]!=0):
         raise HTTPException(409,"Another original wallet send is unresolved")
+    if original["chain"]=="ethereum-mainnet":
+        # The original BTC/SOL/XRP BUY uses this owner's ETH wallet nonce.
+        # Lock already held: never race ETH, LINK/UNI, fee sends or approvals.
+        # No capital, turnover or trade-frequency limits are introduced.
+        cur.execute(
+            """SELECT (SELECT COUNT(*) FROM mininex_live_eth_auto_broadcasts
+                WHERE privy_did=%s AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+              + (SELECT COUNT(*) FROM mininex_live_eth_auto_native_steps
+                WHERE privy_did=%s AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+              + (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
+                WHERE privy_did=%s AND chain_id=1 AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+              + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+                WHERE privy_did=%s AND chain_id=1 AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+              + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
+                WHERE privy_did=%s AND chain_id=1 AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+              AS pending""",(did,did,did,did,did))
+        shared=cur.fetchone()
+        if (type(shared) is not dict or type(shared.get("pending")) is not int
+                or shared["pending"]!=0):
+            raise HTTPException(409,"Existing Ethereum owner wallet send unresolved")
     cur.execute(
         """UPDATE mininex_live_native_order_intents
            SET status='SENDING',updated_at=now()

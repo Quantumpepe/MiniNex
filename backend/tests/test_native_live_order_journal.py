@@ -440,3 +440,24 @@ def test_signed_hash_is_durably_present_before_mainnet_submission():
         __import__("inspect").getsource(
             journal._claim_signed_native_source_once_locked)
     )
+
+
+def test_native_eth_buy_checks_existing_owner_ethereum_nonce():
+    row=identity("BTC","BUY","10")
+    stored={"status":"PREPARED","chain":"ethereum-mainnet",
+            "payload_sha256":row["payload_sha256"],
+            "source_wallet":row["source_wallet"],
+            "owner_consent_sha256":row["owner_consent_sha256"],
+            "privy_grant_sha256":row["privy_grant_sha256"],
+            "budget_revision":row["budget_revision"]}
+    cur=Cursor([{"privy_did":DID},stored,{"pending":0},{"pending":1}])
+    with pytest.raises(HTTPException):
+        journal._claim_once_locked(cur,did=DID,asset="BTC",
+            key=row["intent_key"],digest=row["payload_sha256"],
+            permission_audit=audit(row))
+    sql,args=cur.queries[-1]
+    assert "mininex_live_eth_auto_broadcasts" in sql
+    assert "mininex_live_evm_auto_broadcasts" in sql
+    assert "mininex_evm_auto_fee_sends" in sql
+    assert args==(DID,)*5
+    assert not any("SET status='SENDING'" in query for query,_ in cur.queries)

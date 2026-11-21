@@ -181,11 +181,15 @@ def _claim_single_auto_fee_locked(
     # Any same-owner same-chain broadcast or native conversion uses the
     # same Privy account nonce; no concurrent fee send can race it.
     cur.execute(
-        """SELECT COUNT(*) AS pending
-           FROM mininex_live_evm_auto_broadcasts
+        """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
            WHERE privy_did=%s AND chain_id=%s AND status IN
-             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-        (did,pair["chain_id"]))
+             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+         + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+           WHERE privy_did=%s AND chain='ethereum-mainnet' AND side='BUY'
+             AND %s=1 AND status IN
+             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+         AS pending""",
+        (did,pair["chain_id"],did,pair["chain_id"]))
     active=cur.fetchone()
     if type(active) is not dict or active.get("pending")!=0:
         raise HTTPException(409,"Earlier EVM wallet trade send is unresolved")

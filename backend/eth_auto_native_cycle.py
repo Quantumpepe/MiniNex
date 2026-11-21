@@ -79,8 +79,12 @@ def _assert_no_pending_ethereum_token_send(cur, did:str)->None:
              + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
                WHERE privy_did=%s AND chain_id=1 AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND chain='ethereum-mainnet'
+                  AND side='BUY' AND status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
-        (did,did,did))
+        (did,did,did,did))
     row=cur.fetchone()
     if (type(row) is not dict
             or type(row.get("pending")) is not int
