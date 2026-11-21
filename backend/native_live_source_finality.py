@@ -8,6 +8,7 @@ Never sends, retries, approves, signs or creates a user order.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import hashlib
 import json
 import logging
@@ -27,7 +28,46 @@ from .live_btc_receipts import check_native_btc_transaction
 
 LOG=logging.getLogger("mininex.native_source_finality")
 _FINALITY_PAGE_LOCK=Lock()
-_FINALITY_PAGE_OFFSET=0
+# Separate source/unknown/ETH BUY keyset cursors. Finished rows disappear
+# from the SQL predicate, so OFFSET pagination would skip later users.
+_RECEIPT_PAGE_CURSORS={"sell":None,"unknown":None,"buy":None}
+
+
+def _native_source_receipt_work_page(
+    *,where_sql:str,kind:str,limit:int,lock:Lock,
+)->list[dict]:
+    """Keyset scan against mutable receipt statuses, never a trade cap."""
+    if kind not in _RECEIPT_PAGE_CURSORS or type(limit) is not int or not 0<limit<=256:
+        raise ValueError("Invalid original native receipt page")
+    global _RECEIPT_PAGE_CURSORS
+    db=_db_url()
+    _ensure_schema(db)
+    suffix=""" ORDER BY created_at ASC,privy_did,asset,intent_key LIMIT %s"""
+    after=""" AND (created_at,privy_did,asset,intent_key)>(%s,%s,%s,%s)"""
+    with lock:
+        previous=_RECEIPT_PAGE_CURSORS[kind]
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(where_sql+(after if previous else "")+suffix,
+                            (*previous,limit) if previous else (limit,))
+                rows=list(cur.fetchall())
+                if not rows and previous:
+                    cur.execute(where_sql+suffix,(limit,))
+                    rows=list(cur.fetchall())
+        if rows:
+            last=rows[-1]
+            stamp=last.get("created_at")
+            did=last.get("privy_did")
+            asset=last.get("asset")
+            key=last.get("intent_key")
+            if (not isinstance(stamp,datetime) or stamp.tzinfo is None
+                    or type(did) is not str or type(asset) is not str
+                    or type(key) is not str):
+                raise ValueError("Original native receipt key not verifiable")
+            _RECEIPT_PAGE_CURSORS[kind]=(stamp,did,asset,key)
+        else:
+            _RECEIPT_PAGE_CURSORS[kind]=None
+    return rows
 _CHAIN={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet"}
 
 
@@ -114,32 +154,15 @@ def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
 
 
 def _pending_original_source_submissions(limit:int=32)->list[dict]:
-    """Fair bounded receipt work pages, not a trade-count or budget limit."""
-    global _FINALITY_PAGE_OFFSET
-    if type(limit) is not int or limit<=0 or limit>256:
-        raise ValueError("Invalid finality database work page")
-    db=_db_url()
-    _ensure_schema(db)
+    """Original submitted native SELL source receipts, fair under mutations."""
     query="""SELECT privy_did,asset,intent_key,payload_sha256,side,
-                    chain,source_wallet,source_tx_hash,status
+                    chain,source_wallet,source_tx_hash,status,created_at
              FROM mininex_live_native_order_intents
              WHERE status='SUBMITTED' AND side='SELL'
                AND asset IN ('BTC','SOL','XRP')
-               AND source_tx_hash IS NOT NULL
-             ORDER BY created_at ASC,privy_did,asset,intent_key
-             LIMIT %s OFFSET %s"""
-    with _FINALITY_PAGE_LOCK:
-        offset=_FINALITY_PAGE_OFFSET
-        with psycopg.connect(db,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(query,(limit,offset))
-                records=list(cur.fetchall())
-                if not records and offset:
-                    offset=0
-                    cur.execute(query,(limit,0))
-                    records=list(cur.fetchall())
-        _FINALITY_PAGE_OFFSET=offset+len(records)
-    return records
+               AND source_tx_hash IS NOT NULL"""
+    return _native_source_receipt_work_page(
+        where_sql=query,kind="sell",limit=limit,lock=_FINALITY_PAGE_LOCK)
 
 
 def _persist_source_finality_locked(
@@ -290,42 +313,24 @@ async def reconcile_original_native_source_once(limit:int=32)->dict:
 # The immutable signed tx ID is committed before any network POST. Recover
 # either state by READ-ONLY source-chain finality; never sign or rebroadcast.
 _UNKNOWN_SIGNED_PAGE_LOCK=Lock()
-_UNKNOWN_SIGNED_PAGE_OFFSET=0
 
 
 def _pending_unknown_signed_sources(limit:int=32)->list[dict]:
-    global _UNKNOWN_SIGNED_PAGE_OFFSET
-    if type(limit) is not int or not 0<limit<=256:
-        raise ValueError("Invalid native unknown-source receipt page")
-    db=_db_url()
-    _ensure_schema(db)
-    # Avoid racing the currently active source broadcaster: its HTTP
-    # timeout is 12 seconds; only investigate SENDING rows stranded
-    # beyond a minute. RECONCILIATION_REQUIRED is immediately eligible.
-    sql="""SELECT privy_did,asset,intent_key,payload_sha256,side,
-                  chain,source_wallet,source_tx_hash,
-                  source_signed_tx_hash,status
-           FROM mininex_live_native_order_intents
-           WHERE (status='RECONCILIATION_REQUIRED'
-                  OR (status='SENDING'
-                      AND updated_at < now() - interval '60 seconds'))
-             AND side='SELL' AND asset IN ('BTC','SOL','XRP')
-             AND source_tx_hash IS NULL
-             AND source_signed_tx_hash IS NOT NULL
-           ORDER BY created_at ASC,privy_did,asset,intent_key
-           LIMIT %s OFFSET %s"""
-    with _UNKNOWN_SIGNED_PAGE_LOCK:
-        offset=_UNKNOWN_SIGNED_PAGE_OFFSET
-        with psycopg.connect(db,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(sql,(limit,offset))
-                rows=list(cur.fetchall())
-                if not rows and offset:
-                    offset=0
-                    cur.execute(sql,(limit,0))
-                    rows=list(cur.fetchall())
-        _UNKNOWN_SIGNED_PAGE_OFFSET=offset+len(rows)
-    return rows
+    # Avoid racing an active source broadcaster (HTTP timeout 12 seconds):
+    # only SENDING rows stranded for 60 seconds may enter passive recovery.
+    query="""SELECT privy_did,asset,intent_key,payload_sha256,side,
+                    chain,source_wallet,source_tx_hash,
+                    source_signed_tx_hash,status,created_at
+             FROM mininex_live_native_order_intents
+             WHERE (status='RECONCILIATION_REQUIRED'
+                    OR (status='SENDING'
+                        AND updated_at < now() - interval '60 seconds'))
+               AND side='SELL' AND asset IN ('BTC','SOL','XRP')
+               AND source_tx_hash IS NULL
+               AND source_signed_tx_hash IS NOT NULL"""
+    return _native_source_receipt_work_page(
+        where_sql=query,kind="unknown",limit=limit,
+        lock=_UNKNOWN_SIGNED_PAGE_LOCK)
 
 
 def _persist_unknown_native_finality_locked(
@@ -404,37 +409,19 @@ async def reconcile_unknown_original_native_signed_sources_once(limit:int=32)->d
         "fees_collected":False,
     }
 
-# Separate BUY readback work scan; does not change legacy SELL pagination.
-_ETH_BUY_PAGE_OFFSET=0
+# Separate Ethereum-stablecoin BUY scan shares only the query helper.
 
 
 def _pending_original_eth_buy_submissions(limit:int=32)->list[dict]:
-    global _ETH_BUY_PAGE_OFFSET
-    if type(limit) is not int or not 0<limit<=256:
-        raise ValueError("Invalid native BUY work page")
-    db=_db_url()
-    _ensure_schema(db)
     query="""SELECT privy_did,asset,intent_key,payload_sha256,
                     side,stable,chain,input_amount,source_wallet,
-                    destination_wallet,source_tx_hash,status
+                    destination_wallet,source_tx_hash,status,created_at
              FROM mininex_live_native_order_intents
              WHERE status='SUBMITTED' AND side='BUY'
                AND asset IN ('BTC','SOL','XRP')
-               AND source_tx_hash IS NOT NULL
-             ORDER BY created_at ASC,privy_did,asset,intent_key
-             LIMIT %s OFFSET %s"""
-    with _FINALITY_PAGE_LOCK:
-        offset=_ETH_BUY_PAGE_OFFSET
-        with psycopg.connect(db,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(query,(limit,offset))
-                rows=list(cur.fetchall())
-                if not rows and offset:
-                    offset=0
-                    cur.execute(query,(limit,0))
-                    rows=list(cur.fetchall())
-        _ETH_BUY_PAGE_OFFSET=offset+len(rows)
-    return rows
+               AND source_tx_hash IS NOT NULL"""
+    return _native_source_receipt_work_page(
+        where_sql=query,kind="buy",limit=limit,lock=_FINALITY_PAGE_LOCK)
 
 
 async def reconcile_original_eth_buy_sources_once(limit:int=32)->dict:

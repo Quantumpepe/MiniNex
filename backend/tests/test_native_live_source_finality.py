@@ -172,8 +172,13 @@ def test_mutated_receipt_economics_cannot_be_written_to_ledger():
     assert cur.queries==[]
 
 
-def test_finality_page_does_not_let_old_unconfirmed_tx_starve_new_owners(monkeypatch):
-    entries=[original(asset) for asset in ("BTC","SOL","XRP","BTC","SOL")]
+def test_finality_page_does_not_skip_submitted_rows_after_prior_rows_settle(monkeypatch):
+    from datetime import datetime,timezone,timedelta
+    base=datetime(2026,11,21,tzinfo=timezone.utc)
+    entries=[original(asset)|{
+        "created_at":base+timedelta(minutes=i),
+        "intent_key":"native_"+f"{i:064x}",
+    } for i,asset in enumerate(("BTC","SOL","XRP","BTC","SOL"))]
     queries=[]
     class DB:
         def __enter__(self):return self
@@ -182,19 +187,38 @@ def test_finality_page_does_not_let_old_unconfirmed_tx_starve_new_owners(monkeyp
         def execute(self,query,params):
             assert "side='SELL'" in query
             assert "status='SUBMITTED'" in query
-            assert "LIMIT %s OFFSET %s" in query
-            self.size,self.offset=params
+            assert "LIMIT %s" in query
+            assert "OFFSET" not in query
+            self.limit=params[-1]
+            self.after=params[:-1] if len(params)>1 else None
             queries.append(params)
         def fetchall(self):
-            return entries[self.offset:self.offset+self.size]
-    monkeypatch.setattr(finality,"_FINALITY_PAGE_OFFSET",0)
+            candidates=entries
+            if self.after is not None:
+                candidates=[row for row in entries if (
+                    row["created_at"],row["privy_did"],row["asset"],
+                    row["intent_key"])>tuple(self.after)]
+            return candidates[:self.limit]
+    monkeypatch.setitem(finality._RECEIPT_PAGE_CURSORS,"sell",None)
     monkeypatch.setattr(finality,"_db_url",lambda:"postgres://test.invalid")
     monkeypatch.setattr(finality,"_ensure_schema",lambda _:None)
     monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
-    pages=[finality._pending_original_source_submissions(limit=2)
-           for _ in range(4)]
-    assert pages==[entries[:2],entries[2:4],entries[4:],entries[:2]]
-    assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+    first=finality._pending_original_source_submissions(limit=2)
+    assert first==entries[:2]
+    del entries[:2]
+    second=finality._pending_original_source_submissions(limit=2)
+    assert second==entries[:2]
+    del entries[:2]
+    last=finality._pending_original_source_submissions(limit=2)
+    assert last==entries[:1]
+    again=finality._pending_original_source_submissions(limit=2)
+    assert again==entries[:1]
+    assert len(queries)==5
+    assert len(queries[0])==1
+    assert len(queries[1])==5
+    assert len(queries[2])==5
+    assert len(queries[3])==5
+    assert len(queries[4])==1
 
 
 def test_reconcile_reads_owner_and_never_signs_or_broadcasts(monkeypatch):
@@ -341,7 +365,7 @@ def test_passive_recovery_scans_stranded_sending_without_retry(monkeypatch):
             queries.append((sql,parameters))
         def fetchall(self):
             return []
-    monkeypatch.setattr(finality,"_UNKNOWN_SIGNED_PAGE_OFFSET",0)
+    monkeypatch.setitem(finality._RECEIPT_PAGE_CURSORS,"unknown",None)
     monkeypatch.setattr(finality,"_db_url",lambda:"postgres://fake")
     monkeypatch.setattr(finality,"_ensure_schema",lambda *_:None)
     monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
@@ -449,3 +473,33 @@ def test_native_source_receipts_progress_across_owners_without_serial_rpc_wait(m
     # The first owner's two orders remain in original journal order.
     assert started==[(DID,"SOL"),(other,"SOL"),(DID,"XRP")]
     assert len(persisted)==3
+
+
+def test_original_eth_buy_and_unknown_sources_use_distinct_keyset_cursors(monkeypatch):
+    from datetime import datetime,timezone
+    base=datetime(2026,11,21,tzinfo=timezone.utc)
+    row=original("SOL")|{
+        "created_at":base,"intent_key":"native_"+"a"*64,
+    }
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,query,args):
+            self.query=query
+            self.args=args
+            assert "LIMIT %s" in query
+            assert "OFFSET" not in query
+        def fetchall(self):
+            return [row] if len(self.args)==1 else []
+    monkeypatch.setattr(finality,"_db_url",lambda:"postgres://test.invalid")
+    monkeypatch.setattr(finality,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setitem(finality._RECEIPT_PAGE_CURSORS,"buy",None)
+    monkeypatch.setitem(finality._RECEIPT_PAGE_CURSORS,"unknown",None)
+    assert finality._pending_original_eth_buy_submissions(1)==[row]
+    assert finality._pending_unknown_signed_sources(1)==[row]
+    assert finality._RECEIPT_PAGE_CURSORS["buy"]==(
+        base,row["privy_did"],row["asset"],row["intent_key"])
+    assert finality._RECEIPT_PAGE_CURSORS["unknown"]==(
+        base,row["privy_did"],row["asset"],row["intent_key"])
