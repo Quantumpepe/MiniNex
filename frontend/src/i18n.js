@@ -720,8 +720,8 @@ export const DICTIONARY = {
     helpMarketText: 'Kurse, Tagesveränderungen, Referenzwerte und Charts sind Marktdaten und kein persönliches Wallet-Guthaben. Daten können verspätet eintreffen oder fehlen.',
     helpHistoryTitle: 'Verlauf und Steuerunterlagen',
     helpHistoryText: 'PDF-/CSV-Jahresberichte sind für bestätigte Kontotransaktionen verfügbar. Nur unabhängig geprüfte und archivierte Blockchain-Seiten erscheinen; Bewertungen in der jeweiligen Landeswährung und vollständige Steuerabstimmung fehlen noch. Simulationen sind ausgeschlossen.',
-    helpSecurityTitle: 'Sicherheit'
-    helpSecurityText: 'Live-Handel nutzt deine Privy-Wallet. Prüfe Beträge und Ziele immer. Signiere nur Transaktionen, die du ausführen willst.'
+    helpSecurityTitle: 'Sicherheit',
+    helpSecurityText: 'Live-Handel nutzt deine Privy-Wallet. Prüfe Beträge und Ziele immer. Signiere nur Transaktionen, die du ausführen willst.',
     infoLabel: 'Information',
     noRealTrades: 'Noch keine Transaktionen',
     tradingUnavailable: 'Handel noch nicht aktiviert',
