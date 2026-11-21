@@ -43,6 +43,7 @@ def test_exact_native_buy_request_uses_original_thor_router(asset,stable,amount)
     assert body["params"]["transaction"]=={
         "to":original["inbound_router"],"value":"0",
         "data":source["unsigned_transaction"]["data"],
+        "nonce":"0x2a",
     }
     assert nonce==42
     assert len(digest)==64
@@ -105,3 +106,30 @@ def test_no_owner_policy_means_no_remote_wallet_or_send(monkeypatch):
     with pytest.raises(HTTPException) as e:
         asyncio.run(run())
     assert e.value.status_code==409
+
+
+def test_onwire_privy_eth_nonce_is_original_and_immutable():
+    from backend.native_eth_nonce_binding import pin_original_privy_eth_nonce
+    order,quote,preflight=ready()
+    url,body,nonce,digest=m.bound_original_native_buy_rpc(
+        order,quote,preflight,wallet_id="native_test_wallet001",now=NOW)
+    assert nonce==42 and body["params"]["transaction"]["nonce"]=="0x2a"
+    assert len(digest)==64
+    bare={**body,"params":{"transaction":{
+        k:v for k,v in body["params"]["transaction"].items() if k!="nonce"}}}
+    assert pin_original_privy_eth_nonce(url,bare,nonce)==body
+    assert "nonce" not in bare["params"]["transaction"]
+    assert pin_original_privy_eth_nonce(url,bare,nonce+1)!=body
+    for bad in (-1,True,2**64,None,"42"):
+        with pytest.raises(ValueError):
+            pin_original_privy_eth_nonce(url,bare,bad)
+    for changed in (
+        {**bare,"caip2":"eip155:56"},
+        {**bare,"method":"eth_call"},
+        {**bare,"params":{"transaction":{
+            **bare["params"]["transaction"],"nonce":"0x2b"}}},
+        {**bare,"params":{"transaction":{
+            **bare["params"]["transaction"],"value":"50"}}},
+    ):
+        with pytest.raises(ValueError):
+            pin_original_privy_eth_nonce(url,changed,nonce)

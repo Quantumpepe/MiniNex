@@ -33,6 +33,7 @@ from .native_thor_swap_quote import _exact_owner_wallets
 from .privy_live_signer import _owned_eth_wallet, _scoped_signer, fetch_privy_wallet_metadata
 from .privy_wallet_verification import fetch_privy_user
 from .shared_evm_execution import bound_evm_wallet_rpc
+from .native_eth_nonce_binding import pin_original_privy_eth_nonce
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .storage import _db_url, _ensure_schema, _safe_did
 
@@ -146,6 +147,7 @@ def bound_original_native_buy_rpc(
         # passive canonical Ethereum transaction reconstruction.
         tx={"from":tx["from"],"to":tx["to"].lower(),"chainId":1,
             "data":tx["data"],"value":"0"})
+    body=pin_original_privy_eth_nonce(url,body,nonce)
     digest=hashlib.sha256(json.dumps(
         [url,body,order["payload_sha256"],nonce],
         sort_keys=True,separators=(",",":"),ensure_ascii=True,

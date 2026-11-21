@@ -26,6 +26,7 @@ from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import fetch_privy_user
 from .shared_evm_allowance import owner_approval_draft
 from .shared_evm_execution import bound_evm_wallet_rpc
+from .native_eth_nonce_binding import pin_original_privy_eth_nonce
 from .storage import _db_url, _ensure_schema, _safe_did
 from .live_eth_receipts import _num
 
@@ -111,6 +112,7 @@ def _original_thor_approval_candidate(
         tx={"from":original["wallet_address"],"chainId":1,
             "to":STABLES[original["stable"]],"data":expected_data,
             "value":"0"})
+    body=pin_original_privy_eth_nonce(url,body,original["nonce_exact"])
     digest=hashlib.sha256(json.dumps(
         [url,body,original["idempotency_key"],original["nonce_exact"]],
         sort_keys=True,separators=(",",":"),ensure_ascii=True,

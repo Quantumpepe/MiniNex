@@ -35,6 +35,7 @@ from .native_thor_swap_quote import _exact_owner_wallets
 from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import fetch_privy_user
 from .shared_evm_execution import bound_evm_wallet_rpc
+from .native_eth_nonce_binding import pin_original_privy_eth_nonce
 from .storage import _db_url, _ensure_schema, _safe_did
 from .wallet_balances import ETH_RPC
 
@@ -140,6 +141,7 @@ def _original_eth_buy_candidate(
         asset="ETH",wallet_id=wallet_id,wallet=original["source_wallet"],
         tx={"from":original["source_wallet"],"chainId":1,
             "to":tx["to"].lower(),"data":tx["input"].lower(),"value":"0"})
+    body=pin_original_privy_eth_nonce(url,body,original["nonce_exact"])
     digest=hashlib.sha256(json.dumps(
         [url,body,original["payload_sha256"],original["nonce_exact"]],
         sort_keys=True,separators=(",",":"),ensure_ascii=True,

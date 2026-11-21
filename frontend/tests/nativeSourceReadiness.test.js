@@ -154,7 +154,7 @@ test('never trust a forged chain, amount, owner, source or unredacted payload',(
 });
 test('native check is under the quoted coin, with no additional capital controls',()=>{
   const jsx=readFileSync(new URL('../src/LiveTradePlan.jsx',import.meta.url),'utf8');
-  assert.match(jsx,/\['BTC','SOL','XRP'\]\.includes\(asset\)&&<NativeSourceReadiness/);
+  assert.match(jsx,/\['BTC','SOL','XRP','TRX','DOGE'\]\.includes\(asset\)&&<NativeSourceReadiness/);
   assert.match(jsx,/request=\{quote\.request\}/);
   const ui=readFileSync(new URL('../src/NativeSourceReadiness.jsx',import.meta.url),'utf8');
   assert.match(ui,/method:'POST'/);

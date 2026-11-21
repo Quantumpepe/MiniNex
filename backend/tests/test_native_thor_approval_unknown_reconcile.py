@@ -9,6 +9,7 @@ import pytest
 
 from backend import native_thor_approval_unknown_reconcile as m
 from backend import native_thor_buy_approval_send as send
+from backend.native_eth_nonce_binding import pin_original_privy_eth_nonce
 from backend.tests.test_native_thor_buy_approval_plan import plan,NOW
 
 WALLET_ID="native_owner_approval_wallet"
@@ -26,8 +27,10 @@ def source(asset="BTC",stable="USDC",allowance=0):
         did=OWNER,asset=asset,stable=stable,signal="strategy_123",
         revision=5,prepared=pr)
     nonce=42
+    onwire=pin_original_privy_eth_nonce(
+        pr["privy_url"],pr["privy_body"],nonce)
     wire=hashlib.sha256(json.dumps(
-        [pr["privy_url"],pr["privy_body"],key,nonce],
+        [pr["privy_url"],onwire,key,nonce],
         sort_keys=True,separators=(",",":"),ensure_ascii=True,
     ).encode("ascii")).hexdigest()
     row=dict(

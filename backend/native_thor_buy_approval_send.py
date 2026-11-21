@@ -33,6 +33,7 @@ from .privy_live_signer import (
 from .privy_wallet_verification import fetch_privy_user
 from .shared_evm_allowance import owner_approval_draft
 from .shared_evm_execution import bound_evm_wallet_rpc
+from .native_eth_nonce_binding import pin_original_privy_eth_nonce
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .shared_evm_router_approval_send import _finish as _finish_shared_approval
 from .storage import _db_url, _ensure_schema, _safe_did
@@ -293,7 +294,9 @@ async def submit_original_thor_approval_once(
     key=_approval_key(
         did=did,asset=asset,stable=stable,signal=signal_event_id,
         revision=permission_audit["budget_revision"],prepared=prepared)
-    url,body=prepared["privy_url"],prepared["privy_body"]
+    url=prepared["privy_url"]
+    body=pin_original_privy_eth_nonce(
+        url,prepared["privy_body"],pending_nonce)
     digest=hashlib.sha256(json.dumps(
         [url,body,key,pending_nonce,
          prepared["original_buy_unsigned_sha256"]],
