@@ -400,8 +400,15 @@ export default function App() {
   useEffect(()=>{
     let active=true;
     const verifyMode=()=>{
-      // Always keep simulation UI off, regardless of backend flag.
-      if(active)setPaperVisible(false);
+      getJson('/api/user-paper/availability')
+        .then(data=>{
+          if(active)setPaperVisible(
+            data?.paper_available===false
+          );
+        })
+        .catch(()=>{
+          if(active)setPaperVisible(false);
+        });
     };
     verifyMode();
     const timer=window.setInterval(()=>{
