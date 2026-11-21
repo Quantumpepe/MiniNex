@@ -103,7 +103,7 @@ export default function ExtraCoinStrategyReplay({
           onClick={onRetryPreference}>{t.privyBudgetReload}</button>
       </>}
     </div>
-    <ExtraCoinPaperControl asset={asset} t={t} enabled={enabled}
+    <ExtraCoinPaperControl asset={asset} t={t} enabled={enabled} liveMode={liveMode}
       getAccessToken={getAccessToken} options={options} onChange={onChange}/>
     {!budgetOk&&<p className="privy-wallet-description" role="alert">
       {t.extraReplayBudgetInvalid}
