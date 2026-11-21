@@ -88,3 +88,35 @@ export function validEvmOrderHistory(data,asset){
   }
   return true;
 }
+
+export function validEvmFinalizedFills(data,asset){
+  if(!data||data.mode!=='FINALIZED_EVM_REAL_FILLS_ONLY'||
+     data.asset!==asset||!LIVE_EVM_ASSETS.includes(asset)||
+     data.includes_simulation!==false||
+     data.wallet_signing_authorized!==false||
+     data.full_native_order_settlement_verified!==false||
+     data.realized_net_pnl_calculated!==false||
+     data.performance_fee_settled!==false||
+     typeof data.history_truncated!=='boolean'||
+     !Array.isArray(data.fills)||data.fills.length>20)return false;
+  const seen=new Set();
+  for(const fill of data.fills){
+    if(!fill||fill.asset!==asset||fill.chain_id!==NETWORKS[asset]||
+       !['BUY','SELL'].includes(fill.side)||
+       !['USDC','USDT'].includes(fill.stable)||
+       !/^[A-Za-z0-9_.:-]{8,128}$/.test(fill.intent_key||'')||
+       seen.has(fill.intent_key)||
+       !/^0x[0-9a-f]{64}$/.test(fill.tx_hash||'')||
+       fill.onchain_finalized!==true||
+       fill.native_coin_cycle_complete!==false||
+       fill.realized_net_usd!==null||
+       fill.performance_fee_paid!==false||
+       fill.spent_asset!==(fill.side==='BUY'?fill.stable:asset)||
+       fill.received_asset!==(fill.side==='BUY'?asset:fill.stable)||
+       ![fill.spent_amount,fill.received_amount].every(v=>
+          typeof v==='string'&&v.length<=96&&
+          Number.isFinite(Number(v))&&Number(v)>0))return false;
+    seen.add(fill.intent_key);
+  }
+  return true;
+}
