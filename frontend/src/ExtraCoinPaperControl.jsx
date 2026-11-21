@@ -86,7 +86,10 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         budget_usd:Number(options.budget),
         mode:options.mode,horizon:options.horizon,stable:options.stable,
       }:null;
-      const response=await fetch(API_BASE+'/api/extra-paper/'+asset+'/'+action,{
+      const endpoint=liveMode&&action==='start'
+        ? API_BASE+'/api/live/evm/auto-session/'+asset+'/start'
+        : API_BASE+'/api/extra-paper/'+asset+'/'+action;
+      const response=await fetch(endpoint,{
         method:'POST',cache:'no-store',
         headers:{Authorization:'Bearer '+token,Accept:'application/json',
                  ...(starting?{'Content-Type':'application/json'}:{})},
