@@ -236,3 +236,14 @@ test('signed Bitcoin TXID is exposed before the broadcast reply becomes uncertai
     assert.match(source('../src/BtcWalletSend.jsx'),/stage==='uncertain'&&txid/);
   }finally{globalThis.fetch=before;}
 });
+
+
+test('BTC Send persists only a signed public TXID for recovery after OTA reload',()=>{
+  const ui=source('../src/BtcWalletSend.jsx');
+  assert.match(ui,/mininex:last-signed-btc:/);
+  assert.match(ui,/globalThis\.localStorage\?\.setItem\(signedKey,hash\)/);
+  assert.match(ui,/globalThis\.localStorage\?\.getItem\(signedKey\)/);
+  assert.match(ui,/rememberSignedTxid\(hash\)/);
+  assert.match(ui,/lastSignedTxid!==txid/);
+  assert.doesNotMatch(ui,/localStorage\?\.setItem\([^\n]*signedWire/);
+});

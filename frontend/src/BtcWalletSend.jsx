@@ -16,6 +16,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
   const [review,setReview]=useState(null);
   const [stage,setStage]=useState('idle');
   const [txid,setTxid]=useState(null);
+  const [lastSignedTxid,setLastSignedTxid]=useState(null);
   const [issue,setIssue]=useState('');
   const pending=useRef(false);
   const request=useRef(0);
@@ -25,6 +26,16 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
   const [verifying,setVerifying]=useState(false);
   const de=lang==='de';
   const address=wallet?.address||null;
+  // Store only a public BTC transaction hash, never signed wire, keys or
+  // Privy credentials. This permits recovery of its explorer link after an
+  // OTA reload or ambiguous network acknowledgement on the same account.
+  const signedKey=userId&&/^bc1q[ac-hj-np-z02-9]{38}$/.test(address||'')?
+    'mininex:last-signed-btc:'+userId+':'+address:null;
+  const rememberSignedTxid=hash=>{
+    if(!signedKey||!/^[a-f0-9]{64}$/.test(hash))return;
+    setLastSignedTxid(hash);
+    try{globalThis.localStorage?.setItem(signedKey,hash);}catch{/* private mode */}
+  };
   const publicKey=btcOwnedPublicKey(wallet)||verifiedPubkey;
   const ownerScript=btcOwnerScript(address,publicKey);
   const supported=enabled&&ownerScript&&typeof signRawHash==='function';
@@ -37,7 +48,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     setOpen(false);setDestination('');setAmount('');setReview(null);
     setStage('idle');setTxid(null);setIssue('');
     setVerifiedPubkey(null);setVerifying(false);
-  },[userId,address,enabled,nonce]);
+    let saved=null;
+    if(signedKey){
+      try{saved=globalThis.localStorage?.getItem(signedKey);}catch{/* private mode */}
+    }
+    setLastSignedTxid(/^[a-f0-9]{64}$/.test(saved||'')?saved:null);
+  },[userId,address,enabled,nonce,signedKey]);
 
   const verifyWallet=async()=>{
     if(!enabled||verifying||!address||!/^bc1q[ac-hj-np-z02-9]{38}$/.test(address)||
@@ -115,7 +131,10 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
       const hash=await btcSignAndBroadcast(review,{address,pubkey:publicKey,
         signRawHash,signal:ctrl.signal,onSigned:hash=>{
           signedTxid=hash;
-          if(id===request.current)setTxid(hash);
+          if(id===request.current){
+            setTxid(hash);
+            rememberSignedTxid(hash);
+          }
         }});
       if(id===request.current){setTxid(hash);setReview(null);setStage('submitted');}
     }catch{
@@ -205,6 +224,13 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         {de?'An Bitcoin-Netzwerk übermittelt':'Submitted to Bitcoin network'}:
         {' '}<a href={'https://mempool.space/tx/'+txid} target="_blank"
           rel="noopener noreferrer">{txid}</a>
+      </p>}
+      {lastSignedTxid&&lastSignedTxid!==txid&&<p role="status"
+        className="privy-wallet-description">
+        {de?'Letzte signierte BTC-Transaktion (Blockchain-Status im Explorer prüfen)':
+          'Last signed BTC transaction (verify status on the explorer)'}:
+        {' '}<a href={'https://mempool.space/tx/'+lastSignedTxid}
+          target="_blank" rel="noopener noreferrer">{lastSignedTxid}</a>
       </p>}
     </div>}
   </section>;
