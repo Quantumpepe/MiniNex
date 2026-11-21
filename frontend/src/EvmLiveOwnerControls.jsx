@@ -88,12 +88,14 @@ export default function EvmLiveOwnerControls({
     const [p,s,h]=await Promise.all([
       request(path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
-      request(path+'/order-status/'+asset+'?limit=20'),
+      request(path+'/order-status/'+asset+'?limit=20').catch(()=>null),
     ]);
-    if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset)||
-       !validEvmOrderHistory(h,asset))
+    if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
       throw Error('Inconsistent EVM LIVE trading state');
-    setPermission(p);setSession(s);setOrders(h);
+    setPermission(p);setSession(s);
+    // History is read-only; an unavailable order journal must never
+    // prevent owner Start Trade, Pause or a fresh grant.
+    setOrders(validEvmOrderHistory(h,asset)?h:null);
   };
   useEffect(()=>{
     let active=true;
@@ -106,12 +108,15 @@ export default function EvmLiveOwnerControls({
         const [p,s,h]=await Promise.all([
           request(path+'/permission-status/'+asset),
           request(path+'/auto-session/'+asset),
-          request(path+'/order-status/'+asset+'?limit=20'),
+          request(path+'/order-status/'+asset+'?limit=20').catch(()=>null),
         ]);
-        if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset)||
-           !validEvmOrderHistory(h,asset))
+        if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
           throw Error('Invalid backend trading session state');
-        if(active){setPermission(p);setSession(s);setOrders(h);setError('');}
+        if(active){
+          setPermission(p);setSession(s);
+          setOrders(validEvmOrderHistory(h,asset)?h:null);
+          setError('');
+        }
       }catch{if(active)setError(t.failed);}
     };
     void poll();
@@ -252,7 +257,8 @@ export default function EvmLiveOwnerControls({
       <p className="privy-wallet-description">{t.warn}</p>}
     <p className="privy-wallet-description">{t.note}</p>
     {orders&&<div className="mininex-live-orders" aria-label={t.history}
-      style={{display:'grid',gap:6}}>
+      style={{display:'grid',gap:6,maxHeight:260,overflowY:'auto',
+        scrollbarWidth:'none'}}>
       <strong>{t.history} · {asset}</strong>
       {orders.orders.length===0&&<p className="privy-wallet-description">{t.empty}</p>}
       {orders.orders.map(order=><div key={order.intent_key}
