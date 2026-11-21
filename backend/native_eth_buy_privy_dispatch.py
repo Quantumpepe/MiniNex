@@ -141,7 +141,9 @@ def bound_original_native_buy_rpc(
         raise ValueError("Original native BUY cannot bind verified Ethereum source") from None
     url,body=bound_evm_wallet_rpc(
         asset="ETH",wallet_id=wallet_id,wallet=order["source_wallet"],
-        tx={"from":tx["from"],"to":tx["to"],"chainId":1,
+        # Normalized for identical original Privy request digest during
+        # passive canonical Ethereum transaction reconstruction.
+        tx={"from":tx["from"],"to":tx["to"].lower(),"chainId":1,
             "data":tx["data"],"value":"0"})
     digest=hashlib.sha256(json.dumps(
         [url,body,order["payload_sha256"],nonce],
@@ -153,11 +155,14 @@ def bound_original_native_buy_rpc(
 def _claim_eth_buy_once(
     *,did:str,asset:str,key:str,digest:str,
     permission_audit:dict,nonce:int,request_digest:str,
+    observed_block_number:int,
 )->None:
     """Owner lock and source ETH nonce are committed before any Privy POST."""
     if (type(nonce) is not int or nonce<0 or nonce>=2**256
+            or type(observed_block_number) is not int
+            or observed_block_number<=0 or observed_block_number>=2**256
             or not _SHA.fullmatch(request_digest)):
-        raise ValueError("Original ETH source nonce invalid")
+        raise ValueError("Original ETH source nonce or observed block invalid")
     db=_db_url()
     _ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
@@ -168,14 +173,17 @@ def _claim_eth_buy_once(
             cur.execute(
                 """UPDATE mininex_live_native_order_intents
                    SET source_eth_pending_nonce=%s,
-                       source_rpc_request_sha256=%s,updated_at=now()
+                       source_rpc_request_sha256=%s,
+                       source_eth_observed_block_number=%s,updated_at=now()
                    WHERE privy_did=%s AND asset=%s AND intent_key=%s
                      AND chain='ethereum-mainnet' AND side='BUY'
                      AND status='SENDING' AND payload_sha256=%s
                      AND source_eth_pending_nonce IS NULL
                      AND source_rpc_request_sha256 IS NULL
+                     AND source_eth_observed_block_number IS NULL
                    RETURNING source_rpc_request_sha256""",
-                (nonce,request_digest,did,asset,key,digest))
+                (nonce,request_digest,observed_block_number,
+                 did,asset,key,digest))
             row=cur.fetchone()
             if (type(row) is not dict or
                     row.get("source_rpc_request_sha256")!=request_digest):
@@ -250,13 +258,19 @@ async def submit_original_eth_native_buy_once(
             order,quote,preflight,wallet_id=owner["wallet_id"],now=int(time.time()))
     except (ValueError,KeyError,TypeError):
         raise HTTPException(409,"Original ETH BUY source no longer current") from None
+    observed_block_number=preflight.get(
+        "source_ethereum_observed_block_number")
+    if (type(observed_block_number) is not int
+            or observed_block_number<=0):
+        raise HTTPException(409,"Original ETH source observation block unavailable")
     secret=os.environ.get("MININEX_PRIVY_APP_SECRET","").strip()
     if len(secret)<12:
         raise HTTPException(503,"Privy ETH funding secret unavailable")
     await asyncio.to_thread(
         _claim_eth_buy_once,did=did,asset=asset,key=intent_key,
         digest=order["payload_sha256"],permission_audit=permission_audit,
-        nonce=nonce,request_digest=request_digest)
+        nonce=nonce,request_digest=request_digest,
+        observed_block_number=observed_block_number)
     tx_hash=None
     try:
         signature=sign_privy_rpc_payload(

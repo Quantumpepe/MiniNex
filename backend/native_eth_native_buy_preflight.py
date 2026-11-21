@@ -292,13 +292,18 @@ async def _preflight_verified_original_eth_buy(
                 _rpc(client, method="eth_gasPrice",
                      params=[], req_id=7),
             )
-        return inspect_original_native_buy_evm_preflight(
+        report=inspect_original_native_buy_evm_preflight(
             unsigned=unsigned, original_quote=original, now=int(time.time()),
             chain_id=chain, token_allowance=allowance_word,
             eth_balance=balance, token_balance=source,
             pending_nonce=pending_nonce, estimate_gas=gas,
             gas_price=gas_price,
         )
+        # The original pre-send Ethereum height is durable evidence for
+        # recovery if Privy's response later becomes uncertain. Starting
+        # there never scans a user-selected chain or older unrelated sends.
+        report["source_ethereum_observed_block_number"]=height
+        return report
     except (ValueError, KeyError, TypeError, OverflowError,
             httpx.HTTPError):
         raise HTTPException(

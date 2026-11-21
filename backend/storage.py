@@ -1153,6 +1153,10 @@ SCHEMA += (
             OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
         source_eth_pending_nonce NUMERIC(78,0) CHECK (
             source_eth_pending_nonce >= 0),
+        source_eth_observed_block_number NUMERIC(78,0) CHECK (
+            source_eth_observed_block_number > 0),
+        source_eth_scan_next_block NUMERIC(78,0) CHECK (
+            source_eth_scan_next_block > 0),
         source_rpc_request_sha256 TEXT CHECK (
             source_rpc_request_sha256 IS NULL OR
             source_rpc_request_sha256 ~ '^[0-9a-f]{64}$'),
@@ -1203,6 +1207,12 @@ SCHEMA += (
         ADD COLUMN IF NOT EXISTS source_rpc_request_sha256 TEXT
         CHECK (source_rpc_request_sha256 IS NULL OR
                source_rpc_request_sha256 ~ '^[0-9a-f]{64}$')""",
+    """ALTER TABLE mininex_live_native_order_intents
+        ADD COLUMN IF NOT EXISTS source_eth_observed_block_number NUMERIC(78,0)
+        CHECK (source_eth_observed_block_number > 0)""",
+    """ALTER TABLE mininex_live_native_order_intents
+        ADD COLUMN IF NOT EXISTS source_eth_scan_next_block NUMERIC(78,0)
+        CHECK (source_eth_scan_next_block > 0)""",
     """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique
        ON mininex_live_native_order_intents(chain,source_signed_tx_hash)
        WHERE source_signed_tx_hash IS NOT NULL""",

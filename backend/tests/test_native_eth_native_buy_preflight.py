@@ -172,6 +172,7 @@ def test_real_mainnet_rpc_readback_is_owner_bound_and_not_a_tx(monkeypatch):
     assert result["asset"] == "XRP"
     assert result["chain_id_verified"] is True
     assert result["can_submit"] is False
+    assert result["source_ethereum_observed_block_number"]==0x123456
     assert [x[0] for x in called] == [
         "eth_chainId","eth_blockNumber","eth_getBalance","eth_call",
         "eth_call","eth_getTransactionCount","eth_estimateGas","eth_gasPrice",

@@ -30,7 +30,7 @@ LOG=logging.getLogger("mininex.native_source_finality")
 _FINALITY_PAGE_LOCK=Lock()
 # Separate source/unknown/ETH BUY keyset cursors. Finished rows disappear
 # from the SQL predicate, so OFFSET pagination would skip later users.
-_RECEIPT_PAGE_CURSORS={"sell":None,"unknown":None,"buy":None}
+_RECEIPT_PAGE_CURSORS={"sell":None,"unknown":None,"buy":None,"unknown_buy":None}
 
 
 def _native_source_receipt_work_page(
