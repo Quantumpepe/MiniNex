@@ -709,13 +709,13 @@ export const DICTIONARY = {
     helpModesTitle: 'Long und Abwärtsphase',
     helpModesText: 'Long nutzt Aufwärtstrends und DCA. Abwärtsphase verkauft bereits vorhandene Coins und kauft bei Erholung günstiger zurück. AUTO kombiniert Long, DCA und defensive Spot-Verkäufe bei bestätigtem Abwärtstrend. Das ist kein gehebelter Short.',
     helpSettlementTitle: 'USDC / USDT',
-    helpSettlementText: 'Die Handelswährung legt den Stablecoin für den Coin fest. Änderungen werden automatisch gespeichert.'
+    helpSettlementText: 'Die Handelswährung legt den Stablecoin für den Coin fest. Änderungen werden automatisch gespeichert.',
     helpHorizonTitle: 'Signal-Zeitraum',
-    helpHorizonText: 'Wähle 5 Minuten, 15 Minuten, 1 Stunde oder 24 Stunden pro Coin. Jeder Coin hat eigenen Modus (Long, Spot-Abwärtstrend oder AUTO). Änderungen werden automatisch gespeichert.'
+    helpHorizonText: 'Wähle 5 Minuten, 15 Minuten, 1 Stunde oder 24 Stunden pro Coin. Jeder Coin hat eigenen Modus (Long, Spot-Abwärtstrend oder AUTO). Änderungen werden automatisch gespeichert.',
     helpTradingTitle: 'Automatischer Handel',
-    helpTradingText: 'Mit dem Simulations-Schalter kannst du Strategien zuerst mit Paper-Trades testen. Wenn du bereit bist, schalte auf Live. Strategie starten im Live-Modus aktiviert die Live-Session für diesen Coin. Jeder Live-Trade benötigt eine Privy-Signatur.'
+    helpTradingText: 'Mit dem Simulations-Schalter kannst du Strategien zuerst mit Paper-Trades testen. Wenn du bereit bist, schalte auf Live. Strategie starten im Live-Modus aktiviert die Live-Session für diesen Coin. Jeder Live-Trade benötigt eine Privy-Signatur.',
     helpFeesTitle: 'Erfolgsgebühr',
-    helpFeesText: 'Die Performance-Gebühr beträgt 5% des neuen realisierten Nettogewinns mit High-Water-Mark. Vorherige Verluste müssen zuerst ausgeglichen werden.'
+    helpFeesText: 'Die Performance-Gebühr beträgt 5% des neuen realisierten Nettogewinns mit High-Water-Mark. Vorherige Verluste müssen zuerst ausgeglichen werden.',
     helpMarketTitle: 'Kurse und Charts',
     helpMarketText: 'Kurse, Tagesveränderungen, Referenzwerte und Charts sind Marktdaten und kein persönliches Wallet-Guthaben. Daten können verspätet eintreffen oder fehlen.',
     helpHistoryTitle: 'Verlauf und Steuerunterlagen',
