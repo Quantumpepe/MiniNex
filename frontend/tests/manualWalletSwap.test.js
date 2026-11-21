@@ -10,7 +10,7 @@ const wallet=read('../src/PrivyWalletPanel.jsx');
 const labels=read('../src/i18n.js');
 const css=read('../src/styles.css');
 
-test('wallet Swap is manual, accessible, directly below balances and no execution path',()=>{
+test('wallet Swap keeps other networks quote-only and mounts explicit ETH Privy execution',()=>{
   assert.match(wallet,/import ManualSwapPreview from '\.\/ManualSwapPreview\.jsx'/);
   assert.match(wallet,/renderCoinActions = asset/);
   assert.match(wallet,/<ManualSwapPreview key=\{'swap-'\+asset\} initialCoin=\{asset\} lockedCoin/);
@@ -18,6 +18,18 @@ test('wallet Swap is manual, accessible, directly below balances and no executio
   assert.match(component,/getAccessToken\(\)/);
   assert.match(component,/walletSwapNotEnabled/);
   assert.match(component,/walletSwapUnsupported/);
+  assert.match(component,/import EthLiveSwap from '\.\/EthLiveSwap\.jsx'/);
+  assert.match(component,/ethManualPair=\(/);
+  assert.match(component,/ethManualReady=enabled && ethManualPair && request\?\.coin==='ETH'/);
+  assert.match(component,/\{ethManualReady&&<EthLiveSwap/);
+  assert.match(component,/\{!ethManualPair&&<p/);
+  const ethSigner=read('../src/EthLiveSwap.jsx');
+  assert.match(ethSigner,/method:'eth_sendTransaction'/);
+  assert.match(ethSigner,/async function submit\(kind\)/);
+  assert.match(ethSigner,/const p=await getProvider\(\)/);
+  assert.match(ethSigner,/wallet\.getEthereumProvider\(\)/);
+  assert.match(ethSigner,/wallet\.switchChain\(1\)/);
+  assert.match(ethSigner,/if\(BigInt\(await p\.request\(\{method:'eth_chainId'\}\)\)\!==1n\)/);
   assert.match(component,/requestId\.current/);
   assert.match(css,/\.mininex-wallet-swap\{/);
   assert.match(labels,/walletSwapTitle: 'Swap'/);
@@ -478,7 +490,7 @@ test('privy wallet record readiness is independent, authenticated and never an e
 test('manual quote UI is compact and preserves 12 coins without diagnostic buttons',()=>{
   assert.match(component,/onSubmit=\{checkQuote\}/);
   assert.match(component,/className="mininex-swap-summary"/);
-  assert.match(component,/walletSwapAdaPending/);
+  assert.doesNotMatch(component,/walletSwapAdaPending/); // ADA was replaced by ARB.
   assert.match(component,/walletSwapNotEnabled/);
   for(const name of ['checkWalletReadiness','checkRoute','checkFee','checkReceipt'])
     assert.equal(component.includes('onClick={'+name+'}'),false);

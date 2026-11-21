@@ -46,8 +46,19 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
 
   async function getProvider(){
     if(!wallet||typeof wallet.getEthereumProvider!=='function')throw Error('wallet');
-    const p=await wallet.getEthereumProvider();
+    let p=await wallet.getEthereumProvider();
     if(!p||typeof p.request!=='function')throw Error('provider');
+    // Only from the owner's explicit manual Prepare/Send action. An embedded
+    // Privy wallet may begin on another coin's EVM network. Switch to
+    // Ethereum before checking balances, ERC20 allowances or sending; a
+    // chain switch is never a signature or permission to spend funds.
+    if(BigInt(await p.request({method:'eth_chainId'}))!==1n){
+      if(typeof wallet.switchChain!=='function')
+        throw Error('Ethereum mainnet wallet required');
+      await wallet.switchChain(1);
+      p=await wallet.getEthereumProvider();
+      if(!p||typeof p.request!=='function')throw Error('provider');
+    }
     if(BigInt(await p.request({method:'eth_chainId'}))!==1n)
       throw Error('Ethereum mainnet wallet required');
     const accounts=await p.request({method:'eth_accounts'});

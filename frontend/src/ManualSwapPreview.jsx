@@ -2,10 +2,13 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
+import EthLiveSwap from './EthLiveSwap.jsx';
 import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs} from './manualSwapRules.js';
 
-// Standalone MANUAL wallet swap preview. It never signs, approves, delegates,
-// broadcasts, auto-swaps or changes the independent BTC/ETH trading budgets.
+// Manual provider quote previews remain read-only for every chain. Only the
+// already implemented ETH/USDC/USDT route mounts its separately user-signed
+// Privy wallet executor after the user selects an exact amount. This parent
+// neither signs nor broadcasts transactions and never grants AUTO trading.
 export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,userId,initialCoin='ETH',lockedCoin=false}) {
   const [open,setOpen]=useState(false);
   const [from,setFrom]=useState(initialCoin);
@@ -26,6 +29,13 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const supportedPair=MANUAL_SWAP_ASSETS.includes(from)&&
     MANUAL_SWAP_ASSETS.includes(to)&&
     from!==to&&!!manualSwapQuoteRequest(from,to,'1');
+  // Both directions on Ethereum mainnet only. BTC and all other networks
+  // must never inherit a signer from an unrelated coin/chain quote.
+  const ethManualPair=(
+    (from==='ETH' && ['USDC','USDT'].includes(to)) ||
+    (to==='ETH' && ['USDC','USDT'].includes(from))
+  );
+  const ethManualReady=enabled && ethManualPair && request?.coin==='ETH';
 
   // One local timeout per quote, with cleanup; never poll or refetch.
   useEffect(()=>{
@@ -185,12 +195,14 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         {quote.request.coin==='MULTICHAIN'&&
           <p className="privy-wallet-description">{t.walletSwapNativeLiquidityNotice}</p>}
       </div>}
-      {(from==='ADA'||to==='ADA')&&<p className="privy-wallet-description" role="status">
-        {t.walletSwapAdaPending}
-      </p>}
-      <p className="privy-wallet-description mininex-swap-disabled-note" role="status">
+      {ethManualReady&&<EthLiveSwap
+        key={[userId,request.body.side,request.body.stable,request.body.amount].join(':')}
+        enabled={enabled} userId={userId} getAccessToken={getAccessToken}
+        side={request.body.side} stable={request.body.stable}
+        amount={request.body.amount} t={t}/>}
+      {!ethManualPair&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
-      </p>
+      </p>}
     </div>}
   </section>;
 }
