@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {
   nativeSourcePreflightRequest,validNativeSourcePreflight,
   originalNativeBlocker,validNativeOwnerReadback,
-  nativeOwnerReadbackBlocker,
+  nativeOwnerReadbackBlocker,validNativeBuyApprovalReport,
 } from '../src/nativeSourceReadinessRules.js';
 
 const NETWORK=Object.freeze({BTC:'bitcoin-mainnet',
@@ -229,14 +229,61 @@ test('readback rejects forged privileged state or leaked signer credentials',()=
 });
 test('UI queries owner fallback only after source failed, never claims chain verification',()=>{
   const ui=readFileSync(new URL('../src/NativeSourceReadiness.jsx',import.meta.url),'utf8');
-  assert.match(ui,/if\(!response\.ok\)throw Error\('Original source preflight unavailable'\)/);
+  assert.match(ui,/preflightCode=response\.status/);
+  assert.match(ui,/if\(!response\.ok\)/);
   assert.match(ui,/\/api\/live\/native\/authorization\//);
   assert.match(ui,/validNativeOwnerReadback\(owner,nativeRequest\.asset\)/);
   assert.match(ui,/nativeOwnerReadbackBlocker\(owner,nativeRequest\.asset\)/);
-  assert.match(ui,/setStatus\(\{code:ownerCode,sourceChecked:false\}\)/);
-  assert.match(ui,/status\.sourceChecked\?t\.nativeSourceChecked:t\.nativeSourceNotChecked/);
+  assert.match(ui,/setStatus\(\{code:ownerCode,sourceChecked:false,approvalChecked\}\)/);
+  assert.match(ui,/status\.approvalChecked\?t\.nativeSourceAllowanceChecked:t\.nativeSourceNotChecked/);
+  assert.match(ui,/\/api\/live\/native\/buy-approval\//);
   assert.doesNotMatch(ui,/sendTransaction|signAndSend|createPolicy|approve\(/);
   const words=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
   assert.equal(words.split('nativeSourceNotChecked:').length,3);
   assert.equal(words.split('nativeSourceWalletMissing:').length,3);
+});
+
+function allowanceReport(req,reset=false){
+  return {
+    mode:'THORCHAIN_ORIGINAL_ERC20_APPROVAL_PREVIEW_ONLY',
+    asset:req.asset,side:'BUY',stable:req.stable,
+    network:'ethereum-mainnet',chain_id:1,
+    owner_wallet_needs_erc20_approval:true,
+    existing_usdt_allowance_requires_zero_reset:reset,
+    source_balance_atomic:'50000000',
+    approval_amount_atomic:'50000000',
+    existing_router_allowance_atomic:reset?'1000000':'0',
+    source_eth_gas_balance_wei:'1000000000000000',
+    required_sequential_approval_receipts:reset?2:1,
+    exact_approval_gas_verified:false,
+    current_remote_privy_trade_policy_verified:false,
+    durable_approval_send_claimed:false,real_token_approval_sent:false,
+    actual_buy_source_sent:false,source_trade_receipt_finalized:false,
+    source_trade_refund_verified:false,execution_enabled:false,can_submit:false,
+  };
+}
+test('first native BUY finite allowance is not an executable trade',()=>{
+  for(const req of [
+    request('BTC','BUY','USDC','50'),
+    request('SOL','BUY','USDT','50'),
+    request('XRP','BUY','USDC','50'),
+  ]){
+    const report=allowanceReport(req);
+    assert.equal(validNativeBuyApprovalReport(report,req),true);
+    assert.equal(validNativeBuyApprovalReport({...report,can_submit:true},req),false);
+    assert.equal(validNativeBuyApprovalReport({...report,real_token_approval_sent:true},req),false);
+    assert.equal(validNativeBuyApprovalReport({...report,source_balance_atomic:'49999999'},req),false);
+    assert.equal(validNativeBuyApprovalReport({...report,chain_id:56},req),false);
+    assert.equal(validNativeBuyApprovalReport(report,{...req,side:'SELL'}),false);
+  }
+});
+test('partial USDT needs reset first without claiming an approval was sent',()=>{
+  const req=request('SOL','BUY','USDT','50');
+  const report=allowanceReport(req,true);
+  assert.equal(validNativeBuyApprovalReport(report,req),true);
+  assert.equal(validNativeBuyApprovalReport({...report,
+    existing_usdt_allowance_requires_zero_reset:false},req),false);
+  assert.equal(validNativeBuyApprovalReport({...report,
+    required_sequential_approval_receipts:1},req),false);
+  assert.equal(validNativeBuyApprovalReport({...report,stable:'USDC'},req),false);
 });

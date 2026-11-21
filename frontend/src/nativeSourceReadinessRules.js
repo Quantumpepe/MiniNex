@@ -126,3 +126,34 @@ export function nativeOwnerReadbackBlocker(data,asset){
     return 'SIGNER_NOT_ASSIGNED';
   return 'POLICY_AND_SEND_CLAIM_MISSING';
 }
+
+
+// Owner-only observed first-buy allowance. This never authorizes signing.
+export function validNativeBuyApprovalReport(data,request){
+  const req=nativeSourcePreflightRequest(request);
+  if(!req||req.side!=='BUY'||!data||typeof data!=='object'||
+    Array.isArray(data)||
+    data.mode!=='THORCHAIN_ORIGINAL_ERC20_APPROVAL_PREVIEW_ONLY'||
+    data.asset!==req.asset||data.side!=='BUY'||data.stable!==req.stable||
+    data.network!=='ethereum-mainnet'||data.chain_id!==1||
+    data.owner_wallet_needs_erc20_approval!==true||
+    typeof data.existing_usdt_allowance_requires_zero_reset!=='boolean'||
+    !['exact_approval_gas_verified','current_remote_privy_trade_policy_verified',
+      'durable_approval_send_claimed','real_token_approval_sent',
+      'actual_buy_source_sent','source_trade_receipt_finalized',
+      'source_trade_refund_verified','execution_enabled','can_submit']
+      .every(k=>data[k]===false))return false;
+  const decimal=/^(?:0|[1-9][0-9]{0,77})$/;
+  const fields=['source_balance_atomic','existing_router_allowance_atomic',
+    'approval_amount_atomic','source_eth_gas_balance_wei'];
+  if(!fields.every(k=>typeof data[k]==='string'&&decimal.test(data[k])))return false;
+  const required=BigInt(data.approval_amount_atomic);
+  const allowed=BigInt(data.existing_router_allowance_atomic);
+  if(required<=0n||allowed>=required||
+    BigInt(data.source_balance_atomic)<required||
+    BigInt(data.source_eth_gas_balance_wei)<=0n)return false;
+  const reset=data.existing_usdt_allowance_requires_zero_reset;
+  if(reset!==(req.stable==='USDT'&&allowed>0n)||
+    data.required_sequential_approval_receipts!==(reset?2:1))return false;
+  return true;
+}

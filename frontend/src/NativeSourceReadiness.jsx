@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import {nativeSourcePreflightRequest,validNativeSourcePreflight,
   originalNativeBlocker,validNativeOwnerReadback,
-  nativeOwnerReadbackBlocker} from './nativeSourceReadinessRules.js';
+  nativeOwnerReadbackBlocker,validNativeBuyApprovalReport} from './nativeSourceReadinessRules.js';
 
 // Optional owner-initiated source-chain check for the CURRENT quoted native
 // coin. A successful preview is not a Privy permission or a live trade.
@@ -36,6 +36,7 @@ export default function NativeSourceReadiness({
     const timeout=setTimeout(()=>abort.abort(),30000);
     setBusy(true);setFailed(false);setStatus(null);
     let token=null;
+    let preflightCode=null;
     try {
       token=await getAccessToken();
       if(!token||abort.signal.aborted)throw Error('Privy authentication required');
@@ -47,7 +48,10 @@ export default function NativeSourceReadiness({
         },
         body:JSON.stringify(nativeRequest.body),
       });
-      if(!response.ok)throw Error('Original source preflight unavailable');
+      if(!response.ok){
+        preflightCode=response.status;
+        throw Error('Original source preflight unavailable');
+      }
       const result=await response.json();
       if(!validNativeSourcePreflight(result,nativeRequest))
         throw Error('Invalid original source status');
@@ -59,7 +63,32 @@ export default function NativeSourceReadiness({
       // absent. Fetch the separate Privy owner status, without suggesting
       // that any source fee, balance or source transaction was verified.
       let ownerCode=null;
-      if(token&&!abort.signal.aborted){
+      let approvalChecked=false;
+      // A first BUY can be blocked solely by the exact ERC20 allowance.
+      // The extra read never sends funds or displays router/wallet contracts.
+      if(token&&!abort.signal.aborted&&preflightCode===409&&
+          nativeRequest.side==='BUY'){
+        try{
+          const answer=await fetch(API_BASE+
+            '/api/live/native/buy-approval/'+nativeRequest.asset,{
+              method:'POST',cache:'no-store',signal:abort.signal,
+              headers:{Authorization:'Bearer '+token,Accept:'application/json',
+                'Content-Type':'application/json'},
+              body:JSON.stringify(nativeRequest.body),
+            });
+          if(answer.ok){
+            const report=await answer.json();
+            if(validNativeBuyApprovalReport(report,nativeRequest)){
+              ownerCode=report.existing_usdt_allowance_requires_zero_reset?
+                'USDT_ZERO_RESET_REQUIRED':'ERC20_APPROVAL_REQUIRED';
+              approvalChecked=true;
+            }
+          }
+        }catch{
+          // Quote changes or unavailable RPC never imply trade permission.
+        }
+      }
+      if(!ownerCode&&token&&!abort.signal.aborted){
         try {
           const response=await fetch(
             API_BASE+'/api/live/native/authorization/'+nativeRequest.asset,{
@@ -79,7 +108,7 @@ export default function NativeSourceReadiness({
       }
       if(id===ref.current.id){
         if(ownerCode&&ownerCode!=='INVALID')
-          setStatus({code:ownerCode,sourceChecked:false});
+          setStatus({code:ownerCode,sourceChecked:false,approvalChecked});
         else setFailed(true);
       }
     }finally{
@@ -95,6 +124,8 @@ export default function NativeSourceReadiness({
     code==='PUBLIC_KEY_UNVERIFIED'?t.nativeSourceKeyMissing:
     code==='SIGNER_NOT_ASSIGNED'?t.nativeSourceSignerMissing:
     code==='POLICY_AND_SEND_CLAIM_MISSING'?t.nativeSourcePolicyPending:
+    code==='ERC20_APPROVAL_REQUIRED'?t.nativeSourceApprovalMissing:
+    code==='USDT_ZERO_RESET_REQUIRED'?t.nativeSourceUsdtResetMissing:
     t.nativeSourceUnavailable;
   return <section className="mininex-eth-policy-review">
     <button type="button"
@@ -109,7 +140,8 @@ export default function NativeSourceReadiness({
     {status&&<div className="mininex-swap-quote" role="status">
       <strong>{t.nativeSourceTitle} · {nativeRequest.asset}</strong>
       <p className="privy-wallet-description">
-        {status.sourceChecked?t.nativeSourceChecked:t.nativeSourceNotChecked}
+        {status.sourceChecked?t.nativeSourceChecked:
+          status.approvalChecked?t.nativeSourceAllowanceChecked:t.nativeSourceNotChecked}
       </p>
       <p className="privy-wallet-description">{message}</p>
       <p className="privy-wallet-description">{t.nativeSourceNotExecutable}</p>
