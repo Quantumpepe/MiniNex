@@ -166,6 +166,14 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
                      AND s.stable=n.stable AND s.chain_id=n.chain_id
                      AND s.wallet_address=n.wallet_address
                      AND b.intent_key IS NULL
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM mininex_live_evm_router_approval_sends a
+                         WHERE a.privy_did=n.privy_did
+                           AND a.chain_id=n.chain_id
+                           AND a.status IN
+                             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     )
                    ORDER BY n.updated_at ASC,n.privy_did,n.asset,n.intent_key LIMIT %s OFFSET %s"""
     # Rotate across all owner-approved native steps; a stalled older receipt
     # or unresolved downstream operation must not starve newer owners.

@@ -111,6 +111,8 @@ def test_worker_uses_only_finalized_deposit_with_no_existing_swap():
     assert "s.status='ACTIVE'" in source
     assert "s.budget_revision=n.budget_revision" in source
     assert "b.intent_key IS NULL" in source
+    assert "mininex_live_evm_router_approval_sends" in source
+    assert "'RECONCILIATION_REQUIRED'" in source
     assert "LEFT JOIN mininex_live_evm_auto_broadcasts" in source
     source=inspect.getsource(rec.pending_native_sell_deposits)
     assert "status='SUBMITTED' AND tx_hash IS NOT NULL" in source
