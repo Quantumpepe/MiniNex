@@ -332,53 +332,81 @@ async def reconcile_one_live_eth_order(row:dict)->str:
 
 
 async def reconcile_live_eth_orders():
+    """Finish earlier user-wallet swaps independently without owner starvation."""
     if not _worker_approved():
         return 0
     pending=await asyncio.to_thread(submitted_live_orders)
-    done=0
+    groups:dict[str,list[dict]]={}
     for row in pending:
-        try:
-            state=await reconcile_one_live_eth_order(row)
-            if state!="PENDING":
-                done+=1
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.exception("ETH LIVE order settlement failed; will inspect original hash again")
-    return done
-
+        groups.setdefault(_safe_did(row["privy_did"]),[]).append(row)
+    async def original_owner(rows:list[dict])->int:
+        finished=0
+        for row in rows:
+            try:
+                state=await reconcile_one_live_eth_order(row)
+                if state!="PENDING":
+                    finished+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception(
+                    "ETH LIVE order settlement failed; inspect original hash")
+        return finished
+    completed=await asyncio.gather(*(
+        original_owner(rows) for rows in groups.values()
+    ))
+    return sum(completed)
 
 async def reconcile_and_resume_native_eth(client:httpx.AsyncClient):
-    """Actual WETH9 sends and settlement, connected to the LIVE worker."""
+    """Finalize original native steps and resume WETH BUYs across owners.
+
+    Same-wallet conversions remain serial because they share Ethereum nonce
+    and signed owner consent. Other wallets no longer wait on a slow receipt.
+    """
     if not _worker_approved():
         return 0
-    done=0
     rows=await asyncio.to_thread(submitted_native_steps)
+    pending:dict[str,list[dict]]={}
     for row in rows:
-        try:
-            result=await finalize_native_step(row)
-            if result!="PENDING":
-                done+=1
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.exception("ETH native conversion receipt unavailable")
-    # Real BUY has paid stable and received finalized WETH. Convert that
-    # exact WETH acquired amount to native ETH, once via Privy signing.
+        pending.setdefault(_safe_did(row["privy_did"]),[]).append(row)
+    async def complete_one_owner(rows:list[dict])->int:
+        finalized=0
+        for row in rows:
+            try:
+                result=await finalize_native_step(row)
+                if result!="PENDING":
+                    finalized+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("ETH native conversion receipt unavailable")
+        return finalized
+    done=sum(await asyncio.gather(*(
+        complete_one_owner(owners) for owners in pending.values()
+    )))
+    # A finalized BUY delivered WETH to the real wallet. Convert exactly
+    # that verified original amount to native ETH, once under the same grant.
     waiting=await asyncio.to_thread(confirmed_buy_native_conversions)
+    queued:dict[str,list[dict]]={}
     for row in waiting:
-        try:
-            wei=int(Decimal(str(row["destination_amount"]))*10**18)
-            await send_eth_auto_native_leg(
-                row["privy_did"],source_key=row["source_key"],
-                operation="WITHDRAW",amount_wei=wei,
-                stable=row["stable"],client=client)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.exception("ETH LIVE purchased WETH conversion not completed")
+        queued.setdefault(_safe_did(row["privy_did"]),[]).append(row)
+    async def withdraw_one_owner(rows:list[dict])->None:
+        for row in rows:
+            try:
+                wei=int(Decimal(str(row["destination_amount"]))*10**18)
+                await send_eth_auto_native_leg(
+                    row["privy_did"],source_key=row["source_key"],
+                    operation="WITHDRAW",amount_wei=wei,
+                    stable=row["stable"],client=client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception(
+                    "ETH LIVE purchased WETH conversion not completed")
+    await asyncio.gather(*(
+        withdraw_one_owner(owners) for owners in queued.values()
+    ))
     return done
-
 
 async def run_eth_owner_session_batch(
     sessions:list[dict],*,market,client:httpx.AsyncClient,

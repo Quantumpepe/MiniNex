@@ -219,3 +219,53 @@ def test_eth_auto_independent_wallets_do_not_block_one_another(
         "sessions_seen":3,"attempted":3,
         "failed":0,"wallet_groups":2}
     assert started==["run_a123456","run_b123456","run_a654321"]
+
+
+def test_eth_pending_live_receipts_of_different_wallets_do_not_block(
+    monkeypatch,
+):
+    import asyncio
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    rows=[{"privy_did":"did:privy:one","intent_key":"sig_aaaaaaaa"},
+          {"privy_did":"did:privy:one","intent_key":"sig_bbbbbbbb"},
+          {"privy_did":"did:privy:two","intent_key":"sig_cccccccc"}]
+    monkeypatch.setattr(mod,"submitted_live_orders",lambda:rows)
+    newer=asyncio.Event()
+    seen=[]
+    async def verify(row):
+        seen.append(row["intent_key"])
+        if row["intent_key"]=="sig_aaaaaaaa":
+            await asyncio.wait_for(newer.wait(),timeout=3)
+        if row["intent_key"]=="sig_cccccccc":
+            newer.set()
+        return "CONFIRMED"
+    monkeypatch.setattr(mod,"reconcile_one_live_eth_order",verify)
+    assert asyncio.run(mod.reconcile_live_eth_orders())==3
+    assert seen==["sig_aaaaaaaa","sig_cccccccc","sig_bbbbbbbb"]
+
+
+def test_eth_native_receipts_do_not_wait_for_unrelated_owner(
+    monkeypatch,
+):
+    import asyncio
+    import httpx
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    rows=[{"privy_did":"did:privy:one","source_key":"sig_aaa"},
+          {"privy_did":"did:privy:two","source_key":"sig_bbb"}]
+    monkeypatch.setattr(mod,"submitted_native_steps",lambda:rows)
+    monkeypatch.setattr(mod,"confirmed_buy_native_conversions",lambda:[])
+    other=asyncio.Event()
+    seen=[]
+    async def finalize(row):
+        seen.append(row["source_key"])
+        if row["source_key"]=="sig_aaa":
+            await asyncio.wait_for(other.wait(),timeout=3)
+        else:
+            other.set()
+        return "CONFIRMED"
+    monkeypatch.setattr(mod,"finalize_native_step",finalize)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await mod.reconcile_and_resume_native_eth(client)
+    assert asyncio.run(run())==2
+    assert seen==["sig_aaa","sig_bbb"]
