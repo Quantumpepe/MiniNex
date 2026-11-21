@@ -65,6 +65,19 @@ def test_explicit_live_trader_also_attaches_receipt_worker(monkeypatch):
     assert m._settlement_enabled() is False
 
 
+def test_live_worker_owns_finality_poll_without_duplicate_passive_task(monkeypatch):
+    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    async def check():
+        worker=m.PassiveEvmSettlementWorker()
+        await worker.start()
+        assert worker._task is None
+        await worker.stop()
+    asyncio.run(check())
+
+
 def test_completed_pending_and_bad_rows_are_separately_counted(monkeypatch):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")

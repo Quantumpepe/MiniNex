@@ -23,6 +23,13 @@ _INTERVAL_SECONDS=30
 _SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
+def _live_worker_configured()->bool:
+    return (
+        os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
+        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
+    )
+
+
 def _settlement_enabled()->bool:
     """Always reconcile real EVM sends when the owner-enabled trader runs.
 
@@ -34,10 +41,7 @@ def _settlement_enabled()->bool:
         return False
     return (
         os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
-        or (
-            os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
-            and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        )
+        or _live_worker_configured()
     )
 
 
@@ -128,12 +132,13 @@ async def reconcile_submitted_evm_once(*,limit:int=25)->dict:
 
 
 class PassiveEvmSettlementWorker:
-    """Background read/settle only; external sends remain unimplemented."""
+    """Standalone read-only worker; LIVE worker already polls these receipts."""
     def __init__(self):
         self._task=None
 
     async def start(self)->None:
-        if _settlement_enabled() and self._task is None:
+        if (_settlement_enabled() and not _live_worker_configured()
+                and self._task is None):
             self._task=asyncio.create_task(
                 self._run(),name="mininex-evm-passive-settlement")
 
@@ -146,5 +151,7 @@ class PassiveEvmSettlementWorker:
     async def _run(self)->None:
         while True:
             await asyncio.sleep(_INTERVAL_SECONDS)
-            if _settlement_enabled():
+            # Avoid a duplicate network/SQL finality scan when LIVE worker
+            # already calls reconcile_submitted_evm_swaps_once itself.
+            if _settlement_enabled() and not _live_worker_configured():
                 await reconcile_submitted_evm_once()

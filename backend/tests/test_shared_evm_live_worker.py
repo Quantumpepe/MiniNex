@@ -318,6 +318,7 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
     monkeypatch,asset
 ):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def zero_wrapped(did,**kw):
         actions.append("native_wallet_probe")
@@ -351,6 +352,7 @@ def test_native_sell_existing_wrapped_balance_requires_original_deposit_proof(
     monkeypatch,asset
 ):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def should_not_wrap(**kwargs):
         pytest.fail("Existing wrapped source balance must not be deposited again")
@@ -439,6 +441,7 @@ def test_new_owner_wallet_automatically_sends_scoped_approval_before_swap(
 ):
     if asset in ("BNB","POL","AVAX"):
         monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+        monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
     async def zero_allowance(did,**kw):
         actions.append(("onchain_source",kw["amount"]))
