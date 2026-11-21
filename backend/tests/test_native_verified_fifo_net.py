@@ -143,6 +143,41 @@ def test_fake_paper_or_mismatched_original_chain_receipt_cannot_create_fee(mutat
             "asset":"BTC","privy_did":DID,"fills":[a,b]})
 
 
+def test_distinct_fills_same_block_timestamp_are_accounted_once_each():
+    # Two separately finalized SELLs can have the same timestamp. The
+    # journal order, not unique wall-clock seconds, defines FIFO order.
+    h=history()
+    first=leg("BTC","SELL",2,"0.5",70000000)
+    second=leg("BTC","SELL",3,"0.5",70000000)
+    timestamp=first["execution_block_unix"]
+    second["execution_block_unix"]=timestamp
+    second["stable_usd_reference"]["execution_block_unix"]=timestamp
+    second["stable_usd_reference"]["rate_observed_unix"]=timestamp
+    second["network_fee"]["execution_block_unix"]=timestamp
+    second["network_fee"]["fee_asset_usd_reference"]["execution_block_unix"]=timestamp
+    second["network_fee"]["fee_asset_usd_reference"]["rate_observed_unix"]=timestamp
+    h["fills"]=[leg("BTC","BUY",1,"100",100000000),first,second]
+    report=m.preview_native_fifo_net_hwm(h)
+    assert report["sell_trades"]==2
+    assert [x["realized_net_usd"] for x in report["close_previews"]]==[
+        "20.000000000000","20.000000000000"]
+    assert [x["indicative_5pct_hwm_usd"] for x in report["close_previews"]]==[
+        "1.000000","1.000000"]
+    assert report["remaining_native_quantity"]=="0"
+
+    # Reordered genuinely earlier blocks must still be rejected.
+    earlier=deepcopy(first)
+    earlier["execution_block_unix"]-=60
+    earlier["stable_usd_reference"]["execution_block_unix"]-=60
+    earlier["stable_usd_reference"]["rate_observed_unix"]-=60
+    earlier["network_fee"]["execution_block_unix"]-=60
+    earlier["network_fee"]["fee_asset_usd_reference"]["execution_block_unix"]-=60
+    earlier["network_fee"]["fee_asset_usd_reference"]["rate_observed_unix"]-=60
+    with pytest.raises(ValueError):
+        m.preview_native_fifo_net_hwm({
+            **h,"fills":[h["fills"][0],first,earlier]})
+
+
 def test_same_original_source_key_cannot_create_two_sell_fees():
     h=history()
     h["fills"]=[

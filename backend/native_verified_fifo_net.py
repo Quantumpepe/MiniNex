@@ -98,7 +98,7 @@ def preview_native_fifo_net_hwm(history:object)->dict:
     seen=set()
     lots=deque()
     closes=[]
-    previous_unix=-1
+    previous_unix=-1  # Original fills may legitimately share a block timestamp.
     cumulative=Decimal(0)
     hwm=Decimal(0)
     with localcontext() as ctx:
@@ -119,7 +119,7 @@ def preview_native_fifo_net_hwm(history:object)->dict:
                                "payload_sha256","source_proof_sha256",
                                "destination_proof_sha256"))
                     or type(row.get("execution_block_unix")) is not int
-                    or row["execution_block_unix"]<=previous_unix):
+                    or row["execution_block_unix"]<previous_unix):
                 raise ValueError("Unverified or unordered owner native settlement")
             seen.add(row["intent_key"])
             unix=row["execution_block_unix"]
