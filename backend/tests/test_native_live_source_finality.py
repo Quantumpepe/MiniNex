@@ -377,7 +377,7 @@ def test_passive_recovery_scans_stranded_sending_without_retry(monkeypatch):
     assert "source_signed_tx_hash IS NOT NULL" in sql
     assert "source_tx_hash IS NULL" in sql
     assert "side='SELL'" in sql
-    assert params==(2,0)
+    assert params==(2,)
 
 
 def test_crashed_sending_receipt_finalizes_without_second_send(monkeypatch):

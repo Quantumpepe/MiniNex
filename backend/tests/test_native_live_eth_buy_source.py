@@ -291,7 +291,12 @@ def test_wrong_source_buy_side_not_saved_as_sell():
 
 
 def test_eth_buy_work_page_keeps_owner_source_identity(monkeypatch):
-    originals=[fixture(asset)["row"] for asset in ("BTC","SOL","XRP")]
+    from datetime import datetime,timezone,timedelta
+    start=datetime(2026,11,21,tzinfo=timezone.utc)
+    originals=[fixture(asset)["row"]|{
+        "created_at":start+timedelta(minutes=i),
+        "intent_key":"native_"+f"{i:064x}"
+    } for i,asset in enumerate(("BTC","SOL","XRP"))]
     calls=[]
     class Conn:
         def __enter__(self):return self
@@ -299,13 +304,23 @@ def test_eth_buy_work_page_keeps_owner_source_identity(monkeypatch):
         def cursor(self,**kwargs):return self
         def execute(self,query,params):
             assert "side='BUY'" in query and "status='SUBMITTED'" in query
-            self.limit,self.offset=params
+            assert "OFFSET" not in query
+            self.limit=params[-1]
+            self.after=params[:-1] if len(params)>1 else None
             calls.append(params)
-        def fetchall(self):return originals[self.offset:self.offset+self.limit]
+        def fetchall(self):
+            records=originals
+            if self.after is not None:
+                records=[row for row in originals if (
+                    row["created_at"],row["privy_did"],row["asset"],
+                    row["intent_key"])>tuple(self.after)]
+            return records[:self.limit]
     monkeypatch.setattr(finality,"_db_url",lambda:"postgres://unit")
     monkeypatch.setattr(finality,"_ensure_schema",lambda x:None)
     monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:Conn())
-    monkeypatch.setattr(finality,"_ETH_BUY_PAGE_OFFSET",0)
+    monkeypatch.setitem(finality._RECEIPT_PAGE_CURSORS,"buy",None)
     assert finality._pending_original_eth_buy_submissions(2)==originals[:2]
-    assert finality._pending_original_eth_buy_submissions(2)==originals[2:]
-    assert calls[:2]==[(2,0),(2,2)]
+    del originals[:2]
+    assert finality._pending_original_eth_buy_submissions(2)==originals[:1]
+    assert len(calls[0])==1
+    assert len(calls[1])==5
