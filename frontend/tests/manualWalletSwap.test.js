@@ -10,7 +10,7 @@ const wallet=read('../src/PrivyWalletPanel.jsx');
 const labels=read('../src/i18n.js');
 const css=read('../src/styles.css');
 
-test('wallet Swap is manual, accessible, directly below balances and no execution path',()=>{
+test('wallet Swap keeps other networks quote-only and mounts explicit ETH Privy execution',()=>{
   assert.match(wallet,/import ManualSwapPreview from '\.\/ManualSwapPreview\.jsx'/);
   assert.match(wallet,/renderCoinActions = asset/);
   assert.match(wallet,/<ManualSwapPreview key=\{'swap-'\+asset\} initialCoin=\{asset\} lockedCoin/);
@@ -18,6 +18,16 @@ test('wallet Swap is manual, accessible, directly below balances and no executio
   assert.match(component,/getAccessToken\(\)/);
   assert.match(component,/walletSwapNotEnabled/);
   assert.match(component,/walletSwapUnsupported/);
+  assert.match(component,/import EthLiveSwap from '\.\/EthLiveSwap\.jsx'/);
+  assert.match(component,/ethManualPair=\(/);
+  assert.match(component,/ethManualReady=enabled && ethManualPair && request\?\.coin==='ETH'/);
+  assert.match(component,/\{ethManualReady&&<EthLiveSwap/);
+  assert.match(component,/\{!ethManualPair&&<p/);
+  const ethSigner=read('../src/EthLiveSwap.jsx');
+  assert.match(ethSigner,/method:'eth_sendTransaction'/);
+  assert.match(ethSigner,/async function submit\(kind\)/);
+  assert.match(ethSigner,/const p=await getProvider\(\)/);
+  assert.match(ethSigner,/wallet\.getEthereumProvider\(\)/);
   assert.match(component,/requestId\.current/);
   assert.match(css,/\.mininex-wallet-swap\{/);
   assert.match(labels,/walletSwapTitle: 'Swap'/);
