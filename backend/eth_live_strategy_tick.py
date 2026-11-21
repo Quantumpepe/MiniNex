@@ -42,7 +42,7 @@ def verified_live_evm_momentum(
     if type(now) not in (int,float) or not math.isfinite(now) or now<=0:
         raise ValueError("Invalid market timestamp")
     if type(asset) is not str or asset not in (
-            "ETH","BNB","POL","AVAX","LINK","UNI"):
+            "ETH","BNB","POL","AVAX","LINK","UNI","ARB"):
         raise ValueError("Unsupported verified EVM live market")
     if type(horizon) is not str or horizon not in _HORIZON_WINDOWS:
         raise ValueError("Unsupported owner-chosen LIVE market horizon")
@@ -107,10 +107,10 @@ def _positive_decimal(value,what):
 
 def live_trade_quantity(*, decision: dict, live_limits: dict,
                         balances: dict, allowance: dict) -> str|None:
-    """Amount is real source-token units, capped by own LIVE spending limits.
+    """BUY respects the owner's chosen budget; SELL may realize appreciation.
 
-    Never silently approve new tokens. If allowance is unavailable, the owner
-    can approve via the existing explicit Privy wallet interface.
+    Never silently approve new tokens. Both sides still require the original
+    wallet's verified ownership, allowance and on-chain gas availability.
     """
     action=decision.get("action")
     if action not in ("BUY","SELL"):
@@ -133,17 +133,19 @@ def live_trade_quantity(*, decision: dict, live_limits: dict,
             return None
         source=_positive_decimal(b["balance"],"stable balance")
         # Gas is paid in native ETH, not the trade's stablecoin source.
-        # Honor the owner's full selected budget in confirmed uptrends,
-        # without an artificial 50% stablecoin exposure limit. Every order
-        # is still capped by the LIVE per-order limit and daily turnover.
+        # Honor the owner's full selected buying budget in confirmed uptrends,
+        # without an artificial partial-use or daily-turnover cap.
         quantity=min(cap,source)
         if quantity<_MIN_ORDER:
             return None
         quantity=quantity.quantize(_D("0.000001"),rounding=ROUND_DOWN)
     else:
         weth=_positive_decimal(allowance["verified_source_balance"],"WETH")
-        price=_positive_decimal(decision.get("market_price"),"market price")
-        quantity=min(weth,cap/price)
+        _positive_decimal(decision.get("market_price"),"market price")
+        # A SELL closes verified WETH inventory even if the market price
+        # increased beyond the original USD entry capital. The owner's
+        # scoped Privy policy still restricts the actual token input.
+        quantity=weth
         quantity=quantity.quantize(_D("0.000000000000000001"),rounding=ROUND_DOWN)
         if quantity*price<_MIN_ORDER:
             return None

@@ -105,6 +105,16 @@ def test_owner_selected_budget_controls_all_in_cash():
     assert result=="200.000000"
 
 
+def test_profitable_eth_position_can_sell_full_verified_weth_not_just_entry_budget():
+    decision={"action":"SELL","market_price":"250"}
+    actual={**allowance("SELL"),"verified_source_balance":"1.5"}
+    result=live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=balance(),allowance=actual)
+    # Original budget $200; actual 1.5 WETH is now worth $375.
+    assert result=="1.500000000000000000"
+
+
 def test_sell_with_existing_weth_and_missing_approval_never_wraps(monkeypatch):
     """Lacking router approval is not an instruction to wrap more native ETH."""
     monkeypatch.setattr(live,"get_live_eth_limits",lambda did:limits())
@@ -170,7 +180,7 @@ class ExtraMarket:
             for t in range(810,1001,5)]
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("trend,expected",[
     ("up","BUY"),("down","SELL")
 ])
