@@ -370,9 +370,11 @@ def test_real_native_signed_hash_is_reserved_with_atomic_original_claim():
         "owner_consent_sha256":row["owner_consent_sha256"],
         "privy_grant_sha256":row["privy_grant_sha256"],
         "budget_revision":row["budget_revision"],
+        "side":"SELL","stable":"USDC",
     }
     cur=Cursor([
-        {"privy_did":DID},original,{"pending":0},
+        {"privy_did":DID},original,
+        {"revision":3,"stable":"USDC","percent":100},{"pending":0},
         {"status":"SENDING"},{"source_signed_tx_hash":expected},
     ])
     state=journal._claim_signed_native_source_once_locked(
@@ -381,7 +383,7 @@ def test_real_native_signed_hash_is_reserved_with_atomic_original_claim():
         permission_audit=audit(row),
     )
     assert state=="SENDING"
-    assert len(cur.queries)==5
+    assert len(cur.queries)==6
     assert "source_signed_tx_hash=%s" in cur.queries[-1][0]
     assert "status='SENDING'" in cur.queries[-1][0]
     assert cur.queries[-1][1][0]==expected
