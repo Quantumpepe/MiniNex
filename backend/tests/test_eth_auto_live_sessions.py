@@ -186,3 +186,36 @@ def test_eth_work_pages_rotate_instead_of_stranding_active_users_or_receipts(
     assert [p for sql,p in queries]==(
         [(2,0),(2,2),(2,4),(2,5),(2,0)]*2)
     assert all("LIMIT %s OFFSET %s" in sql for sql,p in queries)
+
+
+def test_eth_auto_independent_wallets_do_not_block_one_another(
+    monkeypatch,
+):
+    import asyncio
+    import httpx
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    owner_a={"privy_did":"did:privy:owner-a","run_id":"run_a123456",
+             "stable":"USDC"}
+    repeat_owner_a={**owner_a,"run_id":"run_a654321"}
+    owner_b={"privy_did":"did:privy:owner-b","run_id":"run_b123456",
+             "stable":"USDT"}
+    b_started=asyncio.Event()
+    started=[]
+    async def execute(did,*,market,run_id,stable,client):
+        started.append(run_id)
+        if run_id=="run_a123456":
+            await asyncio.wait_for(b_started.wait(),timeout=3)
+        if run_id=="run_b123456":
+            b_started.set()
+        return {"state":"WAIT"}
+    monkeypatch.setattr(mod,"execute_live_eth_strategy_tick",execute)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await mod.run_eth_owner_session_batch(
+                [owner_a,repeat_owner_a,owner_b],
+                market=object(),client=client)
+    result=asyncio.run(run())
+    assert result=={
+        "sessions_seen":3,"attempted":3,
+        "failed":0,"wallet_groups":2}
+    assert started==["run_a123456","run_b123456","run_a654321"]

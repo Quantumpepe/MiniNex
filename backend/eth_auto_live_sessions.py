@@ -380,6 +380,51 @@ async def reconcile_and_resume_native_eth(client:httpx.AsyncClient):
     return done
 
 
+async def run_eth_owner_session_batch(
+    sessions:list[dict],*,market,client:httpx.AsyncClient,
+)->dict:
+    """Independent ETH owners trade concurrently; one owner's nonce is serial.
+
+    LIVE ETH owner grants, balances and reservations remain verified inside
+    execute_live_eth_strategy_tick. A slow external RPC for one owner must
+    not stop other wallets or block receipt settlement on the next cycle.
+    """
+    by_owner:dict[str,list[dict]]={}
+    skipped=0
+    for row in sessions:
+        if type(row) is not dict or type(row.get("privy_did")) is not str:
+            skipped+=1
+            continue
+        by_owner.setdefault(row["privy_did"],[]).append(row)
+    async def one_owner(rows:list[dict])->tuple[int,int]:
+        attempted=0
+        failed=0
+        for row in rows:
+            if not _worker_approved():
+                break
+            try:
+                await execute_live_eth_strategy_tick(
+                    row["privy_did"],market=market,
+                    run_id=row["run_id"],stable=row["stable"],
+                    client=client)
+                attempted+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                failed+=1
+                LOG.exception("ETH LIVE AUTO tick failed for an account")
+        return attempted,failed
+    results=await asyncio.gather(*(
+        one_owner(rows) for rows in by_owner.values()
+    ))
+    return {
+        "sessions_seen":len(sessions),
+        "attempted":sum(a for a,_ in results),
+        "failed":skipped+sum(b for _,b in results),
+        "wallet_groups":len(by_owner),
+    }
+
+
 class EthAutoLiveWorker:
     def __init__(self,market):
         self.market=market
@@ -411,13 +456,5 @@ class EthAutoLiveWorker:
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
                 await reconcile_and_resume_native_eth(client)
                 sessions=await asyncio.to_thread(active_sessions)
-                for row in sessions:
-                    if not _worker_approved(): break
-                    try:
-                        await execute_live_eth_strategy_tick(
-                            row["privy_did"],market=self.market,
-                            run_id=row["run_id"],stable=row["stable"],
-                            client=client)
-                    except asyncio.CancelledError:raise
-                    except Exception:
-                        LOG.exception("ETH LIVE AUTO tick failed for an account")
+                await run_eth_owner_session_batch(
+                    sessions,market=self.market,client=client)
