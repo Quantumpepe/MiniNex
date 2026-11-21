@@ -153,6 +153,8 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
 def test_native_evm_sell_never_runs_without_native_receipt_worker(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -274,6 +276,8 @@ def test_5min_horizon_is_owner_supported_setting():
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
 def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -285,8 +289,19 @@ def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset)
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
-def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(monkeypatch,asset):
-    monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+@pytest.mark.parametrize("activation",["read-only","explicit-live"])
+def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(
+    monkeypatch,asset,activation
+):
+    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    if activation=="read-only":
+        monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    else:
+        monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
+        monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
     async def tick():
         async with httpx.AsyncClient() as client:

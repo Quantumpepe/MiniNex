@@ -1,7 +1,8 @@
 """Passive, chain-scoped settlement worker for six additional EVM assets.
 
 This worker NEVER sends or signs a transaction, creates a policy, activates
-AUTO, or assesses a fee. It only reconciles previously durably SUBMITTED
+AUTO, or assesses a fee. It automatically accompanies an explicitly enabled
+LIVE EVM trader, without a second operator switch. It only reconciles durably SUBMITTED
 wallet transactions against independently verified finalized blockchain
 receipts. Ambiguous SENDING/RECONCILIATION_REQUIRED states are untouched.
 """
@@ -23,8 +24,21 @@ _SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def _settlement_enabled()->bool:
-    return (os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
-            and bool(os.getenv("DATABASE_URL")))
+    """Always reconcile real EVM sends when the owner-enabled trader runs.
+
+    Manual read-only settlement remains independently available. The LIVE
+    worker already requires both explicit opt-ins; an additional read-only
+    environment setting must not strand a funded native BUY or SELL.
+    """
+    if not os.getenv("DATABASE_URL","").strip():
+        return False
+    return (
+        os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
+        or (
+            os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
+            and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
+        )
+    )
 
 
 def _pending_submitted(limit:int=25)->list[dict]:

@@ -37,6 +37,7 @@ from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
 from .shared_evm_token_hwm_worker import reconcile_verified_erc20_fees_once
 from .shared_evm_passive_finality_worker import reconcile_submitted_evm_swaps_once
+from .shared_evm_passive_settlement import _settlement_enabled
 from .shared_evm_auto_fee_finality import reconcile_auto_fee_receipts_once
 from .shared_evm_auto_fee_worker import run_owner_approved_auto_fee_batch
 from .shared_evm_native_sell_deposit import (
@@ -235,8 +236,7 @@ async def execute_owner_evm_live_tick(
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
-    if (asset in _NATIVE
-            and os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")!="explicit-readonly"):
+    if asset in _NATIVE and not _settlement_enabled():
         # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
         # a prior DEPOSIT. Both require the original receipt reconciler.
         return {"asset":asset,"state":"WAIT",
