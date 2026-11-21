@@ -17,7 +17,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   const fetchOne=useCallback(async(signal)=>{
     const token=await getAccessToken();
     if(!token)throw Error('Login required');
-    const response=await fetch(API_BASE+'/api/extra-paper/'+asset,{
+    const response=await fetch(API_BASE+(liveMode?'/api/live/evm/auto-session/':'/api/extra-paper/')+asset,{
       method:'GET',
       headers:{Authorization:'Bearer '+token,Accept:'application/json'},
       cache:'no-store',signal,
@@ -127,7 +127,11 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         state==='PAUSED'?t.extraPaperPaused:
         state==='NOT_STARTED'?t.extraPaperIdle:t.extraPaperLoading}</small>
     </div>
-    {loading&&<p className="privy-wallet-description">{t.extraPaperLoading}</p>}
+    {liveMode&&data&&<>
+      <p className="privy-wallet-description">Status: {data.status||'—'} · Worker: {data.worker_attached?'aktiv':'inaktiv'}</p>
+      <p className="privy-wallet-description">Swaps gesendet: {data.original_blockchain_swaps_sent||0} · Finalisiert: {data.original_blockchain_swaps_finalized||0}</p>
+    </>}
+    {!liveMode&&loading&&<p className="privy-wallet-description">{t.extraPaperLoading}</p>}
     {failed&&<p className="privy-wallet-description" role="alert">
       {t.extraPaperUnavailable}
     </p>}
