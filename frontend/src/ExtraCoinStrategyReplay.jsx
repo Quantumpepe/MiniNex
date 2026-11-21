@@ -86,7 +86,7 @@ export default function ExtraCoinStrategyReplay({
       </label>
       <button type="submit" className="privy-wallet-action"
         disabled={!enabled||busy||!budgetOk}>
-        {busy?t.extraReplayRunning:t.extraReplayRun}
+        {busy?t.extraReplayRunning:(liveMode?t.extraReplayRunLive:t.extraReplayRun)}
       </button>
     </form>
     <div className="mininex-extra-preference-save">
