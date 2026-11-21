@@ -11,6 +11,7 @@ import os
 import secrets
 from decimal import Decimal
 from time import time
+from threading import Lock
 
 import httpx
 import psycopg
@@ -31,6 +32,12 @@ from .storage import _db_url,_ensure_schema,_prepare_rows,_safe_did
 
 LOG=logging.getLogger("mininex.eth_live_auto_sessions")
 _INTERVAL=30
+# Work pages only, not a user or order limit. Independent cursors avoid
+# perpetually unmined orders starving newer transactions.
+_ETH_SESSION_PAGE_LOCK=Lock()
+_ETH_SESSION_PAGE_OFFSET=0
+_ETH_ORDER_PAGE_LOCK=Lock()
+_ETH_ORDER_PAGE_OFFSET=0
 
 
 def _worker_approved():
@@ -198,53 +205,75 @@ def get_eth_auto_session(did:str)->dict:
 
 
 def active_sessions(limit:int=10)->list[dict]:
+    """Scan all owner-approved ETH sessions in rotating bounded DB pages."""
     if not _worker_approved():
         return []
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid ETH session scan page")
+    global _ETH_SESSION_PAGE_OFFSET
+    sql="""SELECT s.privy_did,s.run_id,s.stable
+           FROM mininex_live_eth_auto_sessions s
+           JOIN mininex_live_eth_limits l ON l.privy_did=s.privy_did
+           JOIN mininex_live_eth_policy_enrollments p
+             ON p.privy_did=s.privy_did
+           WHERE s.status='ACTIVE' AND l.trading_paused=FALSE
+             AND p.status='GRANT_VERIFIED'
+             AND p.limits_revision=l.revision
+             AND p.policy_expires_at>now()+interval '120 seconds'
+             AND NOT EXISTS (
+                 SELECT 1 FROM mininex_live_eth_auto_native_steps n
+                 WHERE n.privy_did=s.privy_did AND n.status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+             )
+           ORDER BY s.updated_at ASC,s.privy_did
+           LIMIT %s OFFSET %s"""
     try:
-        url=_db_url();_ensure_schema(url)
-        with psycopg.connect(url,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """SELECT s.privy_did,s.run_id,s.stable
-                       FROM mininex_live_eth_auto_sessions s
-                       JOIN mininex_live_eth_limits l ON l.privy_did=s.privy_did
-                       JOIN mininex_live_eth_policy_enrollments p
-                         ON p.privy_did=s.privy_did
-                       WHERE s.status='ACTIVE' AND l.trading_paused=FALSE
-                         AND p.status='GRANT_VERIFIED'
-                         AND p.limits_revision=l.revision
-                         AND p.policy_expires_at>now()+interval '120 seconds'
-                         AND NOT EXISTS (
-                             SELECT 1 FROM mininex_live_eth_auto_native_steps n
-                             WHERE n.privy_did=s.privy_did AND n.status IN
-                              ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
-                         )
-                       ORDER BY s.updated_at ASC LIMIT %s""",(max(1,min(20,limit)),))
-                return cur.fetchall()
+        with _ETH_SESSION_PAGE_LOCK:
+            offset=_ETH_SESSION_PAGE_OFFSET
+            url=_db_url();_ensure_schema(url)
+            with psycopg.connect(url,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(sql,(limit,offset))
+                    page=list(cur.fetchall())
+                    if not page and offset:
+                        offset=0
+                        cur.execute(sql,(limit,0))
+                        page=list(cur.fetchall())
+            _ETH_SESSION_PAGE_OFFSET=offset+len(page)
+            return page
     except psycopg.Error:
         LOG.exception("ETH LIVE session scan failed")
         return []
 
-
 def submitted_live_orders(limit:int=20)->list[dict]:
-    """Find previously broadcast real ETH orders, including paused sessions."""
+    """Read old AND new original hashes, without repeat sends or starvation."""
     if not _worker_approved():
         return []
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid ETH receipt scan page")
+    global _ETH_ORDER_PAGE_OFFSET
+    sql="""SELECT privy_did,intent_key,side,stable,tx_hash
+           FROM mininex_live_order_intents
+           WHERE asset='ETH' AND state='SUBMITTED'
+           ORDER BY submitted_at ASC,privy_did,intent_key
+           LIMIT %s OFFSET %s"""
     try:
-        url=_db_url();_ensure_schema(url)
-        with psycopg.connect(url,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """SELECT privy_did,intent_key,side,stable,tx_hash
-                       FROM mininex_live_order_intents
-                       WHERE asset='ETH' AND state='SUBMITTED'
-                       ORDER BY submitted_at ASC LIMIT %s""",
-                    (max(1,min(25,limit)),))
-                return cur.fetchall()
+        with _ETH_ORDER_PAGE_LOCK:
+            offset=_ETH_ORDER_PAGE_OFFSET
+            url=_db_url();_ensure_schema(url)
+            with psycopg.connect(url,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(sql,(limit,offset))
+                    page=list(cur.fetchall())
+                    if not page and offset:
+                        offset=0
+                        cur.execute(sql,(limit,0))
+                        page=list(cur.fetchall())
+            _ETH_ORDER_PAGE_OFFSET=offset+len(page)
+            return page
     except psycopg.Error:
         LOG.exception("ETH LIVE broadcast settlement scan failed")
         return []
-
 
 def _finalize_order(did:str,key:str,tx_hash:str,state:str)->bool:
     if state not in ("CONFIRMED","REVERTED"):

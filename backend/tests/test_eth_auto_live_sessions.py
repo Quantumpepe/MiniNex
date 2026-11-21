@@ -156,3 +156,33 @@ def test_auto_start_remote_verified_signer_reaches_owner_grant(monkeypatch):
         asyncio.run(mod.start_eth_auto(DID, "USDC"))
     assert exc.value.status_code == 409
     assert calls == ["quorum", "grant"]
+
+
+def test_eth_work_pages_rotate_instead_of_stranding_active_users_or_receipts(
+    monkeypatch,
+):
+    sessions=[{"privy_did":f"did:privy:eth-{i}"} for i in range(5)]
+    orders=[{"intent_key":f"order_{i}"} for i in range(5)]
+    queries=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,params):
+            self.page=orders if "FROM mininex_live_order_intents" in sql else sessions
+            self.limit,self.offset=params
+            queries.append((sql,params))
+        def fetchall(self):return self.page[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    monkeypatch.setattr(mod,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(mod,"_ensure_schema",lambda url:None)
+    monkeypatch.setattr(mod.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(mod,"_ETH_SESSION_PAGE_OFFSET",0)
+    monkeypatch.setattr(mod,"_ETH_ORDER_PAGE_OFFSET",0)
+    pages=[mod.active_sessions(limit=2) for _ in range(4)]
+    assert pages==[sessions[:2],sessions[2:4],sessions[4:],sessions[:2]]
+    checked=[mod.submitted_live_orders(limit=2) for _ in range(4)]
+    assert checked==[orders[:2],orders[2:4],orders[4:],orders[:2]]
+    assert [p for sql,p in queries]==(
+        [(2,0),(2,2),(2,4),(2,5),(2,0)]*2)
+    assert all("LIMIT %s OFFSET %s" in sql for sql,p in queries)
