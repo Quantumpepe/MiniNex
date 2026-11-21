@@ -103,6 +103,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     const id=++request.current;
     const ctrl=new AbortController();
     controller.current=ctrl;
+    let signedTxid=null;
     try{
       // Re-check the current confirmed UTXO set after review, before signing.
       const fresh=btcValidatedUtxos(await btcFetch(
@@ -112,14 +113,22 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
       if(!fresh||reviewed.some(key=>!current.has(key)))
         throw Error('Bitcoin funds changed; review again');
       const hash=await btcSignAndBroadcast(review,{address,pubkey:publicKey,
-        signRawHash,signal:ctrl.signal});
+        signRawHash,signal:ctrl.signal,onSigned:hash=>{
+          signedTxid=hash;
+          if(id===request.current)setTxid(hash);
+        }});
       if(id===request.current){setTxid(hash);setReview(null);setStage('submitted');}
     }catch{
       if(id===request.current){
-        setStage('uncertain');
+        setStage(signedTxid?'uncertain':'failed');
         setReview(null);
-        setIssue(de?'Senden konnte nicht bestätigt werden. Bitte Bitcoin-Explorer prüfen, bevor du erneut sendest.':
-          'Send could not be confirmed. Check a Bitcoin explorer before trying again.');
+        setIssue(signedTxid?(
+          de?'BTC-Sendeausgang unklar. Prüfe zuerst die signierte Transaktions-ID im Explorer. Nicht erneut senden.':
+             'BTC submission uncertain. Check the signed transaction ID in the explorer. Do not resend.'
+        ):(
+          de?'BTC-Prüfung oder Signierung nicht erfolgreich. Es wurde nichts versendet.':
+             'BTC verification or signing failed before broadcast. Nothing was sent.'
+        ));
       }
     }finally{pending.current=false;}
   };
@@ -185,6 +194,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
       {stage==='sending'&&<p role="status" className="privy-wallet-description">
         {de?'Privy-Signierung und Bitcoin-Versand laufen …':
           'Privy signing and Bitcoin broadcast in progress…'}
+      </p>}
+      {stage==='uncertain'&&txid&&<p role="status" className="privy-wallet-description">
+        {de?'Signierte Transaktions-ID (Versand nicht bestätigt)':
+          'Signed transaction ID (broadcast not confirmed)'}:
+        {' '}<a href={'https://mempool.space/tx/'+txid} target="_blank"
+          rel="noopener noreferrer">{txid}</a>
       </p>}
       {stage==='submitted'&&txid&&<p role="status" className="privy-wallet-description">
         {de?'An Bitcoin-Netzwerk übermittelt':'Submitted to Bitcoin network'}:

@@ -200,3 +200,39 @@ test('manual MAX signs all owned Bitcoin inputs and creates a single output',asy
     assert.deepEqual(Buffer.from(posted.outs[0].script),btcRecipientScript(recipient));
   }finally{globalThis.fetch=previous;}
 });
+
+
+test('signed Bitcoin TXID is exposed before the broadcast reply becomes uncertain',async()=>{
+  const funding=new bitcoin.Transaction();
+  funding.version=2;
+  funding.addInput(Buffer.alloc(32),0xffffffff);
+  funding.addOutput(script,100000);
+  const txid=funding.getId();
+  const plan=btcMaxPlan({destination:recipient,utxos:[
+    {txid,vout:0,value:100000n}
+  ],feeRate:5,sourceScript:script});
+  assert.ok(plan);
+  const before=globalThis.fetch;
+  let sentHash=null;
+  let attemptedTxid=null;
+  globalThis.fetch=async(url,opts={})=>{
+    if(String(url).endsWith('/tx/'+txid+'/hex')&&opts.method!=='POST')
+      return new Response(funding.toHex(),{status:200});
+    if(String(url).endsWith('/tx')&&opts.method==='POST'){
+      attemptedTxid=bitcoin.Transaction.fromHex(opts.body).getId();
+      throw Error('Network response lost after possible broadcast');
+    }
+    throw Error('Unexpected test provider request');
+  };
+  try{
+    await assert.rejects(()=>btcSignAndBroadcast(plan,{address,pubkey:publicKey,
+      signRawHash:async({hash})=>({signature:'0x'+Buffer.from(
+        secp256k1.sign(Buffer.from(hash.slice(2),'hex'),priv).toCompactRawBytes()
+      ).toString('hex')}),
+      onSigned:hash=>{sentHash=hash}
+    }));
+    assert.equal(sentHash,attemptedTxid);
+    assert.match(sentHash,/^[a-f0-9]{64}$/);
+    assert.match(source('../src/BtcWalletSend.jsx'),/stage==='uncertain'&&txid/);
+  }finally{globalThis.fetch=before;}
+});

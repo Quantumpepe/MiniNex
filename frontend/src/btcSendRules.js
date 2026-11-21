@@ -162,7 +162,7 @@ export async function btcVerifyUtxo(utxo,sourceScript,signal) {
      !Buffer.from(out.script).equals(sourceScript))
      throw new Error('Bitcoin UTXO ownership mismatch');
 }
-export async function btcSignAndBroadcast(plan,{address,pubkey,signRawHash,signal}) {
+export async function btcSignAndBroadcast(plan,{address,pubkey,signRawHash,signal,onSigned}) {
   if(Date.now()-plan.createdAt>BTC_REVIEW_MAX_AGE_MS)throw Error('Fee review expired');
   if(!btcOwnerScript(address,pubkey)?.equals(plan.sourceScript))throw Error('Wallet mismatch');
   for(const utxo of plan.utxos)await btcVerifyUtxo(utxo,plan.sourceScript,signal);
@@ -198,6 +198,10 @@ export async function btcSignAndBroadcast(plan,{address,pubkey,signRawHash,signa
   if(actual<size*BigInt(plan.feeRate))throw Error('Network fee below reviewed rate');
   if(signal?.aborted)throw Error('Review cancelled');
   const txid=tx.getId();
+  // The immutable TXID exists BEFORE the irreversible network request.
+  // Keep it visible if the node accepts the transaction but its HTTP
+  // acknowledgement is lost. Do not automatically broadcast a second time.
+  if(typeof onSigned==='function')onSigned(txid);
   const broadcast=(await btcFetch('/tx',{method:'POST',body:tx.toHex(),signal})).trim();
   if(broadcast.toLowerCase()!==txid.toLowerCase())throw Error('Broadcast result not verified');
   return txid;
