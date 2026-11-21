@@ -27,25 +27,17 @@ _PASSIVE_PAGE_OFFSET=0
 
 
 def _live_worker_configured()->bool:
-    return (
-        os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
-        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-    )
+    """Compatibility API: not an operator-controlled LIVE permission."""
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 def _settlement_enabled()->bool:
-    """Always reconcile real EVM sends when the owner-enabled trader runs.
+    """Reconcile every submitted original receipt whenever DB is available.
 
-    Manual read-only settlement remains independently available. The LIVE
-    worker already requires both explicit opt-ins; an additional read-only
-    environment setting must not strand a funded native BUY or SELL.
+    The passive receipt observer sends no transactions and must NEVER be
+    stopped by a missing operator switch or an owner's paused session.
     """
-    if not os.getenv("DATABASE_URL","").strip():
-        return False
-    return (
-        os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
-        or _live_worker_configured()
-    )
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 def _pending_submitted(limit:int=25)->list[dict]:

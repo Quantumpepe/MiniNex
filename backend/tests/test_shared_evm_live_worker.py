@@ -54,14 +54,15 @@ def rates(asset,stable):
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
-def test_worker_requires_exact_opt_in_and_database(monkeypatch,asset):
+def test_owner_session_no_longer_needs_operator_live_switch(monkeypatch,asset):
+    monkeypatch.delenv("DATABASE_URL",raising=False)
+    assert worker.evm_auto_worker_enabled() is False
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
-    monkeypatch.setenv("DATABASE_URL","postgres://test.invalid")
-    assert worker.evm_auto_worker_enabled() is False
-    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
     monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
-    assert worker.evm_auto_worker_enabled() is False
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.setenv("DATABASE_URL","postgres://test.invalid")
+    assert worker.evm_auto_worker_enabled() is True
+    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","disabled")
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     assert worker.evm_auto_worker_enabled() is True
     assert worker._trusted_live_session(session(asset))["asset"]==asset
 
@@ -155,6 +156,7 @@ def test_native_evm_sell_never_runs_without_native_receipt_worker(monkeypatch,as
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -203,10 +205,10 @@ def test_worker_scans_only_real_owner_started_current_granted_sessions(monkeypat
     assert "paper" not in db.sql.lower()
 
 
-def test_worker_is_wired_to_lifespan_and_disabled_by_default(monkeypatch):
+def test_worker_is_wired_to_lifespan_and_needs_database(monkeypatch):
     from backend.app import evm_auto_live
     assert isinstance(evm_auto_live,worker.SharedEvmLiveWorker)
-    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     assert worker.evm_auto_worker_enabled() is False
     assert evm_auto_live._task is None
 
@@ -278,6 +280,7 @@ def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset)
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     actions=use_tick_mocks(monkeypatch,asset=asset,action="BUY")
     async def tick():
         async with httpx.AsyncClient() as client:

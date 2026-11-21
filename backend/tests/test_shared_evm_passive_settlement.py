@@ -40,11 +40,8 @@ def test_invalid_pending_claim_rejected_before_network(change):
     assert m._valid_pending_row(row) is False
 
 
-def test_worker_defaults_off_without_explicit_opt_in(monkeypatch):
-    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
-    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
-    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
-    monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+def test_passive_receipt_worker_needs_only_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL",raising=False)
     assert m._settlement_enabled() is False
     assert asyncio.run(m.reconcile_submitted_evm_once())=={
         "worker_enabled":False,"scanned":0,
@@ -53,13 +50,13 @@ def test_worker_defaults_off_without_explicit_opt_in(monkeypatch):
     }
 
 
-def test_explicit_live_trader_also_attaches_receipt_worker(monkeypatch):
-    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
-    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
+def test_receipts_do_not_depend_on_any_operator_trading_flag(monkeypatch):
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
+    monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
-    assert m._settlement_enabled() is False
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    assert m._settlement_enabled() is True
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     assert m._settlement_enabled() is True
     monkeypatch.delenv("DATABASE_URL")
     assert m._settlement_enabled() is False

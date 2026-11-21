@@ -57,11 +57,12 @@ _EVM_SESSION_PAGE_OFFSET=0
 
 
 def evm_auto_worker_enabled()->bool:
-    return (
-        os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
-        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        and bool(os.getenv("DATABASE_URL","").strip())
-    )
+    """No operator feature switch beyond each owner's actual trade grant.
+
+    Every user must explicitly start their own session with current remote
+    Privy authorization. The database is the only service dependency.
+    """
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 def _persist_evm_worker_heartbeat()->None:

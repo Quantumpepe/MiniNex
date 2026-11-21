@@ -1,11 +1,10 @@
-"""Authoritative MiniNex LIVE asset registry and global readiness gate.
+"""Authoritative metadata for MiniNex's twelve supported coin views.
 
-The twelve user-facing assets include native coins and Ethereum tokens.
-Only independently verified native routes/token contracts may execute. Stablecoin tickers do NOT imply that an issuer supports
-the same asset on every chain. All trading stays disabled until individually
-verified native routes and one separately authenticated operator rollout.
-
-This module does not create wallets, keys, deposits, approvals or orders.
+This registry is NOT a trade-authorization gate. Concrete owner-authorized
+execution lives in the ETH, shared EVM and native source dispatchers,
+where current Privy consent, source funds, nonce and finality are checked.
+An unauthenticated asset catalog cannot evaluate twelve users' live
+transaction checks or require a separate operator rollout.
 """
 from __future__ import annotations
 
@@ -14,12 +13,12 @@ import os
 
 from fastapi import HTTPException
 
-# BTC/ETH remain the only PAPER engines; all real execution is still disabled.
+# UI order for all twelve independent owner wallets and real-market engines.
 ASSET_ORDER = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
                "AVAX", "LINK", "DOGE", "UNI", "ARB")
 
-# All capabilities listed as "candidate" here need real venue, issuer,
-# address and decimals verification before any coin is eligible to trade.
+# Human-readable network metadata; actual venue/token details come from
+# exact source adapters rather than an additional global approval flag.
 @dataclass(frozen=True)
 class CoinNetwork:
     symbol: str
@@ -121,11 +120,8 @@ _REGISTRY_UNSORTED = (
 REGISTRY = tuple(sorted(_REGISTRY_UNSORTED, key=lambda coin: ASSET_ORDER.index(coin.symbol)))
 BY_SYMBOL = {coin.symbol: coin for coin in REGISTRY}
 
-# Deliberately no hidden feature flag/env switch can bypass these controls.
-# Later LIVE enabling requires independently reviewed policy + DB rollout,
-# a separated operator identity, signed requests and testable release gates.
-_LIVE_ENGINE_ENABLED = False
-_OPERATOR_ACTIVATION_ROUTE_AVAILABLE = False
+# Runtime transaction checks belong to each owner wallet and its actual
+# source/receipt adapter, never to a fixed global list of False values.
 _MANDATORY_SAFETY_GATES = (
     "verified_user_wallet",
     "restricted_wallet_signer",
@@ -141,57 +137,78 @@ _MANDATORY_SAFETY_GATES = (
     "independent_mainnet_acceptance",
 )
 
+# Concrete modules already provide these source paths. This is interface
+# metadata, NOT a claim that an owner's Privy policy or native SELL signer
+# has been verified. The native BUY route is funded from the user's ETH
+# USDC/USDT wallet via THORChain; refunds/receipts are chain-specific.
+_EVM_SOURCES = frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
+_NATIVE_SOURCES = frozenset(("BTC","SOL","XRP","TRX","DOGE"))
+
 
 def get_asset(symbol: str) -> CoinNetwork:
     if symbol not in BY_SYMBOL:
-        raise HTTPException(404, "Unsupported LIVE asset")
+        raise HTTPException(404,"Unsupported LIVE asset")
     return BY_SYMBOL[symbol]
 
 
 def _coin_readiness(coin: CoinNetwork) -> dict:
-    # Existing ETH price quote work is still only read-only preflight.
-    # No other chain claims executable quotes without actual integration.
-    quote_prepared = bool(os.getenv("MININEX_UNISWAP_API_KEY", "").strip()) if coin.symbol == "ETH" else False
-    safety_gates = {key: False for key in _MANDATORY_SAFETY_GATES}
+    """Show implemented source routes, without inventing owner approval.
+
+    The owner-only readiness, authenticated session and transaction receipt
+    endpoints evaluate actual chain data when the user requests them. A
+    public registry must NOT manufacture a dozen permanent failed checks
+    that accidentally override the user's valid Privy grant.
+    """
+    asset=coin.symbol
     return {
         **asdict(coin),
-        "stablecoin_candidates": list(coin.stablecoin_candidates),
-        "readonly_eth_quote_provider_configured": quote_prepared,
-        "safety_gates": safety_gates,
-        "live_execution_ready": False,
-        "allow_user_trading": False,
-        "mode": "LIVE_PREPARATION_ONLY",
+        "stablecoin_candidates":list(coin.stablecoin_candidates),
+        "source_route":(
+            "OWNER_ETH_UNISWAP_ROUTER02" if asset=="ETH"
+            else "OWNER_SCOPED_ROUTER02" if asset in _EVM_SOURCES
+            else "OWNER_ETH_STABLE_THORCHAIN_NATIVE_BUY"
+        ),
+        "native_sell_status":(
+            "REQUIRES_SIGNED_NATIVE_SELL_PATH" if asset in _NATIVE_SOURCES
+            else "EVM_OWNER_GRANT_REQUIRED"
+        ),
+        # None means not evaluated for this user's real transaction, NOT
+        # a permanent False gate or permission bypass.
+        "safety_gates":{key:None for key in _MANDATORY_SAFETY_GATES},
+        "checks_evaluated_at":"OWNER_AUTHORIZED_SEND_AND_RECEIPT",
+        "live_execution_ready":None,
+        "allow_user_trading":None,
+        "mode":"PER_OWNER_EXECUTION_CAPABILITIES",
     }
 
 
 def get_global_live_readiness() -> dict:
-    rows = [_coin_readiness(coin) for coin in REGISTRY]
+    rows=[_coin_readiness(coin) for coin in REGISTRY]
     return {
-        "mode": "MULTICHAIN_LIVE_PREPARATION",
-        "ordered_assets": list(ASSET_ORDER),
-        "stablecoins_are_separate_settlement_assets": True,
-        "assets": {row["symbol"]: row for row in rows},
-        "global_trading_enabled": False,
-        "all_chains_ready": False,
-        "operator_go_live_available": _OPERATOR_ACTIVATION_ROUTE_AVAILABLE,
-        "one_click_activation_enabled": False,
-        "global_activation_blocked": True,
-        "required_checks_per_asset": list(_MANDATORY_SAFETY_GATES),
-        "description": (
-            "BTC and ETH can be prepared independently for LIVE only after all"
-            " per-asset security and settlement checks pass. Ten other"
-            " coins remain display-only; no auto-capital rotation."
+        "mode":"PER_OWNER_EXECUTION_CAPABILITIES",
+        "ordered_assets":list(ASSET_ORDER),
+        "stablecoins_are_separate_settlement_assets":True,
+        "assets":{row["symbol"]:row for row in rows},
+        # A public coin catalog has no owner/Privy token and therefore
+        # cannot decide whether that user's trading session is ready.
+        "global_trading_enabled":None,
+        "all_chains_ready":None,
+        "operator_go_live_available":None,
+        "one_click_activation_enabled":None,
+        "global_activation_blocked":False,
+        "required_checks_per_asset":list(_MANDATORY_SAFETY_GATES),
+        "description":(
+            "Coin routes are not blocked by registry or operator flags. "
+            "Actual execution uses the signed owner's current per-coin "
+            "session, Privy grant, source balances and confirmed receipts."
         ),
     }
 
 
-def require_live_engine(symbol: str) -> None:
-    """Single fail-closed dispatch guard for all future adapters.
+def require_live_engine(symbol:str)->None:
+    """Legacy adapter lookup, not a separate operator/global kill switch.
 
-    Even a forged enabled front-end or environment flag cannot invoke a
-    real swap through this route. There is no current LIVE submit endpoint.
+    This MUST NOT be treated as a wallet grant. Every real submit must call
+    its dedicated owner-authenticated, nonce-locked native/EVM executor.
     """
     get_asset(symbol)
-    if not _LIVE_ENGINE_ENABLED:
-        raise HTTPException(503, "LIVE trading not enabled")
-    raise HTTPException(503, "No verified execution adapter is available")

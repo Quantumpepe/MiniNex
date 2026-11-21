@@ -62,10 +62,16 @@ def test_pause_locks_out_future_trades():
     assert paused["future_auto_orders_blocked"] is True
     assert any("trading_paused=TRUE" in sql for sql in cur.sql)
 
-def test_worker_disabled_without_explicit_deployment(monkeypatch):
+def test_eth_worker_respects_owner_session_without_extra_operator_flags(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL",raising=False)
+    assert mod._worker_approved() is False
+    monkeypatch.setenv("DATABASE_URL","postgresql://test.invalid/mininex")
     monkeypatch.delenv("MININEX_ETH_AUTO_WORKER_ENABLED",raising=False)
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
-    assert not mod._worker_approved()
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    assert mod._worker_approved() is True
+    monkeypatch.setenv("MININEX_ETH_AUTO_WORKER_ENABLED","disabled")
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
+    assert mod._worker_approved() is True
 
 def test_real_finalized_swap_unblocks_next_eth_auto_order(monkeypatch):
     import asyncio

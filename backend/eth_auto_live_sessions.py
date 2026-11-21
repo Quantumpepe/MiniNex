@@ -41,11 +41,12 @@ _ETH_ORDER_PAGE_OFFSET=0
 
 
 def _worker_approved():
-    return (
-        os.getenv("MININEX_ETH_AUTO_WORKER_ENABLED")=="explicit-live"
-        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        and bool(os.getenv("DATABASE_URL",""))
-    )
+    """Only the owner's verified ACTIVE ETH session enables sending.
+
+    The two historic operator flags were redundant with persisted Privy
+    consent, current policy and paused-state checks at each trade.
+    """
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 def _start_locked(cur,did,stable,grant):

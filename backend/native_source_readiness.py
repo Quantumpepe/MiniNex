@@ -77,9 +77,10 @@ async def read_original_native_source_readiness(
                 or owner.get("original_wallet_link_verified") is not True
                 or owner.get("original_wallet_remote_owner_verified") is not True
                 or owner.get("original_public_key_matches_wallet") is not True
-                or owner.get("privy_native_wallet_api_supported") is not True
-                or owner.get("can_submit") is not False
-                or owner.get("execution_enabled") is not False):
+                or owner.get("privy_native_wallet_api_supported") is not True):
+            # This is a read-only proof of native wallet ownership.
+            # It must not REQUIRE that the actual native signer advertise
+            # 'can_submit=False'; an executable signer is not a failure.
             raise HTTPException(409, "Original native Privy SELL signer unavailable")
     else:
         # BUY's real ETH router quote verifies both original Privy wallets.
