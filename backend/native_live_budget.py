@@ -78,7 +78,7 @@ def exact_owner_native_buy_amount(
         available=max(Decimal(0),Decimal(budget_usd)-held_value-unclosed_value-fees)
         allowed=min(liquid,available/stable_usd)
         amount=allowed.quantize(_MICRO,rounding=ROUND_DOWN)
-        return format(amount,"f") if amount>0 else None
+        return format(amount,"f").rstrip("0").rstrip(".") if amount>0 else None
     except (InvalidOperation,ValueError,TypeError,ArithmeticError):
         return None
 

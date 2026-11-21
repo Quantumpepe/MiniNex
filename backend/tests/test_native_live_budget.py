@@ -43,7 +43,7 @@ def test_native_each_coin_honors_actual_owner_budget_not_platform_cap(asset,stab
 
 def test_owner_source_spends_only_actual_stable_and_respects_depeg():
     assert amount(liquid="1.2345679")=="1.234567"
-    assert amount(stable_price="1.01",budget=100,liquid="300")=="99.009900"
+    assert amount(stable_price="1.01",budget=100,liquid="300")=="99.0099"
     assert amount(stable_price="0.94") is None
     assert amount(stable_price="1.06") is None
 
