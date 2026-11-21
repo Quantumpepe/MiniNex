@@ -22,7 +22,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       headers:{Authorization:'Bearer '+token,Accept:'application/json'},
       cache:'no-store',signal,
     });
-    if(!response.ok)throw Error('Personal paper state unavailable');
+    if(!response.ok)throw Error(liveMode?'Live session unavailable':'Personal paper state unavailable');
     const result=await response.json();
     if(!validExtraPaperState(result,asset))throw Error('Invalid paper session');
     return result;
@@ -97,7 +97,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       });
       if(!response.ok)throw Error('Paper command failed');
       const result=await response.json();
-      if(!validExtraPaperState(result,asset))throw Error('Invalid response');
+      if(!liveMode && !validExtraPaperState(result,asset))throw Error('Invalid response');
       if(request===activeRef.current)setData(result);
     }catch{
       if(request===activeRef.current)setFailed(true);
@@ -133,7 +133,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     </>}
     {!liveMode&&loading&&<p className="privy-wallet-description">{t.extraPaperLoading}</p>}
     {failed&&<p className="privy-wallet-description" role="alert">
-      {t.extraPaperUnavailable}
+      {liveMode?'Live-Session noch nicht gestartet oder nicht verfügbar.':t.extraPaperUnavailable}
     </p>}
     {state==='NOT_STARTED'&&<>
       <label className="mininex-extra-paper-stable">
