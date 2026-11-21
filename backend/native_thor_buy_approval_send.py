@@ -256,7 +256,8 @@ async def submit_original_thor_approval_once(
     try:
         prepared=bound_original_thor_approval(
             plan,asset=asset,stable=stable,wallet_id=owner["wallet_id"],now=now)
-        if (permission_audit.get("source_wallet")!=prepared["wallet"]
+        if (str(permission_audit.get("source_wallet","")).lower()
+                !=prepared["wallet"]
                 or permission_audit.get("source_amount_atomic")
                 !=str(prepared["amount_atomic"])):
             raise ValueError("Original owner grant differs from source wallet/amount")

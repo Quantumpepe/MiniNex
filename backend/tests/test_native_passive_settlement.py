@@ -103,7 +103,8 @@ def test_unavailable_native_chain_does_not_block_other_read_only_receipts(
         if len(calls) == 1:
             raise RuntimeError("chain explorer temporarily offline")
         return {
-            "scanned": 1, "finalized_approvals": 1, "finalized_sources": 1,
+            "scanned": 1, "finalized_approvals": 1,
+            "finalized_without_resend": 1, "finalized_sources": 1,
             "verified_eth_source": 1,
             "destination_finalized": 1, "refunds_verified": 0,
             "new_transactions_sent": 0, "fees_paid": False,
