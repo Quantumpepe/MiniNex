@@ -6,14 +6,16 @@ import pytest
 from backend import native_live_worker as m
 
 
-def test_worker_defaults_disabled_even_when_session_exists(monkeypatch):
+def test_native_auto_needs_no_extra_technical_live_switches(monkeypatch):
     for name in ("MININEX_NATIVE_AUTO_WORKER_ENABLED",
                  "MININEX_LIVE_TRADING_ENABLED","DATABASE_URL"):
         monkeypatch.delenv(name,raising=False)
     assert m.native_auto_worker_enabled() is False
-    monkeypatch.setenv("MININEX_NATIVE_AUTO_WORKER_ENABLED","explicit-live")
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     monkeypatch.setenv("DATABASE_URL","postgres://fake")
+    assert m.native_auto_worker_enabled() is True
+    # No hidden operator switches needed after the user's owner grant.
+    monkeypatch.setenv("MININEX_NATIVE_AUTO_WORKER_ENABLED","false")
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     assert m.native_auto_worker_enabled() is True
     async def test():
         worker=m.NativeLiveWorker(object(),object())
@@ -24,8 +26,8 @@ def test_worker_defaults_disabled_even_when_session_exists(monkeypatch):
 
 
 def test_owner_started_native_sessions_queries_only_active_current_budgets(monkeypatch):
-    monkeypatch.setenv("MININEX_NATIVE_AUTO_WORKER_ENABLED","explicit-live")
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
+    monkeypatch.delenv("MININEX_NATIVE_AUTO_WORKER_ENABLED",raising=False)
+    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
     monkeypatch.setenv("DATABASE_URL","postgres://unused")
     class Cur:
         def __enter__(self):return self
@@ -48,6 +50,7 @@ def test_owner_started_native_sessions_queries_only_active_current_budgets(monke
     monkeypatch.setattr(m,"_PAGE_OFFSET",0)
     assert m.owner_started_native_sessions()==[]
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
+    # Changing an obsolete operator switch cannot block owner sessions.
     assert m.owner_started_native_sessions()==[]
 
 

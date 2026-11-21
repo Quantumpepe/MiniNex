@@ -1,11 +1,10 @@
 """Opt-in native AUTO LIVE worker for five original Privy-owned coins.
 
 This runtime uses the same actual market Strategist and original staged
-THORChain source executor. It is dormant unless the app is explicitly
-LIVE-enabled, an owner's ACTIVE session exists, AND a genuine independently
-implemented server-side Privy grant auditor is injected. Merely setting
-environment variables, signing in, or editing a local status is insufficient
-to grant spending power.
+THORChain source executor. It uses the existing database and only the
+owner's ACTIVE trade session plus a real independent current Privy grant
+auditor. There are no extra operator-side LIVE-enable switches.
+Merely signing in or editing a local status cannot grant spending power.
 
 A once-submitted Ethereum source has its own passive finality regardless of
 whether the user later pauses this live worker.
@@ -33,11 +32,12 @@ _INTERVAL_SECONDS=30
 
 
 def native_auto_worker_enabled()->bool:
-    return (
-        os.getenv("MININEX_NATIVE_AUTO_WORKER_ENABLED")=="explicit-live"
-        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        and bool(os.getenv("DATABASE_URL","").strip())
-    )
+    """No additional LIVE switches: only the existing DB is needed.
+
+    Actual source sends still need owner-started ACTIVE sessions, unchanged
+    coin settings and fresh independently audited Privy spending consent.
+    """
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 def _native_worker_heartbeat()->None:
