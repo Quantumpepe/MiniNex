@@ -24,7 +24,7 @@ from .native_thor_swap_quote import get_private_native_thornode_terms
 from .shared_evm_allowance import owner_approval_draft
 from .storage import _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 
 
 def inspect_original_thor_buy_allowance(

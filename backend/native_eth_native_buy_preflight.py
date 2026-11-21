@@ -55,7 +55,7 @@ def inspect_original_native_buy_evm_preflight(
     """Verify read-only RPC answers for the exact server-compiled BUY."""
     if (type(unsigned) is not dict
             or unsigned.get("mode") != "THORCHAIN_ETH_ORIGINAL_BUY_UNSIGNED_PREVIEW"
-            or unsigned.get("asset") not in ("BTC", "SOL", "XRP")
+            or unsigned.get("asset") not in ("BTC", "SOL", "XRP","TRX","DOGE")
             or unsigned.get("stable") not in STABLES
             or unsigned.get("source_wallet_fee_balance_verified") is not False
             or unsigned.get("token_allowance_or_permit_verified") is not False
@@ -225,7 +225,7 @@ async def preflight_original_native_eth_buy(
 ) -> dict:
     """Read original THORChain quote and source Ethereum RPC; never transact."""
     did = _safe_did(did)
-    if asset not in ("BTC", "SOL", "XRP") or stable not in STABLES:
+    if asset not in ("BTC","SOL","XRP","TRX","DOGE") or stable not in STABLES:
         raise HTTPException(422, "Native Ethereum BUY asset or stable unsupported")
     original = await get_private_native_thornode_terms(
         did, asset=asset, side="BUY", stable=stable, amount=amount,
@@ -243,7 +243,7 @@ async def _preflight_verified_original_eth_buy(
     under this verified DID. This helper neither delegates nor sends.
     """
     did=_safe_did(did)
-    if (asset not in ("BTC","SOL","XRP") or stable not in STABLES
+    if (asset not in ("BTC","SOL","XRP","TRX","DOGE") or stable not in STABLES
             or (asset=="XRP" and stable!="USDC")
             or type(original) is not dict):
         raise HTTPException(422,"Invalid original native source context")

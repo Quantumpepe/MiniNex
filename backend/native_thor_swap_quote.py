@@ -19,14 +19,17 @@ from fastapi import HTTPException
 
 from .manual_swap_live_quotes import validate_live_quote_pair
 from .wallet_balances import get_wallet_balances, verified_addresses
-from .native_coin_balances import get_native_balances, verified_native_addresses
+from .native_coin_balances import get_native_balances, verified_native_addresses, _valid_address
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _safe_did
 
 _API="https://gateway.liquify.com/chain/thorchain_api"
-_ASSET_CHAIN={"BTC":"BTC","SOL":"SOL","XRP":"XRP"}
+_ASSET_CHAIN={"BTC":"BTC","SOL":"SOL","XRP":"XRP",
+              "TRX":"TRON","DOGE":"DOGE"}
 _ASSET_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
-                "XRP":"xrpl-mainnet"}
+                "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
+                "DOGE":"dogecoin-mainnet"}
+_BUY_ONLY=frozenset(("TRX","DOGE"))
 _INTEGER=re.compile(r"^[0-9]{1,28}$")
 
 
@@ -86,8 +89,12 @@ def validate_thornode_route_terms(
     eth_owner:str,quote:dict,inbounds:list,now:int,
 )->dict:
     """Strict quote-vs-active-vault matching. No user-selected destination."""
-    if asset not in _ASSET_CHAIN or side not in ("BUY","SELL"):
+    if (asset not in _ASSET_CHAIN or side not in ("BUY","SELL")
+            or (asset in _BUY_ONLY and side!="BUY")):
         raise ValueError("Native source chain unsupported")
+    if (asset in _BUY_ONLY
+            and not _valid_address(asset,native_owner)):
+        raise ValueError("Original TRX/DOGE receiving wallet not validated")
     if stable not in ("USDC","USDT") or (asset=="XRP" and stable!="USDC"):
         raise ValueError("Native settlement stable invalid")
     src=stable if side=="BUY" else asset
@@ -183,7 +190,8 @@ async def get_private_native_thornode_terms(
 )->dict:
     """Fetch owner-bound protocol terms privately; not exposed as a public API."""
     did=_safe_did(did)
-    if asset not in _ASSET_CHAIN or side not in ("BUY","SELL"):
+    if (asset not in _ASSET_CHAIN or side not in ("BUY","SELL")
+            or (asset in _BUY_ONLY and side!="BUY")):
         raise HTTPException(422,"Unsupported native trading asset")
     if stable not in ("USDC","USDT") or (asset=="XRP" and stable!="USDC"):
         raise HTTPException(422,"Unsupported native source stable")
@@ -196,7 +204,11 @@ async def get_private_native_thornode_terms(
     except (ValueError,TypeError,KeyError):
         raise HTTPException(409,"Current Privy owner wallet unavailable") from None
     evm=await get_wallet_balances(did)
-    native=await get_native_balances(did) if asset!="BTC" else None
+    # ETH-funded BUY uses the verified owner stablecoin balance, not a
+    # second remote native balance RPC. This avoids blocking a first BUY
+    # solely because the empty receiving TRON/DOGE/SOL wallet RPC is slow.
+    native=(await get_native_balances(did)
+            if asset!="BTC" and side=="SELL" else None)
     try:
         _read_owner_balance(asset,side,stable,amount,evm,native)
     except ValueError:

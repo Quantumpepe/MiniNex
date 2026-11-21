@@ -19,7 +19,7 @@ from eth_utils import keccak
 from .live_eth_quotes import STABLES
 from .manual_swap_live_quotes import THOR_ASSETS
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _WALLET=re.compile(r"^0x[a-fA-F0-9]{40}$")
 _AMOUNT=re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 _SELECTOR=keccak(text="depositWithExpiry(address,address,uint256,string,uint256)")[:4]
@@ -61,9 +61,11 @@ def encode_original_eth_native_buy_deposit(
             or quote.get("destination_asset")!=asset
             or quote.get("amount")!=amount
             or quote.get("from_network")!="ethereum-mainnet"
-            or quote.get("to_network")!=(
-                "bitcoin-mainnet" if asset=="BTC" else
-                "solana-mainnet" if asset=="SOL" else "xrpl-mainnet")
+            or quote.get("to_network")!={
+                "BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
+                "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
+                "DOGE":"dogecoin-mainnet",
+            }[asset]
             or any(type(x) is not str or not _WALLET.fullmatch(x)
                    for x in (source,vault,router))
             or type(receiver) is not str
