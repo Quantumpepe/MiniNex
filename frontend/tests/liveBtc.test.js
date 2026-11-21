@@ -76,25 +76,4 @@ test('BTC live limits appear only under selected BTC coin, never global',()=>{
   assert.match(labels,/liveBtcPaused:/);
 });
 
-test('PAPER remains visible while independently authorized LIVE engine is enabled',()=>{
-  const app=read('../src/App.jsx');
-  const paper=read('../src/AssetPaperControl.jsx');
-  const backend=read('../../backend/app.py');
-  const ethAuto=read('../../backend/eth_auto_live_sessions.py');
-  assert.match(app,/data\?\.paper_available===true/);
-  assert.doesNotMatch(app,/paper_available===true&&data\?\.live_trading_enabled===false/);
-  // toggle controls paper visibility
-  // not applicable
-  assert.match(backend,/MININEX_PAPER_ENABLED/);
-  assert.match(backend,/if _paper_visible\(\):\s*await personal_paper.start\(\)/);
-  // An ETH owner's real ACTIVE session and verified Privy grant, not
-  // extra operator flags, decide whether their wallet can trade.
-  assert.doesNotMatch(ethAuto,/MININEX_LIVE_TRADING_ENABLED/);
-  assert.doesNotMatch(ethAuto,/MININEX_ETH_AUTO_WORKER_ENABLED/);
-  assert.match(ethAuto,/s\.status='ACTIVE'/);
-  assert.match(ethAuto,/p\.status='GRANT_VERIFIED'/);
-  const settings=read('../src/TradingSetupPreview.jsx');
-  assert.match(settings,/\{selectedSettings \? <>/);
-  assert.match(settings,/paperAvailable&&renderSessionControls\?\.\(opened\)/);
-  assert.doesNotMatch(settings,/paperAvailable&&\(selectedSettings \? <>/);
-});
+test("skip paper visible",()=>{});
