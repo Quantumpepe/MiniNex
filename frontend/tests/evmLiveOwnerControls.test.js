@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validEvmTradeChallenge,validEvmTradeSignerOffer,
-  validEvmTradePermission,validEvmAutoSession,LIVE_EVM_ASSETS,
+  validEvmTradePermission,validEvmAutoSession,validEvmOrderHistory,LIVE_EVM_ASSETS,
 } from '../src/evmLiveOwnerRules.js';
 
 const WALLET='0x'+'ab'.repeat(20);
@@ -100,4 +100,49 @@ for(const [asset,chain] of Object.entries(ASSETS)){
 }
 test('exact LIVE EVM asset scope excludes ADA and native BTC',()=>{
   assert.deepEqual(LIVE_EVM_ASSETS,Object.keys(ASSETS));
+});
+
+
+test('coin-specific real EVM order history rejects other coins and PAPER',()=>{
+  const tx='0x'+'a'.repeat(64);
+  const order={
+    asset:'LINK',chain_id:1,intent_key:'sig_real_123456789',
+    side:'BUY',stable:'USDC',status:'FINALIZED_SUCCESS',tx_hash:tx,
+    swap_erc20_leg_finalized:true,native_trade_cycle_settled:false,
+    fee_transferred:false,created_at:'2026-11-21T07:30:00+00:00',
+  };
+  const report={
+    mode:'OWNER_DURABLE_EVM_ORDER_STATUS_ONLY',asset:'LINK',
+    includes_simulation:false,wallet_signing_enabled_by_this_api:false,
+    automatic_trade_execution_enabled_by_this_api:false,
+    history_truncated:false,orders:[order],
+  };
+  assert.equal(validEvmOrderHistory(report,'LINK'),true);
+  assert.equal(validEvmOrderHistory(report,'UNI'),false);
+  assert.equal(validEvmOrderHistory({...report,includes_simulation:true},'LINK'),false);
+  assert.equal(validEvmOrderHistory({...report,orders:[{...order,asset:'UNI'}]},'LINK'),false);
+  assert.equal(validEvmOrderHistory({...report,orders:[{...order,tx_hash:null}]},'LINK'),false);
+  assert.equal(validEvmOrderHistory({...report,orders:[order,order]},'LINK'),false);
+  assert.equal(validEvmOrderHistory({...report,orders:[]},'LINK'),true);
+});
+
+test('native settlement and real on-chain swap remain distinct',()=>{
+  const order={
+    asset:'BNB',chain_id:56,intent_key:'sig_real_bnb_123456',
+    side:'SELL',stable:'USDT',status:'FINALIZED_SUCCESS',
+    tx_hash:'0x'+'1'.repeat(64),swap_erc20_leg_finalized:true,
+    native_trade_cycle_settled:false,fee_transferred:false,
+    created_at:'2026-11-21T07:30:00+00:00',
+  };
+  const report={
+    mode:'OWNER_DURABLE_EVM_ORDER_STATUS_ONLY',asset:'BNB',
+    includes_simulation:false,wallet_signing_enabled_by_this_api:false,
+    automatic_trade_execution_enabled_by_this_api:false,
+    history_truncated:false,orders:[order],
+  };
+  assert.equal(validEvmOrderHistory(report,'BNB'),true);
+  assert.equal(validEvmOrderHistory({
+    ...report,orders:[{...order,status:'SUBMITTED',
+      swap_erc20_leg_finalized:false,native_trade_cycle_settled:true}]
+  },'BNB'),false);
 });
