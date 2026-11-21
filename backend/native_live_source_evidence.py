@@ -150,14 +150,19 @@ def _pending_usd(rows:list[dict],asset:str,prices:dict)->Decimal:
 
 
 async def verified_owner_native_buy_amount(
-    did:str,*,asset:str,stable:str,budget_usd:int,
-    client:httpx.AsyncClient,
+    did:str,*,asset:str,stable:str,budget_usd:object=None,
+    budget_percent:int|None=None,client:httpx.AsyncClient,
 )->str|None:
     """One coin's actual available balance, holdings, pending and USD rates."""
     did=_safe_did(did)
     if (asset not in _NATIVE or stable not in _NATIVE[asset][2]
-            or type(budget_usd) is not int or budget_usd<=0
-            or type(client) is not httpx.AsyncClient):
+            or type(client) is not httpx.AsyncClient
+            or (asset=="BTC" and (
+                budget_usd is not None or type(budget_percent) is not int
+                or not 0<=budget_percent<=100))
+            or (asset!="BTC" and (
+                budget_percent is not None or type(budget_usd) is not int
+                or budget_usd<=0))):
         raise HTTPException(409,"Invalid owner-selected native LIVE allocation")
     user=await fetch_privy_user(did)
     native=verified_native_addresses(user,did)
@@ -177,6 +182,16 @@ async def verified_owner_native_buy_amount(
                 or eth_result.get("wallets",{}).get("ETH") is None):
             raise ValueError("Original ETH funding owner unavailable")
         # A single account must own both wallets. No secondary imported key.
+        pending_usd=_pending_usd(pending,asset,prices)
+        if asset=="BTC":
+            # The existing BTC setting is a percentage, not a second
+            # invented USD field. Apply it to the actually verified
+            # native BTC, current ETH stable and committed pending BUY
+            # exposures. At 100% the owner can spend ALL real cash.
+            native_value=Decimal(native_balance)*prices["BTC"]
+            stable_value=Decimal(source["balance"])*prices[stable]
+            budget_usd=(native_value+stable_value+pending_usd)*(
+                Decimal(budget_percent)/Decimal(100))
         result=exact_owner_native_buy_amount(
             asset=asset,stable=stable,budget_usd=budget_usd,
             native_wallet_evidence={
@@ -185,7 +200,7 @@ async def verified_owner_native_buy_amount(
             stable_wallet_evidence=source,
             market_price_usd=prices[asset],
             stable_price_usd=prices[stable],
-            pending_buy_usd=_pending_usd(pending,asset,prices),
+            pending_buy_usd=pending_usd,
         )
         return result
     except (ValueError,TypeError,ArithmeticError,psycopg.Error,

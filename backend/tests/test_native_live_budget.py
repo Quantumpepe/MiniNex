@@ -85,3 +85,15 @@ def test_no_fake_refund_from_unrecognized_journal_state():
 
 def test_trx_rejects_usdc_until_actual_native_route_supported():
     assert amount("TRX","USDC") is None
+
+
+def test_native_budget_accepts_exact_decimal_owner_selection_without_rounding_up():
+    assert amount(budget=500,liquid="400")=="400"
+    value=exact_owner_native_buy_amount(
+        asset="BTC",stable="USDC",budget_usd=Decimal("2.50000050"),
+        native_wallet_evidence={"asset":"BTC","network":"bitcoin-mainnet",
+                                "status":"verified","balance":"0"},
+        stable_wallet_evidence={"status":"verified","network":"ethereum-mainnet",
+                                "balance":"100"},
+        market_price_usd="100",stable_price_usd="1")
+    assert value=="2.5"

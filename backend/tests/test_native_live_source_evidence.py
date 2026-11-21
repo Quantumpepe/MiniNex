@@ -86,8 +86,10 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
     async def run():
         async with httpx.AsyncClient() as client:
             return await m.verified_owner_native_buy_amount(
-                DID,asset=asset,stable=stable,budget_usd=500,client=client)
-    assert asyncio.run(run())=="350"
+                DID,asset=asset,stable=stable,
+                budget_percent=50 if asset=="BTC" else None,
+                budget_usd=500 if asset!="BTC" else None,client=client)
+    assert asyncio.run(run())==("425" if asset=="BTC" else "350")
     assert sorted(calls)==sorted(("owner","eth","native","usd","pending"))
 
 
