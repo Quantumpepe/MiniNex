@@ -165,6 +165,6 @@ test('native original order progress appears per-coin, without shadow fills',()=
   assert.match(livePanel,/\['BTC','SOL','XRP'\]\.includes\(asset\)&&<NativeLiveOrderHistory/);
   const list=read('../src/NativeLiveOrderHistory.jsx');
   assert.match(list,/getAccessToken\(\)/);
-  assert.match(list,/validOriginalNativeOrderHistory\(data,asset\)/);
+  assert.match(list,/validOriginalNativeOrderHistory\(result,asset\)/);
   assert.doesNotMatch(list,/signTransaction\(|sendTransaction\(|POST/);
 });

@@ -23,7 +23,7 @@ _STATES=frozenset(("PREPARED","SENDING","SUBMITTED",
     "DESTINATION_FINALIZED","REFUNDED_VERIFIED","CANCELLED"))
 _KEY=re.compile(r"^native_[0-9a-f]{64}$")
 _DIGEST=re.compile(r"^[0-9a-f]{64}$")
-_ETH_HASH=re.compile(r"^0x[a-fA-F0-9]{64}$")
+_ETH_HASH=re.compile(r"^[a-f0-9]{64}$")
 _NATIVE_HASH=re.compile(r"^[A-Za-z0-9]{64,90}$")
 
 
@@ -38,6 +38,13 @@ def _original_native_order_row(row:object,asset:str)->dict:
     signed_hash=row.get("source_signed_tx_hash")
     outbound=row.get("destination_tx_hash")
     finalized=state in ("DESTINATION_FINALIZED","REFUNDED_VERIFIED")
+    # THORChain's outbound IDs and the verified DB journal store Ethereum
+    # destination hashes without 0x; expose the canonical prefixed ID only
+    # to the display while validating the immutable original bare hash.
+    eth_dest=((side=="SELL" and state=="DESTINATION_FINALIZED") or
+              (side=="BUY" and state=="REFUNDED_VERIFIED"))
+    display_out=("0x"+outbound if eth_dest and
+                 type(outbound) is str else outbound)
     sent=state in ("SUBMITTED","SOURCE_FINALIZED",
                    "DESTINATION_FINALIZED","REFUNDED_VERIFIED")
     when=row.get("created_at")
@@ -61,11 +68,12 @@ def _original_native_order_row(row:object,asset:str)->dict:
             or (finalized and (outbound is None
                 or type(row.get("destination_proof_sha256")) is not str
                 or not _DIGEST.fullmatch(row["destination_proof_sha256"])))
-            or (not finalized and outbound is not None)
+            or (not finalized and (outbound is not None
+                or row.get("destination_received_atomic") is not None
+                or row.get("destination_proof_sha256") is not None))
             or (outbound is not None
-                and not ((_ETH_HASH.fullmatch(outbound) if side=="SELL" and state=="DESTINATION_FINALIZED"
-                    else (_ETH_HASH.fullmatch(outbound) if side=="BUY" and state=="REFUNDED_VERIFIED"
-                    else _NATIVE_HASH.fullmatch(outbound)))))
+                and not (_ETH_HASH.fullmatch(outbound) if eth_dest
+                    else _NATIVE_HASH.fullmatch(outbound)))
             or (finalized and row.get("destination_received_atomic") is None)):
         raise ValueError("Unverified original native order progress")
     raw=row.get("input_amount")
@@ -97,7 +105,7 @@ def _original_native_order_row(row:object,asset:str)->dict:
         "original_input_asset":stable if side=="BUY" else asset,
         "source_tx_hash":known_hash,
         "signed_source_hash_known":signed_hash is not None,
-        "destination_tx_hash":outbound,
+        "destination_tx_hash":display_out,
         "destination_amount_atomic":str(received) if finalized else None,
         "destination_asset":target,
         "source_blockchain_finalized":state in (

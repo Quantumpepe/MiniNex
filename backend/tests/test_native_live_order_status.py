@@ -35,13 +35,15 @@ def test_original_native_order_history_only_reports_received_if_true_chain_fill(
     assert credited["destination_wallet_credited"] is True
     assert credited["destination_asset"]=="BTC"
     assert credited["destination_amount_atomic"]=="800000"
+    assert credited["destination_tx_hash"]=="d"*64
     refunded={**old,"status":"REFUNDED_VERIFIED",
-              "destination_tx_hash":"0x"+"e"*64,
+              "destination_tx_hash":"e"*64,
               "destination_proof_sha256":"f"*64,
               "destination_received_atomic":99000000}
     returned=status._original_native_order_row(refunded,"BTC")
     assert returned["original_funds_refunded"] is True
     assert returned["destination_asset"]=="USDC"
+    assert returned["destination_tx_hash"]=="0x"+"e"*64
 
 @pytest.mark.parametrize("mutation",[
     lambda r:r.update(asset="SOL"),
