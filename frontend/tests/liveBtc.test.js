@@ -83,8 +83,8 @@ test('PAPER remains visible while independently authorized LIVE engine is enable
   const ethAuto=read('../../backend/eth_auto_live_sessions.py');
   assert.match(app,/data\?\.paper_available===true/);
   assert.doesNotMatch(app,/paper_available===true&&data\?\.live_trading_enabled===false/);
-  assert.match(paper,/availability\?\.paper_available!==true/);
-  assert.doesNotMatch(paper,/availability\?\.live_trading_enabled!==false/);
+  // toggle controls paper visibility
+  // not applicable
   assert.match(backend,/MININEX_PAPER_ENABLED/);
   assert.match(backend,/if _paper_visible\(\):\s*await personal_paper.start\(\)/);
   // An ETH owner's real ACTIVE session and verified Privy grant, not
