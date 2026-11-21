@@ -4,8 +4,10 @@ import pytest
 from backend import native_verified_fifo_net as m
 
 DID="did:privy:owner_native_financial_001"
-ASSETS={"BTC":8,"SOL":9,"XRP":6}
-NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet"}
+ASSETS={"BTC":8,"SOL":9,"XRP":6,"TRX":6,"DOGE":8}
+NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
+         "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
+         "DOGE":"dogecoin-mainnet"}
 
 
 def usd(asset,when,price="1"):
@@ -53,13 +55,14 @@ def history(asset="BTC"):
     return {"asset":asset,"privy_did":DID,"fills":[]}
 
 
-@pytest.mark.parametrize("asset",["BTC","SOL","XRP"])
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX","DOGE"])
 def test_one_original_roundtrip_hwm_5pct_net_profit(asset):
     atomic=10**ASSETS[asset]
     data=history(asset)
+    stable="USDT" if asset=="TRX" else "USDC"
     data["fills"]=[
-        leg(asset,"BUY",1,"100",atomic),
-        leg(asset,"SELL",2,"1",120000000),
+        leg(asset,"BUY",1,"100",atomic,stable=stable),
+        leg(asset,"SELL",2,"1",120000000,stable=stable),
     ]
     report=m.preview_native_fifo_net_hwm(data)
     close=report["close_previews"][0]
@@ -204,3 +207,47 @@ def test_native_coin_budgets_and_profits_never_mix_across_assets():
     ]
     with pytest.raises(ValueError):
         m.preview_native_fifo_net_hwm(h)
+
+
+def test_native_trx_doge_hwm_math_is_calculation_only_and_per_coin():
+    for asset,stable,units in (
+        ("TRX","USDT",10**6),("DOGE","USDC",10**8),
+        ("DOGE","USDT",10**8),
+    ):
+        batch=history(asset)
+        batch["fills"]=[
+            leg(asset,"BUY",1,"70",units,stable=stable,
+                source_fee="0.001"),
+            leg(asset,"SELL",2,"1",100_000_000,stable=stable,
+                source_fee="0.01"),
+        ]
+        result=m.preview_native_fifo_net_hwm(batch)
+        close=result["close_previews"][0]
+        # Original Ethereum source gas and actual native sell fees reduce
+        # net profit; no fees or transfers are collected by this preview.
+        assert close["realized_net_usd"]=="27.000000000000"
+        assert close["indicative_5pct_hwm_usd"]=="1.350000"
+        assert close["fee_assessed"] is False
+        assert result["fee_obligation_created"] is False
+        assert result["fee_payment_transferred"] is False
+        assert result["native_live_trading_enabled"] is False
+        assert result["complete_original_wallet_history_independently_audited"] is False
+
+
+def test_future_native_hwm_never_invents_trx_usdc_trade_or_a_completed_fill():
+    h=history("TRX")
+    original=leg("TRX","BUY",1,"100",10**6,stable="USDT")
+    altered=deepcopy(original)
+    altered["stable"]="USDC"
+    with pytest.raises(ValueError):
+        m.preview_native_fifo_net_hwm({**h,"fills":[altered]})
+    altered=deepcopy(original)
+    altered["status"]="SOURCE_FINALIZED"
+    with pytest.raises(ValueError):
+        m.preview_native_fifo_net_hwm({**h,"fills":[altered]})
+    # A BUY-only history does not fabricate any fee or realized return.
+    h["fills"]=[original]
+    report=m.preview_native_fifo_net_hwm(h)
+    assert report["sell_trades"]==0
+    assert report["close_previews"]==[]
+    assert report["fee_obligation_created"] is False

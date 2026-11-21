@@ -1,4 +1,4 @@
-"""Exact native BTC/SOL/XRP FIFO and HWM math on already-finalized fills.
+"""Exact five-native-coin FIFO and HWM math on already-finalized fills.
 
 Pure internal calculation. It consumes rows supplied by an independent
 complete-wallet-history reconciler; a row or client boolean alone cannot prove
@@ -18,9 +18,11 @@ import re
 
 from .fees import RATE, assess_realized_gain
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
-_PRECISION={"BTC":8,"SOL":9,"XRP":6}
-_SOURCE_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet"}
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
+_PRECISION={"BTC":8,"SOL":9,"XRP":6,"TRX":6,"DOGE":8}
+_SOURCE_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
+                 "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
+                 "DOGE":"dogecoin-mainnet"}
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _INTENT=re.compile(r"^native_[0-9a-f]{64}$")
 _ETH_HASH=re.compile(r"^0x[0-9a-f]{64}$")
@@ -111,6 +113,7 @@ def preview_native_fifo_net_hwm(history:object)->dict:
                     or row.get("status")!="DESTINATION_FINALIZED"
                     or row.get("stable") not in ("USDC","USDT")
                     or (asset=="XRP" and row.get("stable")!="USDC")
+                    or (asset=="TRX" and row.get("stable")!="USDT")
                     or type(row.get("intent_key")) is not str
                     or not _INTENT.fullmatch(row["intent_key"])
                     or row["intent_key"] in seen
