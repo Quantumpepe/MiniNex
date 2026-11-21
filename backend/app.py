@@ -1185,13 +1185,19 @@ async def owner_link_uni_router02_user_transaction(
     finality; these data are never a claimed LIVE AUTO fill or HWM event.
     """
     did=verify_privy_bearer(authorization)["user_id"]
-    result=await quote_owner_erc20_trade(
+    # ARB is an ERC-20 on Arbitrum One, NOT an Ethereum token:
+    # route through chain-specific verified Router02/Quoter and reject any
+    # cross-chain quote. LINK/UNI keep the original Ethereum quote.
+    quote_fn=quote_native_evm_trade if asset=="ARB" else quote_owner_erc20_trade
+    result=await quote_fn(
         did,asset=asset,side=request.side,stable=request.stable,
         amount=request.amount,include_user_transaction=True,
     )
+    expected_chain=42161 if asset=="ARB" else 1
     if (result.get("wallet_identity_verified") is not True
             or result.get("onchain_quote_verified") is not True
-            or result.get("transaction",{}).get("chainId")!=1
+            or result.get("chain_id")!=expected_chain
+            or result.get("transaction",{}).get("chainId")!=expected_chain
             or result.get("execution_enabled") is not False):
         raise HTTPException(502,"Owner ERC-20 quote identity mismatch")
     return JSONResponse(result,headers={

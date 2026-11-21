@@ -134,3 +134,38 @@ def test_owner_erc20_endpoint_does_not_sign_or_broadcast():
     assert "quote_owner_erc20_trade" in text
     assert "broadcast_privy_eth_swap(" not in text
     assert "send_privy_native_weth9(" not in text
+
+
+
+@pytest.mark.parametrize("reported_chain,accepted",[(42161,True),(1,False)])
+def test_arb_owner_quote_endpoint_requires_actual_arbitrum_chain(
+    monkeypatch,reported_chain,accepted
+):
+    import json
+    from backend import app as api
+    monkeypatch.setattr(api,"verify_privy_bearer",lambda token:{"user_id":DID})
+    async def native(did,**kwargs):
+        assert did==DID and kwargs["asset"]=="ARB"
+        return {
+            "wallet_identity_verified":True,
+            "onchain_quote_verified":True,
+            "chain_id":reported_chain,
+            "transaction":{"chainId":reported_chain},
+            "execution_enabled":False,
+        }
+    async def invalid_eth(did,**kwargs):
+        pytest.fail("ARB must not use the Ethereum LINK/UNI quote")
+    monkeypatch.setattr(api,"quote_native_evm_trade",native)
+    monkeypatch.setattr(api,"quote_owner_erc20_trade",invalid_eth)
+    payload=api.EthLiveQuoteRequest(
+        side="BUY",stable="USDC",amount="1")
+    if accepted:
+        response=asyncio.run(
+            api.owner_link_uni_router02_user_transaction(
+                "ARB",payload,authorization="Bearer owner"))
+        assert json.loads(response.body)["transaction"]["chainId"]==42161
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(api.owner_link_uni_router02_user_transaction(
+                "ARB",payload,authorization="Bearer owner"))
+        assert error.value.status_code==502
