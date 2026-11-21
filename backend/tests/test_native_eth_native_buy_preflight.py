@@ -155,6 +155,7 @@ def test_real_mainnet_rpc_readback_is_owner_bound_and_not_a_tx(monkeypatch):
         called.append((method, params, req_id))
         replies = {
             "eth_chainId":"0x1",
+            "eth_blockNumber":"0x123456",
             "eth_getBalance":hex(_ETH_WEI),
             "eth_call":"0x" + f"{_FUNDS:064x}",
             "eth_getTransactionCount":"0x2a",
@@ -172,14 +173,17 @@ def test_real_mainnet_rpc_readback_is_owner_bound_and_not_a_tx(monkeypatch):
     assert result["chain_id_verified"] is True
     assert result["can_submit"] is False
     assert [x[0] for x in called] == [
-        "eth_chainId","eth_getBalance","eth_call","eth_call",
-        "eth_getTransactionCount","eth_estimateGas","eth_gasPrice",
+        "eth_chainId","eth_blockNumber","eth_getBalance","eth_call",
+        "eth_call","eth_getTransactionCount","eth_estimateGas","eth_gasPrice",
     ]
-    assert called[3][1][0]["to"].lower() == (
+    assert called[2][1][-1] == "0x123456"
+    assert called[3][1][-1] == "0x123456"
+    assert called[4][1][-1] == "0x123456"
+    assert called[4][1][0]["to"].lower() == (
         __import__("backend.live_eth_quotes", fromlist=["STABLES"])
         .STABLES["USDC"].lower()
     )
-    assert called[3][1][0]["data"] == m._allowance_data(ETH, ROUTER)
+    assert called[4][1][0]["data"] == m._allowance_data(ETH, ROUTER)
 
 
 
@@ -229,3 +233,39 @@ def test_native_buy_no_privy_signatures_or_erc20_approval_created():
     for action in ("send_transaction(", "approve(", "privy_rpc",
                    "sendrawtransaction", "private_key", "psycopg"):
         assert action not in code
+
+
+def test_native_eth_buy_independent_rpc_reads_are_parallel_and_block_pinned(monkeypatch):
+    """Slow independent provider calls cannot make quote expire serially."""
+    import httpx
+    original=quote(asset="BTC",stable="USDC",amount=_AMOUNT)
+    started=set()
+    gate=asyncio.Event()
+    async def terms(did,**kw):
+        assert did=="did:privy:owner"
+        return original
+    async def rpc(client,*,method,params,req_id):
+        if method=="eth_chainId":return "0x1"
+        if method=="eth_blockNumber":return "0x123456"
+        started.add(req_id)
+        if len(started)==6:gate.set()
+        await asyncio.wait_for(gate.wait(),timeout=1.0)
+        assert req_id in (2,3,4,5,6,7)
+        if req_id in (2,3,4):
+            assert params[-1]=="0x123456"
+        return {
+            2:hex(_ETH_WEI),3:"0x"+f"{_FUNDS:064x}",
+            4:"0x"+f"{_FUNDS:064x}",5:"0x2a",
+            6:hex(_GAS),7:hex(_GAS_PRICE),
+        }[req_id]
+    monkeypatch.setattr(m,"get_private_native_thornode_terms",terms)
+    monkeypatch.setattr(m,"_rpc",rpc)
+    monkeypatch.setattr(m.time,"time",lambda:NOW)
+    result=asyncio.run(m.preflight_original_native_eth_buy(
+        "did:privy:owner",asset="BTC",stable="USDC",amount=_AMOUNT,
+    ))
+    assert started=={2,3,4,5,6,7}
+    assert result["original_router_allowance_verified"] is True
+    assert result["pending_nonce_and_gas_estimate_verified"] is True
+    assert result["ready_to_sign"] is False
+    assert result["can_submit"] is False

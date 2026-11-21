@@ -7,6 +7,7 @@ accepted. Gas/nonce/allowance checks do NOT authorize wallet signing or send.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -244,22 +245,35 @@ async def preflight_original_native_eth_buy(
             chain = await _rpc(client, method="eth_chainId", params=[], req_id=1)
             if _int_quantity(chain) != 1:
                 raise ValueError("Wrong Ethereum chain for native BUY")
-            balance = await _rpc(
-                client, method="eth_getBalance",
-                params=[owner, "latest"], req_id=2)
-            source = await _rpc(client, method="eth_call",
-                params=[{"to": token, "data": "0x70a08231" + owner_word},
-                        "latest"], req_id=3)
-            allowance_word = await _rpc(client, method="eth_call",
-                params=[{"to": token, "data": allowance}, "latest"], req_id=4)
-            pending_nonce = await _rpc(client, method="eth_getTransactionCount",
-                params=[owner, "pending"], req_id=5)
-            gas = await _rpc(client, method="eth_estimateGas", params=[{
-                "from": owner, "to": router,
-                "data": tx["data"], "value": "0x0",
-            }], req_id=6)
-            gas_price = await _rpc(client, method="eth_gasPrice",
-                                  params=[], req_id=7)
+            # The quote is short-lived. Read independent account state
+            # concurrently instead of waiting for six sequential public RPCs.
+            # Pin all historical balance/allowance reads to the SAME block:
+            # mixing "latest" across successive blocks can fabricate a
+            # spendable allowance when the tokens have already moved.
+            height = _int_quantity(await _rpc(
+                client, method="eth_blockNumber", params=[], req_id=8))
+            if height <= 0:
+                raise ValueError("Ethereum source block unavailable")
+            block_tag = hex(height)
+            (balance, source, allowance_word, pending_nonce,
+             gas, gas_price) = await asyncio.gather(
+                _rpc(client, method="eth_getBalance",
+                     params=[owner, block_tag], req_id=2),
+                _rpc(client, method="eth_call",
+                     params=[{"to": token, "data": "0x70a08231" + owner_word},
+                             block_tag], req_id=3),
+                _rpc(client, method="eth_call",
+                     params=[{"to": token, "data": allowance}, block_tag],
+                     req_id=4),
+                _rpc(client, method="eth_getTransactionCount",
+                     params=[owner, "pending"], req_id=5),
+                _rpc(client, method="eth_estimateGas", params=[{
+                    "from": owner, "to": router,
+                    "data": tx["data"], "value": "0x0",
+                }], req_id=6),
+                _rpc(client, method="eth_gasPrice",
+                     params=[], req_id=7),
+            )
         return inspect_original_native_buy_evm_preflight(
             unsigned=unsigned, original_quote=original, now=int(time.time()),
             chain_id=chain, token_allowance=allowance_word,
