@@ -55,6 +55,13 @@ def test_native_passive_finality_checks_all_original_source_states(monkeypatch):
                 "unverified_or_unavailable": 0,
                 "new_transactions_sent": 0,
             },
+            "reconcile_original_native_destinations_once": {
+                "scanned": 3, "destination_finalized": 2,
+                "refunds_verified": 1,
+                "unverified_or_unavailable": 0,
+                "new_transactions_sent": 0,
+                "fees_paid": False,
+            },
         }
         return values[callback.__name__]
 
@@ -64,16 +71,17 @@ def test_native_passive_finality_checks_all_original_source_states(monkeypatch):
         ("reconcile_unknown_original_native_signed_sources_once", 24),
         ("reconcile_original_native_source_once", 24),
         ("reconcile_original_eth_buy_sources_once", 24),
+        ("reconcile_original_native_destinations_once", 24),
     ]
     assert result["worker_enabled"] is True
-    assert result["passes"] == 3
-    assert result["scanned"] == 6
+    assert result["passes"] == 4
+    assert result["scanned"] == 9
     assert result["source_finalized"] == 4
     assert result["unresolved_or_unavailable"] == 2
     assert result["errors"] == 0
     assert result["new_signatures_created"] == 0
     assert result["new_transactions_sent"] == 0
-    assert result["destination_settlements_recorded"] == 0
+    assert result["destination_settlements_recorded"] == 3
     assert result["performance_fees_collected"] == 0
 
 
@@ -95,7 +103,7 @@ def test_unavailable_native_chain_does_not_block_other_read_only_receipts(
 
     monkeypatch.setattr(worker, "_reconcile_in_thread", partial)
     result = asyncio.run(worker.reconcile_original_native_passive_once())
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert result["passes"] == 2
     assert result["errors"] == 1
     assert result["new_transactions_sent"] == 0
@@ -115,7 +123,7 @@ def test_native_passive_observer_rejects_broadcast_claims_from_its_report(
 
     monkeypatch.setattr(worker, "_reconcile_in_thread", invalid)
     result = asyncio.run(worker.reconcile_original_native_passive_once())
-    assert result["errors"] == 3
+    assert result["errors"] == 4
     assert result["source_finalized"] == 0
     assert result["new_transactions_sent"] == 0
 

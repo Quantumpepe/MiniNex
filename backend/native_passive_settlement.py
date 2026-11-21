@@ -16,6 +16,7 @@ import asyncio
 import logging
 import os
 
+from .native_passive_destination import reconcile_original_native_destinations_once
 from .native_live_source_finality import (
     reconcile_original_native_source_once,
     reconcile_unknown_original_native_signed_sources_once,
@@ -41,7 +42,7 @@ async def _reconcile_in_thread(callback, *, limit: int) -> dict:
 
 
 async def reconcile_original_native_passive_once() -> dict:
-    """One bounded pass across SELL, crash recovery and ETH BUY finality."""
+    """One bounded pass across actual source and destination chain finality."""
     result = {
         "mode": "NATIVE_ORIGINAL_PASSIVE_FINALITY_ONLY",
         "worker_enabled": _native_passive_enabled(),
@@ -63,6 +64,8 @@ async def reconcile_original_native_passive_once() -> dict:
          "finalized_without_resend"),
         (reconcile_original_native_source_once, "finalized_sources"),
         (reconcile_original_eth_buy_sources_once, "verified_eth_source"),
+        (reconcile_original_native_destinations_once,
+         "destination_finalized"),
     ):
         try:
             report = await _reconcile_in_thread(callback, limit=_BATCH_SIZE)
@@ -74,7 +77,13 @@ async def reconcile_original_native_passive_once() -> dict:
                 raise ValueError("Native source read-only report invalid")
             result["passes"] += 1
             result["scanned"] += report["scanned"]
-            result["source_finalized"] += report[count_key]
+            if count_key == "destination_finalized":
+                if type(report.get("refunds_verified")) is not int:
+                    raise ValueError("Native refund finality report missing")
+                result["destination_settlements_recorded"] += (
+                    report["destination_finalized"] + report["refunds_verified"])
+            else:
+                result["source_finalized"] += report[count_key]
             result["unresolved_or_unavailable"] += (
                 report.get("unresolved_without_resend", 0)
                 + report.get("unverified_or_unavailable", 0))
