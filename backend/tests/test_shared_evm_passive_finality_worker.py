@@ -38,6 +38,13 @@ def test_only_original_immutable_db_send_record_is_reconciled(mutation):
         worker.validate_original_submitted_swap_record(row)
 
 
+def test_checksum_owner_wallet_does_not_block_passive_receipt_finality():
+    row=order("LINK")
+    row["wallet_address"]="0x"+("Ab"*20)
+    verified=worker.validate_original_submitted_swap_record(row)
+    assert verified["wallet_address"]==row["wallet_address"]
+
+
 def test_worker_joins_submitted_and_finalizes_without_resend(monkeypatch):
     pending=[order("BNB"),order("LINK"),order("UNI"),order("ARB")]
     monkeypatch.setattr(worker,"original_submitted_evm_orders",lambda:pending)
