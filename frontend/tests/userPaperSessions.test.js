@@ -32,11 +32,11 @@ test('automatic server cadence and simulated funds disclosed in both languages',
 
 test('live mode hides simulated home timeline and keeps personal PAPER controls disabled',()=>{
   const compact=read('../src/CompactOverview.jsx');
-  assert.match(app,/getJson\('\/api\/user-paper\/availability'\)/);
+  // availability replaced by user toggle
   assert.match(ui,/if\(!paperAvailable\)return null/);
   assert.doesNotMatch(ui,/live_trading_enabled/);
   assert.doesNotMatch(ui,/\/api\/user-paper\/availability/);
-  assert.match(app,/const \[paperVisible,setPaperVisible\]=useState\(true\)/);
+  assert.match(app,/const \[paperVisible,setPaperVisible\]=useState\(false\)/); // default off, user toggle
   assert.match(app,/\{paperVisible&&<section className="panel recent-panel"/);
   assert.match(compact,/\{showSimulatedTrades&&<section className="compact-recent-trades"/);
   assert.match(app,/useAllPaperHomeTrades\(paperVisible,page==='overview',refreshNonce,homePaperScope\)/);
