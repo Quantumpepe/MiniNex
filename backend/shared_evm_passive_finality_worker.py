@@ -71,7 +71,7 @@ def validate_original_submitted_swap_record(row:object)->dict:
             or type(row.get("tx_hash")) is not str
             or not re.fullmatch(r"0x[0-9a-f]{64}",row["tx_hash"])
             or type(row.get("wallet_address")) is not str
-            or not re.fullmatch(r"0x[0-9a-f]{40}",row["wallet_address"])):
+            or not re.fullmatch(r"0x[0-9a-fA-F]{40}",row["wallet_address"])):
         raise ValueError("Unverified persisted original EVM submission")
     return row
 
