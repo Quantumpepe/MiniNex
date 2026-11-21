@@ -270,7 +270,8 @@ def metadata(*, signers=None, owner=DID, address=WALLET):
         "id": WALLET_ID,
         "chain_type": "ethereum",
         "address": address,
-        "owner": {"user_id": owner},
+        "entity": {"type":"user","id": owner},
+        "archived_at":None,
         "additional_signers": signers if signers is not None else [],
     }
 
@@ -312,6 +313,7 @@ def test_remote_absence_must_be_requested_on_verified_wallet(tamper):
     metadata(signers=[{"signer_id": SIGNER,"override_policy_ids": []}]),
     metadata(signers=[{"signer_id": "unrecognized"}]),
     metadata(owner="did:privy:other-user"),
+    {**metadata(),"archived_at":"2026-11-20T22:00:00Z"},
     metadata(address=OTHER),
     {**metadata(), "additional_signers": None},
     {**metadata(), "additional_signers": "[]"},

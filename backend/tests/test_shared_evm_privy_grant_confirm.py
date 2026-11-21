@@ -128,7 +128,7 @@ def user(delegated=True):
 
 def metadata():
     return {"id":WALLET_ID,"address":WALLET,
-        "chain_type":"ethereum","owner":{"user_id":DID},
+        "chain_type":"ethereum","entity":{"type":"user","id":DID},
         "additional_signers":[{
             "signer_id":SIGNER,"override_policy_ids":[POLICY_ID],
         }]}
@@ -168,7 +168,7 @@ def test_five_coins_require_privy_owner_signer_with_exact_policy(asset):
     lambda x:x["additional_signers"][0].update(
         override_policy_ids=[POLICY_ID,"unrestricted_123456"]),
     lambda x:x["additional_signers"][0].update(signer_id="other_123456"),
-    lambda x:x["owner"].update(user_id="did:privy:another"),
+    lambda x:x["entity"].update(id="did:privy:another"),
     lambda x:x.update(address="0x"+"cd"*20),
 ])
 def test_unsafe_grant_scope_refused(tamper):

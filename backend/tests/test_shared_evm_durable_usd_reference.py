@@ -86,13 +86,22 @@ def test_never_silently_use_current_quote_for_old_missing_buy(monkeypatch):
     monkeypatch.setattr(durable,"_read_immutable_price",
                         lambda *_:None)
     proof=original()
+    async def handler(req):
+        # A delayed finalized receipt must query its original block, never
+        # a current market quotation; a coarse old sample cannot be booked.
+        assert int(req.url.params["from"])<=proof["block_unix"]
+        assert int(req.url.params["to"])<proof["block_unix"]+86400
+        return httpx.Response(200,json={"prices":[[
+            (proof["block_unix"]+3600)*1000,1.0]]})
     async def run():
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await durable.historical_usd_for_verified_fill(
                 did="did:privy:account12345",proof=proof,quoted_asset="USDC",
                 client=client,now=proof["block_unix"]+86400*20)
-    with pytest.raises(ValueError):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
         asyncio.run(run())
+    assert exc.value.status_code==503
 
 
 def test_new_historic_rate_schema_is_immutable_owner_and_tx_bound():

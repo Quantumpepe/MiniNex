@@ -23,6 +23,7 @@ from .eth_privy_auto_transport import (
 )
 from .eth_privy_p256_signer import sign_privy_eth_request
 from .eth_privy_remote_quorum import check_privy_backend_quorum
+from .eth_privy_user_grant import eth_grant_budget_digest
 from .live_orders import valid_order_key
 from .storage import _db_url,_ensure_schema,_safe_did
 from .privy_wallet_verification import APP_ID,fetch_privy_user
@@ -50,7 +51,8 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
                   signer_id:str,policy_id:str,digest:str)->str:
     """Commit SENDING before attempting Privy HTTP, under the ETH limit lock."""
     cur.execute(
-        """SELECT trading_paused,revision
+        """SELECT trading_paused,revision,planned_capital_usd,
+                  max_order_usd,max_daily_turnover_usd
            FROM mininex_live_eth_limits
            WHERE privy_did=%s FOR UPDATE""",(did,))
     limits=cur.fetchone()
@@ -59,6 +61,7 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
     cur.execute(
         """SELECT status,policy_id,wallet_address,limits_revision,
                   execution_signer_id,remote_policy_sha256,candidate_sha256,
+                  policy_owner_id,authorization_method,grant_budget_sha256,
                   extract(epoch FROM policy_expires_at)::bigint AS expires_at_unix
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""",(did,))
@@ -74,16 +77,24 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
             or type(grant.get("expires_at_unix")) is not int
             or grant["expires_at_unix"]<=int(time())+30):
         raise HTTPException(409,"Active verified Privy signer grant required")
-    cur.execute(
-        """SELECT status,revoked_at,limits_revision
-           FROM mininex_live_eth_consent_intents
-           WHERE privy_did=%s FOR UPDATE""",(did,))
-    consent=cur.fetchone()
-    if (type(consent) is not dict
-            or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("revoked_at") is not None
-            or consent.get("limits_revision")!=limits.get("revision")):
-        raise HTTPException(409,"LIVE signer consent revoked or outdated")
+    if grant.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        try:
+            digest=eth_grant_budget_digest(did=did,policy=grant,limits=limits)
+        except (TypeError,ValueError,KeyError):
+            raise HTTPException(409,"ETH wallet capital grant invalid") from None
+        if grant.get("grant_budget_sha256")!=digest:
+            raise HTTPException(409,"ETH owner trade grant was changed")
+    else:
+        cur.execute(
+            """SELECT status,revoked_at,limits_revision
+               FROM mininex_live_eth_consent_intents
+               WHERE privy_did=%s FOR UPDATE""",(did,))
+        consent=cur.fetchone()
+        if (type(consent) is not dict
+                or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("revoked_at") is not None
+                or consent.get("limits_revision")!=limits.get("revision")):
+            raise HTTPException(409,"LIVE signer consent revoked or outdated")
     # ETH, LINK, UNI and ETH native conversions share the same wallet nonce.
     # Lock the SAME owner account row as the common EVM order claim before
     # checking pending transactions. This closes concurrent check/insert races.
@@ -120,8 +131,15 @@ def _claim_locked(cur,*,did:str,key:str, wallet:str, wallet_id:str,
              + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
                WHERE privy_did=%s AND chain_id=1
                  AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
+               WHERE privy_did=%s AND chain_id=1 AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND chain='ethereum-mainnet'
+                  AND side='BUY' AND status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
-        (did,did))
+        (did,did,did,did))
     pending_other=cur.fetchone()
     if (type(pending_other) is not dict
             or type(pending_other.get("pending")) is not int

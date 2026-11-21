@@ -59,7 +59,8 @@ def test_five_evm_assets_have_independent_bound_durable_send_identity(
     assert len(cur.sql)==(5 if chain==1 else 7)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "chain_id=%s" in cur.sql[1][0]
-    assert cur.sql[1][1]==(DID,chain,DID,chain)
+    assert cur.sql[1][1]==(DID,chain,DID,chain,DID,chain,DID,chain)
+    assert "mininex_live_native_order_intents" in cur.sql[1][0]
     assert "mininex_evm_auto_fee_sends" in cur.sql[1][0]
     assert "'SENDING'" in cur.sql[-1][0]
     assert i["request_digest"] in cur.sql[-1][1]
@@ -176,3 +177,78 @@ def test_other_swap_cannot_spend_unsettled_native_buy_position(asset):
     assert "mininex_live_evm_completed_native_cycles" in cur.sql[-1][0]
     assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
                    for sql,args in cur.sql)
+
+
+
+def test_verified_one_signature_grant_reaches_durable_send_without_eip191(monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from backend.shared_evm_order_journal import _claim_authorized_evm_order_locked
+    from backend.shared_evm_remote_grant_audit import _grant_scope_digest
+
+    owner=dict(
+        asset="LINK", stable="USDC", chain_id=1, wallet_id=WALLET_ID,
+        wallet_address=WALLET, owner_id="owner_123456",
+        signer_id="signer_123456", policy_id="policy_123456",
+        policy_sha256="a"*64, remote_policy_sha256="a"*64,
+        budget_revision=5, authorization_method="PRIVY_SCOPED_GRANT",
+        status="GRANT_VERIFIED", revoked_at=None,
+        expires_at=datetime.now(timezone.utc)+timedelta(hours=2),
+    )
+    owner["consent_sha256"]=_grant_scope_digest(
+        did=DID,record=owner,budget_usd=1500)
+    settings={"stable":"USDC","revision":5,"budget_usd":1500}
+    reserve={"state":"RESERVED","side":"BUY","stable":"USDC",
+             "budget_revision":5,"quote_sha256":"b"*64}
+    session={"status":"ACTIVE","chain_id":1,"stable":"USDC",
+             "wallet_address":WALLET,"budget_revision":5,
+             "started_by_owner_at":datetime.now(timezone.utc)}
+    cur=Cursor([
+        owner,settings,reserve,session,
+        {"privy_did":DID},{"pending":0},{"pending":0},{"pending":0},
+        {"state":"SENDING"},
+    ])
+    _claim_authorized_evm_order_locked(
+        cur,did=DID,key=KEY,identity=identity("LINK"),
+        quote_sha256="b"*64,budget_revision=5)
+    assert not any("mininex_live_evm_consent_challenges" in sql
+                   for sql,_ in cur.sql)
+    assert any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
+               for sql,_ in cur.sql)
+    assert "budget_usd" in cur.sql[1][0]
+
+
+def test_one_signature_send_rejects_changed_capital_before_claim():
+    from datetime import datetime, timezone, timedelta
+    from backend.shared_evm_order_journal import _claim_authorized_evm_order_locked
+    from backend.shared_evm_remote_grant_audit import _grant_scope_digest
+
+    owner=dict(
+        asset="LINK",stable="USDC",chain_id=1,wallet_id=WALLET_ID,
+        wallet_address=WALLET,owner_id="owner_123456",
+        signer_id="signer_123456",policy_id="policy_123456",
+        policy_sha256="a"*64,remote_policy_sha256="a"*64,
+        budget_revision=5,authorization_method="PRIVY_SCOPED_GRANT",
+        status="GRANT_VERIFIED",revoked_at=None,
+        expires_at=datetime.now(timezone.utc)+timedelta(hours=2),
+    )
+    owner["consent_sha256"]=_grant_scope_digest(
+        did=DID,record=owner,budget_usd=1500)
+    cur=Cursor([owner,{"stable":"USDC","revision":5,"budget_usd":1501}])
+    with pytest.raises(HTTPException) as exc:
+        _claim_authorized_evm_order_locked(
+            cur,did=DID,key=KEY,identity=identity("LINK"),
+            quote_sha256="b"*64,budget_revision=5)
+    assert exc.value.status_code==409
+    assert not any("INSERT INTO mininex_live_evm_auto_broadcasts" in sql
+                   for sql,_ in cur.sql)
+
+
+def test_erc20_ethereum_claim_checks_original_native_buy_nonce():
+    for asset in ("LINK","UNI"):
+        cur=Cursor([{"privy_did":DID},{"pending":1}])
+        with pytest.raises(HTTPException):
+            _claim_locked(cur,did=DID,key=KEY,identity=identity(asset))
+        sql,args=cur.sql[1]
+        assert "mininex_live_native_order_intents" in sql
+        assert "chain='ethereum-mainnet'" in sql
+        assert args[-2:]==(DID,1)

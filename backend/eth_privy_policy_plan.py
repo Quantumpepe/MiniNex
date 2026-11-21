@@ -30,6 +30,7 @@ from .eth_privy_user_policy_blueprint import (
     build_eth_privy_user_policy_blueprint,
     inspect_eth_user_policy_blueprint,
 )
+from .coingecko_provider import coingecko_request_settings
 from .eth_user_enrollment_preflight import get_eth_user_enrollment_preflight
 from .eth_user_consent import _require_enrollment_evidence, _require_policy_roles
 from .storage import _safe_did
@@ -37,7 +38,7 @@ from .storage import _safe_did
 LOG = logging.getLogger("mininex.eth_privy_policy_plan")
 
 # Public token prices; NEVER infer an exact live trade quote from these.
-COINGECKO_SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
+# Price requests share the server-only paid/Demo CoinGecko configuration.
 _PRICE_ASSETS = ("ethereum", "usd-coin", "tether")
 _MAX_PRICE_AGE_SEC = 90
 _POLICY_DRAFT_LIFETIME_SEC = 24 * 3600
@@ -116,19 +117,25 @@ def derive_policy_atomic_caps(
 
 
 async def fetch_reference_prices() -> dict:
-    """Read the fixed external HTTPS reference price URL, no client targets."""
+    """Use MiniNex's server-only CoinGecko API plan for ETH policy prices.
+
+    A configured paid key must be sent in an HTTP header to the canonical
+    Pro hostname, never leaked to a mobile wallet or appended to a URL.
+    This uses the same transport routing as every other live EVM coin.
+    """
+    url, private_headers, _interval = coingecko_request_settings("/simple/price")
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(7.0), follow_redirects=False,
         ) as client:
             response = await client.get(
-                COINGECKO_SIMPLE_PRICE_URL,
+                url,
                 params={
                     "ids": ",".join(_PRICE_ASSETS),
                     "vs_currencies": "usd",
                     "include_last_updated_at": "true",
                 },
-                headers={"Accept": "application/json"},
+                headers={"Accept": "application/json", **private_headers},
             )
             response.raise_for_status()
             if len(response.content) > 24_000:

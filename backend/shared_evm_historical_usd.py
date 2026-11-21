@@ -15,16 +15,16 @@ import time
 import httpx
 from fastapi import HTTPException
 
-_IDS={
-    "ETH":"ethereum","BNB":"binancecoin",
-    "POL":"polygon-ecosystem-token","AVAX":"avalanche-2",
-    "LINK":"chainlink","UNI":"uniswap","ARB":"arbitrum",
-    "USDC":"usd-coin","USDT":"tether",
-}
+from .coingecko_provider import coingecko_request_settings, COIN_IDS
+
+# Keep the historical EVM-asset allowlist; resolve IDs centrally.
+_IDS={asset: COIN_IDS[asset] for asset in (
+    "ETH", "BNB", "POL", "AVAX", "LINK", "UNI", "ARB", "USDC", "USDT"
+)}
 LOG=logging.getLogger("mininex.real_historical_usd")
 _BASE="https://api.coingecko.com/api/v3/coins"
 _MAX_QUOTE_GAP=180
-_MIN_HISTORY_TIME=86400-3600
+_MAX_HISTORY_AGE=90*86400
 
 
 def pick_historical_usd_observation(
@@ -34,7 +34,7 @@ def pick_historical_usd_observation(
     if (type(asset) is not str or asset not in _IDS
             or type(block_unix) is not int or type(now) is not int
             or block_unix<=0 or block_unix>now+10
-            or now-block_unix>_MIN_HISTORY_TIME
+            or now-block_unix>_MAX_HISTORY_AGE
             or type(payload) is not dict
             or type(payload.get("prices")) is not list):
         raise ValueError("No near-execution historical USD price evidence")
@@ -85,17 +85,21 @@ async def fetch_recent_historical_usd_observation(
             or asset not in _IDS
             or type(block_unix) is not int
             or block_unix>current+10
-            or current-block_unix>_MIN_HISTORY_TIME):
+            or current-block_unix>_MAX_HISTORY_AGE):
         raise ValueError("Recent exact historical rate unavailable")
-    start=max(current-86400,block_unix-3600)
+    # Use the original mined block's window, not the current spot quote,
+    # when a confirmed receipt takes more than one day to reconcile.
+    start=max(0,block_unix-3600)
     end=min(current,block_unix+3600)
     if end<=start:
         raise ValueError("Historical market range unavailable")
+    endpoint, auth_headers, _ = coingecko_request_settings(
+        f"/coins/{_IDS[asset]}/market_chart/range")
     try:
         res=await client.get(
-            f"{_BASE}/{_IDS[asset]}/market_chart/range",
+            endpoint,
             params={"vs_currency":"usd","from":start,"to":end},
-            headers={"Accept":"application/json"})
+            headers={"Accept":"application/json", **auth_headers})
         res.raise_for_status()
         if len(res.content)>120000:
             raise ValueError("Oversized historical provider data")

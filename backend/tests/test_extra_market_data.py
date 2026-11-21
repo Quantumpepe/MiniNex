@@ -211,7 +211,7 @@ def test_gecko_429_waits_without_immediate_retries(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(svc._gecko_loop())
     assert len(calls) == 1
-    assert calls[0].count(",") == 9  # all ten assets in one call
+    assert calls[0].count(",") == 11  # all twelve market assets in one call
     assert delays == [601]
     assert not svc._reference
     status=svc.diagnostics(now=NOW)
@@ -309,3 +309,40 @@ def test_arb_history_and_price_snapshot_http_endpoints_no_longer_return_404():
     assert "ARB" in prices.json()["markets"]
     assert "ADA" not in prices.json()["markets"]
     assert client.get("/api/market/history/ADA").status_code==404
+
+
+def test_shared_coingecko_provider_supports_all_twelve_assets_and_paid_key():
+    from backend.coingecko_provider import COIN_IDS, coingecko_request_settings
+    assert set(COIN_IDS) >= {"BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB"}
+    pro = {"MININEX_COINGECKO_PRO_API_KEY": "server-secret"}
+    url, headers, interval = coingecko_request_settings("/simple/price", pro)
+    assert url == "https://pro-api.coingecko.com/api/v3/simple/price"
+    assert headers == {"x-cg-pro-api-key": "server-secret"}
+    assert "server-secret" not in url
+    assert interval == 60
+    url, headers, _ = coingecko_request_settings("/coins/ethereum/market_chart/range", pro)
+    assert url == "https://pro-api.coingecko.com/api/v3/coins/ethereum/market_chart/range"
+    assert headers == {"x-cg-pro-api-key": "server-secret"}
+    with pytest.raises(ValueError):
+        coingecko_request_settings("/coins/unknown-token/market_chart/range", pro)
+    with pytest.raises(ValueError):
+        coingecko_request_settings("/users/private", pro)
+
+def test_coingecko_basic_and_future_analyst_use_identical_paid_transport():
+    from backend.coingecko_provider import coingecko_request_settings, MARKET_ASSETS, COIN_IDS
+    assert len(MARKET_ASSETS) == 12
+    assert len({COIN_IDS[asset] for asset in MARKET_ASSETS}) == 12
+    env = {"MININEX_COINGECKO_PRO_API_KEY": "existing-nexus-plan-key",
+           "MININEX_COINGECKO_REFERENCE_POLL_SECONDS": "120"}
+    url, headers, interval = coingecko_request_settings("/simple/price", env)
+    assert url == "https://pro-api.coingecko.com/api/v3/simple/price"
+    assert headers == {"x-cg-pro-api-key": "existing-nexus-plan-key"}
+    assert interval == 120
+    assert "existing-nexus-plan-key" not in url
+    # Invalid overrides cannot accidentally create an aggressive poll loop.
+    env["MININEX_COINGECKO_REFERENCE_POLL_SECONDS"] = "-5"
+    assert coingecko_request_settings("/simple/price", env)[2] == 60
+    env["MININEX_COINGECKO_REFERENCE_POLL_SECONDS"] = "9999"
+    assert coingecko_request_settings("/simple/price", env)[2] == 60
+    public = {"MININEX_COINGECKO_REFERENCE_POLL_SECONDS": "60"}
+    assert coingecko_request_settings("/simple/price", public)[2] == 120

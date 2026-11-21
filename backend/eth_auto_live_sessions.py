@@ -11,13 +11,14 @@ import os
 import secrets
 from decimal import Decimal
 from time import time
+from threading import Lock
 
 import httpx
 import psycopg
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
-from .eth_privy_user_grant import get_eth_user_grant_review
+from .eth_privy_user_grant import get_eth_user_grant_review,eth_grant_budget_digest
 from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .eth_live_strategy_tick import execute_live_eth_strategy_tick
 from .eth_live_auto_dispatch import expire_abandoned_eth_orders
@@ -31,6 +32,12 @@ from .storage import _db_url,_ensure_schema,_prepare_rows,_safe_did
 
 LOG=logging.getLogger("mininex.eth_live_auto_sessions")
 _INTERVAL=30
+# Work pages only, not a user or order limit. Independent cursors avoid
+# perpetually unmined orders starving newer transactions.
+_ETH_SESSION_PAGE_LOCK=Lock()
+_ETH_SESSION_PAGE_OFFSET=0
+_ETH_ORDER_PAGE_LOCK=Lock()
+_ETH_ORDER_PAGE_OFFSET=0
 
 
 def _worker_approved():
@@ -58,6 +65,8 @@ def _start_locked(cur,did,stable,grant):
     cur.execute(
         """SELECT status,policy_id,wallet_address,limits_revision,
                   remote_policy_sha256,candidate_sha256,
+                  authorization_method,grant_budget_sha256,
+                  policy_owner_id,execution_signer_id,
                   extract(epoch FROM policy_expires_at)::bigint AS expires
            FROM mininex_live_eth_policy_enrollments
            WHERE privy_did=%s FOR UPDATE""",(did,))
@@ -71,15 +80,24 @@ def _start_locked(cur,did,stable,grant):
             or type(policy.get("expires")) is not int
             or policy["expires"]<int(time())+120):
         raise HTTPException(409,"Verified restricted wallet policy expired or changed")
-    cur.execute(
-        """SELECT status,revoked_at,limits_revision
-           FROM mininex_live_eth_consent_intents
-           WHERE privy_did=%s FOR UPDATE""",(did,))
-    consent=cur.fetchone()
-    if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("revoked_at") is not None
-            or consent.get("limits_revision")!=limits["revision"]):
-        raise HTTPException(409,"User live consent missing or revoked")
+    if policy.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        # Remote Privy approval is the sole owner authorization here.
+        # Bind it to the original saved, now-locked ETH capital revision.
+        expected_digest=eth_grant_budget_digest(
+            did=did,policy=policy,limits=limits)
+        if (type(policy.get("grant_budget_sha256")) is not str
+                or policy["grant_budget_sha256"]!=expected_digest):
+            raise HTTPException(409,"Approved ETH wallet capital changed")
+    else:
+        cur.execute(
+            """SELECT status,revoked_at,limits_revision
+               FROM mininex_live_eth_consent_intents
+               WHERE privy_did=%s FOR UPDATE""",(did,))
+        consent=cur.fetchone()
+        if (type(consent) is not dict or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("revoked_at") is not None
+                or consent.get("limits_revision")!=limits["revision"]):
+            raise HTTPException(409,"User live consent missing or revoked")
     cur.execute(
         """SELECT COUNT(*) AS pending FROM mininex_live_order_intents
            WHERE privy_did=%s AND asset='ETH' AND state IN
@@ -187,53 +205,75 @@ def get_eth_auto_session(did:str)->dict:
 
 
 def active_sessions(limit:int=10)->list[dict]:
+    """Scan all owner-approved ETH sessions in rotating bounded DB pages."""
     if not _worker_approved():
         return []
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid ETH session scan page")
+    global _ETH_SESSION_PAGE_OFFSET
+    sql="""SELECT s.privy_did,s.run_id,s.stable
+           FROM mininex_live_eth_auto_sessions s
+           JOIN mininex_live_eth_limits l ON l.privy_did=s.privy_did
+           JOIN mininex_live_eth_policy_enrollments p
+             ON p.privy_did=s.privy_did
+           WHERE s.status='ACTIVE' AND l.trading_paused=FALSE
+             AND p.status='GRANT_VERIFIED'
+             AND p.limits_revision=l.revision
+             AND p.policy_expires_at>now()+interval '120 seconds'
+             AND NOT EXISTS (
+                 SELECT 1 FROM mininex_live_eth_auto_native_steps n
+                 WHERE n.privy_did=s.privy_did AND n.status IN
+                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+             )
+           ORDER BY s.updated_at ASC,s.privy_did
+           LIMIT %s OFFSET %s"""
     try:
-        url=_db_url();_ensure_schema(url)
-        with psycopg.connect(url,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """SELECT s.privy_did,s.run_id,s.stable
-                       FROM mininex_live_eth_auto_sessions s
-                       JOIN mininex_live_eth_limits l ON l.privy_did=s.privy_did
-                       JOIN mininex_live_eth_policy_enrollments p
-                         ON p.privy_did=s.privy_did
-                       WHERE s.status='ACTIVE' AND l.trading_paused=FALSE
-                         AND p.status='GRANT_VERIFIED'
-                         AND p.limits_revision=l.revision
-                         AND p.policy_expires_at>now()+interval '120 seconds'
-                         AND NOT EXISTS (
-                             SELECT 1 FROM mininex_live_eth_auto_native_steps n
-                             WHERE n.privy_did=s.privy_did AND n.status IN
-                              ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
-                         )
-                       ORDER BY s.updated_at ASC LIMIT %s""",(max(1,min(20,limit)),))
-                return cur.fetchall()
+        with _ETH_SESSION_PAGE_LOCK:
+            offset=_ETH_SESSION_PAGE_OFFSET
+            url=_db_url();_ensure_schema(url)
+            with psycopg.connect(url,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(sql,(limit,offset))
+                    page=list(cur.fetchall())
+                    if not page and offset:
+                        offset=0
+                        cur.execute(sql,(limit,0))
+                        page=list(cur.fetchall())
+            _ETH_SESSION_PAGE_OFFSET=offset+len(page)
+            return page
     except psycopg.Error:
         LOG.exception("ETH LIVE session scan failed")
         return []
 
-
 def submitted_live_orders(limit:int=20)->list[dict]:
-    """Find previously broadcast real ETH orders, including paused sessions."""
+    """Read old AND new original hashes, without repeat sends or starvation."""
     if not _worker_approved():
         return []
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid ETH receipt scan page")
+    global _ETH_ORDER_PAGE_OFFSET
+    sql="""SELECT privy_did,intent_key,side,stable,tx_hash
+           FROM mininex_live_order_intents
+           WHERE asset='ETH' AND state='SUBMITTED'
+           ORDER BY submitted_at ASC,privy_did,intent_key
+           LIMIT %s OFFSET %s"""
     try:
-        url=_db_url();_ensure_schema(url)
-        with psycopg.connect(url,connect_timeout=6) as conn:
-            with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """SELECT privy_did,intent_key,side,stable,tx_hash
-                       FROM mininex_live_order_intents
-                       WHERE asset='ETH' AND state='SUBMITTED'
-                       ORDER BY submitted_at ASC LIMIT %s""",
-                    (max(1,min(25,limit)),))
-                return cur.fetchall()
+        with _ETH_ORDER_PAGE_LOCK:
+            offset=_ETH_ORDER_PAGE_OFFSET
+            url=_db_url();_ensure_schema(url)
+            with psycopg.connect(url,connect_timeout=6) as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(sql,(limit,offset))
+                    page=list(cur.fetchall())
+                    if not page and offset:
+                        offset=0
+                        cur.execute(sql,(limit,0))
+                        page=list(cur.fetchall())
+            _ETH_ORDER_PAGE_OFFSET=offset+len(page)
+            return page
     except psycopg.Error:
         LOG.exception("ETH LIVE broadcast settlement scan failed")
         return []
-
 
 def _finalize_order(did:str,key:str,tx_hash:str,state:str)->bool:
     if state not in ("CONFIRMED","REVERTED"):
@@ -292,52 +332,125 @@ async def reconcile_one_live_eth_order(row:dict)->str:
 
 
 async def reconcile_live_eth_orders():
+    """Finish earlier user-wallet swaps independently without owner starvation."""
     if not _worker_approved():
         return 0
     pending=await asyncio.to_thread(submitted_live_orders)
-    done=0
+    groups:dict[str,list[dict]]={}
     for row in pending:
-        try:
-            state=await reconcile_one_live_eth_order(row)
-            if state!="PENDING":
-                done+=1
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.exception("ETH LIVE order settlement failed; will inspect original hash again")
-    return done
-
+        groups.setdefault(_safe_did(row["privy_did"]),[]).append(row)
+    async def original_owner(rows:list[dict])->int:
+        finished=0
+        for row in rows:
+            try:
+                state=await reconcile_one_live_eth_order(row)
+                if state!="PENDING":
+                    finished+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception(
+                    "ETH LIVE order settlement failed; inspect original hash")
+        return finished
+    completed=await asyncio.gather(*(
+        original_owner(rows) for rows in groups.values()
+    ))
+    return sum(completed)
 
 async def reconcile_and_resume_native_eth(client:httpx.AsyncClient):
-    """Actual WETH9 sends and settlement, connected to the LIVE worker."""
+    """Finalize original native steps and resume WETH BUYs across owners.
+
+    Same-wallet conversions remain serial because they share Ethereum nonce
+    and signed owner consent. Other wallets no longer wait on a slow receipt.
+    """
     if not _worker_approved():
         return 0
-    done=0
     rows=await asyncio.to_thread(submitted_native_steps)
+    pending:dict[str,list[dict]]={}
     for row in rows:
-        try:
-            result=await finalize_native_step(row)
-            if result!="PENDING":
-                done+=1
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.exception("ETH native conversion receipt unavailable")
-    # Real BUY has paid stable and received finalized WETH. Convert that
-    # exact WETH acquired amount to native ETH, once via Privy signing.
+        pending.setdefault(_safe_did(row["privy_did"]),[]).append(row)
+    async def complete_one_owner(rows:list[dict])->int:
+        finalized=0
+        for row in rows:
+            try:
+                result=await finalize_native_step(row)
+                if result!="PENDING":
+                    finalized+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("ETH native conversion receipt unavailable")
+        return finalized
+    done=sum(await asyncio.gather(*(
+        complete_one_owner(owners) for owners in pending.values()
+    )))
+    # A finalized BUY delivered WETH to the real wallet. Convert exactly
+    # that verified original amount to native ETH, once under the same grant.
     waiting=await asyncio.to_thread(confirmed_buy_native_conversions)
+    queued:dict[str,list[dict]]={}
     for row in waiting:
-        try:
-            wei=int(Decimal(str(row["destination_amount"]))*10**18)
-            await send_eth_auto_native_leg(
-                row["privy_did"],source_key=row["source_key"],
-                operation="WITHDRAW",amount_wei=wei,
-                stable=row["stable"],client=client)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.exception("ETH LIVE purchased WETH conversion not completed")
+        queued.setdefault(_safe_did(row["privy_did"]),[]).append(row)
+    async def withdraw_one_owner(rows:list[dict])->None:
+        for row in rows:
+            try:
+                wei=int(Decimal(str(row["destination_amount"]))*10**18)
+                await send_eth_auto_native_leg(
+                    row["privy_did"],source_key=row["source_key"],
+                    operation="WITHDRAW",amount_wei=wei,
+                    stable=row["stable"],client=client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception(
+                    "ETH LIVE purchased WETH conversion not completed")
+    await asyncio.gather(*(
+        withdraw_one_owner(owners) for owners in queued.values()
+    ))
     return done
+
+async def run_eth_owner_session_batch(
+    sessions:list[dict],*,market,client:httpx.AsyncClient,
+)->dict:
+    """Independent ETH owners trade concurrently; one owner's nonce is serial.
+
+    LIVE ETH owner grants, balances and reservations remain verified inside
+    execute_live_eth_strategy_tick. A slow external RPC for one owner must
+    not stop other wallets or block receipt settlement on the next cycle.
+    """
+    by_owner:dict[str,list[dict]]={}
+    skipped=0
+    for row in sessions:
+        if type(row) is not dict or type(row.get("privy_did")) is not str:
+            skipped+=1
+            continue
+        by_owner.setdefault(row["privy_did"],[]).append(row)
+    async def one_owner(rows:list[dict])->tuple[int,int]:
+        attempted=0
+        failed=0
+        for row in rows:
+            if not _worker_approved():
+                break
+            try:
+                await execute_live_eth_strategy_tick(
+                    row["privy_did"],market=market,
+                    run_id=row["run_id"],stable=row["stable"],
+                    client=client)
+                attempted+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                failed+=1
+                LOG.exception("ETH LIVE AUTO tick failed for an account")
+        return attempted,failed
+    results=await asyncio.gather(*(
+        one_owner(rows) for rows in by_owner.values()
+    ))
+    return {
+        "sessions_seen":len(sessions),
+        "attempted":sum(a for a,_ in results),
+        "failed":skipped+sum(b for _,b in results),
+        "wallet_groups":len(by_owner),
+    }
 
 
 class EthAutoLiveWorker:
@@ -371,13 +484,5 @@ class EthAutoLiveWorker:
                     timeout=httpx.Timeout(12),follow_redirects=False) as client:
                 await reconcile_and_resume_native_eth(client)
                 sessions=await asyncio.to_thread(active_sessions)
-                for row in sessions:
-                    if not _worker_approved(): break
-                    try:
-                        await execute_live_eth_strategy_tick(
-                            row["privy_did"],market=self.market,
-                            run_id=row["run_id"],stable=row["stable"],
-                            client=client)
-                    except asyncio.CancelledError:raise
-                    except Exception:
-                        LOG.exception("ETH LIVE AUTO tick failed for an account")
+                await run_eth_owner_session_batch(
+                    sessions,market=self.market,client=client)

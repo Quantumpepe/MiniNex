@@ -20,6 +20,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .shared_evm_privy_user_policy import build_user_evm_policy_blueprint
+from .shared_evm_single_grant_policy import build_single_grant_evm_policy
+from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_owner_consent import _asset,_locked_coin_settings
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_policy_reference_rates import (
@@ -39,43 +41,57 @@ def _stage_locked(
     owner_id:str,signer_id:str,
     buy_source_atomic_cap:str,sell_source_atomic_cap:str,
     native_wrap_atomic_cap:str|None,expires_at:int,now:int,
+    single_privy_grant:bool=False,
 )->dict:
     """One-shot immutable policy snapshot; no HTTP and no Privy POST."""
     asset=_asset(asset)
     settings=_locked_coin_settings(cur,did=did,asset=asset)
     stable=settings["stable"]
     pair=_pair(asset,stable,"BUY")
-    cur.execute(
-        """SELECT status,wallet_id,wallet_address,chain_id,stable,
-                  budget_revision,budget_usd,message_sha256,confirmed_at
-           FROM mininex_live_evm_consent_challenges
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    intent=cur.fetchone()
-    if (type(intent) is not dict
-            or intent.get("status")!="SIGNED_INTENT"
-            or intent.get("confirmed_at") is None
-            or intent.get("wallet_id")!=owned["wallet_id"]
-            or intent.get("wallet_address")!=owned["address"]
-            or intent.get("chain_id")!=pair["chain_id"]
-            or intent.get("stable")!=stable
-            or intent.get("budget_revision")!=settings["revision"]
-            or int(intent.get("budget_usd",0))!=settings["budget_usd"]
-            or type(intent.get("message_sha256")) is not str
-            or len(intent["message_sha256"])!=64):
-        raise HTTPException(409,"Current owner-signed coin budget intent required")
+    if single_privy_grant:
+        # No consent or permission yet: only the later Privy wallet
+        # addSigners grant can authorize this scoped budget and policy.
+        intent=None
+    else:
+        cur.execute(
+            """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                      budget_revision,budget_usd,message_sha256,confirmed_at
+               FROM mininex_live_evm_consent_challenges
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        intent=cur.fetchone()
+        if (type(intent) is not dict
+                or intent.get("status")!="SIGNED_INTENT"
+                or intent.get("confirmed_at") is None
+                or intent.get("wallet_id")!=owned["wallet_id"]
+                or intent.get("wallet_address")!=owned["address"]
+                or intent.get("chain_id")!=pair["chain_id"]
+                or intent.get("stable")!=stable
+                or intent.get("budget_revision")!=settings["revision"]
+                or int(intent.get("budget_usd",0))!=settings["budget_usd"]
+                or type(intent.get("message_sha256")) is not str
+                or len(intent["message_sha256"])!=64):
+            raise HTTPException(409,"Current owner-signed coin budget intent required")
     cur.execute(
         """SELECT status FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     previous=cur.fetchone()
     if previous is not None:
         raise HTTPException(409,"Already staged EVM owner policy requires audit")
-    candidate=build_user_evm_policy_blueprint(
+    factory=(build_single_grant_evm_policy if single_privy_grant
+             else build_user_evm_policy_blueprint)
+    extra=({
+        "treasury":owner_fee_treasury(asset=asset,stable=stable),
+        # Fee transfer cap is the server-verified stablecoin input budget;
+        # exact 5% HWM debt must still be verified at fee-send time.
+        "owner_max_fee_atomic":buy_source_atomic_cap,
+    } if single_privy_grant else {})
+    candidate=factory(
         asset=asset,stable=stable,wallet=owned["address"],
         owner_id=owner_id,executor_id=signer_id,
         buy_source_atomic_cap=buy_source_atomic_cap,
         sell_source_atomic_cap=sell_source_atomic_cap,
         native_wrap_atomic_cap=native_wrap_atomic_cap,
-        expires_at=expires_at,now=now)
+        expires_at=expires_at,now=now,**extra)
     digest=hashlib.sha256(json.dumps(
         candidate,sort_keys=True,separators=(",",":")
     ).encode("utf-8")).hexdigest()
@@ -84,20 +100,24 @@ def _stage_locked(
            (privy_did,asset,chain_id,stable,wallet_id,wallet_address,
             owner_id,signer_id,policy_sha256,
             consent_sha256,consent_verified_at,expires_at,
-            status,budget_revision,candidate_json)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),
-                   to_timestamp(%s),'DRAFT',%s,%s)
+            status,budget_revision,candidate_json,authorization_method)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                   CASE WHEN %s THEN NULL ELSE now() END,
+                   to_timestamp(%s),'DRAFT',%s,%s,%s)
            ON CONFLICT(privy_did,asset) DO NOTHING
            RETURNING status""",
         (did,asset,pair["chain_id"],stable,owned["wallet_id"],
          owned["address"],owner_id,signer_id,digest,
-         intent["message_sha256"],expires_at,
-         settings["revision"],Jsonb(candidate)))
+         None if single_privy_grant else intent["message_sha256"],
+          single_privy_grant,expires_at,settings["revision"],
+          Jsonb(candidate),"PRIVY_SCOPED_GRANT" if single_privy_grant
+          else "EIP191_AND_PRIVY"))
     inserted=cur.fetchone()
     if type(inserted) is not dict or inserted.get("status")!="DRAFT":
         raise HTTPException(409,"Concurrent coin policy candidate conflict")
     return {
-        "mode":"OWNER_SIGNED_EVM_PRIVY_POLICY_DRAFT_ONLY",
+        "mode":("OWNER_EVM_PRIVY_GRANT_DRAFT_ONLY" if single_privy_grant
+                else "OWNER_SIGNED_EVM_PRIVY_POLICY_DRAFT_ONLY"),
         "asset":asset,"chain_id":pair["chain_id"],
         "policy_sha256":digest,"rules_count":len(candidate["rules"]),
         "signed_budget_revision":settings["revision"],
@@ -144,7 +164,7 @@ async def stage_internal_evm_policy_candidate(
 def _stage_from_prices_locked(
     cur,*,did:str,asset:str,owned:dict,
     owner_id:str,signer_id:str,
-    snapshot:dict,now:int,
+    snapshot:dict,now:int,single_privy_grant:bool=False,
 )->dict:
     """Recompute caps INSIDE locked budget transaction; no stale settings."""
     settings=_locked_coin_settings(cur,did=did,asset=asset)
@@ -158,10 +178,13 @@ def _stage_from_prices_locked(
         buy_source_atomic_cap=caps["buy_source_atomic_cap"],
         sell_source_atomic_cap=caps["sell_source_atomic_cap"],
         native_wrap_atomic_cap=caps["native_wrap_atomic_cap"],
-        expires_at=now+24*3600,now=now)
+        expires_at=now+24*3600,now=now,
+        single_privy_grant=single_privy_grant)
 
 
-async def stage_owner_evm_policy_from_budget(did:str,asset:str)->dict:
+async def stage_owner_evm_policy_from_budget(
+    did:str,asset:str,*,single_privy_grant:bool=False,
+)->dict:
     """Explicit owner-triggered local policy PREPARE; no Privy policy POST.
 
     Reads only authenticated coin settings and fresh fixed-provider market
@@ -189,7 +212,8 @@ async def stage_owner_evm_policy_from_budget(did:str,asset:str)->dict:
                 return _stage_from_prices_locked(
                     cur,did=did,asset=asset,owned=owned,
                     owner_id=owner_id,signer_id=signer_id,
-                    snapshot=snapshot,now=now)
+                    snapshot=snapshot,now=now,
+                    single_privy_grant=single_privy_grant)
     except psycopg.Error:
         LOG.warning("Signed owner EVM policy preparation unavailable")
         raise HTTPException(503,"Cannot prepare coin Privy policy") from None

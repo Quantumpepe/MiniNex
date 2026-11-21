@@ -3,7 +3,7 @@ import {Send} from 'lucide-react';
 import {Buffer} from 'buffer';
 import {useSignRawHash} from '@privy-io/react-auth/extended-chains';
 import {btcSatoshis,btcOwnerScript,btcOwnedPublicKey,btcRecipientScript,
-  btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,
+  btcFeeRate,btcValidatedUtxos,btcPlan,btcMaxPlan,btcDisplay,
   btcFetch,btcSignAndBroadcast,btcRecoverPublicKey,BTC_REVIEW_MAX_AGE_MS} from './btcSendRules.js';
 
 // This is the native BTC wallet, not an EVM/wrapped-BTC route. The user
@@ -16,6 +16,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
   const [review,setReview]=useState(null);
   const [stage,setStage]=useState('idle');
   const [txid,setTxid]=useState(null);
+  const [lastSignedTxid,setLastSignedTxid]=useState(null);
   const [issue,setIssue]=useState('');
   const pending=useRef(false);
   const request=useRef(0);
@@ -25,6 +26,16 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
   const [verifying,setVerifying]=useState(false);
   const de=lang==='de';
   const address=wallet?.address||null;
+  // Store only a public BTC transaction hash, never signed wire, keys or
+  // Privy credentials. This permits recovery of its explorer link after an
+  // OTA reload or ambiguous network acknowledgement on the same account.
+  const signedKey=userId&&/^bc1q[ac-hj-np-z02-9]{38}$/.test(address||'')?
+    'mininex:last-signed-btc:'+userId+':'+address:null;
+  const rememberSignedTxid=hash=>{
+    if(!signedKey||!/^[a-f0-9]{64}$/.test(hash))return;
+    setLastSignedTxid(hash);
+    try{globalThis.localStorage?.setItem(signedKey,hash);}catch{/* private mode */}
+  };
   const publicKey=btcOwnedPublicKey(wallet)||verifiedPubkey;
   const ownerScript=btcOwnerScript(address,publicKey);
   const supported=enabled&&ownerScript&&typeof signRawHash==='function';
@@ -37,7 +48,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     setOpen(false);setDestination('');setAmount('');setReview(null);
     setStage('idle');setTxid(null);setIssue('');
     setVerifiedPubkey(null);setVerifying(false);
-  },[userId,address,enabled,nonce]);
+    let saved=null;
+    if(signedKey){
+      try{saved=globalThis.localStorage?.getItem(signedKey);}catch{/* private mode */}
+    }
+    setLastSignedTxid(/^[a-f0-9]{64}$/.test(saved||'')?saved:null);
+  },[userId,address,enabled,nonce,signedKey]);
 
   const verifyWallet=async()=>{
     if(!enabled||verifying||!address||!/^bc1q[ac-hj-np-z02-9]{38}$/.test(address)||
@@ -62,9 +78,10 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     controller.current=null;
     setReview(null);setIssue('');setStage('idle');
   };
-  const check=async event=>{
+  const check=async(event,useMax=false)=>{
     event.preventDefault();
-    if(!supported||pending.current||!btcSatoshis(amount)||!btcRecipientScript(destination))return;
+    if(!supported||pending.current||
+       (!useMax&&!btcSatoshis(amount))||!btcRecipientScript(destination))return;
     clearReview();
     const id=++request.current;
     const ctrl=new AbortController();
@@ -76,9 +93,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         btcFetch('/v1/fees/recommended',{signal:ctrl.signal})
       ]);
       const utxos=btcValidatedUtxos(coins),rate=btcFeeRate(fees);
-      const plan=btcPlan({destination,amount,utxos,feeRate:rate,sourceScript:ownerScript});
+      const plan=useMax?
+        btcMaxPlan({destination,utxos,feeRate:rate,sourceScript:ownerScript}):
+        btcPlan({destination,amount,utxos,feeRate:rate,sourceScript:ownerScript});
       if(!plan)throw Error('Not enough confirmed BTC or fee quote unavailable');
       if(id===request.current&&!ctrl.signal.aborted){
+        if(useMax)setAmount(plan.amount);
         setReview(plan);setStage('review');
       }
     }catch{
@@ -99,6 +119,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     const id=++request.current;
     const ctrl=new AbortController();
     controller.current=ctrl;
+    let signedTxid=null;
     try{
       // Re-check the current confirmed UTXO set after review, before signing.
       const fresh=btcValidatedUtxos(await btcFetch(
@@ -108,14 +129,25 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
       if(!fresh||reviewed.some(key=>!current.has(key)))
         throw Error('Bitcoin funds changed; review again');
       const hash=await btcSignAndBroadcast(review,{address,pubkey:publicKey,
-        signRawHash,signal:ctrl.signal});
+        signRawHash,signal:ctrl.signal,onSigned:hash=>{
+          signedTxid=hash;
+          if(id===request.current){
+            setTxid(hash);
+            rememberSignedTxid(hash);
+          }
+        }});
       if(id===request.current){setTxid(hash);setReview(null);setStage('submitted');}
     }catch{
       if(id===request.current){
-        setStage('uncertain');
+        setStage(signedTxid?'uncertain':'failed');
         setReview(null);
-        setIssue(de?'Senden konnte nicht bestätigt werden. Bitte Bitcoin-Explorer prüfen, bevor du erneut sendest.':
-          'Send could not be confirmed. Check a Bitcoin explorer before trying again.');
+        setIssue(signedTxid?(
+          de?'BTC-Sendeausgang unklar. Prüfe zuerst die signierte Transaktions-ID im Explorer. Nicht erneut senden.':
+             'BTC submission uncertain. Check the signed transaction ID in the explorer. Do not resend.'
+        ):(
+          de?'BTC-Prüfung oder Signierung nicht erfolgreich. Es wurde nichts versendet.':
+             'BTC verification or signing failed before broadcast. Nothing was sent.'
+        ));
       }
     }finally{pending.current=false;}
   };
@@ -150,6 +182,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
           <input value={amount} autoComplete="off" inputMode="decimal"
             placeholder="0.00000000" disabled={!supported||stage==='sending'}
             onChange={event=>{clearReview();setAmount(event.target.value);}}/>
+          <button type="button" className="privy-wallet-action"
+            disabled={!supported||stage==='checking'||stage==='sending'||
+              !btcRecipientScript(destination)}
+            onClick={event=>check(event,true)}>
+            {t.walletSendMax||'Max'} BTC
+          </button>
         </label>
         <button type="submit" className="privy-wallet-action"
           disabled={!supported||stage==='checking'||stage==='sending'||
@@ -176,10 +214,23 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         {de?'Privy-Signierung und Bitcoin-Versand laufen …':
           'Privy signing and Bitcoin broadcast in progress…'}
       </p>}
+      {stage==='uncertain'&&txid&&<p role="status" className="privy-wallet-description">
+        {de?'Signierte Transaktions-ID (Versand nicht bestätigt)':
+          'Signed transaction ID (broadcast not confirmed)'}:
+        {' '}<a href={'https://mempool.space/tx/'+txid} target="_blank"
+          rel="noopener noreferrer">{txid}</a>
+      </p>}
       {stage==='submitted'&&txid&&<p role="status" className="privy-wallet-description">
         {de?'An Bitcoin-Netzwerk übermittelt':'Submitted to Bitcoin network'}:
         {' '}<a href={'https://mempool.space/tx/'+txid} target="_blank"
           rel="noopener noreferrer">{txid}</a>
+      </p>}
+      {lastSignedTxid&&lastSignedTxid!==txid&&<p role="status"
+        className="privy-wallet-description">
+        {de?'Letzte signierte BTC-Transaktion (Blockchain-Status im Explorer prüfen)':
+          'Last signed BTC transaction (verify status on the explorer)'}:
+        {' '}<a href={'https://mempool.space/tx/'+lastSignedTxid}
+          target="_blank" rel="noopener noreferrer">{lastSignedTxid}</a>
       </p>}
     </div>}
   </section>;

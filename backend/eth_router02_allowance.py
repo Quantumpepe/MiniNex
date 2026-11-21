@@ -83,14 +83,23 @@ async def inspect_router02_approval(
             account=_abi_word(wallet)
             allowance_data=_ALLOWANCE+account+_abi_word(SWAPROUTER02_MAINNET)
             balance_data=_BALANCE+account
-            approval,holding,gas=await asyncio.gather(
+            requests=[
                 _contract_call(client,token=token,
                                data=allowance_data,req_id=2),
                 _contract_call(client,token=token,
                                data=balance_data,req_id=3),
                 _rpc(client,method="eth_getBalance",
                      params=[wallet,"latest"],req_id=4),
-            )
+            ]
+            if side=="BUY":
+                # Count ETH exposure from already held WETH. Fetch it in
+                # the existing parallel RPC batch; no second wallet roundtrip.
+                requests.append(_contract_call(
+                    client,token=WETH_MAINNET,
+                    data=balance_data,req_id=5))
+            proof=await asyncio.gather(*requests)
+        approval,holding,gas=proof[:3]
+        wrapped_owned=proof[3] if side=="BUY" else None
         native_wei=_decode_native(gas)
     except (httpx.HTTPError,ValueError,TypeError,OverflowError):
         raise HTTPException(502,"Router02 wallet allowances unavailable") from None
@@ -106,6 +115,12 @@ async def inspect_router02_approval(
         "spending_router":SWAPROUTER02_MAINNET,
         "verified_source_balance":format(Decimal(holding)/divisor,"f"),
         "verified_source_balance_atomic":str(holding),
+        "verified_destination_token":"WETH" if side=="BUY" else stable,
+        "verified_destination_balance":(
+            format(Decimal(wrapped_owned)/Decimal(10**18),"f")
+            if wrapped_owned is not None else None),
+        "verified_destination_balance_atomic":(
+            str(wrapped_owned) if wrapped_owned is not None else None),
         "existing_router_allowance":format(Decimal(approval)/divisor,"f"),
         "existing_router_allowance_atomic":str(approval),
         "source_funds_sufficient":holding>=needed,

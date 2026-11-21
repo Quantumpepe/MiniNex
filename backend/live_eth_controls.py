@@ -199,13 +199,16 @@ def stop_live_eth(privy_did: str) -> dict:
 
 
 def validate_spend_limits(*, budget: dict, order_usd: object,
-                          reserved_usd: object, spent_today_usd: object) -> Decimal:
+                          reserved_usd: object, spent_today_usd: object,
+                          side: str = "BUY") -> Decimal:
     """Pure pre-send risk gate; future executor MUST call under a DB row lock.
 
     All inputs must come from verified onchain/transaction ledgers, never a
     user's request or exchange-indicative PAPER prices. The current API has
     no execution path and cannot set trading_paused=False.
     """
+    if side not in ("BUY","SELL"):
+        raise HTTPException(422, "Unknown ETH live order side")
     if budget.get("trading_paused") is not False:
         raise HTTPException(409, "LIVE trading is stopped")
     if budget.get("privy_grant_verified") is not True:
@@ -220,9 +223,10 @@ def validate_spend_limits(*, budget: dict, order_usd: object,
     )
     if cap <= 0:
         raise HTTPException(409, "Owner trading budget not set")
-    # No order maximum or daily turnover cap. Respect only the owner's
-    # selected budget for simultaneous capital exposure.
-    if notional + reserved > cap:
+    # Only BUY allocates new capital. A SELL realizes an existing position
+    # whose value may exceed the originally approved USD budget. The
+    # independent Privy allowance/policy and on-chain balance still bound it.
+    if side=="BUY" and notional + reserved > cap:
         raise HTTPException(409, "Trade exceeds owner-selected ETH budget")
     return notional
 

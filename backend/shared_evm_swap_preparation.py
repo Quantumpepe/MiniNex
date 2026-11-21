@@ -129,11 +129,15 @@ async def prepare_owner_evm_swap(
         quote_fn=make_policy_compatible_eth_quote(
             did,side=side,stable=stable,amount=amount,
             include_user_transaction=True)
-    elif asset in ("LINK","UNI","ARB"):
+    elif asset in ("LINK","UNI"):
         quote_fn=quote_owner_erc20_trade(
             did,asset=asset,side=side,stable=stable,amount=amount,
             include_user_transaction=True)
     else:
+        # ARB is an Arbitrum ERC-20, not a native coin: its verified V3
+        # USDC/USDT0 on-chain quote lives in this shared chain-specific
+        # quoter, while LINK/UNI quote against Ethereum mainnet above.
+        # BNB/POL/AVAX require separate native conversion finality.
         quote_fn=quote_native_evm_trade(
             did,asset=asset,side=side,stable=stable,amount=amount,
             include_user_transaction=True)

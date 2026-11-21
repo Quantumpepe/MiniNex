@@ -2,6 +2,9 @@ import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import EthPolicyRouteReadiness from './EthPolicyRouteReadiness.jsx';
 import LiveReceiptCheck from './LiveReceiptCheck.jsx';
+import NativeReceiptCheck from './NativeReceiptCheck.jsx';
+import NativeSourceReadiness from './NativeSourceReadiness.jsx';
+import NativeLiveOrderHistory from './NativeLiveOrderHistory.jsx';
 import EthLiveSwap from './EthLiveSwap.jsx';
 import {createLivePlanRequest,normalizedLiveStable,validLiveTradePlan,
   LIVE_SETTLEMENTS} from './liveTradePlanRules.js';
@@ -148,7 +151,16 @@ export default function LiveTradePlan({
       {asset==='ETH'&&<EthPolicyRouteReadiness
         request={quote.request} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}/>}
+      {['BTC','SOL','XRP'].includes(asset)&&<NativeSourceReadiness
+        request={quote.request} enabled={enabled} userId={userId}
+        getAccessToken={getAccessToken} t={t}/>}
     </div>}
+    {['BTC','SOL','XRP'].includes(asset)&&<NativeLiveOrderHistory
+      asset={asset} enabled={enabled} userId={userId}
+      getAccessToken={getAccessToken} t={t}/>}
+    {['SOL','XRP'].includes(asset)&&<NativeReceiptCheck
+      asset={asset} enabled={enabled} userId={userId}
+      getAccessToken={getAccessToken} t={t}/>}
     {asset==='ETH'&&request&&<EthLiveSwap
       enabled={enabled} userId={userId} getAccessToken={getAccessToken}
       side={side} stable={stable} amount={amount} t={t}

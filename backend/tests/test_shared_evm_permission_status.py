@@ -103,3 +103,16 @@ def test_status_reader_rejects_unsupported_coin():
     with pytest.raises(HTTPException) as err:
         read_owner_evm_permission_status(DID,asset="ETH")
     assert err.value.status_code==404
+
+
+
+def test_ethereum_token_usdt_settlement_status_uses_saved_user_choice():
+    # UNI and LINK allow either supported Ethereum stablecoin. A USDT
+    # trading grant must not disappear just because the status view used
+    # to hard-code USDC.
+    for asset in ("UNI","LINK"):
+        row=stored(asset)
+        row["stable"]="USDT"
+        result=assess_evm_permission_record(row,asset=asset,now=NOW)
+        assert result["status"]=="GRANT_VERIFIED"
+        assert result["signer_grant_recorded"] is True

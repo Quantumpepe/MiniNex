@@ -152,3 +152,102 @@ async def check_evm_source_allowance(
         "native_wrap_unwrap_settled":False,
         "execution_enabled":False,"can_submit":False,
     }
+
+
+def verify_router_approval_transaction(
+    tx: object, *, token: str, router: str, wallet: str,
+    chain_id: int, amount_atomic: int,
+) -> bool:
+    """Fail closed unless a proposed approval is the exact scoped transaction.
+
+    Approval bytes alone do not authorize a wallet send. The executor must
+    separately verify the live owner grant, budget revision and source order.
+    In particular, unlimited approvals and alternate spenders are forbidden.
+    """
+    expected = owner_approval_draft(
+        token=token, router=router, wallet=wallet,
+        chain_id=chain_id, amount_atomic=amount_atomic,
+    )
+    return type(tx) is dict and tx == expected
+
+
+
+def bound_owner_router_approval_rpc(
+    *, asset: str, side: str, stable: str, wallet_id: str,
+    wallet: str, amount_atomic: int,
+) -> tuple[str, dict]:
+    """Exact registry-derived Privy RPC for a finite, user-authorized approve.
+
+    Construct-only: caller MUST separately verify the original combined
+    remote owner grant and durable once-only nonce claim before signing/sending.
+    """
+    from .shared_evm_execution import bound_evm_wallet_rpc
+    pair = _pair(asset, stable, side)
+    approved = owner_approval_draft(
+        token=pair["source_token"], router=pair["router"],
+        wallet=wallet, chain_id=pair["chain_id"],
+        amount_atomic=amount_atomic,
+    )
+    if not verify_router_approval_transaction(
+        approved, token=pair["source_token"], router=pair["router"],
+        wallet=wallet, chain_id=pair["chain_id"],
+        amount_atomic=amount_atomic,
+    ):
+        raise ValueError("Router approval does not match original scoped grant")
+    return bound_evm_wallet_rpc(
+        asset=asset, wallet_id=wallet_id, wallet=wallet,
+        tx={**approved, "value": "0"},
+    )
+
+
+def inspect_combined_grant_router_approval(
+    *, record: dict, asset: str, side: str, stable: str,
+    amount_atomic: int, now: int,
+) -> dict:
+    """Require exact fee-inclusive owner grant before preparing auto approval.
+
+    No wallet permission is inferred from a draft. Remote owner consent and
+    quorum must be independently checked by the sending worker.
+    """
+    from .shared_evm_remote_grant_audit import (
+        validate_pinned_evm_policy, _lte,
+    )
+    if (type(record) is not dict or
+            record.get("authorization_method") != "PRIVY_SCOPED_GRANT" or
+            record.get("status") != "GRANT_VERIFIED" or
+            record.get("revoked_at") is not None or
+            record.get("asset") != asset or
+            record.get("stable") != stable or
+            type(amount_atomic) is not int or amount_atomic <= 0):
+        raise ValueError("No valid one-signature Privy router approval scope")
+    policy=validate_pinned_evm_policy(record,asset=asset,now=now)
+    pair=_pair(asset,stable,side)
+    base=4 if asset in ("BNB","POL","AVAX") else 2
+    if len(policy["rules"])!=base+3:
+        raise ValueError("Original combined grant does not authorize approvals")
+    index=base+(0 if side=="BUY" else 1)
+    rule=policy["rules"][index]
+    checks={(c["field_source"],c["field"],c["operator"]):c["value"]
+            for c in rule["conditions"]}
+    if (checks.get(("ethereum_transaction","to","eq"))!=pair["source_token"]
+            or checks.get(("ethereum_transaction","chain_id","eq"))
+                !=str(pair["chain_id"])
+            or checks.get(("ethereum_calldata","approve.spender","eq"))
+                !=pair["router"]):
+        raise ValueError("Router allowance differs from signed policy")
+    cap=int(_lte(rule,"approve.value"))
+    if amount_atomic>cap:
+        raise ValueError("Router allowance exceeds original owner policy")
+    return {
+        "asset":asset,"chain_id":pair["chain_id"],"side":side,
+        "amount_atomic":str(amount_atomic),
+        "policy_sha256":record["policy_sha256"],
+        "transaction":owner_approval_draft(
+            token=pair["source_token"],router=pair["router"],
+            wallet=record["wallet_address"],chain_id=pair["chain_id"],
+            amount_atomic=amount_atomic,
+        ),
+        "owner_grant_remotely_verified_by_this_check":False,
+        "send_claimed":False,
+        "transaction_submitted":False,
+    }

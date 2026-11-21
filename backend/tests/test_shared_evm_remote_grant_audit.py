@@ -125,3 +125,40 @@ def test_remote_audit_endpoint_owner_only_and_never_signs():
     assert route.methods=={"GET"}
     assert "verify_privy_bearer" in source
     assert "get_owner_evm_remote_grant_audit" in source
+
+
+@pytest.mark.parametrize("asset,stable", [
+    ("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
+    ("LINK","USDC"),("UNI","USDT"),("ARB","USDC"),
+])
+def test_combined_first_grant_is_audited_as_one_immutable_policy(
+    asset,stable,monkeypatch,
+):
+    from backend.shared_evm_single_grant_policy import build_single_grant_evm_policy
+    monkeypatch.setattr(
+        "backend.shared_evm_remote_grant_audit.owner_fee_treasury",
+        lambda **kwargs:"0x"+"cd"*20,
+    )
+    native=asset in ("BNB","POL","AVAX")
+    candidate=build_single_grant_evm_policy(
+        asset=asset,stable=stable,wallet=WALLET,
+        treasury="0x"+"cd"*20,owner_id=OWNER,executor_id=SIGNER,
+        buy_source_atomic_cap="1000000",
+        sell_source_atomic_cap="200000000000000000",
+        native_wrap_atomic_cap=("200000000000000000" if native else None),
+        owner_max_fee_atomic="1000000",expires_at=EXP,now=NOW,
+    )
+    record=pinned(asset)
+    record["stable"]=stable
+    record["authorization_method"]="PRIVY_SCOPED_GRANT"
+    record["candidate_json"]=candidate
+    record["policy_sha256"]=hashlib.sha256(json.dumps(
+        candidate,sort_keys=True,separators=(",",":"),
+    ).encode()).hexdigest()
+    assert validate_pinned_evm_policy(record,asset=asset,now=NOW)==candidate
+    for condition in candidate["rules"][-1]["conditions"]:
+        if condition.get("field")=="transfer.to":
+            condition["value"]="0x"+"dd"*20
+            break
+    with pytest.raises(ValueError):
+        validate_pinned_evm_policy(record,asset=asset,now=NOW)

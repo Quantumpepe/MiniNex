@@ -78,7 +78,7 @@ def _pair(asset: str, stable: str, side: str) -> dict:
 def inspect_finalized_evm_swap(
     tx_hash: str, *, asset: str, stable: str, side: str, wallet: str,
     chain_id: object, transaction: object, receipt: object,
-    latest: object, finalized: object,
+    latest: object, finalized: object,canonical:object=None,
 ) -> dict:
     """Verify actual owner input/output token transfers across any EVM chain.
 
@@ -166,10 +166,15 @@ def inspect_finalized_evm_swap(
     checkpoint=_num(finalized.get("number"))
     if checkpoint>head:
         raise ValueError("Future finalized checkpoint")
-    # Confirm the finalized block itself is the same canonical block if the
-    # RPC returns one at the included height, not just a height number.
     if checkpoint<block:
         return result
+    if canonical is None:
+        return result
+    if (type(canonical) is not dict
+            or _num(canonical.get("number"))!=block
+            or type(canonical.get("hash")) is not str
+            or canonical["hash"].lower()!=bh.lower()):
+        raise ValueError("Original swap is not in the canonical finalized chain")
     result["transaction_finalized"]=True
     if not success:
         result["state"]="FINALIZED_REVERTED"
@@ -252,9 +257,16 @@ async def check_user_evm_swap(
             finalized=(
                 await _receipt_rpc(client,url,"eth_getBlockByNumber",["finalized",False],5)
                 if receipt is not None else None)
+            canonical=(await _receipt_rpc(
+                client,url,"eth_getBlockByNumber",
+                [hex(_num(receipt["blockNumber"])),False],6)
+                if type(receipt) is dict and receipt.get("blockNumber") is not None
+                and type(finalized) is dict
+                and _num(finalized.get("number"))>=_num(receipt["blockNumber"])
+                else None)
         return inspect_finalized_evm_swap(
             tx_hash,asset=asset,stable=stable,side=side,wallet=wallet,
             chain_id=chain_id,transaction=tx,receipt=receipt,
-            latest=head,finalized=finalized)
+            latest=head,finalized=finalized,canonical=canonical)
     except (httpx.HTTPError,ValueError,TypeError,OverflowError):
         raise HTTPException(502,"EVM swap receipt not independently verified") from None

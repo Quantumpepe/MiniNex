@@ -129,6 +129,7 @@ def _reserve_under_eth_limits_lock(
         order_usd=notional,
         reserved_usd=pending,
         spent_today_usd=str(Decimal(pending) + Decimal(confirmed)),
+        side=side,
     )
 
     # Two writes MUST be inside the caller's SAME DB transaction, under the

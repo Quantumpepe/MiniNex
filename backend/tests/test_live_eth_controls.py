@@ -88,6 +88,27 @@ def test_spend_guard_defaults_to_closed_even_with_saved_budget():
             budget=fields, order_usd="NaN", reserved_usd="0", spent_today_usd="0")
 
 
+def test_eth_sell_does_not_get_blocked_by_appreciation_above_owner_buy_budget():
+    fields={
+        "planned_capital_usd":Decimal("200"),
+        "max_order_usd":Decimal("100"),
+        "max_daily_turnover_usd":Decimal("200"),
+        "trading_paused":False,"privy_grant_verified":True,
+    }
+    assert controls.validate_spend_limits(
+        budget=fields,order_usd="375",reserved_usd="200",
+        spent_today_usd="1000",side="SELL")==Decimal("375")
+    with pytest.raises(HTTPException):
+        controls.validate_spend_limits(
+            budget=fields,order_usd="375",reserved_usd="0",
+            spent_today_usd="0",side="BUY")
+    fields["trading_paused"]=True
+    with pytest.raises(HTTPException):
+        controls.validate_spend_limits(
+            budget=fields,order_usd="375",reserved_usd="0",
+            spent_today_usd="0",side="SELL")
+
+
 def test_idempotency_key_is_strict():
     assert controls.validate_order_key("mininexETH_1234567") == "mininexETH_1234567"
     for value in ("", "123", " has-spaces", "../system/orders", None, 22):

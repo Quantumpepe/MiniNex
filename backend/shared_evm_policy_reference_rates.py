@@ -7,6 +7,7 @@ A spot price can NEVER authorize an actual swap or represent realized PnL.
 """
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal,ROUND_FLOOR,InvalidOperation
 import logging
 import time
@@ -15,20 +16,18 @@ import httpx
 from fastapi import HTTPException
 
 from .shared_evm_swap_receipts import _pair
+from .coingecko_provider import coingecko_request_settings, COIN_IDS
 
 LOG=logging.getLogger("mininex.evm_policy_market_caps")
-_PRICE_URL="https://api.coingecko.com/api/v3/simple/price"
-_IDS={
-    "BNB":"binancecoin",
-    "POL":"polygon-ecosystem-token",
-    "AVAX":"avalanche-2",
-    "LINK":"chainlink",
-    "UNI":"uniswap",
-    "ARB":"arbitrum",
-    "USDC":"usd-coin",
-    "USDT":"tether",
-}
+_IDS={asset:COIN_IDS[asset] for asset in (
+    "BNB","POL","AVAX","LINK","UNI","ARB","USDC","USDT"
+)}
+# All active EVM coins share ONE bounded reference quote, not one API request
+# for every user/coin on each strategy tick. It is not a trading throttle:
+# the original DEX quote, balance and Privy consent remain independently fresh.
 _MAX_STALENESS_SEC=90
+_REFERENCE_LOCK=asyncio.Lock()
+_REFERENCE_CACHE:dict|None=None
 
 
 def _price(payload:object,asset:str,now:int)->Decimal:
@@ -93,26 +92,48 @@ def derive_user_budget_evm_atomic_caps(
 
 
 async def fetch_evm_policy_reference_rates(asset:str,stable:str)->dict:
-    pair=_pair(asset,stable,"BUY")
-    symbols=(_IDS[asset],_IDS[stable])
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(7.0),follow_redirects=False,
-        ) as client:
-            response=await client.get(
-                _PRICE_URL,params={
-                    "ids":",".join(symbols),
-                    "vs_currencies":"usd",
-                    "include_last_updated_at":"true",
-                },headers={"Accept":"application/json"})
-            response.raise_for_status()
-            if len(response.content)>24_000:
-                raise ValueError("Oversized EVM policy reference quote")
-            payload=response.json()
+    """Use the same backend-only CoinGecko plan as the market/history worker.
+
+    One short-lived batch supplies all EVM owner sessions. A cached quote is
+    usable only while BOTH asset/stable provider timestamps remain fresh;
+    a changed public-vs-paid endpoint immediately invalidates the cache.
+    """
+    _pair(asset,stable,"BUY")
+    endpoint,auth_headers,interval=coingecko_request_settings("/simple/price")
+    global _REFERENCE_CACHE
+    async with _REFERENCE_LOCK:
         now=int(time.time())
-        _price(payload,asset,now)
-        _price(payload,stable,now)
-        return payload
-    except (httpx.HTTPError,TypeError,ValueError):
-        LOG.warning("EVM user policy market reference unavailable")
-        raise HTTPException(503,"Fresh token USD references unavailable") from None
+        cache=_REFERENCE_CACHE
+        if (type(cache) is dict and cache.get("endpoint")==endpoint
+                and 0<=now-cache.get("fetched_at",0)<=interval):
+            try:
+                _price(cache["payload"],asset,now)
+                _price(cache["payload"],stable,now)
+                return cache["payload"]
+            except (ValueError,KeyError,TypeError):
+                # Never treat an old cached coin price as a fresh market rate.
+                pass
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(7.0),follow_redirects=False,
+            ) as client:
+                response=await client.get(
+                    endpoint,params={
+                        "ids":",".join(dict.fromkeys(_IDS.values())),
+                        "vs_currencies":"usd",
+                        "include_last_updated_at":"true",
+                    },headers={"Accept":"application/json",**auth_headers})
+                response.raise_for_status()
+                if len(response.content)>24_000:
+                    raise ValueError("Oversized EVM policy reference quote")
+                payload=response.json()
+            now=int(time.time())
+            _price(payload,asset,now)
+            _price(payload,stable,now)
+            _REFERENCE_CACHE={
+                "endpoint":endpoint,"fetched_at":now,"payload":payload,
+            }
+            return payload
+        except (httpx.HTTPError,TypeError,ValueError):
+            LOG.warning("EVM user policy market reference unavailable")
+            raise HTTPException(503,"Fresh token USD references unavailable") from None

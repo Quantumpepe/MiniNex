@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from .eth_live_auto_dispatch import EthAutoSignal,execute_eth_auto_signal
 from .eth_auto_native_cycle import send_eth_auto_native_leg
+from .live_eth_quotes import ETH_GAS_RESERVE
 from .eth_router02_allowance import inspect_router02_approval
 from .live_eth_controls import get_live_eth_limits
 from .wallet_balances import get_wallet_balances
@@ -42,7 +43,7 @@ def verified_live_evm_momentum(
     if type(now) not in (int,float) or not math.isfinite(now) or now<=0:
         raise ValueError("Invalid market timestamp")
     if type(asset) is not str or asset not in (
-            "ETH","BNB","POL","AVAX","LINK","UNI"):
+            "ETH","BNB","POL","AVAX","LINK","UNI","ARB"):
         raise ValueError("Unsupported verified EVM live market")
     if type(horizon) is not str or horizon not in _HORIZON_WINDOWS:
         raise ValueError("Unsupported owner-chosen LIVE market horizon")
@@ -107,10 +108,10 @@ def _positive_decimal(value,what):
 
 def live_trade_quantity(*, decision: dict, live_limits: dict,
                         balances: dict, allowance: dict) -> str|None:
-    """Amount is real source-token units, capped by own LIVE spending limits.
+    """BUY respects the owner's chosen budget; SELL may realize appreciation.
 
-    Never silently approve new tokens. If allowance is unavailable, the owner
-    can approve via the existing explicit Privy wallet interface.
+    Never silently approve new tokens. Both sides still require the original
+    wallet's verified ownership, allowance and on-chain gas availability.
     """
     action=decision.get("action")
     if action not in ("BUY","SELL"):
@@ -132,18 +133,31 @@ def live_trade_quantity(*, decision: dict, live_limits: dict,
         if b.get("status")!="verified" or balances.get("wallet_ownership_verified") is not True:
             return None
         source=_positive_decimal(b["balance"],"stable balance")
-        # Gas is paid in native ETH, not the trade's stablecoin source.
-        # Honor the owner's full selected budget in confirmed uptrends,
-        # without an artificial 50% stablecoin exposure limit. Every order
-        # is still capped by the LIVE per-order limit and daily turnover.
-        quantity=min(cap,source)
+        # Verified WETH plus native ETH above the actual gas reserve is
+        # already ETH exposure, including earlier confirmed AUTO BUYs after
+        # their WETH was unwrapped. Otherwise every fresh uptrend could spend
+        # the same user-selected capital repeatedly after a prior fill.
+        # This is the owner's existing coin budget, not a new platform cap.
+        if allowance.get("verified_destination_token")!="WETH":
+            return None
+        weth_owned=_positive_decimal(
+            allowance.get("verified_destination_balance"),"owned WETH")
+        native_owned=_positive_decimal(
+            allowance.get("native_eth_gas_balance"),"owned native ETH")
+        price=_positive_decimal(decision.get("market_price"),"ETH market price")
+        current_exposure=(weth_owned+max(_ZERO,native_owned-ETH_GAS_RESERVE))*price
+        available=max(_ZERO,cap-current_exposure)
+        quantity=min(available,source)
         if quantity<_MIN_ORDER:
             return None
         quantity=quantity.quantize(_D("0.000001"),rounding=ROUND_DOWN)
     else:
         weth=_positive_decimal(allowance["verified_source_balance"],"WETH")
         price=_positive_decimal(decision.get("market_price"),"market price")
-        quantity=min(weth,cap/price)
+        # A SELL closes verified WETH inventory even if the market price
+        # increased beyond the original USD entry capital. The owner's
+        # scoped Privy policy still restricts the actual token input.
+        quantity=weth
         quantity=quantity.quantize(_D("0.000000000000000001"),rounding=ROUND_DOWN)
         if quantity*price<_MIN_ORDER:
             return None
@@ -203,9 +217,12 @@ async def execute_live_eth_strategy_tick(did: str, *, market,
             if (balances.get("wallet_ownership_verified") is True
                     and native.get("status")=="verified"):
                 held=_positive_decimal(native["balance"],"ETH balance")
-                cap=_positive_decimal(limits["planned_capital_usd"],"capital")
                 price=_positive_decimal(decision["market_price"],"price")
-                quantity=min(max(_ZERO,held-_D("0.01")),cap/price)
+                # This SELL realizes real wallet inventory, even if the
+                # market appreciates beyond its original BUY budget.
+                # Only gas is retained here; original owner Privy policy
+                # still bounds the actual WETH9 DEPOSIT and Router02 SELL.
+                quantity=max(_ZERO,held-_D("0.01"))
                 quantity=quantity.quantize(
                     _D("0.000000000000000001"),rounding=ROUND_DOWN)
                 if quantity*price>=_MIN_ORDER:

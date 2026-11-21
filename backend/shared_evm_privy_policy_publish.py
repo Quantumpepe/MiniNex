@@ -49,7 +49,8 @@ def _claim_policy_publication_locked(
     cur.execute(
         """SELECT asset,chain_id,stable,wallet_id,wallet_address,
                   owner_id,signer_id,policy_id,policy_sha256,
-                  candidate_json,consent_sha256,expires_at,status,revoked_at,budget_revision
+                  candidate_json,consent_sha256,expires_at,status,revoked_at,
+                  budget_revision,authorization_method
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     policy=cur.fetchone()
@@ -64,22 +65,27 @@ def _claim_policy_publication_locked(
             or policy.get("budget_revision")!=settings["revision"]
             or policy.get("stable")!=settings["stable"]):
         raise HTTPException(409,"No current signed owner EVM policy draft")
-    cur.execute(
-        """SELECT status,wallet_id,wallet_address,stable,chain_id,
-                  budget_revision,message_sha256,confirmed_at
-           FROM mininex_live_evm_consent_challenges
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    consent=cur.fetchone()
-    if (type(consent) is not dict
-            or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("confirmed_at") is None
-            or consent.get("wallet_id")!=policy["wallet_id"]
-            or consent.get("wallet_address")!=policy["wallet_address"]
-            or consent.get("stable")!=policy["stable"]
-            or consent.get("chain_id")!=policy["chain_id"]
-            or consent.get("budget_revision")!=policy["budget_revision"]
-            or consent.get("message_sha256")!=policy.get("consent_sha256")):
-        raise HTTPException(409,"Original coin enrollment intent was revoked")
+    if policy.get("authorization_method")=="PRIVY_SCOPED_GRANT":
+        # Creating a restrictive policy never grants access to funds.
+        if policy.get("consent_sha256") is not None:
+            raise HTTPException(409,"Unexpected premature owner authorization")
+    else:
+        cur.execute(
+            """SELECT status,wallet_id,wallet_address,stable,chain_id,
+                      budget_revision,message_sha256,confirmed_at
+               FROM mininex_live_evm_consent_challenges
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        consent=cur.fetchone()
+        if (type(consent) is not dict
+                or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("confirmed_at") is None
+                or consent.get("wallet_id")!=policy["wallet_id"]
+                or consent.get("wallet_address")!=policy["wallet_address"]
+                or consent.get("stable")!=policy["stable"]
+                or consent.get("chain_id")!=policy["chain_id"]
+                or consent.get("budget_revision")!=policy["budget_revision"]
+                or consent.get("message_sha256")!=policy.get("consent_sha256")):
+            raise HTTPException(409,"Original coin enrollment intent was revoked")
     try:
         candidate=validate_pinned_evm_policy(
             policy,asset=asset,now=now)
@@ -156,7 +162,7 @@ def _finish_policy_publication_locked(
             or record.get("idempotency_key")!=claimed["idempotency_key"]):
         raise HTTPException(409,"Cannot reconcile changed policy submission")
     cur.execute(
-        """SELECT status,revoked_at,policy_sha256
+        """SELECT status,revoked_at,policy_sha256,authorization_method
            FROM mininex_live_evm_owner_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     original=cur.fetchone()
@@ -194,13 +200,18 @@ def _finish_policy_publication_locked(
         raise HTTPException(409,"Remote policy publication conflict")
     cur.execute(
         """UPDATE mininex_live_evm_owner_permissions
-           SET status='CONSENT_VERIFIED',policy_id=%s,
-               remote_policy_sha256=%s,updated_at=now()
+           SET status=CASE
+                 WHEN authorization_method='PRIVY_SCOPED_GRANT'
+                 THEN 'DRAFT' ELSE 'CONSENT_VERIFIED' END,
+               policy_id=%s,remote_policy_sha256=%s,updated_at=now()
            WHERE privy_did=%s AND asset=%s AND status='DRAFT'
            RETURNING status""",
         (remote["policy_id"],remote["policy_sha256"],did,asset))
     active=cur.fetchone()
-    if type(active) is not dict or active.get("status")!="CONSENT_VERIFIED":
+    expected=("DRAFT" if
+        original.get("authorization_method")=="PRIVY_SCOPED_GRANT"
+        else "CONSENT_VERIFIED")
+    if type(active) is not dict or active.get("status")!=expected:
         raise HTTPException(409,"Remote Privy policy identity could not persist")
     return {
         "status":"REMOTE_VERIFIED_UNATTACHED",

@@ -156,3 +156,116 @@ def test_auto_start_remote_verified_signer_reaches_owner_grant(monkeypatch):
         asyncio.run(mod.start_eth_auto(DID, "USDC"))
     assert exc.value.status_code == 409
     assert calls == ["quorum", "grant"]
+
+
+def test_eth_work_pages_rotate_instead_of_stranding_active_users_or_receipts(
+    monkeypatch,
+):
+    sessions=[{"privy_did":f"did:privy:eth-{i}"} for i in range(5)]
+    orders=[{"intent_key":f"order_{i}"} for i in range(5)]
+    queries=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,params):
+            self.page=orders if "FROM mininex_live_order_intents" in sql else sessions
+            self.limit,self.offset=params
+            queries.append((sql,params))
+        def fetchall(self):return self.page[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    monkeypatch.setattr(mod,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(mod,"_ensure_schema",lambda url:None)
+    monkeypatch.setattr(mod.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(mod,"_ETH_SESSION_PAGE_OFFSET",0)
+    monkeypatch.setattr(mod,"_ETH_ORDER_PAGE_OFFSET",0)
+    pages=[mod.active_sessions(limit=2) for _ in range(4)]
+    assert pages==[sessions[:2],sessions[2:4],sessions[4:],sessions[:2]]
+    checked=[mod.submitted_live_orders(limit=2) for _ in range(4)]
+    assert checked==[orders[:2],orders[2:4],orders[4:],orders[:2]]
+    assert [p for sql,p in queries]==(
+        [(2,0),(2,2),(2,4),(2,5),(2,0)]*2)
+    assert all("LIMIT %s OFFSET %s" in sql for sql,p in queries)
+
+
+def test_eth_auto_independent_wallets_do_not_block_one_another(
+    monkeypatch,
+):
+    import asyncio
+    import httpx
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    owner_a={"privy_did":"did:privy:owner-a","run_id":"run_a123456",
+             "stable":"USDC"}
+    repeat_owner_a={**owner_a,"run_id":"run_a654321"}
+    owner_b={"privy_did":"did:privy:owner-b","run_id":"run_b123456",
+             "stable":"USDT"}
+    b_started=asyncio.Event()
+    started=[]
+    async def execute(did,*,market,run_id,stable,client):
+        started.append(run_id)
+        if run_id=="run_a123456":
+            await asyncio.wait_for(b_started.wait(),timeout=3)
+        if run_id=="run_b123456":
+            b_started.set()
+        return {"state":"WAIT"}
+    monkeypatch.setattr(mod,"execute_live_eth_strategy_tick",execute)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await mod.run_eth_owner_session_batch(
+                [owner_a,repeat_owner_a,owner_b],
+                market=object(),client=client)
+    result=asyncio.run(run())
+    assert result=={
+        "sessions_seen":3,"attempted":3,
+        "failed":0,"wallet_groups":2}
+    assert started==["run_a123456","run_b123456","run_a654321"]
+
+
+def test_eth_pending_live_receipts_of_different_wallets_do_not_block(
+    monkeypatch,
+):
+    import asyncio
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    rows=[{"privy_did":"did:privy:one","intent_key":"sig_aaaaaaaa"},
+          {"privy_did":"did:privy:one","intent_key":"sig_bbbbbbbb"},
+          {"privy_did":"did:privy:two","intent_key":"sig_cccccccc"}]
+    monkeypatch.setattr(mod,"submitted_live_orders",lambda:rows)
+    newer=asyncio.Event()
+    seen=[]
+    async def verify(row):
+        seen.append(row["intent_key"])
+        if row["intent_key"]=="sig_aaaaaaaa":
+            await asyncio.wait_for(newer.wait(),timeout=3)
+        if row["intent_key"]=="sig_cccccccc":
+            newer.set()
+        return "CONFIRMED"
+    monkeypatch.setattr(mod,"reconcile_one_live_eth_order",verify)
+    assert asyncio.run(mod.reconcile_live_eth_orders())==3
+    assert seen==["sig_aaaaaaaa","sig_cccccccc","sig_bbbbbbbb"]
+
+
+def test_eth_native_receipts_do_not_wait_for_unrelated_owner(
+    monkeypatch,
+):
+    import asyncio
+    import httpx
+    monkeypatch.setattr(mod,"_worker_approved",lambda:True)
+    rows=[{"privy_did":"did:privy:one","source_key":"sig_aaa"},
+          {"privy_did":"did:privy:two","source_key":"sig_bbb"}]
+    monkeypatch.setattr(mod,"submitted_native_steps",lambda:rows)
+    monkeypatch.setattr(mod,"confirmed_buy_native_conversions",lambda:[])
+    other=asyncio.Event()
+    seen=[]
+    async def finalize(row):
+        seen.append(row["source_key"])
+        if row["source_key"]=="sig_aaa":
+            await asyncio.wait_for(other.wait(),timeout=3)
+        else:
+            other.set()
+        return "CONFIRMED"
+    monkeypatch.setattr(mod,"finalize_native_step",finalize)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await mod.reconcile_and_resume_native_eth(client)
+    assert asyncio.run(run())==2
+    assert seen==["sig_aaa","sig_bbb"]

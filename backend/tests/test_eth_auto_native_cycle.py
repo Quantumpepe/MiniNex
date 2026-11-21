@@ -102,7 +102,9 @@ def test_eth_native_send_respects_shared_link_uni_wallet_nonce(pending,expected)
     assert "mininex_live_evm_auto_broadcasts" in sql
     assert "chain_id=1" in sql
     assert "RECONCILIATION_REQUIRED" in sql
-    assert args==(DID,DID)
+    assert args==(DID,DID,DID,DID)
+    assert "mininex_live_native_order_intents" in sql
+    assert "mininex_live_evm_router_approval_sends" in sql
     assert "mininex_evm_auto_fee_sends" in sql
 
 
@@ -112,3 +114,32 @@ def test_eth_native_claim_checks_shared_nonce_inside_original_transaction():
     assert "_assert_no_pending_ethereum_token_send(cur,did)" in source
     assert source.index("_assert_no_pending_ethereum_token_send(cur,did)")<source.index(
         "INSERT INTO mininex_live_eth_auto_native_steps")
+
+
+def test_native_eth_receipt_and_buy_completion_scans_rotate_all_owners(
+    monkeypatch,
+):
+    submitted=[{"source_key":f"native_{i}"} for i in range(5)]
+    ready=[{"source_key":f"buy_{i}"} for i in range(5)]
+    queries=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return self
+        def execute(self,sql,params):
+            self.rows=ready if "JOIN mininex_live_eth_verified_legs" in sql else submitted
+            self.limit,self.offset=params
+            queries.append((sql,params))
+        def fetchall(self):return self.rows[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(n,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(n,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(n.psycopg,"connect",lambda *args,**kwargs:DB())
+    monkeypatch.setattr(n,"_NATIVE_RECEIPT_SCAN_OFFSET",0)
+    monkeypatch.setattr(n,"_NATIVE_BUY_SCAN_OFFSET",0)
+    receipts=[n.submitted_native_steps(limit=2) for _ in range(4)]
+    completions=[n.confirmed_buy_native_conversions(limit=2) for _ in range(4)]
+    assert receipts==[submitted[:2],submitted[2:4],submitted[4:],submitted[:2]]
+    assert completions==[ready[:2],ready[2:4],ready[4:],ready[:2]]
+    assert [params for _,params in queries]==(
+        [(2,0),(2,2),(2,4),(2,5),(2,0)]*2)
+    assert all("LIMIT %s OFFSET %s" in sql for sql,_ in queries)

@@ -38,6 +38,13 @@ def test_only_original_immutable_db_send_record_is_reconciled(mutation):
         worker.validate_original_submitted_swap_record(row)
 
 
+def test_checksum_owner_wallet_does_not_block_passive_receipt_finality():
+    row=order("LINK")
+    row["wallet_address"]="0x"+("Ab"*20)
+    verified=worker.validate_original_submitted_swap_record(row)
+    assert verified["wallet_address"]==row["wallet_address"]
+
+
 def test_worker_joins_submitted_and_finalizes_without_resend(monkeypatch):
     pending=[order("BNB"),order("LINK"),order("UNI"),order("ARB")]
     monkeypatch.setattr(worker,"original_submitted_evm_orders",lambda:pending)
@@ -104,3 +111,33 @@ def test_old_unmined_submissions_do_not_starve_newer_arb_receipts(monkeypatch):
     pages=[worker.original_submitted_evm_orders(limit=2) for _ in range(4)]
     assert pages==[rows[:2],rows[2:4],rows[4:6],rows[:2]]
     assert params_seen==[(2,0),(2,2),(2,4),(2,6),(2,0)]
+
+
+def test_original_evm_receipts_do_not_serialize_unrelated_owner_wallets(
+    monkeypatch,
+):
+    first=order("LINK")
+    same_wallet=order("UNI")
+    another_wallet=order("LINK")
+    another_wallet["privy_did"]="did:privy:other_user"
+    first["intent_key"]="sig_first_123456"
+    same_wallet["intent_key"]="sig_second_12345"
+    another_wallet["intent_key"]="sig_third_123456"
+    monkeypatch.setattr(
+        worker,"original_submitted_evm_orders",
+        lambda:[first,same_wallet,another_wallet])
+    different_done=asyncio.Event()
+    calls=[]
+    async def settle(**kw):
+        calls.append(kw["intent_key"])
+        if kw["intent_key"]=="sig_first_123456":
+            await asyncio.wait_for(different_done.wait(),timeout=3)
+        elif kw["intent_key"]=="sig_third_123456":
+            different_done.set()
+        return {"state":"FINALIZED_SUCCESS"}
+    monkeypatch.setattr(worker,"reconcile_evm_internal_order",settle)
+    result=asyncio.run(worker.reconcile_submitted_evm_swaps_once())
+    assert result["finalized_swaps"]==3
+    assert result["unresolved"]==0
+    assert calls==[
+        "sig_first_123456","sig_third_123456","sig_second_12345"]

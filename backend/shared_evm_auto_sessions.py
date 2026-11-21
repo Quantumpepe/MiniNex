@@ -144,6 +144,37 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                        FROM mininex_live_evm_auto_sessions
                        WHERE privy_did=%s AND asset=%s""",(did,asset))
                 row=cur.fetchone()
+                # Only original Privy transaction hashes recorded in the
+                # durable swap journal count as genuine blockchain sends.
+                # Never claim an actual trade merely from ACTIVE session state.
+                sent=0
+                finalized=0
+                worker_seen=False
+                if type(row) is dict:
+                    cur.execute(
+                        """SELECT COUNT(*) AS sent,
+                                  COUNT(*) FILTER (
+                                      WHERE status='FINALIZED_SUCCESS'
+                                  ) AS finalized
+                           FROM mininex_live_evm_auto_broadcasts
+                           WHERE privy_did=%s AND asset=%s
+                             AND tx_hash IS NOT NULL
+                             AND status IN ('SUBMITTED','FINALIZED_SUCCESS',
+                                            'FINALIZED_REVERTED',
+                                            'RECONCILIATION_REQUIRED')""",
+                        (did,asset))
+                    counted=cur.fetchone()
+                    if type(counted) is dict:
+                        sent=int(counted.get("sent") or 0)
+                        finalized=int(counted.get("finalized") or 0)
+                    cur.execute(
+                        """SELECT last_poll_at FROM mininex_live_worker_heartbeats
+                           WHERE worker_name='shared_evm_auto'
+                             AND status='RUNNING'
+                             AND last_poll_at>now()-INTERVAL '90 seconds'""")
+                    heartbeat=cur.fetchone()
+                    worker_seen=(type(heartbeat) is dict and
+                                 heartbeat.get("last_poll_at") is not None)
     except psycopg.Error:
         raise HTTPException(503,"EVM live session status unavailable") from None
     return {
@@ -151,5 +182,7 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
         "asset":asset,"status":row["status"] if type(row) is dict else "NOT_STARTED",
         "chain_id":row.get("chain_id") if type(row) is dict else None,
         "stable":row.get("stable") if type(row) is dict else None,
-        "worker_attached":False,"new_transactions_sent":0,
+        "worker_attached":worker_seen,"new_transactions_sent":0,
+        "original_blockchain_swaps_sent":sent,
+        "original_blockchain_swaps_finalized":finalized,
     }

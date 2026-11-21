@@ -1,7 +1,8 @@
 """Passive, chain-scoped settlement worker for six additional EVM assets.
 
 This worker NEVER sends or signs a transaction, creates a policy, activates
-AUTO, or assesses a fee. It only reconciles previously durably SUBMITTED
+AUTO, or assesses a fee. It automatically accompanies an explicitly enabled
+LIVE EVM trader, without a second operator switch. It only reconciles durably SUBMITTED
 wallet transactions against independently verified finalized blockchain
 receipts. Ambiguous SENDING/RECONCILIATION_REQUIRED states are untouched.
 """
@@ -10,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from threading import Lock
 
 import psycopg
 from psycopg.rows import dict_row
@@ -20,35 +22,62 @@ from .storage import _db_url, _ensure_schema
 LOG=logging.getLogger("mininex.evm_passive_settlement")
 _INTERVAL_SECONDS=30
 _SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_PASSIVE_PAGE_LOCK=Lock()
+_PASSIVE_PAGE_OFFSET=0
+
+
+def _live_worker_configured()->bool:
+    return (
+        os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
+        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
+    )
 
 
 def _settlement_enabled()->bool:
-    return (os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
-            and bool(os.getenv("DATABASE_URL")))
+    """Always reconcile real EVM sends when the owner-enabled trader runs.
+
+    Manual read-only settlement remains independently available. The LIVE
+    worker already requires both explicit opt-ins; an additional read-only
+    environment setting must not strand a funded native BUY or SELL.
+    """
+    if not os.getenv("DATABASE_URL","").strip():
+        return False
+    return (
+        os.getenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED")=="explicit-readonly"
+        or _live_worker_configured()
+    )
 
 
 def _pending_submitted(limit:int=25)->list[dict]:
-    """Scan only unfinalized, known-hash submitted orders.
+    """Rotate every submitted owner hash, also in recovery-only mode.
 
-    The owner DID and original asset/side/stable are taken from trusted
-    durable PostgreSQL records, never from an unauthenticated HTTP caller.
+    Never rebroadcast; this is a work page, not an owner trade cap.
     """
     if type(limit) is not int or not 1<=limit<=100:
         raise ValueError("Invalid settlement scan limit")
     if not _settlement_enabled():
         return []
+    global _PASSIVE_PAGE_OFFSET
     url=_db_url()
     _ensure_schema(url)
-    with psycopg.connect(url,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
-                   FROM mininex_live_evm_auto_broadcasts
-                   WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
-                     AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
-                   ORDER BY created_at ASC LIMIT %s""",
-                (limit,))
-            return list(cur.fetchall())
+    sql="""SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
+           FROM mininex_live_evm_auto_broadcasts
+           WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
+             AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
+           ORDER BY created_at ASC,privy_did,asset,intent_key
+           LIMIT %s OFFSET %s"""
+    with _PASSIVE_PAGE_LOCK:
+        offset=_PASSIVE_PAGE_OFFSET
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _PASSIVE_PAGE_OFFSET=offset+len(page)
+        return page
 
 
 def _valid_pending_row(row:object)->bool:
@@ -114,12 +143,13 @@ async def reconcile_submitted_evm_once(*,limit:int=25)->dict:
 
 
 class PassiveEvmSettlementWorker:
-    """Background read/settle only; external sends remain unimplemented."""
+    """Standalone read-only worker; LIVE worker already polls these receipts."""
     def __init__(self):
         self._task=None
 
     async def start(self)->None:
-        if _settlement_enabled() and self._task is None:
+        if (_settlement_enabled() and not _live_worker_configured()
+                and self._task is None):
             self._task=asyncio.create_task(
                 self._run(),name="mininex-evm-passive-settlement")
 
@@ -132,5 +162,7 @@ class PassiveEvmSettlementWorker:
     async def _run(self)->None:
         while True:
             await asyncio.sleep(_INTERVAL_SECONDS)
-            if _settlement_enabled():
+            # Avoid a duplicate network/SQL finality scan when LIVE worker
+            # already calls reconcile_submitted_evm_swaps_once itself.
+            if _settlement_enabled() and not _live_worker_configured():
                 await reconcile_submitted_evm_once()

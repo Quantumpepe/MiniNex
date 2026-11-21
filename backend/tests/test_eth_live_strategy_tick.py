@@ -24,7 +24,10 @@ def allowance(side="BUY"):
     return {"wallet_identity_verified":True,"side":side,"stable":"USDC",
       "router_allowance_sufficient":True,"source_funds_sufficient":True,
       "conservative_native_gas_reserve_met":True,
-      "verified_source_balance":"1.5"}
+      "verified_source_balance":"1.5",
+      "verified_destination_token":"WETH",
+      "verified_destination_balance":"0",
+      "native_eth_gas_balance":"0.005"}
 
 def balance():
     return {"wallet_ownership_verified":True,"balances":{
@@ -105,6 +108,43 @@ def test_owner_selected_budget_controls_all_in_cash():
     assert result=="200.000000"
 
 
+def test_eth_buy_counts_existing_native_and_wrapped_inventory_against_user_budget():
+    cash=balance()
+    cash["balances"]["USDC"]["balance"]="1000"
+    decision={"action":"BUY","market_price":"100"}
+    # $150 held WETH plus $50 tradable native ETH leaves no new BUY capital.
+    full={**allowance(),"verified_destination_balance":"1.5",
+          "native_eth_gas_balance":"0.505"}
+    assert live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=cash,allowance=full) is None
+    # With only 1 WETH and ETH gas reserve, the user can buy the remaining $100.
+    partial={**full,"verified_destination_balance":"1",
+             "native_eth_gas_balance":"0.005"}
+    assert live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=cash,allowance=partial)=="100.000000"
+    # An unverifiable wrapped holding is never silently treated as zero.
+    partial["verified_destination_balance"]="unknown"
+    try:
+        live.live_trade_quantity(
+            decision=decision,live_limits=limits(),
+            balances=cash,allowance=partial)
+        assert False,"An unavailable chain balance cannot authorize BUY"
+    except ValueError:
+        pass
+
+
+def test_profitable_eth_position_can_sell_full_verified_weth_not_just_entry_budget():
+    decision={"action":"SELL","market_price":"250"}
+    actual={**allowance("SELL"),"verified_source_balance":"1.5"}
+    result=live.live_trade_quantity(
+        decision=decision,live_limits=limits(),
+        balances=balance(),allowance=actual)
+    # Original budget $200; actual 1.5 WETH is now worth $375.
+    assert result=="1.500000000000000000"
+
+
 def test_sell_with_existing_weth_and_missing_approval_never_wraps(monkeypatch):
     """Lacking router approval is not an instruction to wrap more native ETH."""
     monkeypatch.setattr(live,"get_live_eth_limits",lambda did:limits())
@@ -129,12 +169,12 @@ def test_sell_with_existing_weth_and_missing_approval_never_wraps(monkeypatch):
                     "reason":"OWNER_APPROVAL_OR_BALANCE_REQUIRED","asset":"ETH"}
 
 
-def test_sell_with_zero_verified_weth_can_wrap_native_once(monkeypatch):
-    """The native conversion is still reachable if the wallet has no WETH."""
+def test_sell_with_zero_verified_weth_can_wrap_appreciated_native_once(monkeypatch):
+    """A SELL can exit user-owned appreciated ETH above the original BUY USD budget."""
     monkeypatch.setattr(live,"get_live_eth_limits",lambda did:limits())
     async def wallet(did):
         return {"wallet_ownership_verified":True,"balances":{
-            "ETH":{"status":"verified","balance":"2"}}}
+            "ETH":{"status":"verified","balance":"5"}}}
     async def inspect(did,*,side,stable,amount):
         return {**allowance("SELL"),"router_allowance_sufficient":False,
                 "verified_source_balance":"0"}
@@ -151,7 +191,9 @@ def test_sell_with_zero_verified_weth_can_wrap_native_once(monkeypatch):
     assert result["state"]=="SUBMITTED"
     assert len(calls)==1
     assert calls[0][0]=="DEPOSIT"
-    assert calls[0][1]>0
+    # Owner's original $200 BUY budget cannot become an artificial SELL cap.
+    # 5 ETH held - 0.01 ETH gas reserve, exactly 18-decimal native wei.
+    assert calls[0][1]==4990000000000000000
 
 
 class ExtraMarket:
@@ -170,7 +212,7 @@ class ExtraMarket:
             for t in range(810,1001,5)]
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
 @pytest.mark.parametrize("trend,expected",[
     ("up","BUY"),("down","SELL")
 ])

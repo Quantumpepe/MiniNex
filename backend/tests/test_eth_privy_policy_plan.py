@@ -160,6 +160,8 @@ def test_missing_or_same_quorum_ids_are_rejected():
 
 
 def test_prices_fetch_fixed_source_no_dynamic_url_and_size_bound(monkeypatch):
+    monkeypatch.delenv("MININEX_COINGECKO_PRO_API_KEY",raising=False)
+    monkeypatch.delenv("MININEX_COINGECKO_DEMO_API_KEY",raising=False)
     observed = []
     original = httpx.AsyncClient
     def mock_client(*args, **kwargs):
@@ -175,6 +177,27 @@ def test_prices_fetch_fixed_source_no_dynamic_url_and_size_bound(monkeypatch):
     assert result == rates()
     assert observed and len(observed) == 1
     assert observed[0][1] == "GET"
+
+
+def test_eth_owner_grant_reference_prices_use_configured_backend_only_pro_plan(
+    monkeypatch,
+):
+    monkeypatch.setenv("MININEX_COINGECKO_PRO_API_KEY","private_backend_only")
+    monkeypatch.delenv("MININEX_COINGECKO_DEMO_API_KEY",raising=False)
+    observed=[]
+    original=httpx.AsyncClient
+    def mock_client(*args,**kwargs):
+        def handler(request):
+            observed.append(request)
+            assert request.url.host=="pro-api.coingecko.com"
+            assert request.url.path=="/api/v3/simple/price"
+            assert request.headers.get("x-cg-pro-api-key")=="private_backend_only"
+            assert "private_backend_only" not in str(request.url)
+            return httpx.Response(200,json=rates())
+        return original(*args,transport=httpx.MockTransport(handler),**kwargs)
+    monkeypatch.setattr(planner.httpx,"AsyncClient",mock_client)
+    assert asyncio.run(planner.fetch_reference_prices())==rates()
+    assert len(observed)==1
 
 
 def test_account_preflight_never_queries_prices_when_no_privy_identity(

@@ -104,6 +104,59 @@ def _claim_single_auto_fee_locked(
            FROM mininex_evm_fee_auto_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     grant=cur.fetchone()
+    if grant is None and remote.get("source")=="ONE_PRIVY_OWNER_GRANT":
+        # One first wallet-owner approval already included the exact
+        # bounded Treasury transfer. An existing separate fee enrollment,
+        # even REVOKED, is NOT eligible for this fallback.
+        from .shared_evm_remote_grant_audit import (
+            _grant_scope_digest,validate_pinned_evm_policy,_lte,
+        )
+        cur.execute(
+            """SELECT * FROM mininex_live_evm_owner_permissions
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        trade=cur.fetchone()
+        if (type(trade) is not dict
+                or trade.get("authorization_method")!="PRIVY_SCOPED_GRANT"
+                or trade.get("status")!="GRANT_VERIFIED"
+                or trade.get("revoked_at") is not None
+                or trade.get("consent_verified_at") is None
+                or trade.get("grant_verified_at") is None):
+            raise HTTPException(409,"Combined original owner wallet grant unavailable")
+        cur.execute(
+            """SELECT stable,revision,budget_usd
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        settings=cur.fetchone()
+        if (type(settings) is not dict
+                or settings.get("stable")!=trade.get("stable")
+                or settings.get("revision")!=trade.get("budget_revision")
+                or trade.get("consent_sha256")!=_grant_scope_digest(
+                    did=did,record=trade,budget_usd=settings["budget_usd"])):
+            raise HTTPException(409,"Original fee grant changed with coin budget")
+        candidate=validate_pinned_evm_policy(
+            trade,asset=asset,now=now)
+        fee_rule=candidate["rules"][-1]
+        cap=_lte(fee_rule,"transfer.value")
+        if not any(
+            c.get("field")=="transfer.to" and c.get("operator")=="eq"
+            and str(c.get("value","")).lower()==treasury
+            for c in fee_rule["conditions"]
+        ):
+            raise HTTPException(409,"No exact Treasury permission in owner grant")
+        grant={
+            "status":trade["status"],"stable":trade["stable"],
+            "chain_id":trade["chain_id"],"wallet_id":trade["wallet_id"],
+            "wallet_address":trade["wallet_address"],
+            "treasury_wallet":treasury,
+            "owner_max_fee_atomic":cap,
+            "expires_at":trade["expires_at"],
+            "policy_id":trade["policy_id"],
+            "policy_sha256":trade["policy_sha256"],
+            "remote_policy_sha256":trade["remote_policy_sha256"],
+            "owner_signed_at":trade["consent_verified_at"],
+            "grant_verified_at":trade["grant_verified_at"],
+            "revoked_at":trade["revoked_at"],
+        }
     if (type(grant) is not dict
             or grant.get("status")!="GRANT_VERIFIED"
             or grant.get("owner_signed_at") is None
@@ -128,11 +181,15 @@ def _claim_single_auto_fee_locked(
     # Any same-owner same-chain broadcast or native conversion uses the
     # same Privy account nonce; no concurrent fee send can race it.
     cur.execute(
-        """SELECT COUNT(*) AS pending
-           FROM mininex_live_evm_auto_broadcasts
+        """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
            WHERE privy_did=%s AND chain_id=%s AND status IN
-             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-        (did,pair["chain_id"]))
+             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+         + (SELECT COUNT(*) FROM mininex_live_native_order_intents
+           WHERE privy_did=%s AND chain='ethereum-mainnet' AND side='BUY'
+             AND %s=1 AND status IN
+             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+         AS pending""",
+        (did,pair["chain_id"],did,pair["chain_id"]))
     active=cur.fetchone()
     if type(active) is not dict or active.get("pending")!=0:
         raise HTTPException(409,"Earlier EVM wallet trade send is unresolved")
@@ -171,6 +228,16 @@ def _claim_single_auto_fee_locked(
     pending=cur.fetchone()
     if type(pending) is not dict or pending.get("pending")!=0:
         raise HTTPException(409,"Original fee wallet network send unresolved")
+    cur.execute(
+        """SELECT COUNT(*) AS pending
+           FROM mininex_live_evm_router_approval_sends
+           WHERE privy_did=%s AND chain_id=%s
+             AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
+        (did,pair["chain_id"]))
+    approval=cur.fetchone()
+    if type(approval) is not dict or approval.get("pending")!=0:
+        raise HTTPException(409,"Original token router approval is still onchain")
+
     # Do not autosend if an existing manual-payment draft might have
     # already been signed outside MiniNex; require a fresh unique debt.
     cur.execute(

@@ -27,11 +27,21 @@ _KEY_ID=re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 
 def _canonical_authorization_payload(*,url:str,body:dict,key:str) -> bytes:
     if (type(url) is not str
-            or not url.startswith("https://api.privy.io/v1/wallets/")
-            or not url.endswith("/rpc")
+            or not re.fullmatch(
+                r"https://api\.privy\.io/v1/wallets/[A-Za-z0-9_-]{6,160}/(?:rpc|raw_sign)",
+                url)
             or type(body) is not dict
             or type(key) is not str or not _KEY_ID.fullmatch(key)):
         raise ValueError("Invalid Privy request signing context")
+    # Bitcoin Tier-2 signs BIP143 source-input hashes using POST /raw_sign,
+    # whereas ETH/SOL sign through /rpc. Refuse arbitrary raw sign payloads.
+    if url.endswith("/raw_sign") and (
+            set(body) != {"params"}
+            or type(body.get("params")) is not dict
+            or set(body["params"]) != {"hash"}
+            or type(body["params"]["hash"]) is not str
+            or not re.fullmatch(r"0x[0-9a-fA-F]{64}",body["params"]["hash"])):
+        raise ValueError("Unbound Bitcoin raw_sign source hash")
     request={
         "version":1,"method":"POST","url":url,
         "body":body,

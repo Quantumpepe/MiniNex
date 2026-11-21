@@ -20,20 +20,11 @@ from typing import Any
 import httpx
 import websockets
 
+from .coingecko_provider import coingecko_request_settings, COIN_IDS, MARKET_ASSETS
+
 LOGGER = logging.getLogger("mininex.extra_markets")
 EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
-GECKO_IDS = {
-    "BNB": "binancecoin",
-    "POL": "polygon-ecosystem-token",
-    "SOL": "solana",
-    "XRP": "ripple",
-    "ARB": "arbitrum",
-    "TRX": "tron",
-    "AVAX": "avalanche-2",
-    "LINK": "chainlink",
-    "DOGE": "dogecoin",
-    "UNI": "uniswap",
-}
+GECKO_IDS = {asset: COIN_IDS[asset] for asset in EXTRA_ASSETS}
 SYMBOLS = {asset + "USDT": asset for asset in EXTRA_ASSETS}
 WS_URL = ("wss://data-stream.binance.vision/stream?streams=" +
           "/".join(symbol.lower() + "@miniTicker" for symbol in SYMBOLS))
@@ -54,15 +45,8 @@ GECKO_REFERENCE_TTL = 180
 
 
 def gecko_request_settings(environ: dict | None = None) -> tuple[str, dict[str, str], int]:
-    """Provider key is server-only; never expose in a frontend response."""
-    env = os.environ if environ is None else environ
-    pro = str(env.get("MININEX_COINGECKO_PRO_API_KEY", "")).strip()
-    demo = str(env.get("MININEX_COINGECKO_DEMO_API_KEY", "")).strip()
-    if pro:
-        return GECKO_PRO_URL, {"x-cg-pro-api-key": pro}, GECKO_AUTH_INTERVAL
-    if demo:
-        return GECKO_URL, {"x-cg-demo-api-key": demo}, GECKO_AUTH_INTERVAL
-    return GECKO_URL, {}, GECKO_PUBLIC_INTERVAL
+    """Single backend CoinGecko transport for Demo and Pro accounts."""
+    return coingecko_request_settings("/simple/price", environ)
 
 
 def retry_after_seconds(raw: object, *, now: float) -> int | None:
@@ -153,6 +137,9 @@ class ExtraMarketData:
         # exposed through market diagnostics.
         self._gecko_rate_limited = False
         self._gecko_next_attempt_at: float | None = None
+        # Local process counters only: Nexus use and historical lookups are not included.
+        self._gecko_reference_requests_since_start = 0
+        self._gecko_reference_successes_since_start = 0
 
     async def start(self) -> None:
         if self._tasks:
@@ -339,6 +326,8 @@ class ExtraMarketData:
                 self._gecko_rate_limited and remaining is not None and remaining > 0
             ),
             "gecko_next_attempt_in_seconds": remaining,
+            "gecko_reference_requests_since_start": self._gecko_reference_requests_since_start,
+            "gecko_reference_successes_since_start": self._gecko_reference_successes_since_start,
         }
 
     def history(self, asset: str, *, limit: int = 120) -> list[dict[str, float]]:
@@ -477,8 +466,9 @@ class ExtraMarketData:
             while True:
                 delay = interval
                 try:
+                    self._gecko_reference_requests_since_start += 1
                     response = await client.get(url, params={
-                        "ids": ",".join(GECKO_IDS.values()),
+                        "ids": ",".join(COIN_IDS[asset] for asset in MARKET_ASSETS),
                         "vs_currencies": "usd",
                         "include_last_updated_at": "true",
                     }, headers=headers)
@@ -498,6 +488,7 @@ class ExtraMarketData:
                             raise ValueError("Oversized CoinGecko response")
                         if not self.ingest_gecko(response.json()):
                             raise ValueError("No fresh CoinGecko reference prices")
+                        self._gecko_reference_successes_since_start += 1
                         failures = 0
                         self._gecko_rate_limited = False
                 except asyncio.CancelledError:

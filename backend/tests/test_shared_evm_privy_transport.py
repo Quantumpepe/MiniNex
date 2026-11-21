@@ -22,6 +22,7 @@ HASH="0x"+"ab"*32
 @pytest.mark.parametrize("asset,stable,chain",[
     ("ETH","USDC",1),("LINK","USDC",1),("UNI","USDT",1),
     ("BNB","USDT",56),("POL","USDC",137),("AVAX","USDC",43114),
+    ("ARB","USDC",42161),
 ])
 @pytest.mark.parametrize("side",["BUY","SELL"])
 def test_one_privy_network_rpc_for_every_evm_asset(asset,stable,chain,side):
@@ -125,3 +126,40 @@ def test_transport_rejects_unexpected_host_or_chain_without_post(bad_url,bad_cha
                 client=client)
     with pytest.raises(ValueError):
         asyncio.run(run())
+
+
+
+@pytest.mark.parametrize("asset,stable,chain",[
+    ("BNB","USDT",56),("POL","USDC",137),
+    ("AVAX","USDC",43114),("LINK","USDC",1),
+    ("UNI","USDT",1),("ARB","USDC",42161),
+])
+@pytest.mark.parametrize("side",["BUY","SELL"])
+def test_finite_router_approval_uses_same_privy_wallet_network(
+    asset,stable,chain,side,
+):
+    from backend.shared_evm_allowance import bound_owner_router_approval_rpc
+    pair=_pair(asset,stable,side)
+    url,body=bound_owner_router_approval_rpc(
+        asset=asset,side=side,stable=stable,wallet_id=WALLET_ID,
+        wallet=WALLET,amount_atomic=98765)
+    assert url=="https://api.privy.io/v1/wallets/"+WALLET_ID+"/rpc"
+    assert body["caip2"]==f"eip155:{chain}"
+    tx=body["params"]["transaction"]
+    assert tx["to"]==pair["source_token"]
+    assert tx["value"]=="0"
+    assert tx["data"]=="0x095ea7b3"+f"{int(pair['router'],16):064x}"+f"{98765:064x}"
+    assert not tx["data"].endswith("f"*64)
+
+
+def test_router_approval_rpc_rejects_untrusted_asset_wallet_and_amount():
+    from backend.shared_evm_allowance import bound_owner_router_approval_rpc
+    base=dict(asset="BNB",side="BUY",stable="USDT",
+              wallet_id=WALLET_ID,wallet=WALLET,amount_atomic=1234)
+    for changes in (
+        {"asset":"BTC"},{"side":"BURN"},{"wallet":"fake"},
+        {"amount_atomic":0},{"amount_atomic":2**256-1},
+        {"wallet_id":"bad"},
+    ):
+        with pytest.raises((ValueError,HTTPException)):
+            bound_owner_router_approval_rpc(**{**base,**changes})

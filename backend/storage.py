@@ -137,6 +137,15 @@ SCHEMA = (
                last_attempt_at IS NOT NULL),
         CHECK (status <> 'REVOKED' OR revoked_at IS NOT NULL)
     )""",
+    """ALTER TABLE mininex_live_eth_policy_enrollments
+       ADD COLUMN IF NOT EXISTS authorization_method TEXT NOT NULL
+       DEFAULT 'EIP191_AND_PRIVY'
+       CHECK (authorization_method IN
+           ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
+    """ALTER TABLE mininex_live_eth_policy_enrollments
+       ADD COLUMN IF NOT EXISTS grant_budget_sha256 TEXT
+       CHECK (grant_budget_sha256 IS NULL OR
+          grant_budget_sha256 ~ '^[0-9a-f]{64}$')""",
     # Existing installations have the original Stage-21 status CHECK. A
     # CREATE TABLE IF NOT EXISTS cannot extend that original constraint.
     # Replace only that non-destructive CHECK to add GRANT_VERIFIED safely.
@@ -328,6 +337,11 @@ SCHEMA = (
        ADD COLUMN IF NOT EXISTS budget_revision BIGINT""",
     """ALTER TABLE mininex_live_evm_owner_permissions
        ADD COLUMN IF NOT EXISTS candidate_json JSONB""",
+    """ALTER TABLE mininex_live_evm_owner_permissions
+       ADD COLUMN IF NOT EXISTS authorization_method TEXT NOT NULL
+       DEFAULT 'EIP191_AND_PRIVY'
+       CHECK (authorization_method IN
+          ('EIP191_AND_PRIVY','PRIVY_SCOPED_GRANT'))""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_auto_broadcasts (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
@@ -1046,6 +1060,134 @@ SCHEMA = (
                        item.table_name,item.conname);
       END LOOP;
     END $migration$""",
+)
+
+
+# Owner-granted original Router02 approval sends, separate from swaps.
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_router_approval_sends (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        chain_id INTEGER NOT NULL CHECK(chain_id IN (1,56,137,43114,42161)),
+        wallet_id TEXT NOT NULL,
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
+        router_address TEXT NOT NULL CHECK(router_address ~ '^0x[0-9a-f]{40}$'),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(
+            amount_atomic>0 AND amount_atomic<1e45),
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        budget_revision BIGINT NOT NULL CHECK(budget_revision>0),
+        idempotency_key TEXT NOT NULL UNIQUE,
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        status TEXT NOT NULL CHECK(status IN
+            ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+             'FINALIZED_SUCCESS','FINALIZED_REVERTED')),
+        tx_hash TEXT CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,idempotency_key)
+    )""",
+)
+
+
+# Native BTC/SOL/XRP durable chain settlement schema from PR #202.
+SCHEMA += (
+    # Each native original intent is written before any future Privy submission.
+    # PREPARED records are inert, and unknown SENDING outcomes cannot be retried.
+    """CREATE TABLE IF NOT EXISTS mininex_live_native_order_intents (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN ('BTC','SOL','XRP')),
+        intent_key TEXT NOT NULL CHECK (length(intent_key) BETWEEN 6 AND 160),
+        chain TEXT NOT NULL CHECK (chain IN
+            ('bitcoin-mainnet','solana-mainnet','xrpl-mainnet','ethereum-mainnet')),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        budget_revision BIGINT NOT NULL CHECK (budget_revision >= 0),
+        source_wallet TEXT NOT NULL,
+        destination_wallet TEXT NOT NULL,
+        input_amount NUMERIC(60,18) NOT NULL CHECK (input_amount > 0),
+        immutable_quote_sha256 TEXT NOT NULL
+            CHECK (immutable_quote_sha256 ~ '^[0-9a-f]{64}$'),
+        owner_consent_sha256 TEXT NOT NULL
+            CHECK (owner_consent_sha256 ~ '^[0-9a-f]{64}$'),
+        privy_grant_sha256 TEXT NOT NULL
+            CHECK (privy_grant_sha256 ~ '^[0-9a-f]{64}$'),
+        payload_sha256 TEXT NOT NULL
+            CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
+        quote_expires_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PREPARED'
+          CHECK (status IN ('PREPARED','SENDING','SUBMITTED',
+                            'RECONCILIATION_REQUIRED','SOURCE_FINALIZED',
+                            'DESTINATION_FINALIZED','REFUNDED_VERIFIED',
+                            'CANCELLED')),
+        source_tx_hash TEXT,
+        source_signed_tx_hash TEXT CHECK (source_signed_tx_hash IS NULL
+            OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
+        source_proof_sha256 TEXT CHECK (source_proof_sha256 IS NULL OR
+            source_proof_sha256 ~ '^[0-9a-f]{64}$'),
+        source_finalized_at TIMESTAMPTZ,
+        destination_tx_hash TEXT,
+        destination_proof_sha256 TEXT CHECK (
+            destination_proof_sha256 IS NULL OR
+            destination_proof_sha256 ~ '^[0-9a-f]{64}$'),
+        destination_received_atomic NUMERIC(78,0) CHECK (
+            destination_received_atomic > 0),
+        destination_finalized_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        CHECK ((status IN ('PREPARED','SENDING','RECONCILIATION_REQUIRED',
+                           'CANCELLED') AND source_tx_hash IS NULL)
+            OR (status IN ('SUBMITTED','SOURCE_FINALIZED',
+                           'DESTINATION_FINALIZED','REFUNDED_VERIFIED')
+                AND source_tx_hash IS NOT NULL)),
+        CHECK (source_tx_hash IS NULL OR
+               source_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
+        CHECK (destination_tx_hash IS NULL OR
+               destination_tx_hash ~ '^[A-Za-z0-9]{64,90}$'),
+        CHECK (destination_tx_hash IS NULL OR
+               status IN ('DESTINATION_FINALIZED','REFUNDED_VERIFIED')),
+        CHECK (status != 'DESTINATION_FINALIZED' OR (
+            destination_tx_hash IS NOT NULL AND
+            destination_proof_sha256 IS NOT NULL AND
+            destination_received_atomic IS NOT NULL AND
+            destination_finalized_at IS NOT NULL)),
+        CHECK ((status IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
+                           'REFUNDED_VERIFIED') AND
+                source_proof_sha256 IS NOT NULL AND
+                source_finalized_at IS NOT NULL)
+             OR status NOT IN ('SOURCE_FINALIZED','DESTINATION_FINALIZED',
+                                'REFUNDED_VERIFIED'))
+    )""",
+    """ALTER TABLE mininex_live_native_order_intents
+        ADD COLUMN IF NOT EXISTS source_signed_tx_hash TEXT
+        CHECK (source_signed_tx_hash IS NULL
+          OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$')""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique
+       ON mininex_live_native_order_intents(chain,source_signed_tx_hash)
+       WHERE source_signed_tx_hash IS NOT NULL""",
+    """CREATE INDEX IF NOT EXISTS mininex_native_pending_owner_scan
+       ON mininex_live_native_order_intents
+       (privy_did,chain,updated_at)
+       WHERE status IN ('SENDING','SUBMITTED',
+                        'RECONCILIATION_REQUIRED','SOURCE_FINALIZED')""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_original_source_hash_unique
+       ON mininex_live_native_order_intents(chain,source_tx_hash)
+       WHERE source_tx_hash IS NOT NULL""",
+
+)
+
+
+# Independently observed server-side LIVE worker heartbeat (not a trade,
+# wallet signature, deposit, or evidence of a finalized chain transaction).
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_live_worker_heartbeats (
+        worker_name TEXT PRIMARY KEY,
+        last_poll_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        status TEXT NOT NULL CHECK(status IN ('RUNNING'))
+    )""",
 )
 
 

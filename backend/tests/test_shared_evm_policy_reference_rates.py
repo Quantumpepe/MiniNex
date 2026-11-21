@@ -1,6 +1,8 @@
 """Real user budget drives per-coin Privy atomic caps; no platform max."""
 from decimal import Decimal
+import asyncio
 import inspect
+import time
 import pytest
 from fastapi import HTTPException
 
@@ -8,6 +10,8 @@ from backend.shared_evm_policy_reference_rates import (
     _price, derive_user_budget_evm_atomic_caps,
 )
 from backend.shared_evm_policy_candidate_stage import _stage_from_prices_locked
+from backend import shared_evm_policy_reference_rates as rates
+from backend.coingecko_provider import PRO_BASE
 
 NOW=1800000000
 SYMBOLS={
@@ -52,6 +56,41 @@ def test_five_exact_user_budget_caps_respect_network_stable_decimals(
         str(coin) if asset in ("BNB","POL","AVAX") else None)
     assert output["budget_usd_user_selected"]==1000
     assert output["swap_quote_ready"] is False
+
+
+def test_evm_paid_rates_reuse_one_server_only_batch_for_multiple_coins(monkeypatch):
+    monkeypatch.setenv("MININEX_COINGECKO_PRO_API_KEY","test-server-only")
+    monkeypatch.setattr(rates,"_REFERENCE_CACHE",None)
+    now=int(time.time())
+    payload={value:{"usd":123,"last_updated_at":now}
+             for value in rates._IDS.values()}
+    payload["usd-coin"]["usd"]=1
+    payload["tether"]["usd"]=1
+    calls=[]
+    class Response:
+        content=b'{"prices":"verified"}'
+        def raise_for_status(self):pass
+        def json(self):return payload
+    class Client:
+        def __init__(self,**kwargs):pass
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):return False
+        async def get(self,url,*,params,headers):
+            calls.append((url,params,headers))
+            return Response()
+    monkeypatch.setattr(rates.httpx,"AsyncClient",Client)
+    async def read():
+        first=await rates.fetch_evm_policy_reference_rates("LINK","USDC")
+        second=await rates.fetch_evm_policy_reference_rates("ARB","USDT")
+        return first,second
+    first,second=asyncio.run(read())
+    assert first is second
+    assert len(calls)==1
+    url,params,headers=calls[0]
+    assert url==PRO_BASE+"/simple/price"
+    assert headers.get("x-cg-pro-api-key")=="test-server-only"
+    assert len(params["ids"].split(","))==8
+    assert "arbitrum" in params["ids"]
 
 
 def test_large_owner_selected_budget_has_no_arbitrary_system_ceiling():

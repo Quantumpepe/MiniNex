@@ -21,7 +21,10 @@ from psycopg.rows import dict_row
 from .live_orders import valid_order_key
 from .shared_evm_native_cycle_finality import reconcile_internal_native_evm_cycle
 from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
+from .shared_evm_router_approval_send import submit_scoped_router_approval_once
+from .shared_evm_allowance import check_evm_source_allowance
 from .shared_evm_swap_receipts import _pair
+from .live_eth_quotes import _quantity
 from .shared_native_evm_receipts import check_user_native_evm_conversion
 from .storage import _db_url,_ensure_schema,_safe_did
 
@@ -163,6 +166,14 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
                      AND s.stable=n.stable AND s.chain_id=n.chain_id
                      AND s.wallet_address=n.wallet_address
                      AND b.intent_key IS NULL
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM mininex_live_evm_router_approval_sends a
+                         WHERE a.privy_did=n.privy_did
+                           AND a.chain_id=n.chain_id
+                           AND a.status IN
+                             ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     )
                    ORDER BY n.updated_at ASC,n.privy_did,n.asset,n.intent_key LIMIT %s OFFSET %s"""
     # Rotate across all owner-approved native steps; a stalled older receipt
     # or unresolved downstream operation must not starve newer owners.
@@ -276,6 +287,37 @@ async def reconcile_native_sell_once(
     for row in await asyncio.to_thread(original_native_sells_ready_for_swap,limit):
         try:
             amount=_exact_wrapped_sell_amount(row)
+            # A fresh owner-granted wallet typically has no Router02 WBNB/
+            # WPOL/WAVAX allowance. The normal BUY tick can submit a scoped
+            # approval, but this finalized native SELL runs in the separate
+            # receipt worker. It must have the same one-grant approval stage
+            # or the original DEPOSIT would remain wrapped indefinitely.
+            pair=_pair(row["asset"],row["stable"],"SELL")
+            evidence=await check_evm_source_allowance(
+                row["privy_did"],asset=row["asset"],side="SELL",
+                stable=row["stable"],amount=amount)
+            if (evidence.get("wallet_identity_verified") is not True
+                    or evidence.get("asset")!=row["asset"]
+                    or evidence.get("side")!="SELL"
+                    or evidence.get("stable")!=row["stable"]
+                    or evidence.get("chain_id")!=row["chain_id"]
+                    or evidence.get("source_token_address")!=pair["source_token"]
+                    or evidence.get("native_gas_available") is not True
+                    or evidence.get("source_funds_sufficient") is not True):
+                # Do not repeat the native DEPOSIT to repair a pending wallet.
+                result["pending"]+=1
+                continue
+            if evidence.get("router_allowance_sufficient") is not True:
+                _,atomic=_quantity(amount,pair["source_decimals"])
+                approval=await submit_scoped_router_approval_once(
+                    did=row["privy_did"],asset=row["asset"],side="SELL",
+                    stable=row["stable"],amount_atomic=int(atomic),
+                    budget_revision=row["budget_revision"],
+                    signal_event_id=row["signal_event_id"],client=client)
+                # This is at most an independently claimed approval, not a
+                # completed trade. Its original hash must finalize first.
+                result["pending"]+=1
+                continue
             sent=await execute_internal_evm_strategy_signal(
                 did=row["privy_did"],asset=row["asset"],
                 strategy_run_id=row["strategy_run_id"],
