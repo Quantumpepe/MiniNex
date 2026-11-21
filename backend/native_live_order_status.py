@@ -63,7 +63,10 @@ def _original_native_order_row(row:object,asset:str)->dict:
             or (known_hash is not None and
                 not _valid_source_hash(asset,side,known_hash))
             or (signed_hash is not None and
-                not _valid_source_hash(asset,"SELL",signed_hash))
+                (side!="SELL"
+                 or not _valid_source_hash(asset,"SELL",signed_hash)))
+            or (signed_hash is not None and known_hash is not None
+                and signed_hash!=known_hash)
             or (sent and known_hash is None)
             or (finalized and (outbound is None
                 or type(row.get("destination_proof_sha256")) is not str
@@ -105,6 +108,13 @@ def _original_native_order_row(row:object,asset:str)->dict:
         "original_input_asset":stable if side=="BUY" else asset,
         "source_tx_hash":known_hash,
         "signed_source_hash_known":signed_hash is not None,
+        # Original non-retriable signed source hash, committed BEFORE
+        # network POST. This is a lookup ID, not proof it was broadcast.
+        # The source_tx_hash field remains null until network acknowledged.
+        "expected_source_tx_hash":(
+            signed_hash if side=="SELL"
+            and state in ("SENDING","RECONCILIATION_REQUIRED")
+            else None),
         "destination_tx_hash":display_out,
         "destination_amount_atomic":str(received) if finalized else None,
         "destination_asset":target,

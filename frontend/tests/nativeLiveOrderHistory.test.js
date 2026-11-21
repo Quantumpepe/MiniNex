@@ -17,6 +17,7 @@ function order(asset='BTC',side='BUY',state='SOURCE_FINALIZED'){
     source_tx_hash:side==='BUY'?'0x'+'b'.repeat(64):
       asset==='SOL'?'2'.repeat(88):'c'.repeat(64),
     signed_source_hash_known:false,
+    expected_source_tx_hash:null,
     destination_tx_hash:dest||refunded?
       (side==='SELL'&&dest||side==='BUY'&&refunded?
         '0x'+'e'.repeat(64):asset==='SOL'?'2'.repeat(88):
@@ -75,5 +76,30 @@ test('unrelated owner data or shadow simulation not accepted',()=>{
     const altered=wrapper('BTC',[order1]);
     altered[key]=true;
     assert.equal(validOriginalNativeOrderHistory(altered,'BTC'),false);
+  }
+});
+
+
+test('unknown signed source ID is visible but never shown as sent or settled',()=>{
+  const forHash={BTC:'c'.repeat(64),SOL:'2'.repeat(88),XRP:'A'.repeat(64)};
+  for(const asset of ['BTC','SOL','XRP']){
+    const x=order(asset,'SELL','SOURCE_FINALIZED');
+    x.status='RECONCILIATION_REQUIRED';
+    x.source_tx_hash=null;
+    x.source_blockchain_finalized=false;
+    x.pending_or_uncertain=true;
+    x.signed_source_hash_known=true;
+    x.expected_source_tx_hash=forHash[asset];
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[x]),asset),true);
+    for(const value of [
+      {...x,source_blockchain_finalized:true},
+      {...x,destination_wallet_credited:true},
+      {...x,automatic_retry_allowed:true},
+      {...x,expected_source_tx_hash:'0x'+'e'.repeat(64)},
+      {...x,side:'BUY'},
+      {...x,source_tx_hash:forHash[asset]},
+    ]){
+      assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[value]),asset),false);
+    }
   }
 });

@@ -51,6 +51,14 @@ export function validOriginalNativeOrderHistory(value,asset){
          'SENDING','SUBMITTED','RECONCILIATION_REQUIRED','SOURCE_FINALIZED'
        ].includes(o.status)||
        o.signed_source_hash_known!==true&&o.signed_source_hash_known!==false||
+       (o.expected_source_tx_hash!==null&&(
+         o.side!=='SELL'||!['SENDING','RECONCILIATION_REQUIRED'].includes(o.status)||
+         o.signed_source_hash_known!==true||
+         !validSource(asset,'SELL',o.expected_source_tx_hash)||
+         o.source_tx_hash!==null))||
+       (o.expected_source_tx_hash===null&&
+         o.signed_source_hash_known===true&&
+         ['SENDING','RECONCILIATION_REQUIRED'].includes(o.status))||
        o.automatic_retry_allowed!==false||
        o.realized_net_pnl_usd!==null||
        o.performance_fee_assessed!==false||

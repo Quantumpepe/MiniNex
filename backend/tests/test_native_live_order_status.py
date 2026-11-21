@@ -88,3 +88,34 @@ def test_only_bearer_authenticated_native_order_get():
     code=inspect.getsource(matches[0].endpoint)
     assert "verify_privy_bearer" in code
     assert "get_owner_native_live_order_status" in code
+
+
+def test_unknown_original_signed_source_is_visible_without_claiming_broadcast():
+    x=row(asset="BTC",side="SELL",state="RECONCILIATION_REQUIRED")
+    x["source_tx_hash"]=None
+    x["source_signed_tx_hash"]="d"*64
+    report=status._original_native_order_row(x,"BTC")
+    assert report["expected_source_tx_hash"]=="d"*64
+    assert report["source_tx_hash"] is None
+    assert report["source_blockchain_finalized"] is False
+    assert report["destination_wallet_credited"] is False
+    assert report["automatic_retry_allowed"] is False
+    for asset,hash_ in (("SOL","2"*88),("XRP","A"*64)):
+        y=row(asset=asset,side="SELL",state="SENDING")
+        y["source_tx_hash"]=None
+        y["source_signed_tx_hash"]=hash_
+        proof=status._original_native_order_row(y,asset)
+        assert proof["expected_source_tx_hash"]==hash_
+        assert proof["source_tx_hash"] is None
+
+
+def test_signed_source_hash_cannot_be_substituted_or_used_for_buy():
+    a=row("BTC","BUY","SENDING")
+    a["source_tx_hash"]=None
+    a["source_signed_tx_hash"]="d"*64
+    with pytest.raises(ValueError):
+        status._original_native_order_row(a,"BTC")
+    b=row("BTC","SELL","SUBMITTED")
+    b["source_signed_tx_hash"]="e"*64
+    with pytest.raises(ValueError):
+        status._original_native_order_row(b,"BTC")

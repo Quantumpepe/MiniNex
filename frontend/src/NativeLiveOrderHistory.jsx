@@ -68,6 +68,10 @@ export default function NativeLiveOrderHistory({
         {o.source_tx_hash&&<code style={{overflowWrap:'anywhere'}}>
           {t?.liveNativeOrderSource||'Source'} · {o.source_chain}: {o.source_tx_hash}
         </code>}
+        {o.expected_source_tx_hash&&<code style={{overflowWrap:'anywhere'}}>
+          {t?.liveNativeOrderExpectedSource||'Signed transaction ID; network outcome unknown'}
+          {' · '}{o.source_chain}: {o.expected_source_tx_hash}
+        </code>}
         {o.destination_tx_hash&&<code style={{overflowWrap:'anywhere'}}>
           {o.original_funds_refunded?
             (t?.liveNativeOrderReturn||'Refund'):
