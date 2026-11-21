@@ -24,7 +24,6 @@ def rows():
       "remote_policy_sha256":"c"*64,"candidate_sha256":"c"*64,
       "expires":10**11},
      {"status":"SIGNED_INTENT","revoked_at":None,"limits_revision":3},
-     {"pending":0},
     ]
 
 def test_owner_granted_auto_session_can_start(monkeypatch):
@@ -41,13 +40,24 @@ def test_owner_granted_auto_session_can_start(monkeypatch):
     (1,{"status":"REMOTE_VERIFIED_UNATTACHED"}),
     (1,{"policy_id":"other"}),
     (2,{"status":"REVOKED"}),
-    (3,{"pending":1}),
 ])
 def test_no_start_without_user_approval(index,change):
     data=rows();data[index].update(change);cur=Cursor(data)
     with pytest.raises(HTTPException):
         mod._start_locked(cur,DID,"USDT",GRANT)
     assert not any("trading_paused=FALSE" in sql for sql in cur.sql)
+
+def test_owner_may_resume_while_old_source_waits_for_finality(monkeypatch):
+    # Start/Resume doesn't resend the old source; the original order
+    # remains reserved and the nonce/receipt worker owns its recovery.
+    monkeypatch.setattr(mod.secrets,"token_hex",lambda n:"a"*32)
+    cur=Cursor(rows())
+    activated=mod._start_locked(cur,DID,"USDC",GRANT)
+    assert activated["status"]=="ACTIVE"
+    assert all("SELECT COUNT(*) AS pending" not in q for q in cur.sql)
+    assert any("INSERT INTO mininex_live_eth_auto_sessions" in q
+               for q in cur.sql)
+
 
 def test_no_start_without_remote_wallet_grant():
     cur=Cursor(rows())

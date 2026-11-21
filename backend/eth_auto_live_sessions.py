@@ -99,14 +99,9 @@ def _start_locked(cur,did,stable,grant):
                 or consent.get("revoked_at") is not None
                 or consent.get("limits_revision")!=limits["revision"]):
             raise HTTPException(409,"User live consent missing or revoked")
-    cur.execute(
-        """SELECT COUNT(*) AS pending FROM mininex_live_order_intents
-           WHERE privy_did=%s AND asset='ETH' AND state IN
-           ('RESERVED','SENDING','RECONCILIATION_REQUIRED',
-            'SUBMITTED','REORG_PENDING')""",(did,))
-    pending=cur.fetchone()
-    if type(pending) is not dict or pending["pending"]!=0:
-        raise HTTPException(409,"Previous ETH trade must settle before AUTO starts")
+    # An already submitted ETH transaction must be reconciled, not block
+    # the owner's Start/Resume action. Its original reservation and nonce
+    # lock remain active, so this never authorizes a second send of it.
     run_id="eth_auto_"+secrets.token_hex(16)
     cur.execute(
         """INSERT INTO mininex_live_eth_auto_sessions
