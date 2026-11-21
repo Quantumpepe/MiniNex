@@ -164,3 +164,70 @@ def test_old_unpriced_fill_pages_rotate_across_owners(monkeypatch):
         [owners[4]["privy_did"]],
         [owners[0]["privy_did"],owners[1]["privy_did"]]]
     assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+
+
+def test_historical_erc20_prices_parallelize_other_owners_but_serialize_same_coin(monkeypatch):
+    fills=[
+        {"did":"did:privy:alpha","fill":{"asset":"LINK","tx_hash":"one"}},
+        {"did":"did:privy:alpha","fill":{"asset":"LINK","tx_hash":"two"}},
+        {"did":"did:privy:beta","fill":{"asset":"UNI","tx_hash":"three"}},
+    ]
+    monkeypatch.setattr(worker,"_read_pending_original_usd_fills",lambda:fills)
+    monkeypatch.setattr(worker,"_read_unaccounted_token_sell_owners",lambda:[
+        {"privy_did":"did:privy:alpha","asset":"LINK"},
+        {"privy_did":"did:privy:beta","asset":"UNI"},
+    ])
+    started=[]
+    finished=[]
+    barrier=asyncio.Event()
+    async def price(**kwargs):
+        item=(kwargs["did"],kwargs["row"]["tx_hash"])
+        started.append(item)
+        if len(started)>=2:barrier.set()
+        await asyncio.wait_for(barrier.wait(),timeout=1)
+        finished.append(item)
+        return {"historic_usd_priced":True}
+    async def hwm(**kwargs):
+        assert len(finished)==3
+        return {"mode":"HWM_ACCOUNTED_VERIFIED_ERC20_SELLS"}
+    monkeypatch.setattr(worker,"independently_price_stored_evm_fill",price)
+    monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",hwm)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await worker.reconcile_verified_erc20_fees_once(client=client)
+    outcome=asyncio.run(run())
+    assert started[:2]==[
+        ("did:privy:alpha","one"),("did:privy:beta","three")]
+    assert started[-1]==("did:privy:alpha","two")
+    assert outcome=={
+        "prices_recorded":3,"token_accounts_reconciled":2,
+        "accounts_needing_manual_evidence":0,"wallet_transactions_sent":0,
+    }
+
+
+def test_one_failed_erc20_price_does_not_block_unrelated_owner_hwm(monkeypatch):
+    monkeypatch.setattr(worker,"_read_pending_original_usd_fills",lambda:[
+        {"did":"did:privy:bad","fill":{"asset":"LINK"}},
+        {"did":"did:privy:good","fill":{"asset":"ARB"}},
+    ])
+    monkeypatch.setattr(worker,"_read_unaccounted_token_sell_owners",lambda:[
+        {"privy_did":"did:privy:good","asset":"ARB"}
+    ])
+    async def price(**kwargs):
+        if kwargs["did"]=="did:privy:bad":raise ValueError("No archived rate")
+        return {"historic_usd_priced":True}
+    hwm_calls=[]
+    async def hwm(**kwargs):
+        hwm_calls.append(kwargs["did"])
+        return {"mode":"HWM_ACCOUNTED_VERIFIED_ERC20_SELLS"}
+    monkeypatch.setattr(worker,"independently_price_stored_evm_fill",price)
+    monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",hwm)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await worker.reconcile_verified_erc20_fees_once(client=client)
+    report=asyncio.run(run())
+    assert report["prices_recorded"]==1
+    assert report["token_accounts_reconciled"]==1
+    assert report["accounts_needing_manual_evidence"]==1
+    assert report["wallet_transactions_sent"]==0
+    assert hwm_calls==["did:privy:good"]

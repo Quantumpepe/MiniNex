@@ -126,7 +126,13 @@ def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
 async def reconcile_verified_erc20_fees_once(
     *,client:httpx.AsyncClient,
 )->dict:
-    """Keep trading fast: this does not touch the wallet send loop."""
+    """Reconcile independently owned ERC20 histories without serial RPC delay.
+
+    One owner's one coin is handled in original work-page order, and all
+    immutable historic USD evidence is written before that owner's HWM
+    is assessed. Distinct users can progress despite an old slow RPC.
+    This never transfers, signs, approves or creates an order.
+    """
     if type(client) is not httpx.AsyncClient:
         raise ValueError("Original internal HTTP client required")
     result={"prices_recorded":0,"token_accounts_reconciled":0,
@@ -137,29 +143,71 @@ async def reconcile_verified_erc20_fees_once(
     except psycopg.Error:
         LOG.warning("Historical real owner fill scan unavailable")
         return result
+
+    # Same owner+asset may contain several immutable filled trades. Price
+    # those serially, but never hold unrelated owners behind a slow oracle.
+    buckets:dict[tuple[str,str],list[dict]]={}
     for item in pending:
-        try:
-            proof=await independently_price_stored_evm_fill(
-                did=item["did"],row=item["fill"],client=client,
-                durable_rates=True)
-            if proof.get("historic_usd_priced") is True:
-                result["prices_recorded"]+=1
-        except asyncio.CancelledError:
-            raise
-        except (ValueError,HTTPException,psycopg.Error):
+        if (type(item) is not dict
+                or type(item.get("did")) is not str
+                or type(item.get("fill")) is not dict
+                or item["fill"].get("asset") not in ("LINK","UNI","ARB")):
             result["accounts_needing_manual_evidence"]+=1
+            continue
+        buckets.setdefault((item["did"],item["fill"]["asset"]),[]).append(item)
+    # Network-provider concurrency is bounded, not a user trade or fee limit.
+    oracle_slots=asyncio.Semaphore(8)
+
+    async def price_one_owner(items:list[dict])->tuple[int,int]:
+        recorded=unavailable=0
+        async with oracle_slots:
+            for item in items:
+                try:
+                    proof=await independently_price_stored_evm_fill(
+                        did=item["did"],row=item["fill"],client=client,
+                        durable_rates=True)
+                    if type(proof) is not dict:
+                        raise ValueError("Original historic fill price proof unavailable")
+                    if proof.get("historic_usd_priced") is True:
+                        recorded+=1
+                except asyncio.CancelledError:
+                    raise
+                except (ValueError,HTTPException,psycopg.Error,
+                        httpx.HTTPError,KeyError,TypeError):
+                    unavailable+=1
+        return recorded,unavailable
+
+    prices=await asyncio.gather(*(price_one_owner(items)
+                                  for items in buckets.values()))
+    result["prices_recorded"]+=sum(good for good,_ in prices)
+    result["accounts_needing_manual_evidence"]+=sum(bad for _,bad in prices)
+
     try:
         owners=await asyncio.to_thread(_read_unaccounted_token_sell_owners)
     except psycopg.Error:
         LOG.warning("Unaccounted finalized EVM SELL scan unavailable")
         return result
-    for owner in owners:
-        try:
-            await reconcile_owner_erc20_hwm_after_verified_sell(
-                did=owner["privy_did"],asset=owner["asset"],client=client)
-            result["token_accounts_reconciled"]+=1
-        except asyncio.CancelledError:
-            raise
-        except (ValueError,HTTPException,psycopg.Error):
-            result["accounts_needing_manual_evidence"]+=1
+
+    # This is accounting only. Every independent original owner/coin
+    # reconciles HWM exactly once under its own database ledger locks.
+    async def account_one_owner(owner:dict)->tuple[int,int]:
+        if (type(owner) is not dict
+                or type(owner.get("privy_did")) is not str
+                or owner.get("asset") not in ("LINK","UNI","ARB")):
+            return 0,1
+        async with oracle_slots:
+            try:
+                await reconcile_owner_erc20_hwm_after_verified_sell(
+                    did=owner["privy_did"],asset=owner["asset"],client=client)
+                return 1,0
+            except asyncio.CancelledError:
+                raise
+            except (ValueError,HTTPException,psycopg.Error,
+                    httpx.HTTPError,KeyError,TypeError):
+                return 0,1
+
+    accounts=await asyncio.gather(*(account_one_owner(owner)
+                                    for owner in owners))
+    result["token_accounts_reconciled"]+=sum(good for good,_ in accounts)
+    result["accounts_needing_manual_evidence"]+=sum(bad for _,bad in accounts)
     return result
