@@ -41,7 +41,8 @@ def exact_owner_native_buy_amount(
     *,asset:str,stable:str,budget_usd:int,
     native_wallet_evidence:dict,stable_wallet_evidence:dict,
     market_price_usd:object,stable_price_usd:object,
-    pending_buy_stable:object=0,observed_source_fees_usd:object=0,
+    pending_buy_stable:object=0,pending_buy_usd:object=0,
+    observed_source_fees_usd:object=0,
 )->str|None:
     """Calculate precise stablecoin BUY amount within actual selected budget.
 
@@ -68,11 +69,12 @@ def exact_owner_native_buy_amount(
         coin_usd=_nonnegative_exact(market_price_usd,"coin USD rate")
         stable_usd=_nonnegative_exact(stable_price_usd,"stable USD rate")
         pending=_nonnegative_exact(pending_buy_stable,"unsettled native BUY")
+        pending_usd=_nonnegative_exact(pending_buy_usd,"unsettled native BUY USD")
         fees=_nonnegative_exact(observed_source_fees_usd,"real source fees")
         if coin_usd<=0 or stable_usd<=0 or not Decimal("0.95")<=stable_usd<=Decimal("1.05"):
             return None
         held_value=owned*coin_usd
-        unclosed_value=pending*stable_usd
+        unclosed_value=pending*stable_usd+pending_usd
         available=max(Decimal(0),Decimal(budget_usd)-held_value-unclosed_value-fees)
         allowed=min(liquid,available/stable_usd)
         amount=allowed.quantize(_MICRO,rounding=ROUND_DOWN)
