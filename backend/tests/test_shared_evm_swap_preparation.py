@@ -137,6 +137,30 @@ def test_one_executor_routes_every_evm_asset_through_own_quote_and_shared_allowa
     assert ("ALLOWANCE","did:privy:test",asset) in seen
 
 
+def test_arbitrum_preparation_uses_arbitrum_rpc_not_ethereum_token_quoter(monkeypatch):
+    pair,q,a=sample("ARB","BUY","USDC","1")
+    async def wrong_ethereum_erc20(**kwargs):
+        pytest.fail("ARB must never use the Ethereum LINK/UNI quote route")
+    async def arbitrum(did,**kwargs):
+        assert did=="did:privy:test"
+        assert kwargs=={
+            "asset":"ARB","side":"BUY","stable":"USDC",
+            "amount":"1","include_user_transaction":True,
+        }
+        return q
+    async def allowance(did,**kwargs):
+        assert kwargs["asset"]=="ARB"
+        return a
+    monkeypatch.setattr(prep,"quote_owner_erc20_trade",wrong_ethereum_erc20)
+    monkeypatch.setattr(prep,"quote_native_evm_trade",arbitrum)
+    monkeypatch.setattr(prep,"check_evm_source_allowance",allowance)
+    result=asyncio.run(prep.prepare_owner_evm_swap(
+        "did:privy:test",asset="ARB",side="BUY",stable="USDC",amount="1"))
+    assert result["chain_id"]==42161
+    assert result["wallet_identity_verified"] is True
+    assert result["unsigned_transaction"]["chainId"]==42161
+
+
 def test_api_is_authenticated_and_never_signs():
     import inspect
     from backend.app import app
