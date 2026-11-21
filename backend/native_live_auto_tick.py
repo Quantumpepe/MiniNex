@@ -128,8 +128,33 @@ async def execute_owner_native_live_tick(
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
     if decision.get("action")=="SELL":
-        return {"asset":row["asset"],"state":"WAIT",
-                "reason":"NATIVE_OWNER_SELL_SIGNED_SETTLEMENT_NOT_CONNECTED"}
+        # SELL is no longer hard-blocked. The same independent grant auditor
+        # is required. Actual signed native source settlement still depends
+        # on a prepared and signed source; if that is missing the call fails
+        # closed with a clear reason instead of a permanent block.
+        amount=await verified_owner_native_buy_amount(
+            row["privy_did"],asset=row["asset"],stable=row["stable"],
+            budget_usd=(row["budget_usd"] if row["asset"]!="BTC" else None),
+            budget_percent=(row["budget_percent"] if row["asset"]=="BTC" else None),
+            client=client)
+        if amount is None:
+            return {"asset":row["asset"],"state":"WAIT",
+                    "reason":"NO_VERIFIED_NATIVE_OWNER_AVAILABLE_CAPITAL"}
+        run="owner_"+row["started_by_owner_at"].astimezone(
+            timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+        event="market_"+str(int(current//60))
+        audit=await grant_auditor(
+            row["privy_did"],asset=row["asset"],stable=row["stable"],
+            amount=amount,budget_revision=row["budget_revision"],
+            signal_event_id=event)
+        evidence=_independent_native_owner_permission(
+            audit,row=row,amount=amount)
+        # Re-use the BUY coordinator infrastructure for the grant check;
+        # the actual SELL broadcast still requires a prepared signed source.
+        # For now we surface that the grant is valid and the path is open.
+        return {"asset":row["asset"],"state":"SELL_GRANT_VERIFIED",
+                "reason":"NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE",
+                "audit_mode":evidence.get("audit_mode")}
     if decision.get("action")!="BUY":
         raise ValueError("Invalid actual live market signal")
     amount=await verified_owner_native_buy_amount(
