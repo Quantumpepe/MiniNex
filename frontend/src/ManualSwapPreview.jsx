@@ -202,7 +202,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         amount={request.body.amount} t={t}/>}
       {!ethManualPair&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
-      </p>
+      </p>}
     </div>}
   </section>;
 }
