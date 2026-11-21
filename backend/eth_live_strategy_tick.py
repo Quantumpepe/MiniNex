@@ -141,7 +141,7 @@ def live_trade_quantity(*, decision: dict, live_limits: dict,
         quantity=quantity.quantize(_D("0.000001"),rounding=ROUND_DOWN)
     else:
         weth=_positive_decimal(allowance["verified_source_balance"],"WETH")
-        _positive_decimal(decision.get("market_price"),"market price")
+        price=_positive_decimal(decision.get("market_price"),"market price")
         # A SELL closes verified WETH inventory even if the market price
         # increased beyond the original USD entry capital. The owner's
         # scoped Privy policy still restricts the actual token input.
