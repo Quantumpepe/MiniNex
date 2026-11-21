@@ -193,7 +193,11 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
 
   const changeReplay=(asset,key,value)=>{
     if(!EXTRA_REPLAY_COINS.includes(asset)||!['mode','horizon','budget','stable'].includes(key))return;
-    setReplayOptions(old=>({...old,[asset]:{...old[asset],[key]:value}}));
+    setReplayOptions(old=>{
+      const next={...old,[asset]:{...old[asset],[key]:value}};
+      setTimeout(()=>saveExtra(asset),0);
+      return next;
+    });
   };
   const selectedCoin=coinBySymbol(opened);
   const selectedSettings=opened==='BTC'||opened==='ETH'?settings[opened]:null;
