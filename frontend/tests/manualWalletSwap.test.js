@@ -28,6 +28,8 @@ test('wallet Swap keeps other networks quote-only and mounts explicit ETH Privy 
   assert.match(ethSigner,/async function submit\(kind\)/);
   assert.match(ethSigner,/const p=await getProvider\(\)/);
   assert.match(ethSigner,/wallet\.getEthereumProvider\(\)/);
+  assert.match(ethSigner,/wallet\.switchChain\(1\)/);
+  assert.match(ethSigner,/if\(BigInt\(await p\.request\(\{method:'eth_chainId'\}\)\)\!==1n\)/);
   assert.match(component,/requestId\.current/);
   assert.match(css,/\.mininex-wallet-swap\{/);
   assert.match(labels,/walletSwapTitle: 'Swap'/);
@@ -488,7 +490,7 @@ test('privy wallet record readiness is independent, authenticated and never an e
 test('manual quote UI is compact and preserves 12 coins without diagnostic buttons',()=>{
   assert.match(component,/onSubmit=\{checkQuote\}/);
   assert.match(component,/className="mininex-swap-summary"/);
-  assert.match(component,/walletSwapAdaPending/);
+  assert.doesNotMatch(component,/walletSwapAdaPending/); // ADA was replaced by ARB.
   assert.match(component,/walletSwapNotEnabled/);
   for(const name of ['checkWalletReadiness','checkRoute','checkFee','checkReceipt'])
     assert.equal(component.includes('onClick={'+name+'}'),false);
