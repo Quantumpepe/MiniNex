@@ -161,3 +161,29 @@ def test_native_xrp_usdt_or_reset_without_usdt_never_finalizes():
             {**base,"asset":"BTC","approval_mode":"THOR_USDT_ZERO",
              "stable":"USDC","token_address":STABLES["USDC"].lower()},
             chain_id="0x1",tx=None,receipt=None,finalized=None)
+
+
+def test_native_thor_receipt_scan_is_owner_only_and_separate_from_evm(monkeypatch):
+    from backend import shared_evm_router_approval_finality as m
+    sqls=[]
+    records=[{"asset":"BTC"},{"asset":"SOL"}]
+    class Cursor:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def execute(self,query,args):
+            sqls.append(query)
+            assert "approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO')" in query
+            self.limit,self.offset=args
+        def fetchall(self):return records[self.offset:self.offset+self.limit]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def cursor(self,**kwargs):return Cursor()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *args,**kwargs:DB())
+    monkeypatch.setattr(m,"_NATIVE_APPROVAL_PAGE_OFFSET",0)
+    assert m._pending_approvals(limit=1,native_only=True)==[records[0]]
+    assert m._pending_approvals(limit=1,native_only=True)==[records[1]]
+    assert m._pending_approvals(limit=1,native_only=True)==[records[0]]
+    assert len(sqls)==4

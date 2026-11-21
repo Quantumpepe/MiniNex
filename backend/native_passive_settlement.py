@@ -16,6 +16,9 @@ import asyncio
 import logging
 import os
 
+from .shared_evm_router_approval_finality import (
+    reconcile_original_native_thor_approvals_once,
+)
 from .native_passive_destination import reconcile_original_native_destinations_once
 from .native_live_source_finality import (
     reconcile_original_native_source_once,
@@ -60,6 +63,7 @@ async def reconcile_original_native_passive_once() -> dict:
         "passes": 0,
         "scanned": 0,
         "source_finalized": 0,
+        "router_approvals_finalized": 0,
         "unresolved_or_unavailable": 0,
         "errors": 0,
         "new_signatures_created": 0,
@@ -71,6 +75,7 @@ async def reconcile_original_native_passive_once() -> dict:
     if not result["worker_enabled"]:
         return result
     for callback, count_key in (
+        (reconcile_original_native_thor_approvals_once,"finalized_approvals"),
         (reconcile_unknown_original_native_signed_sources_once,
          "finalized_without_resend"),
         (reconcile_original_native_source_once, "finalized_sources"),
@@ -88,7 +93,9 @@ async def reconcile_original_native_passive_once() -> dict:
                 raise ValueError("Native source read-only report invalid")
             result["passes"] += 1
             result["scanned"] += report["scanned"]
-            if count_key == "destination_finalized":
+            if count_key == "finalized_approvals":
+                result["router_approvals_finalized"] += report[count_key]
+            elif count_key == "destination_finalized":
                 if type(report.get("refunds_verified")) is not int:
                     raise ValueError("Native refund finality report missing")
                 result["destination_settlements_recorded"] += (

@@ -22,16 +22,17 @@ from .storage import _db_url,_ensure_schema
 
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _APPROVAL_PAGE_OFFSET=0
+_NATIVE_APPROVAL_PAGE_OFFSET=0
 
 
-def _pending_approvals(limit:int=100)->list[dict]:
+def _pending_approvals(limit:int=100,*,native_only:bool=False)->list[dict]:
     """Rotate across original chain submissions, not just the oldest page.
 
     A perpetually pending old transaction must not prevent other wallets
     from having their original allowances finalized.
     """
-    global _APPROVAL_PAGE_OFFSET
-    if type(limit) is not int or not 1<=limit<=500:
+    global _APPROVAL_PAGE_OFFSET,_NATIVE_APPROVAL_PAGE_OFFSET
+    if type(native_only) is not bool or type(limit) is not int or not 1<=limit<=500:
         raise ValueError("Invalid passive approval scan page size")
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
@@ -40,17 +41,23 @@ def _pending_approvals(limit:int=100)->list[dict]:
                           token_address,router_address,amount_atomic,
                           idempotency_key,tx_hash,approval_mode
                    FROM mininex_live_evm_router_approval_sends
-                   WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
+                   WHERE status='SUBMITTED' AND tx_hash IS NOT NULL""" + (
+                   """ AND approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO')"""
+                   if native_only else "") + """
                    ORDER BY created_at,privy_did,asset,idempotency_key
                    LIMIT %s OFFSET %s"""
-            offset=_APPROVAL_PAGE_OFFSET
+            offset=(_NATIVE_APPROVAL_PAGE_OFFSET if native_only
+                    else _APPROVAL_PAGE_OFFSET)
             cur.execute(sql,(limit,offset))
             rows=list(cur.fetchall())
             if not rows and offset:
                 offset=0
                 cur.execute(sql,(limit,0))
                 rows=list(cur.fetchall())
-    _APPROVAL_PAGE_OFFSET=offset+len(rows)
+    if native_only:
+        _NATIVE_APPROVAL_PAGE_OFFSET=offset+len(rows)
+    else:
+        _APPROVAL_PAGE_OFFSET=offset+len(rows)
     return rows
 
 
@@ -149,12 +156,13 @@ def _persist_finality(row:dict,status:str)->bool:
 
 
 async def reconcile_original_router_approvals_once(
-    *,client:httpx.AsyncClient,
+    *,client:httpx.AsyncClient,native_only:bool=False,limit:int=100,
 )->dict:
-    result={"checked":0,"finalized":0,"pending":0,"unresolved":0,"resent":0}
+    result={"checked":0,"finalized":0,"pending":0,"unresolved":0,"resent":0,"scanned":0}
     if type(client) is not httpx.AsyncClient:
         raise ValueError("Trusted RPC client required")
-    rows=await asyncio.to_thread(_pending_approvals)
+    rows=await asyncio.to_thread(_pending_approvals,limit,native_only=native_only)
+    result["scanned"]=len(rows)
     for row in rows:
         try:
             asset=row["asset"]
@@ -196,3 +204,25 @@ async def reconcile_original_router_approvals_once(
         except Exception:
             result["unresolved"]+=1
     return result
+
+
+async def reconcile_original_native_thor_approvals_once(limit:int=24)->dict:
+    """Native BUY-specific read-only allowance finality without another signer.
+
+    The EVM worker may also reconcile these same submitted receipts; the
+    journal status check ensures both observers cannot finalize twice.
+    """
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(9),follow_redirects=False,
+    ) as client:
+        report=await reconcile_original_router_approvals_once(
+            client=client,native_only=True,limit=limit)
+    return {
+        "mode":"ORIGINAL_NATIVE_THOR_APPROVAL_PASSIVE_FINALITY",
+        "scanned":report["scanned"],
+        "finalized_approvals":report["finalized"],
+        "pending_approvals":report["pending"],
+        "unresolved_without_resend":report["unresolved"],
+        "new_transactions_sent":0,"fees_paid":False,
+        "source_trades_finalized":0,
+    }
