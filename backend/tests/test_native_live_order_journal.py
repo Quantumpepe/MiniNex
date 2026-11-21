@@ -461,3 +461,56 @@ def test_native_eth_buy_checks_existing_owner_ethereum_nonce():
     assert "mininex_evm_auto_fee_sends" in sql
     assert args==(DID,)*5
     assert not any("SET status='SENDING'" in query for query,_ in cur.queries)
+
+
+@pytest.mark.parametrize("asset,side", [
+    ("BTC","SELL"),("SOL","SELL"),("XRP","SELL"),
+    ("BTC","BUY"),("SOL","BUY"),("XRP","BUY"),
+])
+def test_finalized_source_waiting_for_other_chain_is_not_a_wallet_nonce_block(asset,side):
+    """No artificial one-trade-in-flight limit after real source finality."""
+    row=identity(asset=asset,side=side)
+    original={
+        "status":"PREPARED","chain":row["chain"],
+        "payload_sha256":row["payload_sha256"],
+        "source_wallet":row["source_wallet"],
+        "owner_consent_sha256":row["owner_consent_sha256"],
+        "privy_grant_sha256":row["privy_grant_sha256"],
+        "budget_revision":row["budget_revision"],
+    }
+    # At this point the SQL source-nonce query excludes SOURCE_FINALIZED.
+    # The destination receipt worker will still keep and reconcile that row.
+    query_results=[{"privy_did":DID},original,{"pending":0}]
+    if side=="BUY":
+        query_results.append({"pending":0})
+    query_results.append({"status":"SENDING"})
+    cur=Cursor(query_results)
+    status=journal._claim_once_locked(cur,did=DID,asset=asset,
+        key=row["intent_key"],digest=row["payload_sha256"],
+        permission_audit=audit(row))
+    assert status=="SENDING"
+    nonce_sql=cur.queries[2][0]
+    assert "SENDING" in nonce_sql
+    assert "SUBMITTED" in nonce_sql
+    assert "RECONCILIATION_REQUIRED" in nonce_sql
+    assert "SOURCE_FINALIZED" not in nonce_sql
+    assert "quote_expires_at>now()" in cur.queries[-1][0]
+
+
+def test_uncertain_original_source_send_still_blocks_second_claim():
+    row=identity(asset="SOL",side="SELL")
+    original={
+        "status":"PREPARED","chain":row["chain"],
+        "payload_sha256":row["payload_sha256"],
+        "source_wallet":row["source_wallet"],
+        "owner_consent_sha256":row["owner_consent_sha256"],
+        "privy_grant_sha256":row["privy_grant_sha256"],
+        "budget_revision":row["budget_revision"],
+    }
+    cur=Cursor([{"privy_did":DID},original,{"pending":1}])
+    with pytest.raises(HTTPException) as exc:
+        journal._claim_once_locked(cur,did=DID,asset="SOL",
+            key=row["intent_key"],digest=row["payload_sha256"],
+            permission_audit=audit(row))
+    assert exc.value.status_code==409
+    assert not any("SET status='SENDING'" in sql for sql,_ in cur.queries)

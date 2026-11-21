@@ -270,12 +270,19 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
             or original.get("source_wallet")!=
                permission_audit.get("source_wallet")):
         raise HTTPException(409,"Native original send already claimed or changed")
+    # Source-chain finalization means the original transaction is mined
+    # and its source nonce/UTXO can no longer be reused. The cross-chain
+    # destination may still take a long time, but should not freeze
+    # unrelated user-authorized BUY/SELL signals or other per-coin budgets.
+    # Only an unconfirmed or ambiguous source SEND serializes this wallet.
+    # Actual pending capital is still checked against user settings by the
+    # live order coordinator, not through an artificial one-trade gate.
     cur.execute(
         """SELECT COUNT(*) AS pending
            FROM mininex_live_native_order_intents
            WHERE privy_did=%s AND chain=%s
              AND status IN ('SENDING','SUBMITTED',
-                            'RECONCILIATION_REQUIRED','SOURCE_FINALIZED')""",
+                            'RECONCILIATION_REQUIRED')""",
         (did,original["chain"]))
     pending=cur.fetchone()
     if (type(pending) is not dict or type(pending.get("pending")) is not int
