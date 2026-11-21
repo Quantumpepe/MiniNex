@@ -155,13 +155,13 @@ def test_original_native_auto_worker_requires_no_second_receipt_flag(monkeypatch
     monkeypatch.delenv("MININEX_NATIVE_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
-    assert m._native_passive_enabled() is False
+    assert worker._native_passive_enabled() is False
     monkeypatch.setenv("MININEX_NATIVE_AUTO_WORKER_ENABLED","explicit-live")
-    assert m._native_passive_enabled() is False
+    assert worker._native_passive_enabled() is False
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
-    assert m._native_passive_enabled() is True
+    assert worker._native_passive_enabled() is True
     monkeypatch.delenv("MININEX_NATIVE_AUTO_WORKER_ENABLED")
     monkeypatch.setenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
-    assert m._native_passive_enabled() is True
+    assert worker._native_passive_enabled() is True
     monkeypatch.delenv("DATABASE_URL")
-    assert m._native_passive_enabled() is False
+    assert worker._native_passive_enabled() is False
