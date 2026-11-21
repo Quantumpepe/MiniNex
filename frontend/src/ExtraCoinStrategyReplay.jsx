@@ -11,7 +11,7 @@ import {EXTRA_REPLAY_COINS,MODES,HORIZONS,validExtraReplayBudget,
 export default function ExtraCoinStrategyReplay({
   asset,t,enabled,options,onChange,getAccessToken,
   onSavePreference,preferenceStatus,preferenceSaved,preferenceSaving,
-  onRetryPreference,
+  onRetryPreference,liveMode=false,
 }) {
   const [result,setResult]=useState(null);
   const [busy,setBusy]=useState(false);
@@ -63,7 +63,7 @@ export default function ExtraCoinStrategyReplay({
 
   const pct=value=>(value>0?'+':'')+value.toFixed(2)+'%';
   return <section className="mininex-extra-replay" aria-label={asset+' '+t.extraReplayTitle}>
-    <strong>{t.extraReplayTitle}</strong>
+    <strong>{liveMode?t.extraReplayTitleLive:t.extraReplayTitle}</strong>
     <form className="mininex-extra-replay-form" onSubmit={run}>
       <label><span>{t.extraReplayBudget}</span>
         <input type="number" inputMode="numeric" min="1" step="1"
