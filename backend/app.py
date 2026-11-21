@@ -36,6 +36,7 @@ from .native_live_buy_destination import get_private_original_native_buy_destina
 from .native_live_sell_refund import get_private_original_native_sell_refund
 from .native_live_order_status import get_owner_native_live_order_status
 from .native_live_eth_buy_source import get_original_eth_buy_source
+from .native_thor_transaction_status import get_private_original_protocol_status
 from .user_paper import read_user_paper, start_user_paper, set_user_paper_status, step_user_paper, add_paper_mark_to_market
 from .personal_paper_worker import PersonalPaperWorker
 from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth_auto, get_eth_auto_session
@@ -518,7 +519,7 @@ async def authenticated_native_balances(
 
 @app.get("/api/live/native/order-status/{asset}")
 async def read_owner_native_live_original_orders(
-    asset: Literal["BTC","SOL","XRP"],
+    asset: Literal["BTC","SOL","XRP","TRX","DOGE"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -577,12 +578,28 @@ async def read_owner_original_native_settlement(
 
 @app.get("/api/live/native/buy-source/{asset}/{intent_key}")
 async def read_owner_original_native_eth_buy_source(
-    asset: Literal["BTC","SOL","XRP"],intent_key: str,
+    asset: Literal["BTC","SOL","XRP","TRX","DOGE"],intent_key: str,
     authorization: str | None = Header(default=None),
 ):
     """Read-only proof of original Ethereum THORChain stablecoin funding."""
     did=verify_privy_bearer(authorization)["user_id"]
     report=await get_original_eth_buy_source(
+        did,asset=asset,intent_key=intent_key)
+    return JSONResponse(report,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+
+@app.get("/api/live/native/protocol-status/{asset}/{intent_key}")
+async def read_owner_native_protocol_progress(
+    asset: Literal["BTC","SOL","XRP","TRX","DOGE"],intent_key: str,
+    authorization: str | None = Header(default=None),
+):
+    """Read THORChain source/outbound status; never claim native payout."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await get_private_original_protocol_status(
         did,asset=asset,intent_key=intent_key)
     return JSONResponse(report,headers={
         "Cache-Control":"private, no-store",
@@ -678,7 +695,7 @@ async def inspect_owner_native_source_readiness(
 
 @app.post("/api/live/native/buy-approval/{asset}")
 async def inspect_owner_native_buy_router_approval(
-    asset: Literal["BTC", "SOL", "XRP"],
+    asset: Literal["BTC", "SOL", "XRP","TRX","DOGE"],
     request: UnifiedLiveTradeRequest,
     authorization: str | None = Header(default=None),
 ):

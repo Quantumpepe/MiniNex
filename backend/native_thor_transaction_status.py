@@ -20,7 +20,9 @@ from .native_trade_receipts import _valid_native_hash
 from .storage import _db_url,_ensure_schema,_safe_did
 
 _THOR_URL="https://thornode.ninerealms.com/thorchain/tx/status/"
-_CHAINS={"BTC":"BTC","SOL":"SOL","XRP":"XRP"}
+_CHAINS={"BTC":"BTC","SOL":"SOL","XRP":"XRP",
+         "TRX":"TRON","DOGE":"DOGE"}
+_BUY_ONLY=frozenset(("TRX","DOGE"))
 _VALID_INTENT=re.compile(r"^native_[0-9a-f]{64}$")
 _NUMBER=re.compile(r"^[1-9][0-9]{0,34}$")
 _VALID_HEX=re.compile(r"^(?:0x)?[0-9A-Fa-f]{64}$")
@@ -72,6 +74,8 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
     if (type(original) is not dict
             or original.get("asset") not in _CHAINS
             or original.get("side") not in ("BUY","SELL")
+            or (original.get("asset") in _BUY_ONLY
+                and original.get("side")!="BUY")
             or original.get("status")!="SOURCE_FINALIZED"
             or type(original.get("source_tx_hash")) is not str
             or not _valid_source_hash(original["asset"],original["side"],
@@ -84,8 +88,8 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
     side=original["side"]
     source_asset=THOR_ASSETS[asset if side=="SELL" else original["stable"]][0]
     target_asset=THOR_ASSETS[original["stable"] if side=="SELL" else asset][0]
-    source_chain=asset if side=="SELL" else "ETH"
-    target_chain="ETH" if side=="SELL" else asset
+    source_chain=_CHAINS[asset] if side=="SELL" else "ETH"
+    target_chain="ETH" if side=="SELL" else _CHAINS[asset]
     if (not _matches_hash(asset if side=="SELL" else "ETH",tx.get("id"),original["source_tx_hash"])
             or tx.get("chain")!=source_chain
             or type(tx.get("from_address")) is not str
@@ -160,12 +164,12 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
         hash_asset=("ETH" if chain=="ETH" else chain)
         if (type(hash_) is not str or not (
                 _VALID_HEX.fullmatch(hash_)
-                if hash_asset in ("ETH","BTC") else
+                if hash_asset in ("ETH","BTC","TRON","DOGE") else
                 _valid_native_hash(hash_asset,hash_)
             )):
             raise ValueError("THORChain payout or refund hash unavailable")
         canonical=(hash_.lower().removeprefix("0x")
-                   if chain in ("ETH","BTC") else hash_)
+                   if chain in ("ETH","BTC","TRON","DOGE") else hash_)
         if canonical in seen_hashes:
             raise ValueError("Duplicate THORChain outgoing transaction")
         seen_hashes.add(canonical)

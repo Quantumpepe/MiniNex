@@ -67,7 +67,11 @@ def _native_source_receipt_work_page(
         else:
             _RECEIPT_PAGE_CURSORS[kind]=None
     return rows
-_CHAIN={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet"}
+_CHAIN={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet",
+        "TRX":"tron-mainnet","DOGE":"dogecoin-mainnet"}
+# TRX/DOGE are Ethereum-funded BUY only until their native SELL signers
+# and independent destination-chain receipts are implemented.
+_BUY_ONLY=frozenset(("TRX","DOGE"))
 
 
 def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
@@ -170,7 +174,8 @@ def _persist_source_finality_locked(
     """One linearized transition; original chain hash never changes."""
     side=original.get("side") if type(original) is dict else None
     asset=original.get("asset") if type(original) is dict else None
-    if side not in ("SELL","BUY") or asset not in _CHAIN:
+    if (side not in ("SELL","BUY") or asset not in _CHAIN
+            or (asset in _BUY_ONLY and side!="BUY")):
         raise HTTPException(409,"Wrong original native source side")
     if side=="BUY" and (
             type(verified) is not dict
@@ -417,7 +422,7 @@ def _pending_original_eth_buy_submissions(limit:int=32)->list[dict]:
                     destination_wallet,source_tx_hash,status,created_at
              FROM mininex_live_native_order_intents
              WHERE status='SUBMITTED' AND side='BUY'
-               AND asset IN ('BTC','SOL','XRP')
+               AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
                AND source_tx_hash IS NOT NULL"""
     return _native_source_receipt_work_page(
         where_sql=query,kind="buy",limit=limit,lock=_FINALITY_PAGE_LOCK)

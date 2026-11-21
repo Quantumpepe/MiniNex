@@ -266,3 +266,55 @@ def test_extended_ethereum_source_nonce_recovery_cannot_fake_native_fill(asset):
     assert progress["destination_wallet_credited"] is False
     assert progress["performance_fee_assessed"] is False
     assert progress["automatic_retry_allowed"] is False
+
+
+@pytest.mark.parametrize("asset",["TRX","DOGE"])
+def test_trx_doge_buy_source_reconciles_without_synthetic_native_payout(asset):
+    from backend import native_live_source_finality as finality
+    from backend import native_thor_transaction_status as protocol
+    # The Ethereum-funded BUY is eligible for the shared source finalizer,
+    # while unsupported TRX/DOGE native SELL is still explicitly rejected.
+    assert asset in finality._CHAIN
+    assert asset in finality._BUY_ONLY
+    assert asset in protocol._CHAINS
+    assert asset in protocol._BUY_ONLY
+    assert "asset IN ('BTC','SOL','XRP','TRX','DOGE')" in (
+        __import__("inspect").getsource(finality._pending_original_eth_buy_submissions))
+    owner=owner_coin(asset)
+    original_row={
+        "privy_did":DID,"asset":asset,"side":"BUY",
+        "status":"SOURCE_FINALIZED","stable":"USDC",
+        "source_wallet":ETH,"destination_wallet":owner,
+        "source_tx_hash":"0x"+"e"*64,
+        "intent_key":"native_"+"a"*64,
+    }
+    observed={
+        "tx":{
+            "id":"E"*64,"chain":"ETH","from_address":ETH,
+            "memo":"=:"+THOR_ASSETS[asset][0]+":"+owner+"/"+ETH+":0/1/0",
+            "coins":[{"asset":THOR_ASSETS["USDC"][0],"amount":"5000000000"}],
+        },
+        "stages":{
+            "inbound_observed":{"completed":True},
+            "inbound_finalised":{"completed":True},
+            "swap_finalised":{"completed":True},
+        },
+        "out_txs":[{
+            "id":"F"*64,"chain":("TRON" if asset=="TRX" else "DOGE"),
+            "to_address":owner,
+            "coins":[{"asset":THOR_ASSETS[asset][0],"amount":"2000000000"}],
+        }],
+    }
+    checked=protocol.inspect_original_thorchain_status(original_row,observed)
+    assert checked["protocol_outbound_hashes"]==["f"*64]
+    assert checked["destination_owner_bound"] is True
+    assert checked["destination_chain_receipts_verified"] is False
+    assert checked["fee_assessed"] is False
+    assert checked["new_transactions_sent"]==0
+    with pytest.raises(ValueError):
+        protocol.inspect_original_thorchain_status(
+            {**original_row,"side":"SELL"},observed)
+    with pytest.raises(ValueError):
+        protocol.inspect_original_thorchain_status(
+            original_row,{**observed,"out_txs":[{
+                **observed["out_txs"][0],"to_address":ETH}]})

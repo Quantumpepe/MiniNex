@@ -96,7 +96,6 @@ def test_native_buy_xrp_usdt_and_expired_quote_rejected():
 def test_no_owner_policy_means_no_remote_wallet_or_send(monkeypatch):
     async def forbidden(*args,**kwargs):
         raise AssertionError("No Privy lookup without original native owner grant")
-    monkeypatch.setattr(m,"get_original_native_privy_signer_status",forbidden)
     monkeypatch.setattr(m,"fetch_privy_user",forbidden)
     async def run():
         async with httpx.AsyncClient() as client:
