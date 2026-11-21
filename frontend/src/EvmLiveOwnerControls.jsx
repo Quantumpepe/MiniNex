@@ -85,17 +85,17 @@ export default function EvmLiveOwnerControls({
     return resp.json();
   };
   const refresh=async()=>{
-    const [p,s,h]=await Promise.all([
+    const [p,s]=await Promise.all([
       request(path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
-      request(path+'/order-status/'+asset+'?limit=20').catch(()=>null),
     ]);
     if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
       throw Error('Inconsistent EVM LIVE trading state');
     setPermission(p);setSession(s);
-    // History is read-only; an unavailable order journal must never
-    // prevent owner Start Trade, Pause or a fresh grant.
-    setOrders(validEvmOrderHistory(h,asset)?h:null);
+    // Never await optional history before completing owner controls.
+    void request(path+'/order-status/'+asset+'?limit=20')
+      .then(h=>setOrders(validEvmOrderHistory(h,asset)?h:null))
+      .catch(()=>setOrders(null));
   };
   useEffect(()=>{
     let active=true;
@@ -105,18 +105,17 @@ export default function EvmLiveOwnerControls({
     if(!allowed)return()=>{active=false;};
     const poll=async()=>{
       try{
-        const [p,s,h]=await Promise.all([
+        const [p,s]=await Promise.all([
           request(path+'/permission-status/'+asset),
           request(path+'/auto-session/'+asset),
-          request(path+'/order-status/'+asset+'?limit=20').catch(()=>null),
         ]);
         if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
           throw Error('Invalid backend trading session state');
-        if(active){
-          setPermission(p);setSession(s);
-          setOrders(validEvmOrderHistory(h,asset)?h:null);
-          setError('');
-        }
+        if(active){setPermission(p);setSession(s);setError('');}
+        // Read-only history must never delay permission or session status.
+        void request(path+'/order-status/'+asset+'?limit=20')
+          .then(h=>{if(active)setOrders(validEvmOrderHistory(h,asset)?h:null);})
+          .catch(()=>{if(active)setOrders(null);});
       }catch{if(active)setError(t.failed);}
     };
     void poll();
