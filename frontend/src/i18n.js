@@ -84,7 +84,7 @@ export const DICTIONARY = {
     helpHorizonTitle: 'Signal timeframe',
     helpHorizonText: 'Choose 5 minutes, 15 minutes, 1 hour or 24 hours for each coin. Each coin has its own mode (Long, Spot downtrend or AUTO). Changes are saved automatically.',
     helpTradingTitle: 'Automatic trading',
-    helpTradingText: 'Live trading is available. Starting a strategy activates the live session for that coin. Each trade requires Privy signature confirmation.',
+    helpTradingText: 'Use the simulation toggle to test strategies with paper trades first. When ready, switch to live. Starting a strategy in live mode activates the live session for that coin. Each live trade requires Privy signature confirmation.',
     helpFeesTitle: 'Performance fee',
     helpFeesText: 'The planned fee is 5% of new realized net profit using a high-water mark: previous losses must first be recovered. No live fee is currently charged.',
     helpMarketTitle: 'Market prices and charts',
