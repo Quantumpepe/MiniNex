@@ -7,6 +7,7 @@ Never sends, retries, approves, signs or creates a user order.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -209,36 +210,72 @@ def _persist_source_finality_locked(
     return "SOURCE_FINALIZED"
 
 
-async def reconcile_original_native_source_once(limit:int=32)->dict:
-    """Reconcile receipts from submitted user-approved original sends only.
 
-    A failed or temporarily unconfirmed receipt remains SUBMITTED for future
-    read-only checks, not an authorization to resubmit.
+def _persist_independent_source_evidence(
+    original:dict,evidence:dict,*,unknown:bool=False,
+)->str:
+    """Write actual owner source evidence on a worker thread, never broadcast."""
+    db=_db_url()
+    _ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            callback=(_persist_unknown_native_finality_locked if unknown else
+                      _persist_source_finality_locked)
+            return callback(cur,original=original,verified=evidence)
+
+
+async def _reconcile_owned_source_rows(rows:list[dict],inspect)->tuple[int,int]:
+    """Different wallet owners progress together; original owner stays serial.
+
+    Prevent a delayed native explorer response from blocking all other users.
+    Work-page size is only a temporary receipt scan, not a trading limit.
     """
-    rows=_pending_original_source_submissions(limit)
-    done=errors=0
+    owners:dict[str,list[dict]]={}
+    unavailable=0
     for original in rows:
         try:
+            if type(original) is not dict:
+                raise ValueError("Malformed original native receipt job")
             did=_safe_did(original["privy_did"])
-            asset=original["asset"]
-            user=await fetch_privy_user(did)
-            owned,_eth=_exact_owner_wallets(user,did,asset)
-            if owned!=original["source_wallet"]:
-                raise ValueError("Original Privy wallet changed")
-            hash_=original["source_tx_hash"]
-            proof=(await check_native_btc_transaction(did,hash_) if asset=="BTC"
-                   else await get_owner_native_sender_receipt(
-                       did,asset=asset,transaction_hash=hash_))
-            evidence=_confirmed_original_source(original,proof,owned)
-            db=_db_url()
-            _ensure_schema(db)
-            with psycopg.connect(db,connect_timeout=6) as conn:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    _persist_source_finality_locked(
-                        cur,original=original,verified=evidence)
-            done+=1
-        except (ValueError,HTTPException,psycopg.Error,TypeError,KeyError):
-            errors+=1
+            owners.setdefault(did,[]).append(original)
+        except (KeyError,TypeError,ValueError):
+            unavailable+=1
+
+    async def one_owner(items:list[dict])->tuple[int,int]:
+        good=bad=0
+        for original in items:
+            try:
+                await inspect(original)
+                good+=1
+            except asyncio.CancelledError:
+                raise
+            except (HTTPException,ValueError,TypeError,KeyError,psycopg.Error,
+                    OverflowError):
+                bad+=1
+        return good,bad
+    completed=await asyncio.gather(*(one_owner(items) for items in owners.values()))
+    return sum(count[0] for count in completed), (
+        unavailable+sum(count[1] for count in completed))
+
+
+async def reconcile_original_native_source_once(limit:int=32)->dict:
+    """Passive source receipts concurrently by owner, no signature or retry."""
+    rows=await asyncio.to_thread(_pending_original_source_submissions,limit)
+    async def inspect(original:dict):
+        did=_safe_did(original["privy_did"])
+        asset=original["asset"]
+        user=await fetch_privy_user(did)
+        owned,_eth=_exact_owner_wallets(user,did,asset)
+        if owned!=original["source_wallet"]:
+            raise ValueError("Original Privy wallet changed")
+        hash_=original["source_tx_hash"]
+        proof=(await check_native_btc_transaction(did,hash_) if asset=="BTC"
+               else await get_owner_native_sender_receipt(
+                   did,asset=asset,transaction_hash=hash_))
+        evidence=_confirmed_original_source(original,proof,owned)
+        await asyncio.to_thread(_persist_independent_source_evidence,
+                                original,evidence)
+    done,errors=await _reconcile_owned_source_rows(rows,inspect)
     return {
         "mode":"NATIVE_ORIGINAL_SOURCE_READ_ONLY_RECONCILIATION",
         "scanned":len(rows),"finalized_sources":done,
@@ -247,7 +284,6 @@ async def reconcile_original_native_source_once(limit:int=32)->dict:
         "realized_profit_assessed":False,
         "fees_paid":False,"new_transactions_sent":0,
     }
-
 
 # A timed-out network submission OR a server crash between the durable
 # SENDING commit and recording the network answer may already be confirmed.
@@ -334,36 +370,28 @@ def _persist_unknown_native_finality_locked(
 
 
 async def reconcile_unknown_original_native_signed_sources_once(limit:int=32)->dict:
-    """Read-only chain lookup; no retry, new signature or source broadcast."""
-    originals=_pending_unknown_signed_sources(limit)
-    finalized=unresolved=0
-    for original in originals:
-        try:
-            did=_safe_did(original["privy_did"])
-            asset=original["asset"]
-            signed_hash=original["source_signed_tx_hash"]
-            if not _valid_source_hash(asset,"SELL",signed_hash):
-                raise ValueError("Original signed hash invalid")
-            user=await fetch_privy_user(did)
-            owned,_eth=_exact_owner_wallets(user,did,asset)
-            if owned!=original["source_wallet"]:
-                raise ValueError("Original native owner was changed")
-            proof=(await check_native_btc_transaction(did,signed_hash)
-                   if asset=="BTC" else
-                   await get_owner_native_sender_receipt(
-                       did,asset=asset,transaction_hash=signed_hash))
-            provisional={**original,"status":"SUBMITTED",
-                         "source_tx_hash":signed_hash}
-            verified=_confirmed_original_source(provisional,proof,owned)
-            db=_db_url()
-            _ensure_schema(db)
-            with psycopg.connect(db,connect_timeout=6) as conn:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    _persist_unknown_native_finality_locked(
-                        cur,original=original,verified=verified)
-            finalized+=1
-        except (ValueError,HTTPException,psycopg.Error,TypeError,KeyError):
-            unresolved+=1
+    """Original signed source receipt lookup only; never retry the network."""
+    originals=await asyncio.to_thread(_pending_unknown_signed_sources,limit)
+    async def inspect(original:dict):
+        did=_safe_did(original["privy_did"])
+        asset=original["asset"]
+        signed_hash=original["source_signed_tx_hash"]
+        if not _valid_source_hash(asset,"SELL",signed_hash):
+            raise ValueError("Original signed hash invalid")
+        user=await fetch_privy_user(did)
+        owned,_eth=_exact_owner_wallets(user,did,asset)
+        if owned!=original["source_wallet"]:
+            raise ValueError("Original native owner was changed")
+        proof=(await check_native_btc_transaction(did,signed_hash)
+               if asset=="BTC" else
+               await get_owner_native_sender_receipt(
+                   did,asset=asset,transaction_hash=signed_hash))
+        provisional={**original,"status":"SUBMITTED",
+                     "source_tx_hash":signed_hash}
+        verified=_confirmed_original_source(provisional,proof,owned)
+        await asyncio.to_thread(_persist_independent_source_evidence,
+                                original,verified,unknown=True)
+    finalized,unresolved=await _reconcile_owned_source_rows(originals,inspect)
     return {
         "mode":"UNKNOWN_ORIGINAL_NATIVE_SIGNED_SOURCE_READ_ONLY_RECOVERY",
         "scanned":len(originals),
@@ -375,7 +403,6 @@ async def reconcile_unknown_original_native_signed_sources_once(limit:int=32)->d
         "destination_settlement_finalized":False,
         "fees_collected":False,
     }
-
 
 # Separate BUY readback work scan; does not change legacy SELL pagination.
 _ETH_BUY_PAGE_OFFSET=0
@@ -411,23 +438,15 @@ def _pending_original_eth_buy_submissions(limit:int=32)->list[dict]:
 
 
 async def reconcile_original_eth_buy_sources_once(limit:int=32)->dict:
-    """Passive original ETH-to-native BUY receipts. No send, fee or retry."""
-    rows=_pending_original_eth_buy_submissions(limit)
-    verified_count=unverified=0
-    for original in rows:
-        try:
-            did=_safe_did(original["privy_did"])
-            proof=await get_original_eth_buy_source(
-                did,asset=original["asset"],intent_key=original["intent_key"])
-            db=_db_url()
-            _ensure_schema(db)
-            with psycopg.connect(db,connect_timeout=6) as conn:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    _persist_source_finality_locked(
-                        cur,original=original,verified=proof)
-            verified_count+=1
-        except (HTTPException,ValueError,TypeError,KeyError,psycopg.Error):
-            unverified+=1
+    """Owner-independent Ethereum BUY receipt reads, never new sends."""
+    rows=await asyncio.to_thread(_pending_original_eth_buy_submissions,limit)
+    async def inspect(original:dict):
+        did=_safe_did(original["privy_did"])
+        proof=await get_original_eth_buy_source(
+            did,asset=original["asset"],intent_key=original["intent_key"])
+        await asyncio.to_thread(_persist_independent_source_evidence,
+                                original,proof)
+    verified_count,unverified=await _reconcile_owned_source_rows(rows,inspect)
     return {
         "mode":"NATIVE_ETH_BUY_SOURCE_READ_ONLY_RECONCILIATION",
         "scanned":len(rows),"verified_eth_source":verified_count,

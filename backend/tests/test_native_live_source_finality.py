@@ -413,3 +413,39 @@ def test_only_uncertain_signed_states_may_promote(state):
         finality._persist_unknown_native_finality_locked(
             cursor,original=row,verified=verified)
     assert cursor.queries==[]
+
+
+def test_native_source_receipts_progress_across_owners_without_serial_rpc_wait(monkeypatch):
+    other="did:privy:another_native_owner"
+    jobs=[original("SOL"),original("XRP"),
+          {**original("SOL"),"privy_did":other}]
+    monkeypatch.setattr(finality,"_pending_original_source_submissions",
+                        lambda limit=32:jobs)
+    started=[]
+    event=asyncio.Event()
+    async def user(did):
+        return {"id":did}
+    async def receipt(did,*,asset,transaction_hash):
+        started.append((did,asset))
+        if len(started)>=2:
+            event.set()
+        await asyncio.wait_for(event.wait(),timeout=1)
+        assert transaction_hash==TX[asset]
+        return proof(asset)
+    monkeypatch.setattr(finality,"fetch_privy_user",user)
+    monkeypatch.setattr(finality,"_exact_owner_wallets",
+                        lambda u,d,a:(WALLET[a],"0x"+"a"*40))
+    monkeypatch.setattr(finality,"get_owner_native_sender_receipt",receipt)
+    persisted=[]
+    monkeypatch.setattr(finality,"_persist_independent_source_evidence",
+                        lambda row,verified,**kw:
+                          persisted.append((row["privy_did"],row["asset"])) or
+                          "SOURCE_FINALIZED")
+    result=asyncio.run(finality.reconcile_original_native_source_once())
+    assert result["finalized_sources"]==3
+    assert result["unverified_or_unavailable"]==0
+    assert result["new_transactions_sent"]==0
+    # Another owner moves ahead even if the first owner has an RPC wait.
+    # The first owner's two orders remain in original journal order.
+    assert started==[(DID,"SOL"),(other,"SOL"),(DID,"XRP")]
+    assert len(persisted)==3
