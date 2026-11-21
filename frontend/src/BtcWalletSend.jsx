@@ -3,7 +3,7 @@ import {Send} from 'lucide-react';
 import {Buffer} from 'buffer';
 import {useSignRawHash} from '@privy-io/react-auth/extended-chains';
 import {btcSatoshis,btcOwnerScript,btcOwnedPublicKey,btcRecipientScript,
-  btcFeeRate,btcValidatedUtxos,btcPlan,btcDisplay,
+  btcFeeRate,btcValidatedUtxos,btcPlan,btcMaxPlan,btcDisplay,
   btcFetch,btcSignAndBroadcast,btcRecoverPublicKey,BTC_REVIEW_MAX_AGE_MS} from './btcSendRules.js';
 
 // This is the native BTC wallet, not an EVM/wrapped-BTC route. The user
@@ -62,9 +62,10 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
     controller.current=null;
     setReview(null);setIssue('');setStage('idle');
   };
-  const check=async event=>{
+  const check=async(event,useMax=false)=>{
     event.preventDefault();
-    if(!supported||pending.current||!btcSatoshis(amount)||!btcRecipientScript(destination))return;
+    if(!supported||pending.current||
+       (!useMax&&!btcSatoshis(amount))||!btcRecipientScript(destination))return;
     clearReview();
     const id=++request.current;
     const ctrl=new AbortController();
@@ -76,9 +77,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         btcFetch('/v1/fees/recommended',{signal:ctrl.signal})
       ]);
       const utxos=btcValidatedUtxos(coins),rate=btcFeeRate(fees);
-      const plan=btcPlan({destination,amount,utxos,feeRate:rate,sourceScript:ownerScript});
+      const plan=useMax?
+        btcMaxPlan({destination,utxos,feeRate:rate,sourceScript:ownerScript}):
+        btcPlan({destination,amount,utxos,feeRate:rate,sourceScript:ownerScript});
       if(!plan)throw Error('Not enough confirmed BTC or fee quote unavailable');
       if(id===request.current&&!ctrl.signal.aborted){
+        if(useMax)setAmount(plan.amount);
         setReview(plan);setStage('review');
       }
     }catch{
@@ -150,6 +154,12 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
           <input value={amount} autoComplete="off" inputMode="decimal"
             placeholder="0.00000000" disabled={!supported||stage==='sending'}
             onChange={event=>{clearReview();setAmount(event.target.value);}}/>
+          <button type="button" className="privy-wallet-action"
+            disabled={!supported||stage==='checking'||stage==='sending'||
+              !btcRecipientScript(destination)}
+            onClick={event=>check(event,true)}>
+            {t.walletSendMax||'Max'} BTC
+          </button>
         </label>
         <button type="submit" className="privy-wallet-action"
           disabled={!supported||stage==='checking'||stage==='sending'||

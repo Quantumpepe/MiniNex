@@ -16,7 +16,13 @@ export function btcSatoshis(amount) {
   return value>0n?value:null;
 }
 export function btcDisplay(sats) {
-  return (Number(sats)/1e8).toFixed(8).replace(/0+$/,'').replace(/\.$/,'');
+  // Bitcoin quantities are integers; a float can round a MAX balance.
+  const units=BigInt(sats);
+  const negative=units<0n;
+  const value=(negative?-units:units).toString().padStart(9,'0');
+  const whole=value.slice(0,-8);
+  const fraction=value.slice(-8).replace(/0+$/,'');
+  return (negative?'-':'')+whole+(fraction?'.'+fraction:'');
 }
 export function btcOwnedPublicKey(wallet) {
   const key=String(wallet?.publicKey||wallet?.public_key||'').replace(/^0x/,'');
@@ -110,6 +116,34 @@ export function btcPlan({destination,amount,utxos,feeRate,sourceScript}) {
   }
   return null;
 }
+// Manual MAX is the *entire currently confirmed BTC UTXO value* minus the
+// actually reviewed miner fee. No change output, artificial spend cap, or
+// extra transaction. Signing still requires the user's explicit confirmation.
+export function btcMaxPlan({destination,utxos,feeRate,sourceScript}) {
+  const recipientScript=btcRecipientScript(destination);
+  if(!recipientScript||!sourceScript||!Array.isArray(utxos)||!utxos.length||
+     !Number.isSafeInteger(feeRate)||feeRate<=0)return null;
+  let total=0n;
+  const seen=new Set();
+  for(const u of utxos){
+    if(typeof u?.txid!=='string'||!/^[a-fA-F0-9]{64}$/.test(u.txid)||
+       !Number.isSafeInteger(u.vout)||u.vout<0||
+       typeof u.value!=='bigint'||u.value<=0n)return null;
+    const id=u.txid.toLowerCase()+':'+u.vout;
+    if(seen.has(id))return null;
+    seen.add(id);
+    total+=u.value;
+  }
+  const fee=BigInt(11+69*utxos.length+outputVbytes(recipientScript))*
+    BigInt(feeRate);
+  const sats=total-fee;
+  // A valid Bitcoin output must remain after paying the genuine miner fee.
+  if(sats<DUST)return null;
+  return {utxos:[...utxos],sourceScript,recipientScript,destination,
+    amount:btcDisplay(sats),sats,fee,change:0n,total,feeRate,
+    createdAt:Date.now()};
+}
+
 export async function btcFetch(path,{method='GET',body,signal}={}) {
   const response=await fetch(API+path,{method,body,signal,cache:'no-store',
     headers:method==='POST'?{'Content-Type':'text/plain'}:undefined});
