@@ -125,7 +125,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       <strong>{liveMode?t.extraPaperTitleLive:t.extraPaperTitle}</strong>
       <small>{state==='ACTIVE'?t.extraPaperActive:
         state==='PAUSED'?t.extraPaperPaused:
-        state==='NOT_STARTED'?t.extraPaperIdle:t.extraPaperLoading}</small>
+        state==='NOT_STARTED'?t.extraPaperIdle:(liveMode?t.extraPaperLoadingLive:t.extraPaperLoading)}</small>
     </div>
     {liveMode&&data&&<>
       <p className="privy-wallet-description">Status: {data.status||'—'} · Worker: {data.worker_attached?'aktiv':'inaktiv'}</p>
