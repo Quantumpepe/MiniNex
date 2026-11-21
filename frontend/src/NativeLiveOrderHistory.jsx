@@ -45,12 +45,15 @@ export default function NativeLiveOrderHistory({
     o.status==='SOURCE_FINALIZED'?(
       t?.liveNativeOrderCrosschain||'Source confirmed; awaiting receiving chain'):
     o.status==='SUBMITTED'?(
-      t?.liveReceiptState||'Blockchain pending'):
+      t?.liveNativeOrderSubmitted||'Original source submitted'):
     o.status==='RECONCILIATION_REQUIRED'?(
-      t?.liveReceiptUnavailable||'Broadcast outcome unresolved'):
+      t?.liveNativeOrderUncertain||'Broadcast unresolved'):
+    o.status==='PREPARED'?(t?.liveNativeOrderPrepared||'Order prepared'):
+    o.status==='SENDING'?(t?.liveNativeOrderSending||'Submitting source'):
+    o.status==='CANCELLED'?(t?.liveNativeOrderCancelled||'Order cancelled'):
     o.status;
   return <section className="mininex-live-orders" aria-label={asset+' original live orders'}>
-    <strong>{t?.liveReceiptState||'On-chain progress'} · {asset}</strong>
+    <strong>{t?.liveNativeOrderTitle||'Original blockchain trades'} · {asset}</strong>
     <div style={{display:'grid',gap:6,maxHeight:260,overflowY:'auto',scrollbarWidth:'none'}}>
       {data.orders.map(o=><div key={o.intent_key} className="privy-wallet-description"
           style={{display:'grid',gap:2}}>
@@ -63,10 +66,13 @@ export default function NativeLiveOrderHistory({
             ' · '+nativeReceivedAmount(o)+' '+o.destination_asset}
         </span>
         {o.source_tx_hash&&<code style={{overflowWrap:'anywhere'}}>
-          {o.source_chain}: {o.source_tx_hash}
+          {t?.liveNativeOrderSource||'Source'} · {o.source_chain}: {o.source_tx_hash}
         </code>}
         {o.destination_tx_hash&&<code style={{overflowWrap:'anywhere'}}>
-          {o.destination_asset}: {o.destination_tx_hash}
+          {o.original_funds_refunded?
+            (t?.liveNativeOrderReturn||'Refund'):
+            (t?.liveNativeOrderDestination||'Destination')}
+            {' · '}{o.destination_asset}: {o.destination_tx_hash}
         </code>}
       </div>)}
     </div>
