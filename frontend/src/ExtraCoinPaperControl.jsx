@@ -146,7 +146,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       
       <button type="button" className="privy-wallet-action" disabled={busy||!canStart}
         onClick={()=>command('start')}>
-        {t.extraPaperStart} · {asset}
+        {liveMode?t.extraPaperStartLive:t.extraPaperStart} · {asset}
       </button>
     </>}
     {['ACTIVE','PAUSED'].includes(state)&&<>
