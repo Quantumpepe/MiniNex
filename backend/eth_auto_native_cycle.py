@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import re
+from threading import Lock
 
 import httpx
 import psycopg
@@ -33,6 +34,11 @@ from .real_eth_trade_legs import save_verified_leg,validated_finalized_leg
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.eth_native_auto")
+# A long-pending original hash must not starve newer native ETH receipts.
+_NATIVE_RECEIPT_SCAN_LOCK=Lock()
+_NATIVE_RECEIPT_SCAN_OFFSET=0
+_NATIVE_BUY_SCAN_LOCK=Lock()
+_NATIVE_BUY_SCAN_OFFSET=0
 _KEY=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{7,95}$")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 
@@ -294,16 +300,28 @@ async def send_eth_auto_native_leg(did:str, *, source_key:str,operation:str,
 
 
 def submitted_native_steps(limit:int=25)->list[dict]:
-    url=_db_url();_ensure_schema(url)
-    with psycopg.connect(url,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT privy_did,source_key,operation,stable,amount_wei,tx_hash
-                   FROM mininex_live_eth_auto_native_steps
-                   WHERE status='SUBMITTED'
-                   ORDER BY updated_at ASC LIMIT %s""",(max(1,min(limit,25)),))
-            return cur.fetchall()
-
+    """Cycle through all SUBMITTED WETH9 conversions, read-only."""
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid original native receipt work page")
+    global _NATIVE_RECEIPT_SCAN_OFFSET
+    sql="""SELECT privy_did,source_key,operation,stable,amount_wei,tx_hash
+           FROM mininex_live_eth_auto_native_steps
+           WHERE status='SUBMITTED'
+           ORDER BY updated_at ASC,privy_did,source_key,operation
+           LIMIT %s OFFSET %s"""
+    with _NATIVE_RECEIPT_SCAN_LOCK:
+        offset=_NATIVE_RECEIPT_SCAN_OFFSET
+        url=_db_url();_ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _NATIVE_RECEIPT_SCAN_OFFSET=offset+len(page)
+        return page
 
 async def finalize_native_step(row:dict)->str:
     did=_safe_did(row["privy_did"])
@@ -348,27 +366,38 @@ def _finalize_native_record(did:str,source_key:str,operation:str,
 
 
 def confirmed_buy_native_conversions(limit:int=15)->list[dict]:
-    """Owner-sourced completed BUY fills still holding purchased WETH."""
-    url=_db_url();_ensure_schema(url)
-    with psycopg.connect(url,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """SELECT o.privy_did,o.intent_key AS source_key,o.stable,
-                          l.destination_amount
-                   FROM mininex_live_order_intents o
-                   JOIN mininex_live_eth_verified_legs l
-                     ON l.privy_did=o.privy_did AND l.tx_hash=o.tx_hash
-                   JOIN mininex_live_eth_auto_sessions s
-                     ON s.privy_did=o.privy_did
-                   JOIN mininex_live_eth_limits cap
-                     ON cap.privy_did=o.privy_did
-                   LEFT JOIN mininex_live_eth_auto_native_steps n
-                     ON n.privy_did=o.privy_did
-                       AND n.source_key=o.intent_key AND n.operation='WITHDRAW'
-                   WHERE o.asset='ETH' AND o.state='CONFIRMED'
-                     AND o.side='BUY' AND l.kind='SWAP'
-                     AND n.intent_key IS NULL AND s.status='ACTIVE'
-                     AND cap.trading_paused=FALSE
-                   ORDER BY o.finalized_at ASC LIMIT %s""",
-                    (max(1,min(limit,20)),))
-            return cur.fetchall()
+    """Fairly resume every completed BUY's original unwrapping step."""
+    if type(limit) is not int or not 1<=limit<=100:
+        raise ValueError("Invalid original native BUY completion work page")
+    global _NATIVE_BUY_SCAN_OFFSET
+    sql="""SELECT o.privy_did,o.intent_key AS source_key,o.stable,
+                  l.destination_amount
+           FROM mininex_live_order_intents o
+           JOIN mininex_live_eth_verified_legs l
+             ON l.privy_did=o.privy_did AND l.tx_hash=o.tx_hash
+           JOIN mininex_live_eth_auto_sessions s
+             ON s.privy_did=o.privy_did
+           JOIN mininex_live_eth_limits cap
+             ON cap.privy_did=o.privy_did
+           LEFT JOIN mininex_live_eth_auto_native_steps n
+             ON n.privy_did=o.privy_did
+               AND n.source_key=o.intent_key AND n.operation='WITHDRAW'
+           WHERE o.asset='ETH' AND o.state='CONFIRMED'
+             AND o.side='BUY' AND l.kind='SWAP'
+             AND n.intent_key IS NULL AND s.status='ACTIVE'
+             AND cap.trading_paused=FALSE
+           ORDER BY o.finalized_at ASC,o.privy_did,o.intent_key
+           LIMIT %s OFFSET %s"""
+    with _NATIVE_BUY_SCAN_LOCK:
+        offset=_NATIVE_BUY_SCAN_OFFSET
+        url=_db_url();_ensure_schema(url)
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,offset))
+                page=list(cur.fetchall())
+                if not page and offset:
+                    offset=0
+                    cur.execute(sql,(limit,0))
+                    page=list(cur.fetchall())
+        _NATIVE_BUY_SCAN_OFFSET=offset+len(page)
+        return page
