@@ -253,7 +253,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
         preferenceStatus={extraSettingsStatus}
         preferenceSaved={savedExtra?.[opened]||null}
         preferenceSaving={extraSaving===opened}
-        onRetryPreference={()=>setExtraRefresh(n=>n+1)}/>}
+        onRetryPreference={()=>setExtraRefresh(n=>n+1)}/> : null}
       {!selectedCoin.inProgress&&<LiveTradePlan
         key={opened} asset={opened} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}
