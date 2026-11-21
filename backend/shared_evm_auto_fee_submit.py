@@ -40,11 +40,23 @@ _ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 
 def automatic_fee_transfer_worker_enabled()->bool:
-    """External deployment switch, not a trading amount/day cap."""
+    """Honor a single owner-granted LIVE worker; preserve an explicit fee stop.
+
+    The verified one-wallet policy already includes the exact Treasury fee
+    rules. Do not require the operator to remember a second activation flag
+    for existing owner-authorized HWM obligations. An explicitly nonempty
+    off/invalid fee flag must still disable all automatic fee sends.
+    """
+    override=os.getenv("MININEX_EVM_AUTO_FEES_ENABLED","").strip()
+    if override and override!="explicit-owner-privy-grant":
+        return False
     return (
-        os.getenv("MININEX_EVM_AUTO_FEES_ENABLED")=="explicit-owner-privy-grant"
-        and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
+        os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
         and bool(os.getenv("DATABASE_URL","").strip())
+        and (
+            override=="explicit-owner-privy-grant"
+            or os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
+        )
     )
 
 
