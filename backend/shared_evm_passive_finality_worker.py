@@ -77,7 +77,12 @@ def validate_original_submitted_swap_record(row:object)->dict:
 
 
 async def reconcile_submitted_evm_swaps_once()->dict:
-    """Only read chain receipts, finalize exact previously submitted orders."""
+    """Finalize original hashes concurrently across independent wallet chains.
+
+    One owner's same-chain fills retain original order; different wallets
+    should not wait behind an unmined receipt or slow public RPC. This is
+    receipt-only reconciliation, never a new Privy transaction submission.
+    """
     results={"submitted_checked":0,"finalized_swaps":0,
              "awaiting_finality":0,"unresolved":0,
              "wallet_transactions_sent":0}
@@ -86,23 +91,43 @@ async def reconcile_submitted_evm_swaps_once()->dict:
     except psycopg.Error:
         LOG.warning("Original submitted EVM scan unavailable")
         return results
+    groups:dict[tuple[str,int],list[dict]]={}
     for raw in rows:
         try:
             row=validate_original_submitted_swap_record(raw)
-            status=await reconcile_evm_internal_order(
-                did=row["privy_did"],asset=row["asset"],
-                intent_key=row["intent_key"],tx_hash=row["tx_hash"],
-                side=row["side"],stable=row["stable"])
-            results["submitted_checked"]+=1
-            if status.get("state")=="AWAITING_FINALITY":
-                results["awaiting_finality"]+=1
-            elif status.get("state") in ("FINALIZED_SUCCESS","FINALIZED_REVERTED"):
-                results["finalized_swaps"]+=1
-            else:
-                results["unresolved"]+=1
-        except asyncio.CancelledError:
-            raise
-        except (HTTPException,ValueError,psycopg.Error):
-            # Never try another wallet broadcast to repair finality.
+            groups.setdefault(
+                (row["privy_did"],row["chain_id"]),[]
+            ).append(row)
+        except (ValueError,TypeError,KeyError):
             results["unresolved"]+=1
+    async def one_wallet_chain(items:list[dict])->dict:
+        count={"submitted_checked":0,"finalized_swaps":0,
+               "awaiting_finality":0,"unresolved":0}
+        for row in items:
+            try:
+                status=await reconcile_evm_internal_order(
+                    did=row["privy_did"],asset=row["asset"],
+                    intent_key=row["intent_key"],tx_hash=row["tx_hash"],
+                    side=row["side"],stable=row["stable"])
+                count["submitted_checked"]+=1
+                if status.get("state")=="AWAITING_FINALITY":
+                    count["awaiting_finality"]+=1
+                elif status.get("state") in (
+                        "FINALIZED_SUCCESS","FINALIZED_REVERTED"):
+                    count["finalized_swaps"]+=1
+                else:
+                    count["unresolved"]+=1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Reinspect this original hash later; never send again.
+                count["unresolved"]+=1
+                LOG.exception("Original owner EVM receipt not yet reconciled")
+        return count
+    completed=await asyncio.gather(*(
+        one_wallet_chain(items) for items in groups.values()
+    ))
+    for part in completed:
+        for key,value in part.items():
+            results[key]+=value
     return results
