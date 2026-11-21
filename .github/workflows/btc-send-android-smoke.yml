@@ -5,6 +5,7 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/btc-android-compatibility.yml'
+      - '.github/workflows/btc-send-android-smoke.yml'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,7 @@ permissions:
 
 jobs:
   btc-unit-and-android:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 141 || github.event.pull_request.number == 142 || github.event.pull_request.number == 143 || github.event.pull_request.number == 145 || github.event.pull_request.number == 146 || github.event.pull_request.number == 206
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 141 || github.event.pull_request.number == 142 || github.event.pull_request.number == 143 || github.event.pull_request.number == 145 || github.event.pull_request.number == 146 || github.event.pull_request.number == 206 || github.event.pull_request.number == 204
     runs-on: ubuntu-latest
     timeout-minutes: 35
     defaults:
