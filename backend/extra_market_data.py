@@ -20,6 +20,8 @@ from typing import Any
 import httpx
 import websockets
 
+from .coingecko_provider import coingecko_request_settings
+
 LOGGER = logging.getLogger("mininex.extra_markets")
 EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
 GECKO_IDS = {
@@ -54,15 +56,8 @@ GECKO_REFERENCE_TTL = 180
 
 
 def gecko_request_settings(environ: dict | None = None) -> tuple[str, dict[str, str], int]:
-    """Provider key is server-only; never expose in a frontend response."""
-    env = os.environ if environ is None else environ
-    pro = str(env.get("MININEX_COINGECKO_PRO_API_KEY", "")).strip()
-    demo = str(env.get("MININEX_COINGECKO_DEMO_API_KEY", "")).strip()
-    if pro:
-        return GECKO_PRO_URL, {"x-cg-pro-api-key": pro}, GECKO_AUTH_INTERVAL
-    if demo:
-        return GECKO_URL, {"x-cg-demo-api-key": demo}, GECKO_AUTH_INTERVAL
-    return GECKO_URL, {}, GECKO_PUBLIC_INTERVAL
+    """Single backend CoinGecko transport for Demo and Pro accounts."""
+    return coingecko_request_settings("/simple/price", environ)
 
 
 def retry_after_seconds(raw: object, *, now: float) -> int | None:
