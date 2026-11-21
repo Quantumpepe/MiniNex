@@ -16,6 +16,10 @@ import psycopg
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
+from .native_live_buy_refund import (
+    get_private_original_native_buy_refund,
+    _persist_original_native_buy_refund_locked,
+)
 from .native_live_buy_destination import (
     get_private_original_native_buy_destination,
     _persist_original_native_buy_locked,
@@ -80,10 +84,10 @@ def _persist_original_verified_destination(*, original: dict,
             or original.get("status") != "SOURCE_FINALIZED"
             or type(original.get("intent_key")) is not str
             or not _KEY.fullmatch(original["intent_key"])
-            or kind not in ("BUY", "SELL", "REFUND")):
+            or kind not in ("BUY", "SELL", "REFUND", "BUY_REFUND")):
         raise ValueError("Original native destination cannot be trusted")
-    if ((kind == "BUY" and original.get("side") != "BUY")
-            or (kind != "BUY" and original.get("side") != "SELL")):
+    if ((kind in ("BUY","BUY_REFUND") and original.get("side") != "BUY")
+            or (kind in ("SELL","REFUND") and original.get("side") != "SELL")):
         raise ValueError("Original native destination side changed")
     _safe_did(original["privy_did"])
     db = _db_url()
@@ -92,6 +96,9 @@ def _persist_original_verified_destination(*, original: dict,
         with conn.cursor(row_factory=dict_row) as cur:
             if kind == "BUY":
                 return _persist_original_native_buy_locked(
+                    cur, original=original, verified=proof)
+            if kind == "BUY_REFUND":
+                return _persist_original_native_buy_refund_locked(
                     cur, original=original, verified=proof)
             if kind == "REFUND":
                 return _persist_original_native_sell_refund_locked(
@@ -141,14 +148,29 @@ async def reconcile_original_native_destinations_once(
             did, asset, key = row["privy_did"], row["asset"], row["intent_key"]
             try:
                 if row["side"] == "BUY":
-                    proof = await get_private_original_native_buy_destination(
-                        did, asset=asset, intent_key=key)
-                    status = await asyncio.to_thread(
-                        _persist_original_verified_destination,
-                        original=row, proof=proof, kind="BUY")
-                    if status != "DESTINATION_FINALIZED":
-                        raise ValueError("Original BUY destination not finalized")
-                    totals["destination_finalized"] += 1
+                    try:
+                        proof = await get_private_original_native_buy_destination(
+                            did, asset=asset, intent_key=key)
+                    except asyncio.CancelledError:
+                        raise
+                    except (HTTPException, ValueError, TypeError, KeyError):
+                        proof = None
+                    if proof is not None:
+                        status = await asyncio.to_thread(
+                            _persist_original_verified_destination,
+                            original=row, proof=proof, kind="BUY")
+                        if status != "DESTINATION_FINALIZED":
+                            raise ValueError("Original BUY destination not finalized")
+                        totals["destination_finalized"] += 1
+                    else:
+                        proof = await get_private_original_native_buy_refund(
+                            did, asset=asset, intent_key=key)
+                        status = await asyncio.to_thread(
+                            _persist_original_verified_destination,
+                            original=row, proof=proof, kind="BUY_REFUND")
+                        if status != "REFUNDED_VERIFIED":
+                            raise ValueError("Original BUY stablecoin refund not finalized")
+                        totals["refunds_verified"] += 1
                     continue
                 # SELL can either pay the original Ethereum stablecoin wallet
                 # or return the original native asset. Both outcomes require

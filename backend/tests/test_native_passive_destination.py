@@ -88,3 +88,26 @@ def test_native_destination_original_owner_work_page_rotates(monkeypatch):
            for _ in range(4)]
     assert pages==[history[:2],history[2:4],history[4:],history[:2]]
     assert params==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+
+
+def test_native_buy_fallback_to_verified_original_eth_stable_refund(monkeypatch):
+    row=original("BTC","BUY")
+    monkeypatch.setattr(finality,"original_native_sources_awaiting_destination",
+                        lambda limit:[row])
+    async def missing_payout(*args,**kw):
+        raise ValueError("No BTC mainnet payout")
+    async def ethereum_refund(did,*,asset,intent_key):
+        assert did==DID and asset=="BTC" and intent_key==KEY
+        return {"mode":"ORIGINAL_NATIVE_BUY_ETH_STABLE_REFUND_FINALITY"}
+    saved=[]
+    def persist(*,original,proof,kind):
+        saved.append((original["asset"],kind))
+        return "REFUNDED_VERIFIED"
+    monkeypatch.setattr(finality,"get_private_original_native_buy_destination",missing_payout)
+    monkeypatch.setattr(finality,"get_private_original_native_buy_refund",ethereum_refund)
+    monkeypatch.setattr(finality,"_persist_original_verified_destination",persist)
+    result=asyncio.run(finality.reconcile_original_native_destinations_once())
+    assert result["refunds_verified"]==1
+    assert result["destination_finalized"]==0
+    assert result["new_transactions_sent"]==0
+    assert saved==[("BTC","BUY_REFUND")]
