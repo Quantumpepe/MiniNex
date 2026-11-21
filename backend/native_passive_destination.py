@@ -85,7 +85,7 @@ def _persist_original_verified_destination(*, original: dict,
     if ((kind == "BUY" and original.get("side") != "BUY")
             or (kind != "BUY" and original.get("side") != "SELL")):
         raise ValueError("Original native destination side changed")
-    did = _safe_did(original["privy_did"])
+    _safe_did(original["privy_did"])
     db = _db_url()
     _ensure_schema(db)
     with psycopg.connect(db, connect_timeout=6) as conn:

@@ -98,13 +98,14 @@ def test_unavailable_native_chain_does_not_block_other_read_only_receipts(
         return {
             "scanned": 1, "finalized_sources": 1,
             "verified_eth_source": 1,
+            "destination_finalized": 1, "refunds_verified": 0,
             "new_transactions_sent": 0, "fees_paid": False,
         }
 
     monkeypatch.setattr(worker, "_reconcile_in_thread", partial)
     result = asyncio.run(worker.reconcile_original_native_passive_once())
     assert len(calls) == 4
-    assert result["passes"] == 2
+    assert result["passes"] == 3
     assert result["errors"] == 1
     assert result["new_transactions_sent"] == 0
 
