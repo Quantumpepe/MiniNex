@@ -102,13 +102,16 @@ def test_original_usd_capture_prioritizes_newest_finalized_arb_token_fill(monkey
     monkeypatch.setattr(worker,"_db_url",lambda:"postgresql://test")
     monkeypatch.setattr(worker,"_ensure_schema",lambda db:None)
     monkeypatch.setattr(worker.psycopg,"connect",lambda *args,**kwargs:Connection())
+    monkeypatch.setattr(worker,"_USD_FILL_PAGE_OFFSET",0)
     assert worker._read_pending_original_usd_fills(limit=40)==[]
     sql,params=queries[0]
     assert "f.asset IN ('LINK','UNI','ARB')" in sql
     assert "b.status='FINALIZED_SUCCESS'" in sql
     assert "ORDER BY f.created_at DESC" in sql
     assert "n.quoted_asset='ETH'" in sql  # ARB pays native gas in ETH
-    assert params==(40,)
+    assert "INTERVAL '20 hours'" not in sql
+    assert "LIMIT %s OFFSET %s" in sql
+    assert params==(40,0)
 
 
 def test_unresolved_old_erc20_hwm_owner_cannot_starve_other_owners(monkeypatch):
@@ -133,4 +136,31 @@ def test_unresolved_old_erc20_hwm_owner_cannot_starve_other_owners(monkeypatch):
     batches=[worker._read_unaccounted_token_sell_owners(limit=2)
              for _ in range(4)]
     assert batches==[owners[:2],owners[2:4],owners[4:],owners[:2]]
+    assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+
+
+def test_old_unpriced_fill_pages_rotate_across_owners(monkeypatch):
+    owners=[{"privy_did":f"did:privy:acct_{i}","asset":"ARB"} for i in range(5)]
+    queries=[]
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):return self
+        def execute(self,sql,args):
+            assert "INTERVAL '20 hours'" not in sql
+            assert "LIMIT %s OFFSET %s" in sql
+            self.limit,self.offset=args
+            queries.append(args)
+        def fetchall(self):return owners[self.offset:self.offset+self.limit]
+    monkeypatch.setattr(worker,"_db_url",lambda:"postgresql://test")
+    monkeypatch.setattr(worker,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(worker.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(worker,"_verified_account_fill",lambda row,asset:row)
+    monkeypatch.setattr(worker,"_USD_FILL_PAGE_OFFSET",0)
+    batches=[worker._read_pending_original_usd_fills(limit=2) for _ in range(4)]
+    assert [[v["did"] for v in page] for page in batches]==[
+        [owners[0]["privy_did"],owners[1]["privy_did"]],
+        [owners[2]["privy_did"],owners[3]["privy_did"]],
+        [owners[4]["privy_did"]],
+        [owners[0]["privy_did"],owners[1]["privy_did"]]]
     assert queries==[(2,0),(2,2),(2,4),(2,5),(2,0)]
