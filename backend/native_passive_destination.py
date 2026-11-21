@@ -8,6 +8,7 @@ confirmed owner-wallet refund. No signer, broadcast, new order or fee here.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import logging
 import re
 from threading import Lock
@@ -38,41 +39,64 @@ LOG = logging.getLogger("mininex.native_original_destination_finality")
 _ASSETS = frozenset(("BTC", "SOL", "XRP"))
 _KEY = re.compile(r"^native_[0-9a-f]{64}$")
 _WORK_PAGE_LOCK = Lock()
-_WORK_PAGE_OFFSET = 0
+_WORK_PAGE_CURSOR: tuple[datetime,str,str,str]|None = None
 
 
 def original_native_sources_awaiting_destination(limit: int = 24) -> list[dict]:
-    """Fair work pages across original, independently finalized sources.
+    """Fair keyset pages across already-finalized original native sources.
 
-    This is purely a bounded receipt scan, NEVER a user order, wallet budget,
-    permitted volume, trading frequency or native chain transaction limit.
+    The worker's own successful settlements remove rows from this filtered
+    table. OFFSET would skip newly shifted rows after each processed page,
+    sometimes holding real owner payouts for multiple extra polls.
+    Cursor pagination follows immutable (finalized time, owner, asset, key).
+    This is not a trading, wallet, order-count or daily usage limit.
     """
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("Invalid original native destination work page")
-    global _WORK_PAGE_OFFSET
+    global _WORK_PAGE_CURSOR
     db = _db_url()
     _ensure_schema(db)
-    sql = """SELECT privy_did,asset,intent_key,side,stable,
-                    source_wallet,destination_wallet,source_tx_hash,
-                    payload_sha256,source_proof_sha256,status
-             FROM mininex_live_native_order_intents
-             WHERE status='SOURCE_FINALIZED' AND side IN ('BUY','SELL')
-               AND asset IN ('BTC','SOL','XRP')
-               AND source_proof_sha256 IS NOT NULL
-               AND source_tx_hash IS NOT NULL
-             ORDER BY source_finalized_at ASC,privy_did,asset,intent_key
-             LIMIT %s OFFSET %s"""
+    head = """SELECT privy_did,asset,intent_key,side,stable,
+                     source_wallet,destination_wallet,source_tx_hash,
+                     payload_sha256,source_proof_sha256,status,
+                     source_finalized_at
+              FROM mininex_live_native_order_intents
+              WHERE status='SOURCE_FINALIZED' AND side IN ('BUY','SELL')
+                AND asset IN ('BTC','SOL','XRP')
+                AND source_proof_sha256 IS NOT NULL
+                AND source_tx_hash IS NOT NULL
+                AND source_finalized_at IS NOT NULL"""
+    tail = """ ORDER BY source_finalized_at ASC,privy_did,asset,intent_key
+               LIMIT %s"""
+    after = """ AND (source_finalized_at,privy_did,asset,intent_key)
+                 > (%s,%s,%s,%s)"""
     with _WORK_PAGE_LOCK:
-        offset = _WORK_PAGE_OFFSET
+        previous = _WORK_PAGE_CURSOR
         with psycopg.connect(db, connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(sql, (limit, offset))
+                cur.execute(
+                    head + (after if previous is not None else "") + tail,
+                    (*previous, limit) if previous is not None else (limit,),
+                )
                 page = list(cur.fetchall())
-                if not page and offset:
-                    offset = 0
-                    cur.execute(sql, (limit, 0))
+                if not page and previous is not None:
+                    # End of the immutable key range: revisit older rows
+                    # whose outbound is still genuinely pending.
+                    cur.execute(head + tail, (limit,))
                     page = list(cur.fetchall())
-        _WORK_PAGE_OFFSET = offset + len(page)
+        if page:
+            last = page[-1]
+            stamp = last.get("source_finalized_at")
+            did = last.get("privy_did")
+            asset = last.get("asset")
+            key = last.get("intent_key")
+            if (not isinstance(stamp, datetime) or stamp.tzinfo is None
+                    or type(did) is not str or type(asset) is not str
+                    or type(key) is not str or not _KEY.fullmatch(key)):
+                raise ValueError("Original native source paging key unverified")
+            _WORK_PAGE_CURSOR = (stamp, did, asset, key)
+        else:
+            _WORK_PAGE_CURSOR = None
     return page
 
 

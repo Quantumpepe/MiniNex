@@ -65,29 +65,59 @@ def test_no_original_source_finality_never_calls_network_or_sends(monkeypatch):
     assert result["new_transactions_sent"]==0
 
 
-def test_native_destination_original_owner_work_page_rotates(monkeypatch):
-    history=[original("BTC","BUY") | {"intent_key":"native_"+str(i)*64}
-             for i in range(5)]
-    params=[]
+def test_native_destination_keyset_page_rotates_without_skipping_removed_rows(monkeypatch):
+    """Already settled rows disappearing cannot shift later rows past OFFSET."""
+    from datetime import datetime,timezone,timedelta
+    start=datetime(2026,11,21,tzinfo=timezone.utc)
+    history=[
+        original("BTC","BUY")|{
+            "intent_key":"native_"+f"{i:064x}",
+            "source_finalized_at":start+timedelta(minutes=i),
+        } for i in range(5)
+    ]
+    queries=[]
     class DB:
         def __enter__(self):return self
         def __exit__(self,*args):return False
         def cursor(self,**kw):return self
         def execute(self,sql,args):
-            self.limit,self.offset=args
-            params.append(args)
             assert "status='SOURCE_FINALIZED'" in sql
             assert "source_proof_sha256 IS NOT NULL" in sql
+            assert "ORDER BY source_finalized_at" in sql
+            queries.append((sql,args))
+            self.after=args[:-1] if len(args)>1 else None
+            self.limit=args[-1]
         def fetchall(self):
-            return history[self.offset:self.offset+self.limit]
+            candidates=history
+            if self.after is not None:
+                candidates=[
+                    row for row in history if (
+                        row["source_finalized_at"],row["privy_did"],
+                        row["asset"],row["intent_key"])>tuple(self.after)
+                ]
+            return candidates[:self.limit]
     monkeypatch.setattr(finality,"_db_url",lambda:"postgres://test")
     monkeypatch.setattr(finality,"_ensure_schema",lambda db:None)
     monkeypatch.setattr(finality.psycopg,"connect",lambda *a,**kw:DB())
-    monkeypatch.setattr(finality,"_WORK_PAGE_OFFSET",0)
-    pages=[finality.original_native_sources_awaiting_destination(2)
-           for _ in range(4)]
-    assert pages==[history[:2],history[2:4],history[4:],history[:2]]
-    assert params==[(2,0),(2,2),(2,4),(2,5),(2,0)]
+    monkeypatch.setattr(finality,"_WORK_PAGE_CURSOR",None)
+    first=finality.original_native_sources_awaiting_destination(2)
+    assert first==history[:2]
+    # These two outgoing transfers were finalized; the DB predicate
+    # no longer returns them. The keyset must still see every later order.
+    del history[:2]
+    second=finality.original_native_sources_awaiting_destination(2)
+    assert second==history[:2]
+    del history[:2]
+    third=finality.original_native_sources_awaiting_destination(2)
+    assert third==history[:1]
+    fourth=finality.original_native_sources_awaiting_destination(2)
+    assert fourth==history[:1]  # wrap at end to recheck pending
+    assert len(queries)==5
+    assert len(queries[0][1])==1
+    assert len(queries[1][1])==5
+    assert len(queries[2][1])==5
+    assert len(queries[3][1])==5
+    assert len(queries[4][1])==1
 
 
 def test_native_buy_fallback_to_verified_original_eth_stable_refund(monkeypatch):
