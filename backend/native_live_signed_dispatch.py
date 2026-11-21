@@ -170,10 +170,11 @@ def _get_original_prepared_source(did:str,asset:str,intent_key:str)->dict:
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
-                """SELECT privy_did,asset,side,stable,intent_key,status,
+                """SELECT privy_did,asset,chain,side,stable,intent_key,status,
                           source_wallet,destination_wallet,input_amount,
                           payload_sha256,immutable_quote_sha256,
-                          quote_expires_at
+                          owner_consent_sha256,privy_grant_sha256,
+                          budget_revision,quote_expires_at
                    FROM mininex_live_native_order_intents
                    WHERE privy_did=%s AND asset=%s AND intent_key=%s""",
                 (did,asset,intent_key),

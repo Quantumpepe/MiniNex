@@ -114,6 +114,23 @@ async def read_original_thor_buy_allowance(
         raise HTTPException(422,"Unsupported original native approval pair")
     quote=await get_private_native_thornode_terms(
         did,asset=asset,side="BUY",stable=stable,amount=amount)
+    return await _read_original_thor_buy_allowance_from_quote(
+        did,asset=asset,stable=stable,amount=amount,quote=quote)
+
+
+async def _read_original_thor_buy_allowance_from_quote(
+    did:str,*,asset:str,stable:str,amount:str,quote:dict,
+)->dict:
+    """Internal original quote re-use: no extra provider request.
+
+    The strategy coordinator gets this quote exclusively from
+    get_private_native_thornode_terms(did). No external route exposes
+    an arbitrary quote, router, recipient or owner wallet.
+    """
+    did=_safe_did(did)
+    if (asset not in _ASSETS or stable not in STABLES
+            or (asset=="XRP" and stable!="USDC") or type(quote) is not dict):
+        raise HTTPException(422,"Unsupported native THORChain approval route")
     try:
         now=int(time.time())
         unsigned=encode_original_eth_native_buy_deposit(

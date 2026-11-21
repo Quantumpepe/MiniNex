@@ -230,6 +230,23 @@ async def preflight_original_native_eth_buy(
     original = await get_private_native_thornode_terms(
         did, asset=asset, side="BUY", stable=stable, amount=amount,
     )
+    return await _preflight_verified_original_eth_buy(
+        did,asset=asset,stable=stable,amount=amount,original=original)
+
+
+async def _preflight_verified_original_eth_buy(
+    did:str,*,asset:str,stable:str,amount:str,original:dict,
+)->dict:
+    """Internal shared-quote source readback for the current strategy signal.
+
+    Caller must obtain 'original' from get_private_native_thornode_terms
+    under this verified DID. This helper neither delegates nor sends.
+    """
+    did=_safe_did(did)
+    if (asset not in ("BTC","SOL","XRP") or stable not in STABLES
+            or (asset=="XRP" and stable!="USDC")
+            or type(original) is not dict):
+        raise HTTPException(422,"Invalid original native source context")
     try:
         now = int(time.time())
         unsigned = encode_original_eth_native_buy_deposit(
