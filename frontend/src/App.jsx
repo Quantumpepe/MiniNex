@@ -439,7 +439,10 @@ export default function App() {
             <button type="button" className={language==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={language==='en'}>EN</button>
           </div>
           <button className="icon-btn mobile-settings-btn" type="button" aria-label={t.settings} title={t.settings} onClick={()=>navigate('settings')}><Settings2 size={17}/></button>
-          <button className="icon-btn refresh-btn" type="button" aria-label={t.refresh} title={t.refresh} onClick={()=>setRefreshNonce(n=>n+1)}><RefreshCcw size={17}/></button>
+          <button type="button" className="sim-toggle" onClick={toggleSimulation} style={{marginRight:"8px",padding:"6px 10px",borderRadius:"8px",border:"1px solid #3a5a6a",background:paperVisible?"#1aa979":"#1a2a35",color:"#fff",fontSize:"12px"}}>
+          {paperVisible ? (language==="de"?"Sim aus":"Sim off") : (language==="de"?"Sim an":"Sim on")}
+        </button>
+        <button className="icon-btn refresh-btn" type="button" aria-label={t.refresh} title={t.refresh} onClick={()=>setRefreshNonce(n=>n+1)}><RefreshCcw size={17}/></button>
         </div>
       </header>
 
@@ -476,9 +479,7 @@ export default function App() {
               {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
-              <button type="button" className="sim-toggle" onClick={toggleSimulation} style={{margin:"8px 12px",padding:"8px 14px",borderRadius:"8px",border:"1px solid #3a5a6a",background:paperVisible?"#1aa979":"#1a2a35",color:"#fff",fontSize:"14px",cursor:"pointer"}}>
-            {paperVisible ? (language==="de"?"Simulation aus":"Simulation off") : (language==="de"?"Simulation an":"Simulation on")}
-          </button>
+              
           {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>
                 <div className="panel-top"><h2>{t.recentTrades} · {showAllPaperHistory?t.homeAllCoins:asset}</h2>
                    <div className="home-history-filter-actions">
