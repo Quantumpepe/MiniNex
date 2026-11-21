@@ -24,12 +24,13 @@ const WORDS={
     failed:'Aktueller Status konnte nicht verifiziert werden.',
     error:'Die Privy-/Blockchain-Freigabe ist nicht vollständig bestätigt.',
     signing:'Wallet-Freigabe wird geprüft …',
-    history:'Echte LIVE-Trades',buy:'Kauf',sell:'Verkauf',
+    history:'LIVE-Aufträge',buy:'Kauf',sell:'Verkauf',
     empty:'Noch keine gesendeten echten Trades.',
     unproven:'Bestätigung offen',notSent:'Sendestatus noch nicht bestätigt',
     uncertain:'Sendeergebnis unklar',filled:'Swap finalisiert',
     native:'Nativer Handelszyklus bestätigt',failedOrder:'Swap fehlgeschlagen',
     fee:'5-%-Gebühr bezahlt',spent:'Eingesetzt',received:'Erhalten',
+    recorded:'Auftrag erfasst',
     verifiedFill:'Blockchain-bestätigte Mengen',
     note:'Pausieren verhindert neue Trades, schliesst aber nicht automatisch eine offene Position. Bereits gesendete Transaktionen können nicht rückgängig gemacht werden.',
   },
@@ -49,12 +50,13 @@ const WORDS={
     failed:'Current status could not be independently verified.',
     error:'Privy or blockchain permission not fully verified.',
     signing:'Checking wallet grant …',
-    history:'Real LIVE trades',buy:'Buy',sell:'Sell',
+    history:'LIVE orders',buy:'Buy',sell:'Sell',
     empty:'No submitted real trades yet.',
     unproven:'Confirmation pending',notSent:'Submission not yet verified',
     uncertain:'Send result uncertain',filled:'Swap finalized',
     native:'Native trade cycle verified',failedOrder:'Swap reverted',
     fee:'5% fee paid',spent:'Spent',received:'Received',
+    recorded:'Order recorded',
     verifiedFill:'Blockchain-confirmed amounts',
     note:'Pause prevents new trades but does not automatically sell an open position. Previously sent transactions cannot be undone.',
   },
@@ -288,6 +290,8 @@ export default function EvmLiveOwnerControls({
             {' · '}{t.received}: {fill.received_amount} {fill.received_asset}
           </span>)(fills.fills.find(fill=>fill.intent_key===order.intent_key&&
           fill.tx_hash===order.tx_hash))}
+        <span>{t.recorded}: {new Date(order.created_at).toLocaleString(
+          lang==='de'?'de-CH':'en-GB')}</span>
         {order.tx_hash&&<code style={{overflowWrap:'anywhere'}}>
           {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
         </code>}
