@@ -217,9 +217,12 @@ async def execute_live_eth_strategy_tick(did: str, *, market,
             if (balances.get("wallet_ownership_verified") is True
                     and native.get("status")=="verified"):
                 held=_positive_decimal(native["balance"],"ETH balance")
-                cap=_positive_decimal(limits["planned_capital_usd"],"capital")
                 price=_positive_decimal(decision["market_price"],"price")
-                quantity=min(max(_ZERO,held-_D("0.01")),cap/price)
+                # This SELL realizes real wallet inventory, even if the
+                # market appreciates beyond its original BUY budget.
+                # Only gas is retained here; original owner Privy policy
+                # still bounds the actual WETH9 DEPOSIT and Router02 SELL.
+                quantity=max(_ZERO,held-_D("0.01"))
                 quantity=quantity.quantize(
                     _D("0.000000000000000001"),rounding=ROUND_DOWN)
                 if quantity*price>=_MIN_ORDER:

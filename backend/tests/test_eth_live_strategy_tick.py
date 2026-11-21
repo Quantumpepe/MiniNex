@@ -169,12 +169,12 @@ def test_sell_with_existing_weth_and_missing_approval_never_wraps(monkeypatch):
                     "reason":"OWNER_APPROVAL_OR_BALANCE_REQUIRED","asset":"ETH"}
 
 
-def test_sell_with_zero_verified_weth_can_wrap_native_once(monkeypatch):
-    """The native conversion is still reachable if the wallet has no WETH."""
+def test_sell_with_zero_verified_weth_can_wrap_appreciated_native_once(monkeypatch):
+    """A SELL can exit user-owned appreciated ETH above the original BUY USD budget."""
     monkeypatch.setattr(live,"get_live_eth_limits",lambda did:limits())
     async def wallet(did):
         return {"wallet_ownership_verified":True,"balances":{
-            "ETH":{"status":"verified","balance":"2"}}}
+            "ETH":{"status":"verified","balance":"5"}}}
     async def inspect(did,*,side,stable,amount):
         return {**allowance("SELL"),"router_allowance_sufficient":False,
                 "verified_source_balance":"0"}
@@ -191,7 +191,9 @@ def test_sell_with_zero_verified_weth_can_wrap_native_once(monkeypatch):
     assert result["state"]=="SUBMITTED"
     assert len(calls)==1
     assert calls[0][0]=="DEPOSIT"
-    assert calls[0][1]>0
+    # Owner's original $200 BUY budget cannot become an artificial SELL cap.
+    # 5 ETH held - 0.01 ETH gas reserve, exactly 18-decimal native wei.
+    assert calls[0][1]==4990000000000000000
 
 
 class ExtraMarket:
