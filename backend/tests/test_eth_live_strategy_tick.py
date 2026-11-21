@@ -228,3 +228,56 @@ def test_non_evm_assets_cannot_enter_evm_live_momentum(asset):
     with pytest.raises(ValueError):
         live.verified_live_evm_momentum(
             ExtraMarket(asset,"up"),asset=asset,now=1000)
+
+
+class NativeObservedMarket:
+    def __init__(self,asset,trend="up",verified=True):
+        self.asset=asset
+        self.trend=trend
+        self.verified=verified
+    def snapshot(self,*,now):
+        price=101.0 if self.trend=="up" else 98.5
+        return {"markets":{self.asset:{
+            "market_data_valid":self.verified,
+            "price_usdt":price}}}
+    def history(self,asset,*,limit):
+        assert asset==self.asset
+        return [
+            {"timestamp":t,"price_usdt":
+                (100.0 if self.trend=="up" else 100.0)}
+            for t in range(810,1001,5)]
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX","DOGE"])
+@pytest.mark.parametrize("trend,action",[
+    ("up","BUY"),("down","SELL"),
+])
+def test_all_five_native_coins_reuse_same_verified_live_market_signal(
+    asset,trend,action,
+):
+    decision=live.verified_live_native_momentum(
+        NativeObservedMarket(asset,trend=trend),
+        asset=asset,now=1000,horizon="15m")
+    assert decision["action"]==action
+    assert decision["asset"] if "asset" in decision else True
+    assert decision["horizon"]=="15m"
+
+
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX","DOGE"])
+def test_native_market_signal_does_not_relabel_invalid_feed_as_live(asset):
+    result=live.verified_live_native_momentum(
+        NativeObservedMarket(asset,verified=False),
+        asset=asset,now=1000)
+    assert result["action"]=="WAIT"
+    assert result["reason"]=="LIVE_MARKET_DATA_UNVERIFIED"
+    with pytest.raises(ValueError):
+        live.verified_live_evm_momentum(
+            NativeObservedMarket(asset),asset=asset,now=1000)
+
+
+def test_native_live_market_evaluator_has_no_trade_sender_or_grant():
+    assert set(live._NATIVE_MARKETS)=={"BTC","SOL","XRP","TRX","DOGE"}
+    assert "ETH" not in live._NATIVE_MARKETS
+    assert live.verified_live_native_momentum(
+        NativeObservedMarket("BTC"),asset="BTC",now=1000
+    )["action"]=="BUY"

@@ -36,15 +36,18 @@ _HORIZON_WINDOWS={
 }
 
 
-def verified_live_evm_momentum(
+_EVM_MARKETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
+_NATIVE_MARKETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
+
+
+def _verified_live_market_momentum(
     market, *, asset: str, now: float, horizon:str="15m",
 ) -> dict:
-    """Momentum/trailing signal from actual fresh external prices, never PAPER."""
+    """Common 12-coin momentum/trailing signal from real prices, not PAPER."""
     if type(now) not in (int,float) or not math.isfinite(now) or now<=0:
         raise ValueError("Invalid market timestamp")
-    if type(asset) is not str or asset not in (
-            "ETH","BNB","POL","AVAX","LINK","UNI","ARB"):
-        raise ValueError("Unsupported verified EVM live market")
+    if type(asset) is not str or asset not in _EVM_MARKETS|_NATIVE_MARKETS:
+        raise ValueError("Unsupported verified live coin market")
     if type(horizon) is not str or horizon not in _HORIZON_WINDOWS:
         raise ValueError("Unsupported owner-chosen LIVE market horizon")
     fast_window,slow_window,history_window=_HORIZON_WINDOWS[horizon]
@@ -89,6 +92,26 @@ def verified_live_evm_momentum(
         return {"action":"SELL","reason":"LIVE_CONFIRMED_REVERSAL",
                 **details}
     return {"action":"WAIT","reason":"LIVE_NO_TRADE_SIGNAL"}
+
+
+def verified_live_evm_momentum(
+    market, *, asset: str, now: float, horizon:str="15m",
+) -> dict:
+    """Preserve the existing EVM-only entry; share one real-market engine."""
+    if type(asset) is not str or asset not in _EVM_MARKETS:
+        raise ValueError("Unsupported verified EVM live market")
+    return _verified_live_market_momentum(
+        market,asset=asset,now=now,horizon=horizon)
+
+
+def verified_live_native_momentum(
+    market, *, asset: str, now: float, horizon:str="15m",
+) -> dict:
+    """Real BTC/SOL/XRP/TRX/DOGE market signal, not a live order or grant."""
+    if type(asset) is not str or asset not in _NATIVE_MARKETS:
+        raise ValueError("Unsupported verified native live market")
+    return _verified_live_market_momentum(
+        market,asset=asset,now=now,horizon=horizon)
 
 
 def verified_live_eth_momentum(market, *, now: float) -> dict:
