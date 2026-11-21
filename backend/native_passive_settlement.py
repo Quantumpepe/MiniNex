@@ -29,10 +29,21 @@ _BATCH_SIZE = 24
 
 
 def _native_passive_enabled() -> bool:
+    """Attach receipt recovery to the original user-authorized LIVE worker.
+
+    A user should never need to configure a second switch to finish a wallet
+    transaction that was already sent. The preexisting explicit read-only
+    option still works by itself. This function signs or sends nothing.
+    """
+    if not os.getenv("DATABASE_URL","").strip():
+        return False
     return (
         os.getenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED")
         == "explicit-readonly"
-        and bool(os.getenv("DATABASE_URL"))
+        or (
+            os.getenv("MININEX_NATIVE_AUTO_WORKER_ENABLED")=="explicit-live"
+            and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
+        )
     )
 
 
