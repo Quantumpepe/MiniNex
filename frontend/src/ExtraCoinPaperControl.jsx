@@ -5,7 +5,7 @@ import {validExtraPaperState,extraPaperCanStart} from './extraPaperRules.js';
 // One opt-in server-side PAPER session per coin and account. Its simulation
 // persists when Android closes; no wallet, live orders, approvals or deposits.
 export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
-                                               options,onChange}){
+                                               options,onChange,liveMode=false}){
   const [data,setData]=useState(null);
   const [busy,setBusy]=useState(false);
   const [failed,setFailed]=useState(false);
