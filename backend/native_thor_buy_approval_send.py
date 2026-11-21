@@ -128,12 +128,16 @@ def _approval_key(
 def _claim_original_thor_approval(
     *,did:str,asset:str,stable:str,prepared:dict,
     audit:dict,nonce:int,request_digest:str,key:str,
+    observed_block:int,wire_sha256:str,
 )->None:
     """Durable shared-wallet single-send claim; never acquires spending power."""
     if (asset not in _ASSETS or stable not in STABLES
             or type(nonce) is not int or not 0<=nonce<2**256
             or type(key) is not str or not re.fullmatch(r"appr_[0-9a-f]{58}",key)
-            or type(request_digest) is not str or not _SHA.fullmatch(request_digest)):
+            or type(request_digest) is not str or not _SHA.fullmatch(request_digest)
+            or type(wire_sha256) is not str or not _SHA.fullmatch(wire_sha256)
+            or type(observed_block) is not int
+            or observed_block<=0 or observed_block>=2**256):
         raise HTTPException(409,"Native approval journal identity invalid")
     db=_db_url()
     _ensure_schema(db)
@@ -197,13 +201,16 @@ def _claim_original_thor_approval(
                    (privy_did,asset,side,stable,chain_id,approval_mode,
                     wallet_id,wallet_address,token_address,router_address,
                     amount_atomic,policy_sha256,budget_revision,idempotency_key,
-                    request_digest,status,owner_eth_pending_nonce)
+                    request_digest,status,owner_eth_pending_nonce,
+                    owner_eth_observed_block_number,
+                    owner_eth_request_wire_sha256)
                    VALUES (%s,%s,'BUY',%s,1,%s,%s,%s,%s,%s,
-                           %s,%s,%s,%s,%s,'SENDING',%s)""",
+                           %s,%s,%s,%s,%s,'SENDING',%s,%s,%s)""",
                 (did,asset,stable,prepared["mode"],prepared["wallet_id"],
                  prepared["wallet"],prepared["token"],prepared["router"],
                  prepared["amount_atomic"],audit["policy_sha256"],
-                 audit["budget_revision"],key,request_digest,nonce))
+                 audit["budget_revision"],key,request_digest,nonce,
+                 observed_block,wire_sha256))
 
 
 async def submit_original_thor_approval_once(
@@ -262,7 +269,7 @@ async def submit_original_thor_approval_once(
                 !=str(prepared["amount_atomic"])):
             raise ValueError("Original owner grant differs from source wallet/amount")
         tx=prepared["source_unsigned_tx"]
-        cid,nonce,gas,price,balance=await asyncio.gather(
+        cid,nonce,gas,price,balance,height=await asyncio.gather(
             _rpc(client,method="eth_chainId",params=[],req_id=1),
             _rpc(client,method="eth_getTransactionCount",
                  params=[prepared["wallet"],"pending"],req_id=2),
@@ -270,14 +277,17 @@ async def submit_original_thor_approval_once(
             _rpc(client,method="eth_gasPrice",params=[],req_id=4),
             _rpc(client,method="eth_getBalance",
                  params=[prepared["wallet"],"latest"],req_id=5),
+            _rpc(client,method="eth_blockNumber",params=[],req_id=6),
         )
         if (_int_quantity(cid)!=1
+                or _int_quantity(height)<=0
                 or not 21000<=_int_quantity(gas)<=30_000_000
                 or _int_quantity(price)<=0
                 or _int_quantity(balance)<_int_quantity(gas)*_int_quantity(price)
                 or prepared["quote_expires_at"].timestamp()<=time.time()):
             raise ValueError("Native exact approval gas or source quote expired")
         pending_nonce=_int_quantity(nonce)
+        observed_block=_int_quantity(height)
     except (ValueError,KeyError,TypeError,OverflowError,httpx.HTTPError):
         raise HTTPException(409,"Original first-BUY approval network state changed") from None
     key=_approval_key(
@@ -289,13 +299,20 @@ async def submit_original_thor_approval_once(
          prepared["original_buy_unsigned_sha256"]],
         sort_keys=True,separators=(",",":"),ensure_ascii=True,
     ).encode("ascii")).hexdigest()
+    # Immutable ON-WIRE digest can be reconstructed from a finalized Ethereum
+    # transaction even after the short THORChain quote has expired.
+    wire_sha256=hashlib.sha256(json.dumps(
+        [url,body,key,pending_nonce],
+        sort_keys=True,separators=(",",":"),ensure_ascii=True,
+    ).encode("ascii")).hexdigest()
     secret=os.environ.get("MININEX_PRIVY_APP_SECRET","").strip()
     if len(secret)<12:
         raise HTTPException(503,"Original Privy owner execution secret unavailable")
     await asyncio.to_thread(
         _claim_original_thor_approval,did=did,asset=asset,stable=stable,
         prepared=prepared,audit=permission_audit,nonce=pending_nonce,
-        request_digest=digest,key=key)
+        request_digest=digest,key=key,observed_block=observed_block,
+        wire_sha256=wire_sha256)
     tx_hash=None
     try:
         signature=sign_privy_rpc_payload(

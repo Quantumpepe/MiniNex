@@ -1074,6 +1074,13 @@ SCHEMA += (
         approval_mode TEXT NOT NULL DEFAULT 'ROUTER02_FINITE'
           CHECK(approval_mode IN ('ROUTER02_FINITE','THOR_FINITE','THOR_USDT_ZERO')),
         owner_eth_pending_nonce NUMERIC(78,0) CHECK(owner_eth_pending_nonce>=0),
+        owner_eth_observed_block_number NUMERIC(78,0) CHECK(
+            owner_eth_observed_block_number>0),
+        owner_eth_scan_next_block NUMERIC(78,0) CHECK(
+            owner_eth_scan_next_block>0),
+        owner_eth_request_wire_sha256 TEXT CHECK(
+            owner_eth_request_wire_sha256 IS NULL OR
+            owner_eth_request_wire_sha256 ~ '^[0-9a-f]{64}$'),
         wallet_id TEXT NOT NULL,
         wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
         token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
@@ -1099,6 +1106,16 @@ SCHEMA += (
     """ALTER TABLE mininex_live_evm_router_approval_sends
        ADD COLUMN IF NOT EXISTS owner_eth_pending_nonce NUMERIC(78,0)
        CHECK (owner_eth_pending_nonce>=0)""",
+    """ALTER TABLE mininex_live_evm_router_approval_sends
+       ADD COLUMN IF NOT EXISTS owner_eth_observed_block_number NUMERIC(78,0)
+       CHECK(owner_eth_observed_block_number>0)""",
+    """ALTER TABLE mininex_live_evm_router_approval_sends
+       ADD COLUMN IF NOT EXISTS owner_eth_scan_next_block NUMERIC(78,0)
+       CHECK(owner_eth_scan_next_block>0)""",
+    """ALTER TABLE mininex_live_evm_router_approval_sends
+       ADD COLUMN IF NOT EXISTS owner_eth_request_wire_sha256 TEXT
+       CHECK(owner_eth_request_wire_sha256 IS NULL OR
+             owner_eth_request_wire_sha256 ~ '^[0-9a-f]{64}$')""",
     """DO $native_thor_allowance$
        BEGIN
          IF NOT EXISTS(

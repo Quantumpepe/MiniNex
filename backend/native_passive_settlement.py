@@ -19,6 +19,9 @@ import os
 from .shared_evm_router_approval_finality import (
     reconcile_original_native_thor_approvals_once,
 )
+from .native_thor_approval_unknown_reconcile import (
+    reconcile_unknown_thor_approvals_once,
+)
 from .native_eth_buy_unknown_reconcile import (
     reconcile_unknown_original_eth_buy_sources_once,
 )
@@ -67,6 +70,8 @@ async def reconcile_original_native_passive_once() -> dict:
         "scanned": 0,
         "source_finalized": 0,
         "router_approvals_finalized": 0,
+        "unknown_thor_approvals_identified": 0,
+        "unknown_thor_approvals_reverted": 0,
         "unknown_eth_buy_sources_identified": 0,
         "unresolved_or_unavailable": 0,
         "errors": 0,
@@ -79,6 +84,7 @@ async def reconcile_original_native_passive_once() -> dict:
     if not result["worker_enabled"]:
         return result
     for callback, count_key in (
+        (reconcile_unknown_thor_approvals_once,"recovered_approvals"),
         (reconcile_original_native_thor_approvals_once,"finalized_approvals"),
         (reconcile_unknown_original_eth_buy_sources_once,"recovered_buy_sources"),
         (reconcile_unknown_original_native_signed_sources_once,
@@ -98,7 +104,15 @@ async def reconcile_original_native_passive_once() -> dict:
                 raise ValueError("Native source read-only report invalid")
             result["passes"] += 1
             result["scanned"] += report["scanned"]
-            if count_key == "finalized_approvals":
+            if count_key == "recovered_approvals":
+                # A recovered exact nonce is not yet a usable ERC20
+                # approval until the ordinary passive finality verifies it.
+                if type(report.get("reverted_approvals")) is not int:
+                    raise ValueError("Native THOR revert recovery report missing")
+                result["unknown_thor_approvals_identified"] += report[count_key]
+                result["unknown_thor_approvals_reverted"] += report[
+                    "reverted_approvals"]
+            elif count_key == "finalized_approvals":
                 result["router_approvals_finalized"] += report[count_key]
             elif count_key == "recovered_buy_sources":
                 # A recovered transaction is not yet a proven native fill.

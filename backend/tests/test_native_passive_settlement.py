@@ -39,6 +39,11 @@ def test_native_passive_finality_checks_all_original_source_states(monkeypatch):
     async def fake(callback, *, limit):
         calls.append((callback.__name__, limit))
         values = {
+            "reconcile_unknown_thor_approvals_once": {
+                "scanned": 2, "recovered_approvals": 1,
+                "reverted_approvals": 0,"unresolved_without_resend": 1,
+                "new_transactions_sent": 0,"fees_paid": False,
+            },
             "reconcile_unknown_original_eth_buy_sources_once": {
                 "scanned": 2, "recovered_buy_sources": 1,
                 "unresolved_without_resend": 1,
@@ -78,6 +83,7 @@ def test_native_passive_finality_checks_all_original_source_states(monkeypatch):
     monkeypatch.setattr(worker, "_reconcile_in_thread", fake)
     result = asyncio.run(worker.reconcile_original_native_passive_once())
     assert calls == [
+        ("reconcile_unknown_thor_approvals_once",24),
         ("reconcile_original_native_thor_approvals_once",24),
         ("reconcile_unknown_original_eth_buy_sources_once",24),
         ("reconcile_unknown_original_native_signed_sources_once", 24),
@@ -86,12 +92,13 @@ def test_native_passive_finality_checks_all_original_source_states(monkeypatch):
         ("reconcile_original_native_destinations_once", 24),
     ]
     assert result["worker_enabled"] is True
-    assert result["passes"] == 6
-    assert result["scanned"] == 13
+    assert result["passes"] == 7
+    assert result["scanned"] == 15
+    assert result["unknown_thor_approvals_identified"] == 1
     assert result["unknown_eth_buy_sources_identified"] == 1
     assert result["router_approvals_finalized"] == 1
     assert result["source_finalized"] == 4
-    assert result["unresolved_or_unavailable"] == 4
+    assert result["unresolved_or_unavailable"] == 5
     assert result["errors"] == 0
     assert result["new_signatures_created"] == 0
     assert result["new_transactions_sent"] == 0
@@ -111,6 +118,7 @@ def test_unavailable_native_chain_does_not_block_other_read_only_receipts(
             raise RuntimeError("chain explorer temporarily offline")
         return {
             "scanned": 1, "finalized_approvals": 1,
+            "recovered_approvals": 1, "reverted_approvals": 0,
             "recovered_buy_sources": 1,
             "finalized_without_resend": 1, "finalized_sources": 1,
             "verified_eth_source": 1,
@@ -120,8 +128,8 @@ def test_unavailable_native_chain_does_not_block_other_read_only_receipts(
 
     monkeypatch.setattr(worker, "_reconcile_in_thread", partial)
     result = asyncio.run(worker.reconcile_original_native_passive_once())
-    assert len(calls) == 6
-    assert result["passes"] == 5
+    assert len(calls) == 7
+    assert result["passes"] == 6
     assert result["errors"] == 1
     assert result["new_transactions_sent"] == 0
 
@@ -141,7 +149,7 @@ def test_native_passive_observer_rejects_broadcast_claims_from_its_report(
 
     monkeypatch.setattr(worker, "_reconcile_in_thread", invalid)
     result = asyncio.run(worker.reconcile_original_native_passive_once())
-    assert result["errors"] == 6
+    assert result["errors"] == 7
     assert result["source_finalized"] == 0
     assert result["new_transactions_sent"] == 0
 
