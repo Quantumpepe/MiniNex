@@ -395,27 +395,9 @@ export default function App() {
   const [helpOpen,setHelpOpen]=useState(false);
   helpRef.current=helpOpen;
   const [refreshNonce,setRefreshNonce]=useState(0);
-  // Simulation display is intentionally off. Live trading is the active path.
+  // User can toggle the simulation display. Default is off.
   const [paperVisible,setPaperVisible]=useState(false);
-  useEffect(()=>{
-    let active=true;
-    const verifyMode=()=>{
-      getJson('/api/user-paper/availability')
-        .then(data=>{
-          if(active)setPaperVisible(
-            data?.paper_available===false
-          );
-        })
-        .catch(()=>{
-          if(active)setPaperVisible(false);
-        });
-    };
-    verifyMode();
-    const timer=window.setInterval(()=>{
-      if(!document.hidden)verifyMode();
-    },20000);
-    return()=>{active=false;window.clearInterval(timer);};
-  },[]);
+  const toggleSimulation=()=>setPaperVisible(v=>!v);
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
   const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
