@@ -3,7 +3,7 @@ import {useSigners} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
 import {
   LIVE_EVM_ASSETS,validEvmTradeChallenge,validEvmTradeSignerOffer,
-  validEvmTradePermission,validEvmAutoSession,
+  validEvmTradePermission,validEvmAutoSession,validEvmOrderHistory,
 } from './evmLiveOwnerRules.js';
 
 const WORDS={
@@ -23,6 +23,11 @@ const WORDS={
     failed:'Aktueller Status konnte nicht verifiziert werden.',
     error:'Die Privy-/Blockchain-Freigabe ist nicht vollständig bestätigt.',
     signing:'Wallet-Freigabe wird geprüft …',
+    history:'Echte LIVE-Trades',buy:'Kauf',sell:'Verkauf',
+    empty:'Noch keine gesendeten echten Trades.',
+    unproven:'Bestätigung offen',filled:'Swap finalisiert',
+    native:'Native Auszahlung bestätigt',failedOrder:'Swap fehlgeschlagen',
+    fee:'5-%-Gebühr bezahlt',
     note:'Pausieren verhindert neue Trades, schliesst aber nicht automatisch eine offene Position. Bereits gesendete Transaktionen können nicht rückgängig gemacht werden.',
   },
   en:{
@@ -41,6 +46,11 @@ const WORDS={
     failed:'Current status could not be independently verified.',
     error:'Privy or blockchain permission not fully verified.',
     signing:'Checking wallet grant …',
+    history:'Real LIVE trades',buy:'Buy',sell:'Sell',
+    empty:'No submitted real trades yet.',
+    unproven:'Confirmation pending',filled:'Swap finalized',
+    native:'Native payout confirmed',failedOrder:'Swap reverted',
+    fee:'5% fee paid',
     note:'Pause prevents new trades but does not automatically sell an open position. Previously sent transactions cannot be undone.',
   },
 };
@@ -52,6 +62,7 @@ export default function EvmLiveOwnerControls({
   const t=WORDS[lang==='de'?'de':'en'];
   const [permission,setPermission]=useState(null);
   const [session,setSession]=useState(null);
+  const [orders,setOrders]=useState(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [offeredFeeScope,setOfferedFeeScope]=useState(null);
@@ -74,28 +85,33 @@ export default function EvmLiveOwnerControls({
     return resp.json();
   };
   const refresh=async()=>{
-    const [p,s]=await Promise.all([
+    const [p,s,h]=await Promise.all([
       request(path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
+      request(path+'/order-status/'+asset+'?limit=20'),
     ]);
-    if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
+    if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset)||
+       !validEvmOrderHistory(h,asset))
       throw Error('Inconsistent EVM LIVE trading state');
-    setPermission(p);setSession(s);
+    setPermission(p);setSession(s);setOrders(h);
   };
   useEffect(()=>{
     let active=true;
-    setPermission(null);setSession(null);setBusy(false);setError('');
+    setPermission(null);setSession(null);setOrders(null);
+    setBusy(false);setError('');
     setOfferedFeeScope(null);
     if(!allowed)return()=>{active=false;};
     const poll=async()=>{
       try{
-        const [p,s]=await Promise.all([
+        const [p,s,h]=await Promise.all([
           request(path+'/permission-status/'+asset),
           request(path+'/auto-session/'+asset),
+          request(path+'/order-status/'+asset+'?limit=20'),
         ]);
-        if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
+        if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset)||
+           !validEvmOrderHistory(h,asset))
           throw Error('Invalid backend trading session state');
-        if(active){setPermission(p);setSession(s);setError('');}
+        if(active){setPermission(p);setSession(s);setOrders(h);setError('');}
       }catch{if(active)setError(t.failed);}
     };
     void poll();
@@ -235,6 +251,23 @@ export default function EvmLiveOwnerControls({
     {sessionStatus!=='ACTIVE'&&current!=='GRANT_VERIFIED'&&
       <p className="privy-wallet-description">{t.warn}</p>}
     <p className="privy-wallet-description">{t.note}</p>
+    {orders&&<div className="mininex-live-orders" aria-label={t.history}
+      style={{display:'grid',gap:6}}>
+      <strong>{t.history} · {asset}</strong>
+      {orders.orders.length===0&&<p className="privy-wallet-description">{t.empty}</p>}
+      {orders.orders.map(order=><div key={order.intent_key}
+        className="privy-wallet-description" style={{display:'grid',gap:2}}>
+        <span>{order.side==='BUY'?t.buy:t.sell} · {order.stable}
+          {' · '}{order.native_trade_cycle_settled?t.native:
+            order.status==='FINALIZED_SUCCESS'?t.filled:
+            order.status==='FINALIZED_REVERTED'?t.failedOrder:t.unproven}
+          {order.fee_transferred?' · '+t.fee:''}
+        </span>
+        {order.tx_hash&&<code style={{overflowWrap:'anywhere'}}>
+          {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
+        </code>}
+      </div>)}
+    </div>}
     {offeredFeeScope&&
       <p className="privy-wallet-description" role="status">
         {lang==='de'?'Einmalige Handelsfreigabe: 5 % realisierter Nettogewinn über High-Water-Mark':'Single trading grant: 5% realized net gain above high-water mark'}
