@@ -151,11 +151,11 @@ export default function LiveTradePlan({
       {asset==='ETH'&&<EthPolicyRouteReadiness
         request={quote.request} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}/>}
-      {['BTC','SOL','XRP'].includes(asset)&&<NativeSourceReadiness
+      {['BTC','SOL','XRP','TRX','DOGE'].includes(asset)&&<NativeSourceReadiness
         request={quote.request} enabled={enabled} userId={userId}
         getAccessToken={getAccessToken} t={t}/>}
     </div>}
-    {['BTC','SOL','XRP'].includes(asset)&&<NativeLiveOrderHistory
+    {['BTC','SOL','XRP','TRX','DOGE'].includes(asset)&&<NativeLiveOrderHistory
       asset={asset} enabled={enabled} userId={userId}
       getAccessToken={getAccessToken} t={t}/>}
     {['SOL','XRP'].includes(asset)&&<NativeReceiptCheck

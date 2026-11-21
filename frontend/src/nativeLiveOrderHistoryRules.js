@@ -1,4 +1,4 @@
-// Original BTC/SOL/XRP source and real destination journaling only.
+// Original BTC/SOL/XRP/TRX/DOGE source and real destination journaling only.
 // Never treat a SOURCE_FINALIZED cross-chain swap as an owner wallet payout.
 const STATES=new Set(['PREPARED','SENDING','SUBMITTED',
   'RECONCILIATION_REQUIRED','SOURCE_FINALIZED','DESTINATION_FINALIZED',
@@ -9,16 +9,21 @@ const BTC=/^[0-9a-f]{64}$/;
 const ETH=/^0x[0-9a-fA-F]{64}$/;
 const SOL=/^[1-9A-HJ-NP-Za-km-z]{85,90}$/;
 const XRP=/^[0-9A-Fa-f]{64}$/;
-const CHAIN={BTC:'bitcoin-mainnet',SOL:'solana-mainnet',XRP:'xrpl-mainnet'};
+const UTXO_NATIVE=/^[0-9a-fA-F]{64}$/;
+const CHAIN={BTC:'bitcoin-mainnet',SOL:'solana-mainnet',
+  XRP:'xrpl-mainnet',TRX:'tron-mainnet',DOGE:'dogecoin-mainnet'};
+const BUY_ONLY=new Set(['TRX','DOGE']);
 const validSource=(asset,side,hash)=>side==='BUY'?ETH.test(hash):
+  BUY_ONLY.has(asset)?false:
   asset==='BTC'?BTC.test(hash):asset==='SOL'?SOL.test(hash):XRP.test(hash);
 const validDestination=(asset,side,state,hash)=>{
   if(side==='SELL'&&state==='DESTINATION_FINALIZED')return ETH.test(hash);
   if(side==='BUY'&&state==='REFUNDED_VERIFIED')return ETH.test(hash);
-  return asset==='BTC'?BTC.test(hash):asset==='SOL'?SOL.test(hash):XRP.test(hash);
+  return asset==='BTC'?BTC.test(hash):asset==='SOL'?SOL.test(hash):
+    BUY_ONLY.has(asset)?UTXO_NATIVE.test(hash):XRP.test(hash);
 };
 export function validOriginalNativeOrderHistory(value,asset){
-  if(!['BTC','SOL','XRP'].includes(asset)||!value||
+  if(!Object.hasOwn(CHAIN,asset)||!value||
      typeof value!=='object'||Array.isArray(value)||
      value.mode!=='OWNER_ORIGINAL_NATIVE_ORDER_HISTORY_ONLY'||
      value.asset!==asset||!Array.isArray(value.orders)||
@@ -30,9 +35,11 @@ export function validOriginalNativeOrderHistory(value,asset){
   return value.orders.every(o=>{
     if(!o||typeof o!=='object'||Array.isArray(o)||
        o.asset!==asset||!SHA.test(o.intent_key)||seen.has(o.intent_key)||
-       !['BUY','SELL'].includes(o.side)||!STATES.has(o.status)||
+       !['BUY','SELL'].includes(o.side)||
+       (BUY_ONLY.has(asset)&&o.side!=='BUY')||!STATES.has(o.status)||
        !['USDC','USDT'].includes(o.stable)||
        (asset==='XRP'&&o.stable!=='USDC')||
+       (asset==='TRX'&&o.stable!=='USDT')||
        o.source_chain!==(o.side==='BUY'?'ethereum-mainnet':CHAIN[asset])||
        !Number.isSafeInteger(o.budget_revision)||o.budget_revision<0||
        typeof o.original_input_amount!=='string'||
@@ -83,7 +90,8 @@ export function validOriginalNativeOrderHistory(value,asset){
 export function nativeReceivedAmount(order){
   if(!order?.destination_amount_atomic||!order.destination_asset)return null;
   const decimals=['USDC','USDT','XRP'].includes(order.destination_asset)?6:
-    order.destination_asset==='BTC'?8:order.destination_asset==='SOL'?9:null;
+    ['BTC','DOGE'].includes(order.destination_asset)?8:
+    order.destination_asset==='SOL'?9:order.destination_asset==='TRX'?6:null;
   if(decimals===null)return null;
   try{
     const str=BigInt(order.destination_amount_atomic).toString().padStart(decimals+1,'0');

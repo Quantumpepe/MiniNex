@@ -13,7 +13,7 @@ export default function NativeLiveOrderHistory({
     let active=true;
     const abort=new AbortController();
     setData(null);
-    if(!enabled||!userId||!['BTC','SOL','XRP'].includes(asset)||
+    if(!enabled||!userId||!['BTC','SOL','XRP','TRX','DOGE'].includes(asset)||
        typeof getAccessToken!=='function')
       return()=>abort.abort();
     const read=async()=>{
@@ -36,7 +36,7 @@ export default function NativeLiveOrderHistory({
     const interval=window.setInterval(()=>{void read();},20000);
     return()=>{active=false;window.clearInterval(interval);abort.abort();};
   },[asset,enabled,userId,getAccessToken]);
-  if(!enabled||!['BTC','SOL','XRP'].includes(asset)||!data||
+  if(!enabled||!['BTC','SOL','XRP','TRX','DOGE'].includes(asset)||!data||
      data.orders.length===0)return null;
   const state=o=>o.original_funds_refunded?(
     t?.liveNativeOrderRefund||'Funds returned to original wallet'):

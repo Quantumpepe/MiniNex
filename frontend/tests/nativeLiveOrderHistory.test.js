@@ -10,7 +10,8 @@ function order(asset='BTC',side='BUY',state='SOURCE_FINALIZED'){
     refunded?(side==='BUY'?'USDC':asset):null;
   return {
     asset,side,stable:'USDC',source_chain:side==='BUY'?'ethereum-mainnet':
-      {BTC:'bitcoin-mainnet',SOL:'solana-mainnet',XRP:'xrpl-mainnet'}[asset],
+      {BTC:'bitcoin-mainnet',SOL:'solana-mainnet',XRP:'xrpl-mainnet',
+        TRX:'tron-mainnet',DOGE:'dogecoin-mainnet'}[asset],
     intent_key:key,status:state,budget_revision:1,
     original_input_amount:'100.0',
     original_input_asset:side==='BUY'?'USDC':asset,
@@ -102,4 +103,42 @@ test('unknown signed source ID is visible but never shown as sent or settled',()
       assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[value]),asset),false);
     }
   }
+});
+
+
+test('original TRX and DOGE trade history stays owner-bound and BUY only',()=>{
+  for(const [asset,stable,amount] of [
+    ['TRX','USDT','25.25'],['DOGE','USDC','3.125'],['DOGE','USDT','1.5']]){
+    const submitted={...order(asset,'BUY','SUBMITTED'),
+      stable,original_input_asset:stable,
+      source_blockchain_finalized:false,pending_or_uncertain:true};
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[submitted]),asset),true);
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[{
+      ...order(asset,'BUY','SOURCE_FINALIZED'),
+      stable,original_input_asset:stable,
+    }]),asset),true);
+    const credited={...order(asset,'BUY','DESTINATION_FINALIZED'),
+      stable,original_input_asset:stable};
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[credited]),asset),true);
+    const refunded={...order(asset,'BUY','REFUNDED_VERIFIED'),
+      stable,original_input_asset:stable,destination_asset:stable};
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[refunded]),asset),true);
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[{
+      ...credited,side:'SELL'
+    }]),asset),false);
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[{
+      ...credited,destination_tx_hash:'0x'+'f'.repeat(64)
+    }]),asset),false);
+    assert.equal(validOriginalNativeOrderHistory(wrapper(asset,[{
+      ...credited,stable:asset==='TRX'?'USDC':'USD'
+    }]),asset),false);
+  }
+});
+test('native TRX/DOGE exact credited amount and USDT refunds are displayed correctly',()=>{
+  assert.equal(nativeReceivedAmount({destination_amount_atomic:'12345000',
+    destination_asset:'TRX'}),'12.345');
+  assert.equal(nativeReceivedAmount({destination_amount_atomic:'123450000',
+    destination_asset:'DOGE'}),'1.2345');
+  assert.equal(nativeReceivedAmount({destination_amount_atomic:'2500000',
+    destination_asset:'USDT'}),'2.5');
 });

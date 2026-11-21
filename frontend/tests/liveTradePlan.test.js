@@ -162,7 +162,8 @@ test('SOL and XRP quote checks are actual owner-bound readbacks, never executed 
 
 test('native original order progress appears per-coin, without shadow fills',()=>{
   assert.match(livePanel,/NativeLiveOrderHistory/);
-  assert.match(livePanel,/\['BTC','SOL','XRP'\]\.includes\(asset\)&&<NativeLiveOrderHistory/);
+  assert.match(livePanel,/\['BTC','SOL','XRP','TRX','DOGE'\]\.includes\(asset\)&&<NativeSourceReadiness/);
+  assert.match(livePanel,/\['BTC','SOL','XRP','TRX','DOGE'\]\.includes\(asset\)&&<NativeLiveOrderHistory/);
   const list=read('../src/NativeLiveOrderHistory.jsx');
   assert.match(list,/getAccessToken\(\)/);
   assert.match(list,/validOriginalNativeOrderHistory\(result,asset\)/);
