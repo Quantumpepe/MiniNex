@@ -8,7 +8,8 @@ import {
 } from '../src/nativeSourceReadinessRules.js';
 
 const NETWORK=Object.freeze({BTC:'bitcoin-mainnet',
-  SOL:'solana-mainnet',XRP:'xrpl-mainnet'});
+  SOL:'solana-mainnet',XRP:'xrpl-mainnet',
+  TRX:'tron-mainnet',DOGE:'dogecoin-mainnet'});
 
 function request(asset='BTC',side='SELL',stable='USDC',amount='0.5'){
   return {asset,side,stable,amount};
@@ -22,9 +23,10 @@ function response(req){
     destination_network:side==='BUY'?NETWORK[req.asset]:'ethereum-mainnet',
     original_native_owner_wallet_link_verified:true,
     original_native_wallet_remote_owner_verified:true,
-    original_native_owner_public_key_matches_wallet:true,
-    documented_privy_native_wallet_chain_type_supported:req.asset!=='XRP',
-    native_privy_signer_reference_observed:true,
+    original_native_owner_public_key_matches_wallet:side==='SELL',
+    documented_privy_native_wallet_chain_type_supported:
+      side==='SELL'&&req.asset!=='XRP',
+    native_privy_signer_reference_observed:side==='SELL',
     original_source_preflight_verified:true,
     exact_native_privy_policy_contents_verified:false,
     user_signed_coin_budget_ledger_verified:false,
@@ -62,6 +64,7 @@ for(const [asset,side,stable,amount] of [
   ['BTC','BUY','USDC','50'],['BTC','SELL','USDT','0.12345678'],
   ['SOL','BUY','USDT','12.5'],['SOL','SELL','USDC','0.123456789'],
   ['XRP','BUY','USDC','19.1'],['XRP','SELL','USDC','0.123456'],
+  ['TRX','BUY','USDT','19.1'],['DOGE','BUY','USDC','19.1'],
 ]){
   test('validate redacted '+asset+' '+side+' '+stable+' source evidence',()=>{
     const req=request(asset,side,stable,amount);
@@ -71,14 +74,15 @@ for(const [asset,side,stable,amount] of [
     });
     assert.equal(validNativeSourcePreflight(response(req),req),true);
     const code=originalNativeBlocker(response(req),req);
-    assert.equal(code,asset==='XRP'?'NATIVE_WALLET_UNSUPPORTED':
-      'POLICY_AND_SEND_CLAIM_MISSING');
+    assert.equal(code,asset==='XRP'&&side==='SELL'?
+      'NATIVE_WALLET_UNSUPPORTED':'POLICY_AND_SEND_CLAIM_MISSING');
   });
 }
 test('never expose a readiness check for the wrong asset, stable or precision',()=>{
   const rejected=[
     request('ETH'),request('ADA'),request('XRP','SELL','USDT'),
-    request('TRX','BUY','USDT'),request('BTC','HOLD'),
+    request('TRX','SELL','USDT'),request('DOGE','SELL','USDC'),
+    request('TRX','BUY','USDC'),request('BTC','HOLD'),
     request('BTC','SELL','USDC','0.123456789'),
     request('SOL','SELL','USDC','0.1234567891'),
     request('XRP','SELL','USDC','0.1234567'),

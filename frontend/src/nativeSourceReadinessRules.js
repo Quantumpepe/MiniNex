@@ -2,7 +2,8 @@
 // This is a source-readiness observation, NEVER a trade or Privy grant.
 import {LIVE_NETWORKS,LIVE_SETTLEMENTS} from './liveTradePlanRules.js';
 
-const NATIVE=Object.freeze(['BTC','SOL','XRP']);
+const NATIVE=Object.freeze(['BTC','SOL','XRP','TRX','DOGE']);
+const BUY_ONLY=Object.freeze(['TRX','DOGE']);
 const DECIMAL=/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
 const UNSAFE=Object.freeze([
   'memo','inbound_vault','unsigned_psbt','signed_wire_base64',
@@ -17,6 +18,7 @@ const isBoolean=value=>typeof value==='boolean';
 export function nativeSourcePreflightRequest(request){
   if(!request||!NATIVE.includes(request.asset)||
     !['BUY','SELL'].includes(request.side)||
+    (BUY_ONLY.includes(request.asset)&&request.side!=='BUY')||
     !LIVE_SETTLEMENTS[request.asset]?.includes(request.stable)||
     typeof request.amount!=='string'||request.amount.length>45||
     !DECIMAL.test(request.amount)||!/[1-9]/.test(request.amount))return null;
@@ -70,6 +72,10 @@ export function validNativeSourcePreflight(data,request){
 
 export function originalNativeBlocker(data,request){
   if(!validNativeSourcePreflight(data,request))return 'INVALID';
+  // BUY funding only signs with the original ETH Privy source wallet,
+  // not the native recipient. Unsupported XRP/TRX/DOGE SELL signatures
+  // cannot incorrectly downgrade a valid ETH-funded BUY preview.
+  if(request.side==='BUY')return 'POLICY_AND_SEND_CLAIM_MISSING';
   if(!data.documented_privy_native_wallet_chain_type_supported)
     return 'NATIVE_WALLET_UNSUPPORTED';
   if(!data.original_native_wallet_remote_owner_verified)

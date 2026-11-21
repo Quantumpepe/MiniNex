@@ -22,13 +22,18 @@ from .storage import _safe_did
 
 _SETTLEMENTS = {"BTC": ("USDC", "USDT"),
                 "SOL": ("USDC", "USDT"),
-                "XRP": ("USDC",)}
+                "XRP": ("USDC",),
+                "TRX": ("USDT",),
+                "DOGE": ("USDC", "USDT")}
 _NATIVE_NETWORK = {
     "BTC": "bitcoin-mainnet",
     "SOL": "solana-mainnet",
     "XRP": "xrpl-mainnet",
+    "TRX": "tron-mainnet",
+    "DOGE": "dogecoin-mainnet",
 }
-_INPUT_PRECISION = {"BTC": 8, "SOL": 9, "XRP": 6}
+_INPUT_PRECISION = {"BTC": 8, "SOL": 9, "XRP": 6,
+                    "TRX": 6, "DOGE": 8}
 _DECIMAL = re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
 
 
@@ -57,21 +62,35 @@ async def read_original_native_source_readiness(
     """Prove an exact original source route; distinguish from LIVE permission."""
     did = _safe_did(did)
     if (asset not in _SETTLEMENTS or side not in ("BUY", "SELL")
+            or (asset in ("TRX","DOGE") and side!="BUY")
             or stable not in _SETTLEMENTS.get(asset, ())
             or type(amount) is not str or not amount or len(amount) > 55):
         raise HTTPException(422, "Unsupported original native source request")
     source_units = _exact_source_units(asset, side, amount)
-    owner = await get_original_native_privy_signer_status(did, asset=asset)
-    if (type(owner) is not dict
-            or owner.get("asset") != asset
-            or owner.get("network") != _NATIVE_NETWORK[asset]
-            or owner.get("original_wallet_link_verified") is not True
-            or owner.get("original_wallet_remote_owner_verified") is not True
-            or owner.get("original_public_key_matches_wallet") is not True
-            or owner.get("privy_native_wallet_api_supported") is not True
-            or owner.get("can_submit") is not False
-            or owner.get("execution_enabled") is not False):
-        raise HTTPException(409, "Original native Privy owner wallet not available")
+    if side == "SELL":
+        # SELL needs the original native chain signer, unlike an ETH-funded
+        # BUY whose destination is only a uniquely owned native wallet.
+        owner = await get_original_native_privy_signer_status(did, asset=asset)
+        if (type(owner) is not dict
+                or owner.get("asset") != asset
+                or owner.get("network") != _NATIVE_NETWORK[asset]
+                or owner.get("original_wallet_link_verified") is not True
+                or owner.get("original_wallet_remote_owner_verified") is not True
+                or owner.get("original_public_key_matches_wallet") is not True
+                or owner.get("privy_native_wallet_api_supported") is not True
+                or owner.get("can_submit") is not False
+                or owner.get("execution_enabled") is not False):
+            raise HTTPException(409, "Original native Privy SELL signer unavailable")
+    else:
+        # BUY's real ETH router quote verifies both original Privy wallets.
+        # No native-chain signature or native SELL capability is implied.
+        owner = {
+            "network": _NATIVE_NETWORK[asset],
+            "original_wallet_remote_owner_verified": False,
+            "original_public_key_matches_wallet": False,
+            "privy_native_wallet_api_supported": False,
+            "additional_signer_reference_present": False,
+        }
 
     if side == "BUY":
         source = await preflight_original_native_eth_buy(
@@ -166,8 +185,11 @@ async def read_original_native_source_readiness(
         if source.get("source_wallet") is None:
             raise HTTPException(409, "Original native source wallet unavailable")
     else:
-        if source.get("destination_wallet") is None:
-            raise HTTPException(409, "Original native destination wallet unavailable")
+        if (type(source.get("destination_wallet")) is not str
+                or not source["destination_wallet"]
+                or type(source.get("source_wallet")) is not str
+                or not source["source_wallet"]):
+            raise HTTPException(409, "Original native BUY wallets unavailable")
 
     return {
         "mode": "OWNER_NATIVE_SOURCE_READINESS_ONLY",

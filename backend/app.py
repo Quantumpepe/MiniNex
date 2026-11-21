@@ -677,7 +677,7 @@ async def unified_real_market_trade_plan(
 
 @app.post("/api/live/native/source-readiness/{asset}")
 async def inspect_owner_native_source_readiness(
-    asset: Literal["BTC", "SOL", "XRP"],
+    asset: Literal["BTC", "SOL", "XRP", "TRX", "DOGE"],
     request: UnifiedLiveTradeRequest,
     authorization: str | None = Header(default=None),
 ):

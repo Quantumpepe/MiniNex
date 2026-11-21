@@ -16,6 +16,8 @@ NETWORKS = {
     "BTC": "bitcoin-mainnet",
     "SOL": "solana-mainnet",
     "XRP": "xrpl-mainnet",
+    "TRX": "tron-mainnet",
+    "DOGE": "dogecoin-mainnet",
 }
 
 
@@ -134,16 +136,15 @@ def test_shared_native_source_preflight_selects_owner_and_exact_chain(
     assert result["stable"] == stable
     assert result["original_source_preflight_verified"] is True
     assert result["original_native_owner_wallet_link_verified"] is True
-    assert result["original_native_owner_public_key_matches_wallet"] is True
-    assert result["documented_privy_native_wallet_chain_type_supported"] is True
+    assert result["original_native_owner_public_key_matches_wallet"] is (side=="SELL")
+    assert result["documented_privy_native_wallet_chain_type_supported"] is (side=="SELL")
     assert result["can_submit"] is False
     assert result["source_network"] == (
         "ethereum-mainnet" if side == "BUY" else NETWORKS[asset])
     assert result["destination_network"] == (
         NETWORKS[asset] if side == "BUY" else "ethereum-mainnet")
-    assert calls == [
-        ("owner",asset,DID),("source",asset,side,stable,"1.25"),
-    ]
+    assert calls == (([("owner",asset,DID)] if side=="SELL" else [])
+                     +[("source",asset,side,stable,"1.25")])
     for flag in (
         "exact_native_privy_policy_contents_verified",
         "user_signed_coin_budget_ledger_verified",
@@ -161,7 +162,8 @@ def test_shared_native_source_preflight_selects_owner_and_exact_chain(
 
 
 @pytest.mark.parametrize("asset,side,stable", [
-    ("ADA","SELL","USDC"), ("TRX","BUY","USDT"),
+    ("ADA","SELL","USDC"), ("TRX","SELL","USDT"),
+    ("DOGE","SELL","USDC"), ("TRX","BUY","USDC"),
     ("BTC","HOLD","USDC"), ("XRP","SELL","USDT"),
     ("SOL","BUY","BTC"), ("BTC","SELL","USDC!"),
 ])
@@ -284,3 +286,25 @@ def test_xrp_readiness_requires_real_xrpl_signer_support_not_raw_math(monkeypatc
             DID, asset="XRP", side="SELL", stable="USDC", amount="2"))
     assert exc.value.status_code == 409
     assert calls == [("owner", "XRP", DID)]
+
+
+@pytest.mark.parametrize("asset,stable",[
+    ("BTC","USDC"),("SOL","USDT"),("XRP","USDC"),
+    ("TRX","USDT"),("DOGE","USDC"),("DOGE","USDT"),
+])
+def test_all_native_buys_use_owned_ethereum_source_not_native_sell_signer(
+    monkeypatch,asset,stable,
+):
+    calls=_install(monkeypatch)
+    result=asyncio.run(m.read_original_native_source_readiness(
+        DID,asset=asset,side="BUY",stable=stable,amount="1.25"))
+    assert calls==[("source",asset,"BUY",stable,"1.25")]
+    assert result["destination_network"]==NETWORKS[asset]
+    assert result["source_network"]=="ethereum-mainnet"
+    assert result["original_native_owner_wallet_link_verified"] is True
+    # The native chain's additional signer is NOT required for a receive.
+    assert result["original_native_owner_public_key_matches_wallet"] is False
+    assert result["documented_privy_native_wallet_chain_type_supported"] is False
+    assert result["original_router_allowance_verified"] is True
+    assert result["execution_enabled"] is False
+    assert result["can_submit"] is False
