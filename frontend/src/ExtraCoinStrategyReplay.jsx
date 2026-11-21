@@ -89,20 +89,6 @@ export default function ExtraCoinStrategyReplay({
         {busy?t.extraReplayRunning:(liveMode?t.extraReplayRunLive:t.extraReplayRun)}
       </button>
     </form>
-    <div className="mininex-extra-preference-save">
-      {preferenceStatus==='ready'&&
-        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
-          disabled={!enabled||busy||preferenceSaving||
-            !coinPreferenceChanged(options,preferenceSaved)||!budgetOk}
-          onClick={()=>onSavePreference?.(asset)}>
-          {preferenceSaving?(t.extraPaperLoading||'Saving…'):(t.privyBudgetSave+' '+asset)}
-        </button>}
-      {preferenceStatus==='failed'&&<>
-        <p className="privy-wallet-description" role="status">{t.tradeSettingsFailed}</p>
-        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
-          onClick={onRetryPreference}>{t.privyBudgetReload}</button>
-      </>}
-    </div>
     <ExtraCoinPaperControl asset={asset} t={t} enabled={enabled} liveMode={liveMode}
       getAccessToken={getAccessToken} options={options} onChange={onChange}/>
     {!budgetOk&&<p className="privy-wallet-description" role="alert">
