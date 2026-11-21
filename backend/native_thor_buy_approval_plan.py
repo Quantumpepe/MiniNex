@@ -54,8 +54,10 @@ def inspect_original_thor_buy_allowance(
     allowance=int(token_allowance,16)
     eth_wei=_int_quantity(eth_balance)
     required=int(unsigned["source_amount_atomic"])
+    expiry=quote.get("quote_expires_at")
     if (required<=0 or token_units<required or eth_wei<=0
-            or quote.get("quote_expires_at").timestamp()<=now):
+            or not isinstance(expiry,datetime) or expiry.tzinfo is None
+            or expiry.timestamp()<=now):
         raise ValueError("Original native BUY funding or current quote unavailable")
     needs_approval=allowance<required
     # This is a finite EXACT-amount ERC20 approve, not unlimited allowance.
@@ -65,6 +67,12 @@ def inspect_original_thor_buy_allowance(
         token=STABLES[stable],router=unsigned["router"],
         wallet=unsigned["source_wallet"],chain_id=1,
         amount_atomic=required) if needs_approval else None)
+    # USDT may require approve(0) before changing an existing nonzero
+    # allowance. Both transactions need independently finalized receipts;
+    # neither is signed or sent by this read-only owner plan.
+    reset_required=bool(stable=="USDT" and 0<allowance<required)
+    reset=({**approval,"data":approval["data"][:-64]+"0"*64}
+           if reset_required else None)
     return {
         "mode":"THORCHAIN_ORIGINAL_ERC20_APPROVAL_PREVIEW_ONLY",
         "asset":asset,"side":"BUY","stable":stable,
@@ -80,7 +88,11 @@ def inspect_original_thor_buy_allowance(
         "approval_amount_atomic":str(required),
         "source_eth_gas_balance_wei":str(eth_wei),
         "owner_wallet_needs_erc20_approval":needs_approval,
+        "existing_usdt_allowance_requires_zero_reset":reset_required,
+        "exact_owner_approval_reset_transaction":reset,
         "exact_owner_approval_transaction":approval,
+        "required_sequential_approval_receipts":(
+            2 if reset_required else 1 if needs_approval else 0),
         "exact_approval_gas_verified":False,
         "current_remote_privy_trade_policy_verified":False,
         "durable_approval_send_claimed":False,
@@ -97,7 +109,8 @@ async def read_original_thor_buy_allowance(
 )->dict:
     """Three owner-scoped live RPC reads; never transfer or authorize funds."""
     did=_safe_did(did)
-    if asset not in _ASSETS or stable not in STABLES:
+    if (asset not in _ASSETS or stable not in STABLES
+            or (asset=="XRP" and stable!="USDC")):
         raise HTTPException(422,"Unsupported original native approval pair")
     quote=await get_private_native_thornode_terms(
         did,asset=asset,side="BUY",stable=stable,amount=amount)

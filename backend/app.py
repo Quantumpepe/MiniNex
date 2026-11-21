@@ -30,6 +30,7 @@ from .native_coin_balances import get_native_balances
 from .native_trade_receipts import get_owner_native_sender_receipt
 from .native_privy_owner_signer import get_original_native_privy_signer_status
 from .native_source_readiness import read_original_native_source_readiness
+from .native_thor_buy_approval_plan import read_original_thor_buy_allowance
 from .native_live_destination_finality import get_private_native_ethereum_destination
 from .native_live_buy_destination import get_private_original_native_buy_destination
 from .native_live_sell_refund import get_private_original_native_sell_refund
@@ -672,6 +673,24 @@ async def inspect_owner_native_source_readiness(
     return JSONResponse(status, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/api/live/native/buy-approval/{asset}")
+async def inspect_owner_native_buy_router_approval(
+    asset: Literal["BTC", "SOL", "XRP"],
+    request: UnifiedLiveTradeRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Read exact first-buy USDC/USDT allowance; never signs or sends."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    if request.side!="BUY":
+        raise HTTPException(422,"Only original native BUY uses an ETH router approval")
+    report=await read_original_thor_buy_allowance(
+        did,asset=asset,stable=request.stable,amount=request.amount)
+    return JSONResponse(report,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
     })
 
 
