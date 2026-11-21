@@ -119,7 +119,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   if(!enabled||!getAccessToken)return null;
   return <section className="mininex-extra-paper" aria-label={asset+' '+t.extraPaperTitle}>
     <div className="mininex-extra-paper-title">
-      <strong>{t.extraPaperTitle}</strong>
+      <strong>{liveMode?t.extraPaperTitleLive:t.extraPaperTitle}</strong>
       <small>{state==='ACTIVE'?t.extraPaperActive:
         state==='PAUSED'?t.extraPaperPaused:
         state==='NOT_STARTED'?t.extraPaperIdle:t.extraPaperLoading}</small>
