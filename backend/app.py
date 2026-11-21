@@ -46,6 +46,7 @@ from .eth_auto_live_sessions import EthAutoLiveWorker, start_eth_auto, pause_eth
 from .shared_evm_passive_settlement import PassiveEvmSettlementWorker
 from .native_passive_settlement import PassiveNativeSettlementWorker
 from .native_live_worker import NativeLiveWorker
+from .native_grant_auditor import audit_native_owner_grant
 from .shared_evm_live_worker import SharedEvmLiveWorker
 from .extra_paper import (
     read as read_extra_paper, start as start_extra_paper,
@@ -150,9 +151,9 @@ eth_auto_live = EthAutoLiveWorker(market)
 evm_passive_settlement = PassiveEvmSettlementWorker()
 native_passive_settlement = PassiveNativeSettlementWorker()
 evm_auto_live = SharedEvmLiveWorker(extra_markets)
-# The native trading worker starts only after a real Privy-policy auditor
-# is wired in the final owner-grant stage. No grant, no live task.
-native_auto_live = NativeLiveWorker(market,extra_markets)
+# Native worker starts with the independent grant auditor
+# that verifies wallet ownership and budget before any send.
+native_auto_live = NativeLiveWorker(market, extra_markets, grant_auditor=audit_native_owner_grant)
 
 
 @asynccontextmanager
