@@ -206,6 +206,7 @@ def inspect_original_native_buy_evm_preflight(
         "estimated_network_fee_wei": str(gas_budget),
         "unsigned_transaction": tx_final,
         "unsigned_transaction_sha256": fingerprint,
+        "network_checked_at_unix": now,
         "chain_id_verified": True,
         "original_router_allowance_verified": True,
         "source_funds_and_gas_verified": True,
