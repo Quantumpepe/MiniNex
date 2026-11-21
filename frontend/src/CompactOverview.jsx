@@ -164,6 +164,6 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
           </div>;
         })}
       </div> : <p className="compact-trade-empty">{t.noRecentTrades}</p>}
-    </section>}
+    </section>
   </section>;
 }
