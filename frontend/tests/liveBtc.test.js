@@ -1,0 +1,100 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {validLiveBtcLimits,validatedLiveBtcDraft}
+  from '../src/liveBtcRules.js';
+
+const read=file=>readFileSync(new URL(file,import.meta.url),'utf8');
+
+const limits=()=>({
+  asset:'BTC',network:'bitcoin-mainnet',
+  mode:'BTC_LIVE_LIMITS_PREPARATION_ONLY',
+  planned_capital_usd:'9900',max_order_usd:'1000',
+  max_daily_turnover_usd:'7000',
+  revision:4,trading_paused:true,
+  privy_btc_signer_verified:false,
+  btc_crosschain_execution_available:false,
+  native_utxo_spend_authorized:false,
+  paper_budget_used:false,live_trading_enabled:false,
+  automated_signing_enabled:false,
+});
+
+test('BTC live budget allows more than 5000 without changing paper limits',()=>{
+  assert.equal(validLiveBtcLimits(limits()),true);
+  const draft={
+    planned_capital_usd:'9900',max_order_usd:'1000',
+    max_daily_turnover_usd:'7000',
+  };
+  assert.deepEqual(validatedLiveBtcDraft(draft),{
+    planned_capital_usd:'9900',max_order_usd:'9900',
+    max_daily_turnover_usd:'9900'});
+  assert.deepEqual(validatedLiveBtcDraft({...draft,max_order_usd:'7001'}),{
+    planned_capital_usd:'9900',max_order_usd:'9900',
+    max_daily_turnover_usd:'9900'});
+  assert.equal(validatedLiveBtcDraft({...draft,planned_capital_usd:'NaN'}),null);
+});
+
+test('BTC risk response must be independent and never claim unlocked signer',()=>{
+  for(const mutate of [
+    a=>{a.asset='ETH';},a=>{a.network='ethereum-mainnet';},
+    a=>{a.trading_paused=false;},a=>{a.live_trading_enabled=true;},
+    a=>{a.automated_signing_enabled=true;},
+    a=>{a.native_utxo_spend_authorized=true;},
+    a=>{a.btc_crosschain_execution_available=true;},
+    a=>{a.paper_budget_used=true;},
+    a=>{a.privy_btc_signer_verified=true;},
+    a=>{a.revision=-1;},
+    a=>{a.max_order_usd='8000';},
+  ]){
+    const copy=limits();mutate(copy);
+    assert.equal(validLiveBtcLimits(copy),false);
+  }
+});
+
+test('BTC live limits appear only under selected BTC coin, never global',()=>{
+  const setup=read('../src/TradingSetupPreview.jsx');
+  const btc=read('../src/LiveBtcControls.jsx');
+  const eth=read('../src/LiveEthControls.jsx');
+  const panel=read('../src/PrivyWalletPanel.jsx');
+  const labels=read('../src/i18n.js');
+  assert.match(setup,/opened==='BTC'&&<LiveBtcControls/);
+  assert.match(setup,/userId=\{userId\} getAccessToken=\{getAccessToken\}/);
+  assert.match(setup,/renderSessionControls\?\.\(opened\)/);
+  // ETH LIVE belongs exclusively to its existing coin settings, not a global wallet panel.
+  assert.match(panel,/renderLiveControls = \(asset,stable\) => asset==='ETH'/);
+  assert.match(panel,/<LiveEthControls compact/);
+  assert.match(setup,/renderLiveControls\?\.\(opened,selectedSettings\.stable\)/);
+  assert.doesNotMatch(panel,/\n\s*<LiveEthControls t=/);
+  assert.doesNotMatch(btc,/sendTransaction\(|eth_sendTransaction|addSigners\(|sendBitcoin/);
+  assert.match(btc,/\/api\/live\/btc\/limits/);
+  assert.match(btc,/\/api\/live\/btc\/stop/);
+  assert.match(btc,/expected_revision:limits.revision/);
+  assert.match(btc,/validLiveBtcLimits\(data\)/);
+  assert.match(eth,/\/api\/live\/eth\/limits/);
+  assert.match(labels,/liveBtcTitle:/);
+  assert.match(labels,/liveBtcStop:/);
+  assert.match(labels,/liveBtcPaused:/);
+});
+
+test('PAPER remains visible while independently authorized LIVE engine is enabled',()=>{
+  const app=read('../src/App.jsx');
+  const paper=read('../src/AssetPaperControl.jsx');
+  const backend=read('../../backend/app.py');
+  const ethAuto=read('../../backend/eth_auto_live_sessions.py');
+  assert.match(app,/data\?\.paper_available===true/);
+  assert.doesNotMatch(app,/paper_available===true&&data\?\.live_trading_enabled===false/);
+  assert.match(paper,/availability\?\.paper_available!==true/);
+  assert.doesNotMatch(paper,/availability\?\.live_trading_enabled!==false/);
+  assert.match(backend,/MININEX_PAPER_ENABLED/);
+  assert.match(backend,/if _paper_visible\(\):\s*await personal_paper.start\(\)/);
+  // An ETH owner's real ACTIVE session and verified Privy grant, not
+  // extra operator flags, decide whether their wallet can trade.
+  assert.doesNotMatch(ethAuto,/MININEX_LIVE_TRADING_ENABLED/);
+  assert.doesNotMatch(ethAuto,/MININEX_ETH_AUTO_WORKER_ENABLED/);
+  assert.match(ethAuto,/s\.status='ACTIVE'/);
+  assert.match(ethAuto,/p\.status='GRANT_VERIFIED'/);
+  const settings=read('../src/TradingSetupPreview.jsx');
+  assert.match(settings,/\{selectedSettings \? <>/);
+  assert.match(settings,/paperAvailable&&renderSessionControls\?\.\(opened\)/);
+  assert.doesNotMatch(settings,/paperAvailable&&\(selectedSettings \? <>/);
+});
