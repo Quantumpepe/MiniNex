@@ -75,7 +75,7 @@ def test_profile_covers_every_coin_without_ada_and_preserves_independent_capital
     state = profile.get_strategy_profile(DID)
     assert len(state["assets"]) == 12
     assert state["assets"] == ["BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
-                               "AVAX", "LINK", "DOGE", "UNI", "ARB"]
+                               "AVAX", "LINK", "QNT", "UNI", "ARB"]
     assert "ada_in_progress" not in state
     assert state["independent_budgets_preserved"] is True
     assert state["existing_sessions_unchanged"] is True

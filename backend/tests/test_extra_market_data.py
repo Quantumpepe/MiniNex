@@ -26,7 +26,7 @@ def gecko_row(asset, price, at=NOW):
 
 def test_all_ten_public_prices_are_separate_and_not_tradable():
     service = ExtraMarketData(clock=lambda: NOW)
-    assert EXTRA_ASSETS == ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
+    assert EXTRA_ASSETS == ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
     for asset, price in zip(EXTRA_ASSETS, (600, 200, 2, .3, .3, 22, 13, .15, 8, .9)):
         assert service.ingest_ws(make_ws(asset, price), now=NOW)
         assert service.ingest_gecko(gecko_row(asset, price), now=NOW) == 1
@@ -133,6 +133,7 @@ def test_kraken_pairs_require_exact_market_and_us_dollar_quote():
     data = {"error": [], "result": {
         "BNBUSD": {"wsname": "BNB/USD", "status": "online"},
         "XDGZUSD": {"wsname": "XDG/USD", "status": "online"},
+        "QNTUSD": {"wsname": "QNT/USD", "status": "online"},
         "SOLUSDT": {"wsname": "SOL/USDT", "status": "online"},
         "ARBUSD": {"wsname": "ARB/USD", "status": "online"},
         "DODGY": {"wsname": "DOGE/USD", "status": "cancel_only"},
@@ -140,7 +141,7 @@ def test_kraken_pairs_require_exact_market_and_us_dollar_quote():
         "UNKNOWNUSD": {"wsname": "UNKNOWN/USD", "status": "online"},
     }}
     assert discover_kraken_usd_pairs(data) == {
-        "BNB": "BNBUSD", "DOGE": "XDGZUSD", "ARB": "ARBUSD",
+        "BNB": "BNBUSD", "QNT": "QNTUSD", "ARB": "ARBUSD",
     }
     assert discover_kraken_usd_pairs({"error": ["EQuery:Unknown asset pair"],
                                       "result": data["result"]}) == {}
@@ -174,18 +175,18 @@ def test_kraken_secondary_reference_replaces_expired_gecko_not_live_capability()
 
 def test_kraken_mismatched_pair_spread_and_invalid_prices_never_verify():
     svc = ExtraMarketData(clock=lambda: NOW)
-    svc._kraken_pairs = {"DOGE": "XDGUSD"}
-    svc.ingest_ws(make_ws("DOGE", .2), now=NOW)
+    svc._kraken_pairs = {"QNT": "QNTUSD"}
+    svc.ingest_ws(make_ws("QNT", .2), now=NOW)
     assert svc.ingest_kraken({"error": [], "result": {
         "WRONG": {"b": [".19"], "a": [".21"]}}}, now=NOW) == 0
     assert svc.ingest_kraken({"error": [], "result": {
-        "XDGUSD": {"b": [".1"], "a": [".2"]}}}, now=NOW) == 0
+        "QNTUSD": {"b": [".1"], "a": [".2"]}}}, now=NOW) == 0
     assert svc.ingest_kraken({"error": [], "result": {
-        "XDGUSD": {"b": ["NaN"], "a": [".2"]}}}, now=NOW) == 0
-    assert svc.snapshot(now=NOW)["DOGE"]["market_data_valid"] is False
+        "QNTUSD": {"b": ["NaN"], "a": [".2"]}}}, now=NOW) == 0
+    assert svc.snapshot(now=NOW)["QNT"]["market_data_valid"] is False
     assert svc.ingest_kraken({"error": [], "result": {
-        "XDGUSD": {"b": [".2"], "a": [".2001"]}}}, now=NOW) == 1
-    assert svc.snapshot(now=NOW)["DOGE"]["market_data_valid"] is True
+        "QNTUSD": {"b": [".2"], "a": [".2001"]}}}, now=NOW) == 1
+    assert svc.snapshot(now=NOW)["QNT"]["market_data_valid"] is True
 
 
 def test_gecko_429_waits_without_immediate_retries(monkeypatch):
@@ -313,7 +314,7 @@ def test_arb_history_and_price_snapshot_http_endpoints_no_longer_return_404():
 
 def test_shared_coingecko_provider_supports_all_twelve_assets_and_paid_key():
     from backend.coingecko_provider import COIN_IDS, coingecko_request_settings
-    assert set(COIN_IDS) >= {"BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB"}
+    assert set(COIN_IDS) >= {"BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB"}
     pro = {"MININEX_COINGECKO_PRO_API_KEY": "server-secret"}
     url, headers, interval = coingecko_request_settings("/simple/price", pro)
     assert url == "https://pro-api.coingecko.com/api/v3/simple/price"

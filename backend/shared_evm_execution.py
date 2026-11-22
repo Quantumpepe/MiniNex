@@ -15,7 +15,7 @@ from .live_asset_registry import get_asset
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 EXACT_INPUT_SINGLE = "0x04e45aaf"
 NETWORK_ASSETS = {
-    "ethereum-mainnet": frozenset(("ETH", "LINK", "UNI")),
+    "ethereum-mainnet": frozenset(("ETH", "LINK", "UNI", "QNT")),
     "bsc-mainnet": frozenset(("BNB",)),
     "polygon-pos-mainnet": frozenset(("POL",)),
     "avalanche-c-mainnet": frozenset(("AVAX",)),

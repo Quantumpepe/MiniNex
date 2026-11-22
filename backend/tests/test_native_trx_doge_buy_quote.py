@@ -55,7 +55,7 @@ def original(asset,now=1803000000,stable="USDC",amount="50"):
     return report,raw,inbounds
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_private_native_buy_quote_and_calldata_bound_to_original_wallet(asset):
     now=1803000000
     quoted,_,_=original(asset,now=now)
@@ -76,7 +76,7 @@ def test_private_native_buy_quote_and_calldata_bound_to_original_wallet(asset):
     assert unsigned["can_submit"] is False
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_extended_first_buy_financing_and_approval_are_unsigned(asset):
     now=1803000000
     quoted,_,_=original(asset,now=now)
@@ -96,7 +96,7 @@ def test_extended_first_buy_financing_and_approval_are_unsigned(asset):
     assert result["can_submit"] is False
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_native_buy_source_preflight_reuses_same_verified_quote(asset):
     from backend.tests.test_native_eth_native_buy_preflight import inspect
     now=1803000000
@@ -110,7 +110,7 @@ def test_native_buy_source_preflight_reuses_same_verified_quote(asset):
     assert proof["execution_enabled"] is False
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_private_buy_never_accepts_an_external_or_invalid_receiver(asset):
     now=1803000000
     quoted,raw,ins=original(asset,now=now)
@@ -126,7 +126,7 @@ def test_private_buy_never_accepts_an_external_or_invalid_receiver(asset):
             quote=raw,inbounds=ins,now=now)
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_original_privy_native_wallet_used_as_thor_destination(asset,monkeypatch):
     target=owner_coin(asset)
     user={"id":DID,"linked_accounts":[
@@ -177,7 +177,7 @@ def test_original_privy_native_wallet_used_as_thor_destination(asset,monkeypatch
     assert err.value.status_code==422
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_extended_original_ethereum_buy_journal_and_privy_body_share_owner(asset):
     from backend import native_live_order_journal as ledger
     from backend import native_eth_buy_privy_dispatch as dispatcher
@@ -219,7 +219,7 @@ def test_extended_original_ethereum_buy_journal_and_privy_body_share_owner(asset
             owner_consent_sha256="a"*64,privy_grant_sha256="b"*64)
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_extended_ethereum_source_nonce_recovery_cannot_fake_native_fill(asset):
     from backend import native_eth_buy_unknown_reconcile as unknown
     from backend import native_live_order_status as history
@@ -268,7 +268,7 @@ def test_extended_ethereum_source_nonce_recovery_cannot_fake_native_fill(asset):
     assert progress["automatic_retry_allowed"] is False
 
 
-@pytest.mark.parametrize("asset",["TRX","DOGE"])
+@pytest.mark.parametrize("asset",["TRX"])
 def test_trx_doge_buy_source_reconciles_without_synthetic_native_payout(asset):
     from backend import native_live_source_finality as finality
     from backend import native_thor_transaction_status as protocol

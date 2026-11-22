@@ -153,7 +153,8 @@ def test_extra_paper_schema_is_separate_and_per_account_coin():
     assert "CREATE TABLE IF NOT EXISTS mininex_extra_paper_trades" in sql
     assert "PRIMARY KEY (privy_did,asset,event_id)" in sql
     assert "FOREIGN KEY (privy_did,asset)" in sql
-    assert "('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')" in sql
+    assert "('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','QNT','UNI','ARB')" in sql
+    # Legacy DOGE records remain readable; new sessions admit only current coins.
     assert "asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH'))" in sql
     assert "mininex_live_order_intents" in sql
     assert "FOR UPDATE" in extra_paper._row.__code__.co_consts
@@ -204,7 +205,7 @@ def test_start_is_opt_in_one_session_per_account_coin_and_no_global_capital_rota
         extra_paper.start("did:privy:alice","SOL",900,"LONG","USDC","15m",feed,NOW)
     assert err.value.status_code==409
     # Only explicit starts exist. A read on a missing coin never auto-starts.
-    missing=extra_paper.read("did:privy:alice","DOGE")
+    missing=extra_paper.read("did:privy:alice","QNT")
     assert missing["status"]=="NOT_STARTED"
     assert len(fake_db.sessions)==3
 
@@ -276,8 +277,8 @@ def test_unverified_feed_keeps_pause_immediate_and_pending_sell_retries_once(fak
 
 def test_cash_only_and_stale_position_valuations_never_fake_profit(fake_db):
     feed=FakeMarkets(valid=False)
-    extra_paper.start("did:privy:alice","DOGE",600,"LONG","USDC","15m",feed,NOW)
-    cash=extra_paper.read("did:privy:alice","DOGE",feed)
+    extra_paper.start("did:privy:alice","QNT",600,"LONG","USDC","15m",feed,NOW)
+    cash=extra_paper.read("did:privy:alice","QNT",feed)
     assert cash["position"]["valuation"]["quote_valid"] is True
     assert cash["position"]["valuation"]["estimated_total_equity_usd"]==600
     feed.valid=True
@@ -293,14 +294,14 @@ def test_extra_worker_scans_only_opted_in_and_keeps_failures_isolated(monkeypatc
     monkeypatch.setenv("MININEX_PAPER_AUTO_ENABLED","true")
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     monkeypatch.setattr(worker,"active_extra_keys",lambda:[
-        ("did:privy:bad","SOL"),("did:privy:good","DOGE")])
+        ("did:privy:bad","SOL"),("did:privy:good","QNT")])
     touched=[]
     def tick(did,coin,source,now):
         if "bad" in did:raise ValueError("fixture")
         touched.append((did,coin))
     monkeypatch.setattr(worker,"tick_extra_paper",tick)
     assert worker.process_extra_sessions(FakeMarkets())==1
-    assert touched==[("did:privy:good","DOGE")]
+    assert touched==[("did:privy:good","QNT")]
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     assert worker.process_extra_sessions(FakeMarkets())==1
     monkeypatch.setenv("MININEX_PAPER_ENABLED","false")

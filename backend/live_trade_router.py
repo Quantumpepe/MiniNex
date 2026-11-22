@@ -109,7 +109,7 @@ async def get_unified_trade_plan(did: str, *, asset: str, side: str,
             "approval_or_permit_required":upstream.get("state")=="APPROVAL_OR_PERMIT_REQUIRED",
             "transaction_preview_created":upstream.get("transaction_built") is True,
         }
-    elif asset in ("LINK","UNI"):
+    elif asset in ("LINK","QNT","UNI"):
         upstream=await quote_owner_erc20_trade(
             did,asset=asset,side=side,stable=stable,amount=amount)
         if (type(upstream) is not dict

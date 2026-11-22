@@ -94,14 +94,14 @@ def test_missing_long_24h_candles_shows_partial_history_without_blocking_session
 def test_invalid_long_candles_do_not_replace_last_valid_history():
     svc=ExtraMarketData(clock=lambda:NOW)
     original=candles()
-    svc.ingest_long_candles("DOGE",original,now=NOW)
-    before=svc.history("DOGE",limit=3600)
+    svc.ingest_long_candles("QNT",original,now=NOW)
+    before=svc.history("QNT",limit=3600)
     def broken(mutator):
         bad=[row[:] for row in original]
         mutator(bad)
         with pytest.raises(ValueError):
-            svc.ingest_long_candles("DOGE",bad,now=NOW)
-        assert svc.history("DOGE",limit=3600)==before
+            svc.ingest_long_candles("QNT",bad,now=NOW)
+        assert svc.history("QNT",limit=3600)==before
     broken(lambda r:r[-1].__setitem__(6,int((NOW+10)*1000)))
     broken(lambda r:r[-1].__setitem__(4,"nan"))
     broken(lambda r:r[30].__setitem__(6,r[29][6]))

@@ -50,15 +50,16 @@ def test_exact_networks_contracts_decimals_and_read_only_calls(rpc):
         'BNB':56,'POL':137,'AVAX':43114,'ETH_TOKENS':1,'ARB_TOKENS':42161}
     assert {k:v.lower() for k,v in m._ETH_TOKENS.items()} == {
         'LINK':'0x514910771af9ca656af840dff83e8264ecf986ca',
+        'QNT':'0x4a220e6096b25eadb88358cb44068a3248254675',
         'UNI':'0x1f9840a85d5af5bf1d1762f925bddadc4201f984'}
-    assert result['asset_order'] == ['BNB','POL','AVAX','LINK','UNI','ARB']
+    assert result['asset_order'] == ['BNB','POL','AVAX','LINK','QNT','UNI','ARB']
     assert result['real_trading_enabled'] is result['execution_available'] is False
     assert result['wallet_funds_used_for_paper'] is False
     for row in result['assets'].values():
         assert row['balance'] == '1.000000000000000123'
         assert row['decimals'] == 18
         assert row['status'] == 'verified'
-    assert len(seen) == 11
+    assert len(seen) == 12
     assert m._ARB_TOKENS == {'ARB':'0x912CE59144191C1204E64559FE8253a0e49E6548'}
     assert {body['method'] for _, body in seen} == {'eth_chainId','eth_getBalance','eth_call'}
     for _, body in seen:
@@ -80,14 +81,14 @@ def test_bad_chain_isolated_from_other_chains(rpc, bad):
     assets = asyncio.run(m.get_multicoin_evm_balances(DID))['assets']
     assert assets['BNB']['status'] == 'unavailable'
     assert assets['BNB']['balance'] is None
-    assert all(assets[a]['status']=='verified' for a in ('POL','AVAX','LINK','UNI','ARB'))
+    assert all(assets[a]['status']=='verified' for a in ('POL','AVAX','LINK','QNT','UNI','ARB'))
     assert not any(url.rstrip('/')==m._RPC['BNB'][2] and b['method']=='eth_getBalance' for url,b in seen)
 
 
 def test_bad_token_does_not_hide_other_token_and_zero_is_real(rpc):
     _, faults = rpc
     faults[(1,'eth_call',m._ETH_TOKENS['LINK'])] = {'jsonrpc':'2.0','id':3,'result':'0x0'}
-    faults[(1,'eth_call',m._ETH_TOKENS['UNI'])] = {'jsonrpc':'2.0','id':4,'result':'0x'+'0'*64}
+    faults[(1,'eth_call',m._ETH_TOKENS['UNI'])] = {'jsonrpc':'2.0','id':5,'result':'0x'+'0'*64}
     assets = asyncio.run(m.get_multicoin_evm_balances(DID))['assets']
     assert assets['LINK']['balance'] is None
     assert assets['LINK']['status'] == 'unavailable'

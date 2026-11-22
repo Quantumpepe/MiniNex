@@ -35,7 +35,7 @@ def build_erc20_router02_swap(*, asset: str, wallet: str, side: str,
                               stable: str, input_atomic: int,
                               minimum_output_atomic: int, fee: int) -> dict:
     """One verified server-owned token pair, no arbitrary user contracts."""
-    if (asset not in ("LINK", "UNI") or side not in ("BUY", "SELL")
+    if (asset not in ("LINK", "QNT", "UNI") or side not in ("BUY", "SELL")
             or stable not in get_asset(asset).stablecoin_candidates):
         raise ValueError("Unsupported Ethereum ERC-20 trade")
     token = _ETH_TOKENS[asset]
@@ -55,12 +55,12 @@ async def quote_owner_erc20_trade(
     did: str, *, asset: str, side: str, stable: str, amount: str,
     include_user_transaction: bool = False,
 ) -> dict:
-    """Actual V3 on-chain quote for a Privy-owned LINK/UNI ERC-20 route.
+    """Actual V3 on-chain quote for a Privy-owned LINK/QNT/UNI ERC-20 route.
 
     The returned unsigned transaction is NOT an authorized AUTO order.
     Signer/policy/allowance checks and actual finality are separate stages.
     """
-    if (asset not in ("LINK", "UNI") or side not in ("BUY", "SELL")
+    if (asset not in ("LINK", "QNT", "UNI") or side not in ("BUY", "SELL")
             or stable not in get_asset(asset).stablecoin_candidates):
         raise HTTPException(422, "Unsupported owner ERC-20 trade pair")
     requested, units = _quantity(amount,6 if side=="BUY" else 18)
@@ -117,7 +117,7 @@ async def quote_owner_erc20_trade(
             input_atomic=int(units),minimum_output_atomic=minimum,fee=fee,
         )
     except (httpx.HTTPError,ValueError,TypeError,OverflowError):
-        raise HTTPException(502,"Verified LINK/UNI V3 quote unavailable") from None
+        raise HTTPException(502,"Verified LINK/QNT/UNI V3 quote unavailable") from None
 
     return {
         **({

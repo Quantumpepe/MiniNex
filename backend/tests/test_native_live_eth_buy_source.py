@@ -154,7 +154,7 @@ def test_real_original_eth_buy_source_requires_all_chain_proofs(asset,stable):
     lambda x:x["row"].update(source_tx_hash="0x"+"a"*64),
     lambda x:x["row"].update(destination_wallet=OWNER),
     lambda x:x["row"].update(input_amount="43"),
-    lambda x:x["row"].update(asset="DOGE"),
+    lambda x:x["row"].update(asset="TRX"),
     lambda x:x.update(chain_id="0x38"),
     lambda x:x["transaction"].update(fromAddress=VAULT,**{"from":VAULT}),
     lambda x:x["transaction"].update(hash="0x"+"a"*64),

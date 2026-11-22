@@ -103,7 +103,6 @@ def test_dogecoin_requires_all_native_outputs_and_six_confirmations():
 
 @pytest.mark.parametrize("asset,units,proto_units",[
     ("TRX",25_000_000,"2500000000"),
-    ("DOGE",300_000_000,"300000000"),
 ])
 def test_original_native_buy_closes_only_when_protocol_and_chain_agree(
     asset,units,proto_units,
