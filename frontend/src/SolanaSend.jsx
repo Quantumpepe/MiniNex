@@ -14,7 +14,7 @@ export default function SolanaSend({t,enabled,userId}) {
   const [error,setError]=useState('');
   const [txSig,setTxSig]=useState('');
 
-  const wallet=wallets.find(w=>w?.walletClientType==='privy'&&w?.chainType==='solana');
+  const wallet=wallets.find(w=>w?.walletClientType==='privy'||w?.chainType==='solana'||w?.address);
 
   async function send() {
     if(!enabled||!wallet||!destination||!amount)return;
