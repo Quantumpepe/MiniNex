@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from .shared_evm_swap_receipts import _pair
 
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _units(value: object, *, allow_zero: bool=False) -> Decimal:

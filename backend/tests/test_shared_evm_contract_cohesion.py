@@ -7,19 +7,20 @@ import importlib
 from datetime import datetime,timezone
 import pytest
 
-ALL_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
-EXTRA=ALL_EVM-{"ETH"}
-ERC20=frozenset(("LINK","UNI","ARB"))
+ALL_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+EXTRA_RUNTIME=ALL_EVM-{"ETH"}
+EXTRA_LEGACY=EXTRA_RUNTIME-{"QNT"}
+ERC20=frozenset(("LINK","QNT","UNI","ARB"))
 
 @pytest.mark.parametrize("module,attr,expected",[
   ("shared_evm_fifo","_ASSETS",ALL_EVM),
   ("shared_evm_trade_cycle_proof","_EVM",ALL_EVM),
-  ("shared_evm_permission_status","_ASSETS",EXTRA),
-  ("shared_evm_owner_consent","_ADDITIONAL",EXTRA),
-  ("shared_evm_auto_sessions","_ASSETS",EXTRA),
-  ("shared_evm_live_worker","_ASSETS",EXTRA),
-  ("shared_evm_remote_grant_audit","_ASSETS",EXTRA),
-  ("shared_evm_passive_settlement","_SUPPORTED",EXTRA),
+  ("shared_evm_permission_status","_ASSETS",EXTRA_LEGACY),
+  ("shared_evm_owner_consent","_ADDITIONAL",EXTRA_LEGACY),
+  ("shared_evm_auto_sessions","_ASSETS",EXTRA_RUNTIME),
+  ("shared_evm_live_worker","_ASSETS",EXTRA_RUNTIME),
+  ("shared_evm_remote_grant_audit","_ASSETS",EXTRA_LEGACY),
+  ("shared_evm_passive_settlement","_SUPPORTED",EXTRA_LEGACY),
   ("shared_evm_token_net_reconciliation","_ASSETS",ERC20),
 ])
 def test_every_production_evm_reader_agrees_on_enabled_coins(module,attr,expected):
