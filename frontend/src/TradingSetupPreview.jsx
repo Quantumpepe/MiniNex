@@ -244,7 +244,13 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
           </label>
         </div>
         
-        {renderBudget?.(opened)}
+        <label>
+            <span>{t.extraReplayBudget||'Budget (USD)'}</span>
+            <input type="number" min="1" step="1"
+              value={replayOptions[opened]?.budget||''}
+              disabled={status!=='ready'||busy}
+              onChange={event=>changeReplay(opened,'budget',event.target.value)}/>
+          </label>
         {renderSessionControls?.(opened)}
         {renderLiveControls?.(opened,selectedSettings.stable)}
         {opened==='BTC'&&<LiveBtcControls t={t} enabled={enabled}
