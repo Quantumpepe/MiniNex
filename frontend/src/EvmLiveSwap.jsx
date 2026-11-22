@@ -4,7 +4,7 @@ import {buildEvmSwapTransaction} from './evmSwapBuilder.js';
 import {EVM_CHAINS} from './evmSwapRules.js';
 
 // Universal EVM swap: works for BNB, POL, AVAX, ARB.
-export default function EvmLiveSwap({enabled,userId,chain,side,stable,amount,t}){
+export default function EvmLiveSwap({enabled,userId,chain,side,stable,token,amount,t}){
   const {wallets}=useWallets();
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -21,7 +21,7 @@ export default function EvmLiveSwap({enabled,userId,chain,side,stable,amount,t})
       const amountIn=BigInt(Math.floor(Number(amount)*1e18)).toString();
       const deadline=Math.floor(Date.now()/1000)+600;
       const tx=buildEvmSwapTransaction(chain,{
-        side,amountIn,amountOutMin:'0',stable,
+        side,amountIn,amountOutMin:'0',stable,token,
         recipient:wallet.address,deadline,
       });
       const txHash=await provider.request({
