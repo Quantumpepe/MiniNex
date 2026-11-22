@@ -86,6 +86,7 @@ def test_signed_blob_must_match_wallet_and_exact_payment():
     digest = hashlib.new("ripemd160", hashlib.sha256(public).digest()).digest()
     address = encode_classic_address(digest)
     unsigned = prepare_mainnet_payment(address, VAULT, "1000000", *sample_for(address))
+    unsigned["SigningPubKey"] = public_hex
     signing = {**unsigned, "SigningPubKey": public_hex, "TxnSignature": "AB" * 64}
     blob = encode(signing)
     decoded, txid = verified_signed_blob(
