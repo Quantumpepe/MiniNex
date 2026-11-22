@@ -71,6 +71,7 @@ from .shared_evm_fill_history import get_owner_evm_fill_history
 from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
+from .shared_evm_wallet_policy_prepare import prepare_owner_central_evm_wallet_policy
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
@@ -1018,6 +1019,25 @@ async def owner_confirm_signed_evm_fee_payment(
         did=did,asset=asset,execution_id=execution_id,
         tx_hash=request.tx_hash)
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/prepare/{asset}")
+async def owner_prepare_first_shared_evm_wallet_policy(
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Explicit original owner's initial central signer POLICY DRAFT only.
+
+    Reads saved owner-selected coin capital server-side and never sends,
+    attaches, publishes or changes a Privy signer. Existing legacy signers
+    are not silently migrated.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await prepare_owner_central_evm_wallet_policy(did,asset)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.get("/api/live/evm/wallet-policy/status")
