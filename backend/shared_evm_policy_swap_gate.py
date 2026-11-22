@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from .shared_evm_remote_grant_audit import validate_pinned_evm_policy, _lte
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_auto_preflight import inspect_evm_exact_swap
+from .shared_evm_central_runtime import central_policy_rule
 
 
 def check_evm_policy_bound_swap(
@@ -23,14 +24,20 @@ def check_evm_policy_bound_swap(
             or record.get("wallet_address")!=wallet.lower()):
         raise HTTPException(409,"EVM policy wallet, asset or settlement differs")
     try:
-        policy=validate_pinned_evm_policy(record,asset=asset,now=now)
+        if record.get("authorization_method")=="PRIVY_CENTRAL_ONE_SIGNER":
+            rule=central_policy_rule(
+                record,asset=asset,kind="swap",
+                side=side,stable=stable,now=now,
+            )
+        else:
+            policy=validate_pinned_evm_policy(record,asset=asset,now=now)
+            rule=policy["rules"][{"BUY":0,"SELL":1}[side]]
         preflight=inspect_evm_exact_swap(
             tx,asset=asset,wallet=wallet,side=side,stable=stable,
             input_atomic=input_atomic,
             minimum_output_atomic=minimum_output_atomic)
-        rule_index={"BUY":0,"SELL":1}[side]
         cap=int(_lte(
-            policy["rules"][rule_index],"exactInputSingle.params.amountIn"))
+            rule,"exactInputSingle.params.amountIn"))
         amount=int(input_atomic)
         if (type(input_atomic) is not str or input_atomic!=str(amount)
                 or not 0<amount<=cap):

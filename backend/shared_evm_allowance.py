@@ -212,21 +212,31 @@ def inspect_combined_grant_router_approval(
     from .shared_evm_remote_grant_audit import (
         validate_pinned_evm_policy, _lte,
     )
+    from .shared_evm_central_runtime import central_policy_rule
+    central=(type(record) is dict and
+             record.get("authorization_method")=="PRIVY_CENTRAL_ONE_SIGNER")
     if (type(record) is not dict or
-            record.get("authorization_method") != "PRIVY_SCOPED_GRANT" or
+            record.get("authorization_method") not in (
+                "PRIVY_SCOPED_GRANT","PRIVY_CENTRAL_ONE_SIGNER") or
             record.get("status") != "GRANT_VERIFIED" or
             record.get("revoked_at") is not None or
             record.get("asset") != asset or
             record.get("stable") != stable or
             type(amount_atomic) is not int or amount_atomic <= 0):
         raise ValueError("No valid one-signature Privy router approval scope")
-    policy=validate_pinned_evm_policy(record,asset=asset,now=now)
     pair=_pair(asset,stable,side)
-    base=4 if asset in ("BNB","POL","AVAX") else 2
-    if len(policy["rules"])!=base+3:
-        raise ValueError("Original combined grant does not authorize approvals")
-    index=base+(0 if side=="BUY" else 1)
-    rule=policy["rules"][index]
+    if central:
+        rule=central_policy_rule(
+            record,asset=asset,kind="approval",
+            side=side,stable=stable,now=now,
+        )
+    else:
+        policy=validate_pinned_evm_policy(record,asset=asset,now=now)
+        base=4 if asset in ("BNB","POL","AVAX") else 2
+        if len(policy["rules"])!=base+3:
+            raise ValueError("Original combined grant does not authorize approvals")
+        index=base+(0 if side=="BUY" else 1)
+        rule=policy["rules"][index]
     checks={(c["field_source"],c["field"],c["operator"]):c["value"]
             for c in rule["conditions"]}
     if (checks.get(("ethereum_transaction","to","eq"))!=pair["source_token"]

@@ -195,7 +195,10 @@ def _read_grant_evidence_locked(cur,*,did:str,asset:str)->dict:
     return record
 
 
-def _read_grant_record(did:str,asset:str)->dict:
+def _read_grant_record(did:str,asset:str,*,central:bool=False)->dict:
+    if central:
+        from .shared_evm_central_runtime import original_evm_coin_record
+        return original_evm_coin_record(did,asset)
     url=_db_url()
     _ensure_schema(url)
     with psycopg.connect(url,connect_timeout=6) as conn:
@@ -203,8 +206,13 @@ def _read_grant_record(did:str,asset:str)->dict:
             return _read_grant_evidence_locked(cur,did=did,asset=asset)
 
 
-async def get_owner_evm_remote_grant_audit(did:str,asset:str)->dict:
+async def get_owner_evm_remote_grant_audit(
+    did:str,asset:str,*,central:bool=False,
+)->dict:
     did=_safe_did(did)
+    if central:
+        from .shared_evm_central_runtime import audit_original_evm_coin
+        return await audit_original_evm_coin(did,asset)
     if asset not in _ASSETS:
         raise HTTPException(404,"Unsupported per-coin Privy policy")
     try:
