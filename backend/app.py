@@ -2151,7 +2151,8 @@ def budgets_update(
 
 class IndependentCoinPreferenceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    budget_usd: StrictInt = Field(ge=100, le=5000)
+    # The user chooses the capital; only positive JSON-safe integers are valid.
+    budget_usd: StrictInt = Field(gt=0, le=9007199254740991)
     mode: Literal["LONG", "SPOT_SHORT", "AUTO"]
     stable: Literal["USDC", "USDT"]
     horizon: Literal["5m", "15m", "1h", "24h"]
@@ -2162,7 +2163,7 @@ class IndependentCoinPreferenceRequest(BaseModel):
 def coin_preferences_status(
     authorization: str | None = Header(default=None),
 ):
-    """Load nine independent saved preferences for this one Privy account."""
+    """Load ten independent saved preferences for this one Privy account."""
     did = verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(get_coin_preferences(did), headers={
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
