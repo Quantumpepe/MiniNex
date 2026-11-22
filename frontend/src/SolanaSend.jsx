@@ -43,7 +43,7 @@ export default function SolanaSend({t,enabled,userId}) {
     }finally{setBusy(false);}
   }
 
-  if(!wallet)return null;
+  if(!wallet)return <p className="privy-wallet-description">Solana-Wallet wird erstellt… Bitte neu anmelden.</p>;
   return <section className="mininex-wallet-send">
     <button type="button" className="privy-wallet-action" onClick={()=>setOpen(v=>!v)}>
       <Send size={16}/> {t.walletSendTitle||'Senden'} SOL
