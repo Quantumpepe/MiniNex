@@ -98,12 +98,9 @@ _REGISTRY_UNSORTED = (
     ),
     CoinNetwork(
         "QNT", "Quant", "ethereum-mainnet", "evm-erc20", 1,
-        "Privy EVM wallet on Ethereum; QNT is an ERC-20 token, ETH pays network gas",
-        "QNT contract 0x4a220e6096b25eadb88358cb44068a3248254675",
-        "Dedicated user-owned native Dogecoin wallet and separate signer required",
-        ("USDC", "USDT"), "external-provider-required",
-        "No native stablecoin settlement on Dogecoin mainnet; independently vet "
-        "cross-chain venue, confirmations, fees and refund mechanism",
+        "Privy embedded Ethereum wallet; QNT ERC-20 uses ETH gas",
+        ("USDC", "USDT"), "ethereum-erc20-validation-required",
+        "Verify Ethereum QNT token contract, decimals, allowances, fee and route",
     ),
     CoinNetwork(
         "UNI", "Uniswap", "ethereum-mainnet", "evm-erc20", 1,
