@@ -1,5 +1,9 @@
 import React,{useEffect,useState} from 'react';
-import {useSigners} from '@privy-io/react-auth';
+import {useSigners,useSignMessage} from '@privy-io/react-auth';
+import {
+  authorizeCentralEvmWalletCoin,validCentralWalletStatus,
+  centralWalletHasCoin,
+} from './centralEvmWalletFlow.js';
 import {API_BASE} from './data.js';
 import {
   LIVE_EVM_ASSETS,validEvmTradeChallenge,validEvmTradeSignerOffer,
@@ -24,6 +28,8 @@ const WORDS={
     failed:'Aktueller Status konnte nicht verifiziert werden.',
     error:'Die Privy-/Blockchain-Freigabe ist nicht vollständig bestätigt.',
     signing:'Wallet-Freigabe wird geprüft …',
+    centralReady:'Eine gemeinsame Privy-Wallet-Freigabe ist verifiziert.',
+    centralPending:'Der gemeinsame LIVE-Handelsworker ist noch nicht verbunden. Es wurde kein Echtgeldhandel gestartet.',
     history:'LIVE-Aufträge',buy:'Kauf',sell:'Verkauf',
     empty:'Noch keine gesendeten echten Trades.',
     unproven:'Bestätigung offen',notSent:'Sendestatus noch nicht bestätigt',
@@ -50,6 +56,8 @@ const WORDS={
     failed:'Current status could not be independently verified.',
     error:'Privy or blockchain permission not fully verified.',
     signing:'Checking wallet grant …',
+    centralReady:'One combined Privy wallet grant has been verified.',
+    centralPending:'The combined LIVE trading worker is not yet connected. No real trading session has been started.',
     history:'LIVE orders',buy:'Buy',sell:'Sell',
     empty:'No submitted real trades yet.',
     unproven:'Confirmation pending',notSent:'Submission not yet verified',
@@ -66,8 +74,10 @@ export default function EvmLiveOwnerControls({
   asset,stable,address,userId,getAccessToken,enabled,lang='de',
 }){
   const {addSigners}=useSigners();
+  const {signMessage}=useSignMessage();
   const t=WORDS[lang==='de'?'de':'en'];
   const [permission,setPermission]=useState(null);
+  const [centralStatus,setCentralStatus]=useState(null);
   const [session,setSession]=useState(null);
   const [orders,setOrders]=useState(null);
   const [fills,setFills]=useState(null);
@@ -93,13 +103,15 @@ export default function EvmLiveOwnerControls({
     return resp.json();
   };
   const refresh=async()=>{
-    const [p,s]=await Promise.all([
+    const [p,s,c]=await Promise.all([
       request(path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
+      request(path+'/wallet-policy/status'),
     ]);
-    if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
+    if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset)||
+       !validCentralWalletStatus(c))
       throw Error('Inconsistent EVM LIVE trading state');
-    setPermission(p);setSession(s);
+    setPermission(p);setSession(s);setCentralStatus(c);
     // Never await optional history before completing owner controls.
     void request(path+'/order-status/'+asset+'?limit=20')
       .then(h=>setOrders(validEvmOrderHistory(h,asset)?h:null))
@@ -110,19 +122,22 @@ export default function EvmLiveOwnerControls({
   };
   useEffect(()=>{
     let active=true;
-    setPermission(null);setSession(null);setOrders(null);setFills(null);
+    setPermission(null);setSession(null);setCentralStatus(null);
+    setOrders(null);setFills(null);
     setBusy(false);setError('');
     setOfferedFeeScope(null);
     if(!allowed)return()=>{active=false;};
     const poll=async()=>{
       try{
-        const [p,s]=await Promise.all([
+        const [p,s,c]=await Promise.all([
           request(path+'/permission-status/'+asset),
           request(path+'/auto-session/'+asset),
+          request(path+'/wallet-policy/status'),
         ]);
-        if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset))
+        if(!validEvmTradePermission(p,asset)||!validEvmAutoSession(s,asset)||
+           !validCentralWalletStatus(c))
           throw Error('Invalid backend trading session state');
-        if(active){setPermission(p);setSession(s);setError('');}
+        if(active){setPermission(p);setSession(s);setCentralStatus(c);setError('');}
         // Read-only history must never delay permission or session status.
         void request(path+'/order-status/'+asset+'?limit=20')
           .then(h=>{if(active)setOrders(validEvmOrderHistory(h,asset)?h:null);})
@@ -154,14 +169,34 @@ export default function EvmLiveOwnerControls({
   // cryptographic approvals: a future consent protocol may consolidate them.
   // Never run on login, render, retry, or a background effect.
   const startTrade=()=>command(async()=>{
-    const [freshPermission,freshSession]=await Promise.all([
+    const [freshPermission,freshSession,central]=await Promise.all([
       request(path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
+      request(path+'/wallet-policy/status'),
     ]);
     if(!validEvmTradePermission(freshPermission,asset)||
-       !validEvmAutoSession(freshSession,asset))
+       !validEvmAutoSession(freshSession,asset)||
+       !validCentralWalletStatus(central))
       throw Error('Original wallet and trade session unavailable');
     if(freshSession.status==='ACTIVE')return;
+    // A new owner's first grant and every subsequent new EVM coin share
+    // the SAME existing Privy signer and ONE policy. Existing legacy
+    // grant records are never silently migrated or overwritten.
+    if(central.status!=='NOT_CONFIGURED'||
+       freshPermission.status==='NOT_PREPARED'){
+      const current=await authorizeCentralEvmWalletCoin({
+        asset,stable,address,request,addSigners,signMessage,
+      });
+      setCentralStatus(current);
+      // Authorization alone does NOT prove a working LIVE worker. Keep
+      // this path separate from the legacy start endpoint until the
+      // backend has a properly audited central policy execution route.
+      if(!centralWalletHasCoin(current,asset)){
+        throw Error('Original combined EVM wallet grant is not verified');
+      }
+      setError(t.centralPending);
+      return;
+    }
     let state=freshPermission.status;
     if(state==='REVOKED')throw Error(t.revoked);
     const mode=freshPermission.authorization_method;
@@ -241,6 +276,11 @@ export default function EvmLiveOwnerControls({
     style={{display:'grid',gap:8}}>
     <strong>{t.title} · {asset}</strong>
     <p className="privy-wallet-description">{t.desc}</p>
+    {centralStatus?.status==='REMOTE_VERIFIED_READONLY'&&
+      <p className="privy-wallet-description" role="status">
+        {t.centralReady} {centralStatus.scope_coins.join(', ')}
+        {' · '}{t.centralPending}
+      </p>}
     <p className="privy-wallet-description" role="status">
       {t.status}: {sessionStatus==='ACTIVE'?
         (session?.worker_attached===true?t.running:t.off):
@@ -261,7 +301,7 @@ export default function EvmLiveOwnerControls({
           disabled={busy} onClick={pause}>{t.pause}</button>
       : current!=='REVOKED' &&
         <button type="button" className="privy-wallet-action"
-          disabled={busy||permission===null} onClick={startTrade}>
+          disabled={busy||permission===null||centralStatus===null} onClick={startTrade}>
           {t.open} · {asset}
         </button>}
     {sessionStatus!=='ACTIVE'&&
