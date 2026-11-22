@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from backend import native_live_source_evidence as m
 
-ASSETS=("BTC","SOL","XRP","TRX","DOGE")
+ASSETS=("BTC","SOL","XRP","TRX","TRX")
 DID="did:privy:budget_test"
 
 
@@ -31,22 +31,22 @@ def test_reference_rates_require_recent_exact_coin_and_stable_snapshot():
 
 def test_cross_stable_unclosed_native_buys_are_not_ignored_after_setting_change():
     rows=[
-        {"asset":"DOGE","side":"BUY","stable":"USDC",
+        {"asset":"TRX","side":"BUY","stable":"USDC",
          "status":"SOURCE_FINALIZED","input_amount":Decimal("150")},
-        {"asset":"DOGE","side":"BUY","stable":"USDT",
+        {"asset":"TRX","side":"BUY","stable":"USDT",
          "status":"SENDING","input_amount":Decimal("25")},
     ]
     p={"USDC":Decimal("1.001"),"USDT":Decimal("0.999")}
-    assert m._pending_usd(rows,"DOGE",p)==Decimal("175.125")
+    assert m._pending_usd(rows,"TRX",p)==Decimal("175.125")
     with pytest.raises(ValueError):
         m._pending_usd(rows+[{"asset":"TRX","side":"BUY",
              "stable":"USDT","status":"SENDING",
-             "input_amount":Decimal("2")}],"DOGE",p)
+             "input_amount":Decimal("2")}],"TRX",p)
 
 
 @pytest.mark.parametrize("asset,stable",[
     ("BTC","USDC"),("SOL","USDT"),("XRP","USDC"),
-    ("TRX","USDT"),("DOGE","USDC"),
+    ("TRX","USDT"),("TRX","USDC"),
 ])
 def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
     monkeypatch,asset,stable,
@@ -95,7 +95,7 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
 
 def test_missing_native_wallet_prevents_any_network_trade(monkeypatch):
     async def user(did):return {"id":did,"linked_accounts":[]}
-    def wallets(_,did):return {"DOGE":None}
+    def wallets(_,did):return {"TRX":None}
     async def forbidden(*a,**kw):
         raise AssertionError("No ETH funds/price lookup for missing owner wallet")
     monkeypatch.setattr(m,"fetch_privy_user",user)
@@ -104,7 +104,7 @@ def test_missing_native_wallet_prevents_any_network_trade(monkeypatch):
     async def run():
         async with httpx.AsyncClient() as client:
             await m.verified_owner_native_buy_amount(
-                DID,asset="DOGE",stable="USDC",budget_usd=1000,client=client)
+                DID,asset="TRX",stable="USDC",budget_usd=1000,client=client)
     with pytest.raises(HTTPException) as err:
         asyncio.run(run())
     assert err.value.status_code==409
