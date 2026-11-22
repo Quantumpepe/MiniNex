@@ -109,6 +109,31 @@ def original_xrp_wallet(user: dict, did: str, source: str) -> str:
     return matches[0]["id"]
 
 
+def verify_privy_xrp_remote_owner(remote: object, *, wallet_id: str, address: str, did: str) -> None:
+    """Cross-check the API wallet with the authenticated user's linked XRPL ID.
+
+    The Privy wallet GET API permits entity=null. The authenticated user's
+    server-fetched linked_accounts already ties this exact wallet ID/address
+    to the DID; an absent remote entity must not contradict that fact.
+    A present entity must still match the user exactly. Never trust client
+    supplied wallet IDs.
+    """
+    if type(remote) is not dict:
+        raise HTTPException(503, "Privy XRP wallet metadata unavailable")
+    if remote.get("id") != wallet_id:
+        raise HTTPException(503, "Privy XRP wallet ID differs from linked account")
+    if remote.get("address") != address:
+        raise HTTPException(503, "Privy XRP wallet address differs from linked account")
+    if remote.get("chain_type") != "xrpl":
+        raise HTTPException(503, "Privy XRP wallet chain type not supported by server API")
+    if remote.get("archived_at") is not None:
+        raise HTTPException(503, "Privy XRP wallet is archived")
+    entity = remote.get("entity")
+    if entity is not None and (type(entity) is not dict
+            or entity.get("type") != "user" or entity.get("id") != did):
+        raise HTTPException(403, "Privy XRP wallet belongs to a different user")
+
+
 def prepare_mainnet_payment(
     source: str, destination: str, drops: str,
     server: dict, fees: dict, account: dict,
@@ -232,13 +257,8 @@ async def submit_manual_xrp(
     # the authenticated user's exact ledger address before asking to sign.
     from .privy_live_signer import fetch_privy_wallet_metadata
     remote = await fetch_privy_wallet_metadata(wallet_id)
-    entity = remote.get("entity")
-    if (remote.get("id") != wallet_id or remote.get("chain_type") != "xrpl"
-            or remote.get("address") != source
-            or remote.get("archived_at") is not None
-            or type(entity) is not dict or entity.get("type") != "user"
-            or entity.get("id") != did):
-        raise HTTPException(503, "Privy XRP wallet ownership is not verified")
+    verify_privy_xrp_remote_owner(
+        remote, wallet_id=wallet_id, address=source, did=did)
     pubkey = remote.get("public_key")
     try:
         _, owner_address = _owner_pubkey(pubkey)
