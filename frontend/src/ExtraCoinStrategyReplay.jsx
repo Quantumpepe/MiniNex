@@ -111,7 +111,7 @@ export default function ExtraCoinStrategyReplay({
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
         disabled={!enabled||preferenceSaving} onClick={onRetryPreference}>
         {t.privyBudgetReload}
-      </button>
+      </button>}
     {failed&&<p className="privy-wallet-description" role="alert">
       {t.extraReplayUnavailable}
     </p>}
