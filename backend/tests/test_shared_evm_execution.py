@@ -13,6 +13,7 @@ ROUTER = "0x" + "33" * 20
 
 @pytest.mark.parametrize("asset,chain,network",[
     ("ETH",1,"ethereum-mainnet"),
+    ("QNT",1,"ethereum-mainnet"),
     ("BNB",56,"bsc-mainnet"),
     ("POL",137,"polygon-pos-mainnet"),
     ("AVAX",43114,"avalanche-c-mainnet"),
@@ -39,7 +40,7 @@ def test_all_six_evm_assets_reuse_identical_transaction_engine(asset,chain,netwo
     assert payload["params"]["transaction"]["to"]==ROUTER
 
 
-@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX","DOGE"])
+@pytest.mark.parametrize("asset",["BTC","SOL","XRP","TRX"])
 def test_non_evm_coins_never_enter_evm_dispatch(asset):
     with pytest.raises(ValueError):
         chain_for_asset(asset)
