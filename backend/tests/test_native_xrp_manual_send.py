@@ -10,7 +10,7 @@ import hashlib
 
 from backend.native_xrp_manual_send import (
     amount_to_drops, original_xrp_wallet, prepare_mainnet_payment,
-    verified_signed_blob, verify_privy_xrp_remote_owner,
+    verified_signed_blob, verify_privy_xrp_remote_owner, _same_privy_user_id,
 )
 from backend.tests.test_native_xrp_thor_payment_tx import OWNER, VAULT
 
@@ -153,3 +153,36 @@ def test_owner_mismatch_has_distinct_diagnostic_without_revealing_ids(entity,exp
     assert exc.value.status_code == 409
     assert expected in exc.value.detail
     assert entity["id"] not in exc.value.detail
+
+
+def test_privy_wallet_entity_id_can_be_exact_did_suffix():
+    # Privy's wallet metadata can use the ID without the DID namespace.
+    did="did:privy:cmw7yzn8q00a90gl8324o3ipy"
+    user_id="cmw7yzn8q00a90gl8324o3ipy"
+    remote={
+        "id":"wallet_123456789", "address":OWNER, "chain_type":"xrpl",
+        "archived_at":None,"entity":{"type":"user","id":user_id},
+    }
+    verify_privy_xrp_remote_owner(remote,
+        wallet_id="wallet_123456789",address=OWNER,did=did)
+    assert _same_privy_user_id(user_id,did)
+    assert _same_privy_user_id(did,did)
+
+
+@pytest.mark.parametrize("other_id",[
+    "cmw7yzn8q00a90gl8324o3ip", 
+    "cmw7yzn8q00a90gl8324o3ipy_extra",
+    "did:privy:someone_else",
+    "someone_else",None,"",
+])
+def test_prefix_free_privy_id_matching_is_exact(other_id):
+    did="did:privy:cmw7yzn8q00a90gl8324o3ipy"
+    assert not _same_privy_user_id(other_id,did)
+    remote={
+        "id":"wallet_123456789", "address":OWNER, "chain_type":"xrpl",
+        "archived_at":None, "entity":{"type":"user","id":other_id},
+    }
+    with pytest.raises(HTTPException) as exc:
+        verify_privy_xrp_remote_owner(remote,
+            wallet_id="wallet_123456789",address=OWNER,did=did)
+    assert exc.value.status_code==409
