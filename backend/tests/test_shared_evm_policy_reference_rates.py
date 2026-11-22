@@ -15,10 +15,12 @@ from backend.coingecko_provider import PRO_BASE
 
 NOW=1800000000
 SYMBOLS={
+    "ETH":("ethereum",2500),
     "BNB":("binancecoin",500),
     "POL":("polygon-ecosystem-token",0.5),
     "AVAX":("avalanche-2",50),
     "LINK":("chainlink",20),
+    "QNT":("quant-network",100),
     "UNI":("uniswap",10),
 }
 
@@ -89,8 +91,10 @@ def test_evm_paid_rates_reuse_one_server_only_batch_for_multiple_coins(monkeypat
     url,params,headers=calls[0]
     assert url==PRO_BASE+"/simple/price"
     assert headers.get("x-cg-pro-api-key")=="test-server-only"
-    assert len(params["ids"].split(","))==8
+    assert len(params["ids"].split(","))==10
     assert "arbitrum" in params["ids"]
+    assert "ethereum" in params["ids"]
+    assert "quant-network" in params["ids"]
 
 
 def test_large_owner_selected_budget_has_no_arbitrary_system_ceiling():
@@ -160,3 +164,23 @@ def test_authenticated_policy_prepare_does_not_create_privy_remote_grant():
     assert "verify_privy_bearer" in source
     assert "stage_owner_evm_policy_from_budget" in source
     assert "publish" not in source
+
+
+@pytest.mark.parametrize("asset,stable,budget,expected_sell,native",[
+    ("ETH","USDC",Decimal("1234.56"),"493824000000000000",True),
+    ("QNT","USDT",Decimal("500"),"5000000000000000000",False),
+])
+def test_original_wallet_policy_caps_support_eth_decimal_and_qnt(
+    asset,stable,budget,expected_sell,native,
+):
+    cap=derive_user_budget_evm_atomic_caps(
+        asset=asset,stable=stable,budget_usd=budget,
+        snapshot=prices(),now=NOW,
+    )
+    assert cap["sell_source_atomic_cap"]==expected_sell
+    assert cap["native_wrap_atomic_cap"]==(
+        expected_sell if native else None
+    )
+    assert cap["budget_usd_user_selected"]==format(budget,"f")
+    assert int(cap["buy_source_atomic_cap"])>0
+
