@@ -17,11 +17,11 @@ def pending(asset="BNB",side="BUY",stable=None):
         "tx_hash":TX,"side":side,
         "stable":stable or ("USDT" if asset=="BNB" else "USDC"),
         "chain_id":{"BNB":56,"POL":137,"AVAX":43114,
-                    "LINK":1,"UNI":1,"ARB":42161}[asset],
+                    "LINK":1,"QNT":1,"UNI":1,"ARB":42161}[asset],
     }
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","QNT","UNI","ARB"])
 def test_valid_network_specific_journal_row(asset):
     assert m._valid_pending_row(pending(asset)) is True
 

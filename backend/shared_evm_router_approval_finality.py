@@ -167,7 +167,7 @@ async def reconcile_original_router_approvals_once(
     for row in rows:
         try:
             asset=row["asset"]
-            if asset in ("LINK","UNI","BTC","SOL","XRP","TRX","DOGE"):
+            if asset in ("ETH","LINK","QNT","UNI","BTC","SOL","XRP","TRX","DOGE"):
                 chain,network,fallback,env=_RPC["ETH_TOKENS"]
             elif asset=="ARB":
                 chain,network,fallback,env=_RPC["ARB_TOKENS"]
