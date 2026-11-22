@@ -73,6 +73,22 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
       max_daily_turnover_usd:data.max_daily_turnover_usd,
     });
   };
+  // One original ETH wallet and signer for all selected Ethereum-network coins.
+  // Owner authorization is never presented as a completed blockchain trade.
+  const readEthAuto=async()=>{
+    const [legacy,shared]=await Promise.all([
+      request('/api/live/eth/auto/session'),
+      request('/api/live/evm/auto-session/ETH'),
+    ]);
+    if(shared?.mode!=='OWNER_EVM_LIVE_SESSION_CONTROL'||
+       shared.asset!=='ETH'||!['NOT_STARTED','PAUSED','ACTIVE'].includes(shared.status))
+      throw Error('Original wallet ETH LIVE session not verified');
+    return shared.status==='ACTIVE'
+      ? {...legacy,status:'ACTIVE',stable:shared.stable,
+         central:true,worker_deployed:shared.worker_attached===true,
+         shared_submitted:shared.original_blockchain_swaps_sent||0}
+      : {...legacy,central:false};
+  };
   const refresh=async()=>{
     const [currentLimits,currentGrant,currentPolicy]=await Promise.all([
       request('/api/live/eth/limits'),
@@ -89,7 +105,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
       try{setGrantOffer(await request('/api/live/eth/policy/grant-review'));}
       catch{setGrantOffer(null);}
     }else setGrantOffer(null);
-    try{setEthAuto(await request('/api/live/eth/auto/session'));}
+    try{setEthAuto(await readEthAuto());}
     catch{setEthAuto(null);}
     setPhase('ready');
   };
@@ -121,7 +137,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
           }catch{if(active)setGrantOffer(null);}
         }else setGrantOffer(null);
         try{
-          const state=await request('/api/live/eth/auto/session');
+          const state=await readEthAuto();
           if(active)setEthAuto(state);
         }catch{if(active)setEthAuto(null);}
         setPhase('ready');
@@ -362,9 +378,14 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         });
         if(!centralWalletHasCoin(shared,'ETH'))
           throw Error('Central ETH policy was not independently verified');
-        setMessage(lang==='de'
-          ? 'Eine gemeinsame Privy-Freigabe bestätigt. Der gemeinsame LIVE-Handelsworker ist noch nicht verbunden; kein Handel gestartet.'
-          : 'Combined Privy grant verified. The shared LIVE trading worker is not connected yet; no trade started.');
+        const started=await request(
+          '/api/live/evm/wallet-policy/auto-session/ETH/start','POST',
+        );
+        if(started?.mode!=='OWNER_EVM_LIVE_SESSION_CONTROL'||
+           started.asset!=='ETH'||started.status!=='ACTIVE'||
+           started.started_by_owner!==true)
+          throw Error('Original ETH LIVE session not activated');
+        setMessage(t.liveEthAutoStarted);
         return;
       }
       if(!ethAuto?.worker_deployed)
@@ -430,8 +451,12 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
     if(busy||ethAuto?.status!=='ACTIVE')return;
     setBusy(true);setMessage('');
     try{
-      const result=await request('/api/live/eth/auto/pause','POST');
-      if(result?.status!=='PAUSED'||result?.future_auto_orders_blocked!==true)
+      const result=await request(
+        ethAuto?.central===true
+          ? '/api/live/evm/auto-session/ETH/pause'
+          : '/api/live/eth/auto/pause','POST');
+      if(result?.status!=='PAUSED'||
+         (ethAuto?.central!==true && result.future_auto_orders_blocked!==true))
         throw Error('pause');
       setMessage(t.liveEthAutoPaused);
       await refresh();
@@ -486,7 +511,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         ?<button type="button" className="privy-wallet-action"
             disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
         :<button type="button" className="privy-wallet-action"
-            disabled={busy||!ethAuto?.worker_deployed||
+            disabled={busy||
               !ownAddress||!limits.trading_paused||
               !validatedLiveEthDraft(draft)||
               usdUnits(draft?.planned_capital_usd)<=0n}
@@ -508,7 +533,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
             disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
         : <button className="privy-wallet-action" type="button"
             disabled={busy||phase!=='ready'||!limits||
-              !ethAuto?.worker_deployed||changes||!ownAddress||
+              changes||!ownAddress||
               !limits.trading_paused}
             onClick={startTradeOnce}>Start Trade · ETH</button>}
       {!ethAuto?.worker_deployed&&
