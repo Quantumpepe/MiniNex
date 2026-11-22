@@ -343,7 +343,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
         <strong>{t.privyBudgetShortTitle}</strong>
         <strong>{previewBudgets[asset]} %</strong>
       </span>
-      <input type="range" min="0" max="100" step="5"
+      <input type="number" min="0" max="100" step="1"
         value={previewBudgets[asset]}
         disabled={budgetStatus!=='ready' || budgetBusy}
         onChange={event=>setPreviewBudgets(old=>({...old,[asset]:Number(event.target.value)}))}
