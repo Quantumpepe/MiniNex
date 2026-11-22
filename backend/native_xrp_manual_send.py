@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal, InvalidOperation
 import hashlib
+import logging
 import os
 import re
 
@@ -23,11 +24,51 @@ from .privy_wallet_verification import APP_ID, fetch_privy_user
 from .storage import _safe_did
 
 DROPS = Decimal(1_000_000)
+LOG = logging.getLogger("mininex.xrp_manual_send")
 _INTEGER = re.compile(r"^(?:0|[1-9][0-9]*)$")
 _HEX = re.compile(r"^[0-9A-Fa-f]+$")
 _WALLET_ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
 _TXN_PREFIX = bytes.fromhex("54584e00")
 _locks: dict[str, asyncio.Lock] = {}
+
+
+
+def privy_signing_failure(response: httpx.Response) -> HTTPException:
+    """Classify Privy wallet authorization/schema issues without exposing raw responses.
+
+    The user JWT proves their identity to MiniNex. It is not a Privy wallet
+    authorization signature and cannot authorize this server to spend XRP.
+    """
+    status = response.status_code
+    code = None
+    try:
+        payload = response.json()
+        if type(payload) is dict:
+            nested = payload.get("error")
+            if type(nested) is dict:
+                code = nested.get("code")
+            elif type(nested) is str:
+                code = nested
+            if not code:
+                code = payload.get("code")
+    except (ValueError, TypeError):
+        pass
+    if type(code) is not str or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", code):
+        code = "unknown"
+    LOG.warning("Privy XRP sign refused: http_status=%d error_code=%s", status, code)
+    if status in (401, 403):
+        return HTTPException(403,
+            "Privy has not authorized this server to sign your XRP wallet. "
+            "Wallet-owner approval or a verified delegated signer is required.")
+    if status in (400, 422):
+        return HTTPException(502,
+            f"Privy rejected XRP signing format (HTTP {status}, code {code})")
+    if status == 404:
+        return HTTPException(502, "Privy XRPL signing is unavailable for this wallet (404)")
+    if status == 429:
+        return HTTPException(503, "Privy is temporarily rate-limiting XRP signing")
+    return HTTPException(502,
+        f"Privy XRP signing failed (HTTP {status}, code {code})")
 
 
 def amount_to_drops(amount: object) -> str:
@@ -214,17 +255,14 @@ async def submit_manual_xrp(
                     auth=(APP_ID, secret),
                     headers={"privy-app-id": APP_ID, "Content-Type": "application/json"},
                     json={
-                        "method": "xrpl_signTransaction", "chain_type": "xrpl",
+                        "method": "xrpl_signTransaction",
                         "params": {"transaction": encoded, "encoding": "hex"},
                     },
                 )
             except httpx.HTTPError:
                 raise HTTPException(503, "Privy XRP signing service unavailable") from None
             if response.status_code != 200:
-                # Privy errors can include sensitive metadata; do not echo raw response.
-                if response.status_code in (401, 403):
-                    raise HTTPException(403, "Privy authorization is needed for this XRP wallet")
-                raise HTTPException(502, "Privy could not sign the XRP payment")
+                raise privy_signing_failure(response)
             try:
                 payload = response.json()
             except ValueError:
