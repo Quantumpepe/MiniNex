@@ -91,12 +91,14 @@ def test_exact_eth_budget_is_not_rounded_to_whole_dollars():
     assert all("FOR UPDATE" in sql for sql,params in cur.calls)
 
 
-@pytest.mark.parametrize("asset,native",[
-    ("ETH",True),("BNB",True),("POL",True),("AVAX",True),
-    ("LINK",False),("QNT",False),("UNI",False),("ARB",False),
+@pytest.mark.parametrize("asset,stable,native",[
+    ("ETH","USDC",True),("BNB","USDT",True),
+    ("POL","USDC",True),("AVAX","USDC",True),
+    ("LINK","USDC",False),("QNT","USDC",False),
+    ("UNI","USDC",False),("ARB","USDC",False),
 ])
 def test_first_original_wallet_draft_one_signer_per_user_budget(
-    monkeypatch,asset,native,
+    monkeypatch,asset,stable,native,
 ):
     monkeypatch.setattr(m,"owner_fee_treasury",
         lambda **kwargs:TREASURY)
@@ -104,18 +106,18 @@ def test_first_original_wallet_draft_one_signer_per_user_budget(
         rows=[
             {"privy_did":DID},
             {"planned_capital_usd":Decimal("1200.50"),"revision":2},
-            {"stable":"USDC","revision":3},
+            {"stable":stable,"revision":3},
             None,None,{"status":"DRAFT"},
         ]
     else:
         rows=[
             {"privy_did":DID},
-            {"budget_usd":1200,"stable":"USDC","revision":2},
+            {"budget_usd":1200,"stable":stable,"revision":2},
             None,None,{"status":"DRAFT"},
         ]
     cur=Cur(rows)
     result=m._stage_one_original_wallet_locked(
-        cur,did=DID,asset=asset,stable="USDC",expected_revision=2,
+        cur,did=DID,asset=asset,stable=stable,expected_revision=2,
         snapshot=market(),owned=OWNED,
         owner_id=OWNER,signer_id=SIGNER,now=NOW,
     )
