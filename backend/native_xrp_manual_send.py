@@ -227,6 +227,25 @@ async def submit_manual_xrp(
         raise HTTPException(503, "Privy server credentials are missing")
     user = await fetch_privy_user(did)
     wallet_id = original_xrp_wallet(user, did, source)
+    # Privy XRPL expects the native signing public key in the canonical
+    # transaction. Resolve the key from the REMOTE wallet and bind it to
+    # the authenticated user's exact ledger address before asking to sign.
+    from .privy_live_signer import fetch_privy_wallet_metadata
+    remote = await fetch_privy_wallet_metadata(wallet_id)
+    entity = remote.get("entity")
+    if (remote.get("id") != wallet_id or remote.get("chain_type") != "xrpl"
+            or remote.get("address") != source
+            or remote.get("archived_at") is not None
+            or type(entity) is not dict or entity.get("type") != "user"
+            or entity.get("id") != did):
+        raise HTTPException(503, "Privy XRP wallet ownership is not verified")
+    pubkey = remote.get("public_key")
+    try:
+        _, owner_address = _owner_pubkey(pubkey)
+    except ValueError:
+        raise HTTPException(503, "Privy XRP public signing key unavailable") from None
+    if owner_address != source:
+        raise HTTPException(503, "Privy XRP signing key does not belong to this wallet")
     # Prevent two concurrent manual sends with the same account sequence
     # on this backend instance; do not silently retry a broadcast.
     lock = _locks.setdefault(did, asyncio.Lock())
@@ -243,6 +262,7 @@ async def submit_manual_xrp(
                 client, "account_info", [{"account": source, "ledger_index": index, "strict": True}],
             )
             unsigned = prepare_mainnet_payment(source, destination, drops, server, fees, account)
+            unsigned["SigningPubKey"] = pubkey.upper()
             try:
                 encoded = encode(unsigned)
             except (ValueError, TypeError, KeyError):
