@@ -10,7 +10,7 @@ export default function NativeSendEntry({t,asset,enabled}) {
     </button>
     {open&&<div className="mininex-send-content">
       <p className="privy-wallet-description">
-        {asset}-Send für {labels[asset]||asset} wird vorbereitet. Bitte später erneut versuchen.
+        {t.nativeSendPreparing||(asset+'-Send wird vorbereitet. Bitte später erneut versuchen.')}
       </p>
     </div>}
   </section>;
