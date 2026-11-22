@@ -540,13 +540,69 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     </div>
   </section>;
 }
-export default function PrivyWalletPanel({t,lang,marketSnapshot,syncedAt,paperAvailable=true}) {
-  if(!PRIVY_APP_ID) return <section className="panel privy-panel">
+// Logged-out sessions must never mount native-wallet creation hooks.
+// They belong to the signed-in wallet subtree only.
+function WalletAuthGate({t,lang,marketSnapshot,syncedAt,paperAvailable,onGoHome}) {
+  const {ready,authenticated,user,login} = usePrivy();
+  const [loginError,setLoginError] = useState(false);
+  if(!ready || (authenticated&&!user?.id))return <section className="panel privy-panel">
+    <div className="privy-panel-header"><h2>{t.privyTitle}</h2></div>
+    <div className="privy-panel-body"><p className="privy-wallet-description">{t.privyLoading}</p></div>
+  </section>;
+  if(!authenticated)return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
     <div className="privy-panel-body">
-      <strong>{t.privyUnavailable}</strong>
-
+      <button className="privy-wallet-action" type="button" onClick={async()=>{
+        try{setLoginError(false);await login();}catch{setLoginError(true);}
+      }}>{t.privyLogin}</button>
+      {loginError&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
     </div>
   </section>;
-  return <ConnectedPrivyWallet t={t} lang={lang} marketSnapshot={marketSnapshot} syncedAt={syncedAt} paperAvailable={paperAvailable}/>;
+  return <WalletRenderBoundary key={user.id} t={t} onGoHome={onGoHome}>
+    <ConnectedPrivyWallet t={t} lang={lang} marketSnapshot={marketSnapshot}
+      syncedAt={syncedAt} paperAvailable={paperAvailable}/>
+  </WalletRenderBoundary>;
+}
+
+function WalletRecovery({t,onGoHome}) {
+  const {logout} = usePrivy();
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState(false);
+  return <section className="panel privy-panel">
+    <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
+    <div className="privy-panel-body">
+      <p role="alert" className="privy-wallet-description">
+        Wallet konnte nicht geladen werden. / Wallet could not be displayed.
+      </p>
+      <button type="button" className="privy-wallet-action"
+        onClick={()=>onGoHome?.()}>{t.overview||'Startseite / Home'}</button>
+      <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={busy} onClick={async()=>{
+          setBusy(true);setError(false);
+          try{await logout();}catch{setError(true);}
+          finally{setBusy(false);}
+        }}>{t.privyLogout}</button>
+      {error&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
+    </div>
+  </section>;
+}
+
+// A transient wallet hook/SDK render error must not turn the entire app black.
+class WalletRenderBoundary extends React.Component {
+  constructor(props){super(props);this.state={crashed:false};}
+  static getDerivedStateFromError(){return {crashed:true};}
+  componentDidCatch(){console.error('MiniNex wallet UI recovery activated');}
+  render(){
+    if(this.state.crashed)return <WalletRecovery t={this.props.t} onGoHome={this.props.onGoHome}/>;
+    return this.props.children;
+  }
+}
+
+export default function PrivyWalletPanel({t,lang,marketSnapshot,syncedAt,paperAvailable=true,onGoHome}) {
+  if(!PRIVY_APP_ID) return <section className="panel privy-panel">
+    <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
+    <div className="privy-panel-body"><strong>{t.privyUnavailable}</strong></div>
+  </section>;
+  return <WalletAuthGate t={t} lang={lang} marketSnapshot={marketSnapshot}
+    syncedAt={syncedAt} paperAvailable={paperAvailable} onGoHome={onGoHome}/>;
 }
