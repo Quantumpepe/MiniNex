@@ -69,7 +69,7 @@ class Cur:
 def test_initial_owner_policy_claim_is_durable_and_one_time(monkeypatch):
     monkeypatch.setattr(pub,"_locked_selected_budget",
         lambda cur,**kwargs:(1000,3))
-    cur=Cur([row(),{"status":"SUBMITTING"}])
+    cur=Cur([row(),None,None,{"status":"SUBMITTING"}])
     claimed=pub._claim_first_policy_locked(
         cur,did=DID,owned=OWNED,
         owner_id=OWNER,signer_id=SIGNER,now=NOW,
@@ -83,6 +83,8 @@ def test_initial_owner_policy_claim_is_durable_and_one_time(monkeypatch):
     assert "FOR UPDATE" in cur.calls[0][0]
     assert "status='SUBMITTING'" in cur.calls[-1][0]
     assert "publication_idempotency_key" in cur.calls[-1][0]
+    assert "mininex_live_evm_owner_permissions" in cur.calls[1][0]
+    assert "mininex_live_eth_policy_enrollments" in cur.calls[2][0]
     assert cur.calls[-1][1][0]==claimed["idempotency_key"]
 
 
@@ -222,3 +224,27 @@ def test_original_publishing_schema_and_authenticated_route():
     route=next(r for r in app.routes if
         r.path=="/api/live/evm/wallet-policy/publish")
     assert route.methods=={"POST"}
+
+
+
+@pytest.mark.parametrize("prior,index",[
+    ({"asset":"BNB"},1),({"status":"GRANT_VERIFIED"},2),
+])
+def test_legacy_signer_staged_after_draft_blocks_remote_publish(
+    monkeypatch,prior,index,
+):
+    monkeypatch.setattr(pub,"_locked_selected_budget",
+        lambda cur,**kwargs:(1000,3))
+    records=[row(),None,None]
+    records[index]=prior
+    cur=Cur(records)
+    with pytest.raises(HTTPException) as exc:
+        pub._claim_first_policy_locked(
+            cur,did=DID,owned=OWNED,owner_id=OWNER,
+            signer_id=SIGNER,now=NOW,
+        )
+    assert exc.value.status_code==409
+    assert all("status='SUBMITTING'" not in sql
+               for sql,_ in cur.calls)
+
+
