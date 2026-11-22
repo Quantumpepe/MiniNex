@@ -498,6 +498,17 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     <div className="privy-panel-body privy-wallet-layout">
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
         !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
+          {identityStatus==='verified' && databaseStatus==='stored' && address &&
+            <div className="mininex-main-address" style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0'}}>
+              <span style={{fontFamily:'monospace',fontSize:'14px'}}>
+                {address.slice(0,6)}...{address.slice(-4)}
+              </span>
+              <button type="button" onClick={()=>navigator.clipboard.writeText(address)}
+                style={{background:'none',border:'none',cursor:'pointer',padding:'4px'}}
+                aria-label="Adresse kopieren">
+                <Copy size={16}/>
+              </button>
+            </div>}
           {identityStatus==='verified' && databaseStatus==='stored' &&
             <WalletBalances t={t} getAccessToken={getAccessToken} userId={user?.id}
               onSnapshot={setVerifiedCoinHoldings}/>}
