@@ -11,6 +11,11 @@ export const EVM_CHAINS = Object.freeze({
       USDC: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
       USDT: '0xdac17f958d2ee523a2206206994597c13d831ec7',
     }),
+    tokens: Object.freeze({
+      LINK: '0x514910771af9ca656af840dff83e8264ecf986ca',
+      QNT: '0x4a220e6096b25eadb88358cb44068a3248254675',
+      UNI: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984',
+    }),
   }),
   BNB: Object.freeze({
     chainId: 56,
