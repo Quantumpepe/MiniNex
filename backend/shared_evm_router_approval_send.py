@@ -46,6 +46,7 @@ def _claim_once_locked(
     cur,*,did:str,asset:str,side:str,stable:str,
     record:dict,reviewed:dict,revision:int,
     amount_atomic:int,key:str,request_digest:str,now:int,
+    central:bool=False,
 )->None:
     pair=_pair(asset,stable,side)
     cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",
@@ -53,15 +54,21 @@ def _claim_once_locked(
     owner=cur.fetchone()
     if type(owner) is not dict or owner.get("privy_did")!=did:
         raise HTTPException(409,"Cannot lock owner wallet for approval")
-    cur.execute(
-        """SELECT asset,stable,chain_id,wallet_id,wallet_address,owner_id,
-                  signer_id,policy_id,policy_sha256,remote_policy_sha256,
-                  authorization_method,status,grant_verified_at,
-                  consent_sha256,budget_revision,expires_at,revoked_at,
-                  candidate_json
-           FROM mininex_live_evm_owner_permissions
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    permission=cur.fetchone()
+    if central:
+        from .shared_evm_central_runtime import _locked_original_evm_coin
+        permission=_locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=stable,revision=revision,now=now,
+        )
+    else:
+        cur.execute(
+            """SELECT asset,stable,chain_id,wallet_id,wallet_address,owner_id,
+                      signer_id,policy_id,policy_sha256,remote_policy_sha256,
+                      authorization_method,status,grant_verified_at,
+                      consent_sha256,budget_revision,expires_at,revoked_at,
+                      candidate_json
+               FROM mininex_live_evm_owner_permissions
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        permission=cur.fetchone()
     if (type(permission) is not dict
             or permission.get("policy_sha256")!=record.get("policy_sha256")
             or permission.get("wallet_address")!=record.get("wallet_address")
@@ -69,10 +76,11 @@ def _claim_once_locked(
             or permission.get("policy_id")!=record.get("policy_id")
             or permission.get("budget_revision")!=revision
             or permission.get("status")!="GRANT_VERIFIED"
-            or permission.get("grant_verified_at") is None
+            or (not central and permission.get("grant_verified_at") is None)
             or permission.get("revoked_at") is not None
             or permission.get("remote_policy_sha256")!=permission.get("policy_sha256")
-            or permission.get("authorization_method")!="PRIVY_SCOPED_GRANT"
+            or permission.get("authorization_method")!=(
+                "PRIVY_CENTRAL_ONE_SIGNER" if central else "PRIVY_SCOPED_GRANT")
             or permission.get("chain_id")!=pair["chain_id"]
             or permission.get("stable")!=stable
             or not isinstance(permission.get("expires_at"),datetime)
@@ -86,7 +94,7 @@ def _claim_once_locked(
     if (type(settings) is not dict or settings.get("stable")!=stable
             or settings.get("revision")!=revision):
         raise HTTPException(409,"Owner coin budget changed before approval")
-    if permission.get("consent_sha256")!=_grant_scope_digest(
+    if not central and permission.get("consent_sha256")!=_grant_scope_digest(
             did=did,record=permission,budget_usd=settings["budget_usd"]):
         raise HTTPException(409,"Original wallet owner grant does not cover this budget")
     current=inspect_combined_grant_router_approval(
@@ -163,7 +171,7 @@ def _claim_once_locked(
 
 def _claim(*,did:str,asset:str,side:str,stable:str,record:dict,
            reviewed:dict,revision:int,amount_atomic:int,key:str,
-           digest:str,now:int)->None:
+           digest:str,now:int,central:bool=False)->None:
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -171,7 +179,8 @@ def _claim(*,did:str,asset:str,side:str,stable:str,record:dict,
                 cur,did=did,asset=asset,side=side,stable=stable,
                 record=record,reviewed=reviewed,revision=revision,
                 amount_atomic=amount_atomic,key=key,
-                request_digest=digest,now=now)
+                request_digest=digest,now=now,
+                **({"central":True} if central else {}))
 
 
 def _finish(*,did:str,asset:str,key:str,digest:str,tx_hash:str|None)->str:
@@ -195,6 +204,7 @@ def _finish(*,did:str,asset:str,key:str,digest:str,tx_hash:str|None)->str:
 async def submit_scoped_router_approval_once(
     *,did:str,asset:str,side:str,stable:str,amount_atomic:int,
     budget_revision:int,signal_event_id:str,client:httpx.AsyncClient,
+    central:bool=False,
 )->dict:
     """One approved owner-wallet ERC20 approve, not an arbitrary spender API."""
     did=_safe_did(did)
@@ -206,14 +216,19 @@ async def submit_scoped_router_approval_once(
             or type(amount_atomic) is not int or amount_atomic<=0
             or type(budget_revision) is not int or budget_revision<1):
         raise ValueError("Invalid internal Router02 approval request")
-    proof=await get_owner_evm_remote_grant_audit(did,asset)
+    proof=(await get_owner_evm_remote_grant_audit(
+        did,asset,central=True,
+    ) if central else await get_owner_evm_remote_grant_audit(did,asset))
     if any(proof.get(name) is not True for name in (
         "owner_wallet_current","exact_remote_policy_rules_verified",
         "privy_additional_signer_scoped","backend_quorum_current",
         "signed_coin_budget_intent_in_ledger",
     )):
         raise HTTPException(409,"No current original Privy owner trading grant")
-    record=await __import__("asyncio").to_thread(_read_grant_record,did,asset)
+    record=await __import__("asyncio").to_thread(
+        _read_grant_record,did,asset,
+        **({"central":True} if central else {}),
+    )
     now=int(time.time())
     reviewed=inspect_combined_grant_router_approval(
         record=record,asset=asset,side=side,stable=stable,
@@ -251,7 +266,8 @@ async def submit_scoped_router_approval_once(
     await __import__("asyncio").to_thread(
         _claim,did=did,asset=asset,side=side,stable=stable,
         record=record,reviewed=reviewed,revision=budget_revision,
-        amount_atomic=amount_atomic,key=key,digest=digest,now=now)
+        amount_atomic=amount_atomic,key=key,digest=digest,now=now,
+        **({"central":True} if central else {}))
     tx_hash=None
     try:
         signature=sign_privy_rpc_payload(
