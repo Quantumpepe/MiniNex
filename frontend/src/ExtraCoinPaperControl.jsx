@@ -142,20 +142,10 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     {failed&&<p className="privy-wallet-description" role="alert">
       {liveMode?'Live-Session noch nicht gestartet oder nicht verfügbar.':t.extraPaperUnavailable}
     </p>}
-    {(state==='NOT_STARTED'||failed||!data)&&<>
-      <label className="mininex-extra-paper-stable">
-        <span>{t.privySetupStable}</span>
-        <select disabled={busy} value={options?.stable||'USDC'}
-          onChange={e=>onChange(asset,'stable',e.target.value)}>
-          <option value="USDC">USDC</option><option value="USDT">USDT</option>
-        </select>
-      </label>
-      
-      <button type="button" className="privy-wallet-action" disabled={busy||!canStart}
+    {(state==='NOT_STARTED'||failed||!data)&&<button type="button" className="privy-wallet-action" disabled={busy||!canStart}
         onClick={()=>command('start')}>
         {liveMode?t.extraPaperStartLive:t.extraPaperStart} · {asset}
-      </button>
-    </>}
+      </button>}
     {['ACTIVE','PAUSED'].includes(state)&&<>
       <div className="mininex-extra-paper-balances">
         <div><span>{t.extraPaperBudget}</span><strong>{fmt(data.budget_usd)} $</strong></div>
