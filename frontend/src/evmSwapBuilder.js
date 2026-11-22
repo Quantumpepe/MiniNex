@@ -21,11 +21,13 @@ function encodePath(path) {
   return offset + length + addresses;
 }
 
-export function buildEvmSwapCalldata(chain, {side, amountIn, amountOutMin, stable, recipient, deadline}) {
+export function buildEvmSwapCalldata(chain, {side, amountIn, amountOutMin, stable, token: tokenSymbol, recipient, deadline}) {
   const config = EVM_CHAINS[chain];
   if (!config) throw Error('Unsupported chain');
-  const token = config.stables[stable];
-  if (!token) throw Error('Unsupported stable');
+  const stableAddr = config.stables[stable];
+  const tokenAddr = config.tokens?.[tokenSymbol];
+  const targetAddr = tokenAddr || stableAddr;
+  if (!targetAddr) throw Error('Unsupported token');
   const to = padAddress(recipient);
   const deadlineHex = padUint(deadline);
   const minOut = padUint(amountOutMin);
