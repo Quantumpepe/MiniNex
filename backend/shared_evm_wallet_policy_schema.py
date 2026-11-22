@@ -66,7 +66,14 @@ WALLET_POLICY_SCHEMA = (
         source_grant_revision BIGINT CHECK(source_grant_revision > 0),
         status TEXT NOT NULL DEFAULT 'PENDING'
             CHECK(status IN ('PENDING','SIGNED_INTENT','CONSUMED',
-                             'REVOKED','UNCERTAIN')),
+                             'REVOKED','UNCERTAIN',
+                             'PATCH_SUBMITTING','PATCH_UNCERTAIN',
+                             'PATCH_VERIFIED')),
+        update_idempotency_key TEXT UNIQUE CHECK(
+            update_idempotency_key IS NULL OR
+            update_idempotency_key ~ '^[0-9a-f]{64}$'),
+        update_submitted_at TIMESTAMPTZ,
+        update_resolved_at TIMESTAMPTZ,
         issued_at TIMESTAMPTZ NOT NULL,
         expires_at TIMESTAMPTZ NOT NULL,
         signed_at TIMESTAMPTZ,
@@ -83,4 +90,9 @@ WALLET_POLICY_SCHEMA = (
        mininex_live_evm_wallet_policy_intent_active_once
        ON mininex_live_evm_wallet_policy_intents(privy_did)
        WHERE status IN ('PENDING','SIGNED_INTENT')""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS
+       mininex_live_evm_wallet_policy_inflight_once
+       ON mininex_live_evm_wallet_policy_intents(privy_did)
+       WHERE status IN ('PENDING','SIGNED_INTENT',
+                        'PATCH_SUBMITTING','PATCH_UNCERTAIN')""",
 )
