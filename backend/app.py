@@ -2313,3 +2313,50 @@ def extra_paper_action(asset: str,action: str,
         headers={"Cache-Control":"private, no-store"})
 
 
+
+
+# Native coin send endpoints (XRP, TRX)
+@app.post("/api/wallet/send/xrp")
+async def send_xrp(
+    body: dict,
+    authorization: str | None = Header(default=None),
+):
+    """Send XRP from user's wallet. Privy signs, backend submits."""
+    user = verify_privy_bearer(authorization)
+    from_addr = body.get("from")
+    to_addr = body.get("to")
+    amount = body.get("amount")
+    if not from_addr or not to_addr or not amount:
+        raise HTTPException(400, "Missing from, to, or amount")
+    # XRP send requires signing via Privy and submission to XRPL
+    # This is a placeholder - actual implementation needs xrpl library
+    return JSONResponse({
+        "status": "pending",
+        "message": "XRP send requires 1 XRP reserve. Implementation pending.",
+        "from": from_addr,
+        "to": to_addr,
+        "amount": amount,
+    }, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/wallet/send/trx")
+async def send_trx(
+    body: dict,
+    authorization: str | None = Header(default=None),
+):
+    """Send TRX from user's wallet. Privy signs and broadcasts."""
+    user = verify_privy_bearer(authorization)
+    from_addr = body.get("from")
+    to_addr = body.get("to")
+    amount = body.get("amount")
+    if not from_addr or not to_addr or not amount:
+        raise HTTPException(400, "Missing from, to, or amount")
+    # TRX send via Privy tron_sendTransaction
+    # This is a placeholder - actual implementation needs tron library
+    return JSONResponse({
+        "status": "pending",
+        "message": "TRX send implementation pending.",
+        "from": from_addr,
+        "to": to_addr,
+        "amount": amount,
+    }, headers={"Cache-Control": "no-store"})
