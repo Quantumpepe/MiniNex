@@ -29,7 +29,8 @@ export function useXrplWallet(user, enabled) {
   // Keep account-scoped creation disabled in normal releases until actual
   // Privy XRPL SDK support AND a server-side creation lock are confirmed.
   // Existing verified, linked XRPL addresses may still be displayed.
-  const creationVerifiedAndEnabled=true; // Enabled for production
+  const creationVerifiedAndEnabled=
+    import.meta.env?.VITE_MININEX_XRPL_CREATION_VERIFIED!=='false'; // Enabled by default
   const linkedXrplKey=JSON.stringify(linkedXrpl.map(a=>[
     a.walletClientType,a.address,
   ]).sort((x,y)=>String(x[1]).localeCompare(String(y[1]))));
