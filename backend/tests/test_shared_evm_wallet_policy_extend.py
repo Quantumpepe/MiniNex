@@ -197,8 +197,12 @@ def test_one_original_wallet_signature_confirms_only_intent(monkeypatch):
 def test_wrong_target_expired_or_replayed_intent_rejected(monkeypatch,fault):
     g,consent,_,_,signature=signed_fixture()
     fault(consent)
-    monkeypatch.setattr(ext,"_locked_selected_budget",
-        lambda cur,**kwargs:(1000,kwargs["expected_revision"]))
+    def verified_budget(cur,*,asset,expected_revision,**_):
+        correct={"LINK":5,"QNT":9}.get(asset)
+        if expected_revision!=correct:
+            raise HTTPException(409,"Original coin revision changed")
+        return 1000,expected_revision
+    monkeypatch.setattr(ext,"_locked_selected_budget",verified_budget)
     cur=Cur([g,consent])
     with pytest.raises(HTTPException) as exc:
         ext._confirm_wallet_coin_extension_locked(
