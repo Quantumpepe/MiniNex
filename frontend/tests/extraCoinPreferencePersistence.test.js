@@ -24,6 +24,8 @@ test('ten saved settings remain separate and include ARB without granting tradin
   const snapshot=data();
   assert.equal(EXTRA_REPLAY_COINS.length,10);
   assert.equal(EXTRA_REPLAY_COINS.includes('ARB'),true);
+  assert.equal(EXTRA_REPLAY_COINS.includes('QNT'),true);
+  assert.equal(EXTRA_REPLAY_COINS.includes('DOGE'),false);
   assert.equal(validSavedExtraCoinPreferences(snapshot),true);
   const result=savedExtraOptions(snapshot);
   for(const coin of EXTRA_REPLAY_COINS){
@@ -32,6 +34,17 @@ test('ten saved settings remain separate and include ARB without granting tradin
     assert.equal(result[coin].stable,snapshot.settings[coin].stable);
     assert.equal(result[coin].horizon,snapshot.settings[coin].horizon);
   }
+});
+
+test('QNT budget input accepts independent user capital above 5000',()=>{
+  const saved=data(), options=savedExtraOptions(saved);
+  const unchanged=structuredClone(options.UNI);
+  options.QNT={...options.QNT,budget:'25000',mode:'AUTO'};
+  assert.equal(coinPreferenceChanged(options.QNT,saved.settings.QNT),true);
+  assert.equal(coinPreferenceChanged(options.UNI,saved.settings.UNI),false);
+  assert.deepEqual(options.UNI,unchanged);
+  assert.match(settingsUI,/validExtraReplayBudget\(replayOptions\[coin\]\?\.budget\)/);
+  assert.match(settingsUI,/setTimeout\(\(\)=>\{void saveExtra\(asset,value\);\},400\)/);
 });
 
 test('editing AUTO budget for one coin cannot silently overwrite another',()=>{

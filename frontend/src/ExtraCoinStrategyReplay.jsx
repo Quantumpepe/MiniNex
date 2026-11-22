@@ -107,6 +107,11 @@ export default function ExtraCoinStrategyReplay({
     {!budgetOk&&<p className="privy-wallet-description" role="alert">
       {t.extraReplayBudgetInvalid}
     </p>}
+    {preferenceStatus==='failed'&&
+      <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={!enabled||preferenceSaving} onClick={onRetryPreference}>
+        {t.privyBudgetReload}
+      </button>
     {failed&&<p className="privy-wallet-description" role="alert">
       {t.extraReplayUnavailable}
     </p>}
