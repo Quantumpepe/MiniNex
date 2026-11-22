@@ -34,7 +34,10 @@
   },
   "devDependencies": {
     "vite": "^6.1.0",
-    "@capacitor/cli": "^8.0.0"
+    "@capacitor/cli": "^8.0.0",
+    "bitcoinjs-lib": "^6.1.7",
+    "@noble/curves": "^1.9.7",
+    "buffer": "^6.0.3"
   },
   "engines": {
     "node": ">=22"
