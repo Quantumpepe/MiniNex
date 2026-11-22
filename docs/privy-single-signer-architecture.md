@@ -57,7 +57,7 @@ chain/signature type.
   connected** to them. Old per-coin signers cannot be silently replaced.
   Backend tests cover all eight EVM assets, invalid budget revisions,
   legacy signer races, duplicate grant attempts and remote mismatches.
-- **Existing-wallet extension now has a BACKEND-only consent-to-PATCH
+- **Existing-wallet extension now has a backend + Start Trade UI consent-to-PATCH
   workflow in PR #208:** The user chooses one new EVM coin; the server
   independently verifies the original wallet, sole signer, Policy Owner,
   current policy and all coin budgets. A one-use, five-minute EIP-191
@@ -70,8 +70,25 @@ chain/signature type.
   `UPDATE_UNCERTAIN` without retry. An authenticated
   `POST /api/live/evm/wallet-policy/extend/reconcile` uses remote
   GETs **only** to resolve a proven successful update, never repeats
-  the PATCH. Frontend Start Trade, LIVE auto orders, fees/HWM, stop,
-  and all native coins are **not yet** switched to the shared grant.
+  the PATCH. The new original `Start Trade` UI is wired for ETH and
+  the six current additional LIVE EVM controls (BNB/POL/AVAX/LINK/UNI/ARB).
+  For a new wallet the first scoped coin needs ONE Privy `addSigners`
+  confirmation; another coin only needs ONE EIP-191 `signMessage`
+  to update the SAME signer/policy. A second click for an already
+  approved coin needs no further wallet prompt. Existing LEGACY
+  per-coin grants are preserved, never silently migrated.
+  **Important:** authorizing a combined policy does NOT start LIVE
+  trading. The EVM order sender, approval reservation, HWM fee, order
+  receipts, and worker are still bound to the previous per-coin
+  ledger. QNT is supported by the backend policy but has no visible
+  LIVE control yet. A new authenticated revocation endpoint,
+  `POST /api/live/evm/wallet-policy/confirm-revocation`, verifies
+  remote Privy signer absence after the user's `removeSigners`
+  action, then revokes the shared grant, terminates unused consents,
+  and pauses EVM sessions. No native BTC/SOL/XRP/TRX path changed.
+  The `/api/coin-preferences` API now accepts arbitrary positive
+  user-selected capital within JSON-safe integer transport bounds,
+  removing an unintended old 100–5,000 API limit.
 - **Verified backend CI:** [Run 45055610579](https://github.com/Quantumpepe/MiniNex/actions/runs/45055610579):
   **5,163 passed, 0 failed** (1 warning). No real Privy PATCH or
   on-chain trade has been claimed; PR #208 remains Draft/unmerged.
@@ -128,9 +145,11 @@ chain/signature type.
    **Still OPEN:** frontend Start Trade, LIVE worker/grant migration,
    real user/Privy signing confirmation and one-wallet multicoin
    execution validation. Never silently migrate an existing signer.
-4. Update `Start Trade` to present **one clear wallet confirmation** for a
-   new or expanded user scope, and to start only after the aggregate remote
-   policy / signer / budget / quorum are independently verified.
+4. **PARTIAL:** `Start Trade` can now establish or extend the
+   common Privy policy with one wallet action and correctly report
+   authorization-only state. The user still cannot start a new central
+   LIVE order session until all worker/fee paths are rewired.
+   An existing legacy grant requires explicit migration.
 5. Rewire all EVM auto-order, receipt, HWM fee and pause/revoke checks to
    the wallet-wide grant plus separate per-coin budget. Migrate legacy
    per-coin grants with owner approval, never silently.
