@@ -36,7 +36,12 @@ _CALL = re.compile(r"^0x[0-9a-fA-F]+$")
 
 
 def _pair(asset: str, stable: str, side: str) -> dict:
-    chain, network = chain_for_asset(asset)
+    try:
+        chain, network = chain_for_asset(asset)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        raise ValueError("Unsupported EVM asset") from None
     if type(side) is not str or side not in ("BUY","SELL"):
         raise ValueError("Invalid EVM swap side")
     if asset in ("ETH", "LINK", "QNT", "UNI"):
