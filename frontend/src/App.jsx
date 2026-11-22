@@ -504,7 +504,7 @@ export default function App() {
 
         {page==='wallet'&&<>
           <section className="page-heading"><h1>{t.wallet}</h1></section>
-          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt} paperAvailable={paperVisible}/>
+          <PrivyWalletPanel t={t} lang={language} marketSnapshot={market?.markets} syncedAt={syncedAt} paperAvailable={paperVisible} onGoHome={()=>navigate('overview')}/>
           <UserPaperSessions t={t} lang={language} paperAvailable={paperVisible}/>
         </>}
 
