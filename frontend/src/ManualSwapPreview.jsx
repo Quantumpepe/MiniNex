@@ -6,6 +6,7 @@ import {getChainConfig,getStables} from './evmSwapRules.js';
 import {buildBnbSwapTransaction} from './bnbSwapBuilder.js';
 import EthLiveSwap from './EthLiveSwap.jsx';
 import BnbLiveSwap from './BnbLiveSwap.jsx';
+import EvmLiveSwap from './EvmLiveSwap.jsx';
 import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs} from './manualSwapRules.js';
 
 // Manual provider quote previews remain read-only for every chain. Only the
