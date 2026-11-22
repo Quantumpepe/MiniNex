@@ -142,7 +142,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     {failed&&<p className="privy-wallet-description" role="alert">
       {liveMode?'Live-Session noch nicht gestartet oder nicht verfügbar.':t.extraPaperUnavailable}
     </p>}
-    {state==='NOT_STARTED'&&<>
+    {(state==='NOT_STARTED'||failed||!data)&&<>
       <label className="mininex-extra-paper-stable">
         <span>{t.privySetupStable}</span>
         <select disabled={busy} value={options?.stable||'USDC'}
