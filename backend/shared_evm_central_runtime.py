@@ -139,6 +139,9 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
         "candidate_json":policy,
         "expires_at":datetime.fromtimestamp(
             selected["expires_at"],timezone.utc),
+        "grant_verified_at":grant["original_owner_granted_at"],
+        "consent_verified_at":grant["original_owner_granted_at"],
+        "owner_signed_at":grant["original_owner_granted_at"],
         "revoked_at":None,
     }
 
