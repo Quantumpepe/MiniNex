@@ -39,7 +39,7 @@ def test_all_twelve_native_assets_and_ethereum_stables_exactly_mapped():
     expected = {
         "BTC": "BTC.BTC", "ETH": "ETH.ETH", "BNB": "BSC.BNB",
         "SOL": "SOL.SOL", "XRP": "XRP.XRP", "TRX": "TRON.TRX",
-        "POL": "POL.POL", "AVAX": "AVAX.AVAX", "DOGE": "DOGE.DOGE",
+        "POL": "POL.POL", "AVAX": "AVAX.AVAX", "QNT": "ETH.QNT-0X4A220E6096B25EADB88358CB44068A3248254675",
         "ARB": "ARB.ARB",
     }
     for sym, ident in expected.items():
@@ -57,7 +57,7 @@ def test_all_twelve_native_assets_and_ethereum_stables_exactly_mapped():
 
 @pytest.mark.parametrize("source,dest,amount", [
     ("ETH","ETH","1"), ("BTC","WBTC","1"), ("USDCx","ADA","1"),
-    ("BTC","USDC","0"), ("DOGE","USDC","1e2"),
+    ("BTC","USDC","0"), ("QNT","USDC","1e2"),
     ("ETH","SOL","0.000000001"),
     ("USDT","SOL","0.0000001"),
     ("ARB","USDC","0.0000000000000000001"),
@@ -138,7 +138,7 @@ def test_unavailable_or_malicious_provider_never_returns_executable_instructions
             lambda request:httpx.Response(200,json=provider(**evil))),**kwargs)
     monkeypatch.setattr(mq.httpx,"AsyncClient",client)
     with pytest.raises(HTTPException) as ex:
-        asyncio.run(mq.get_native_swap_quote("DOGE","ETH","2"))
+        asyncio.run(mq.get_native_swap_quote("QNT","ETH","2"))
     assert ex.value.status_code == 503
 
 
