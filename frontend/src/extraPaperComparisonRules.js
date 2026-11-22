@@ -79,7 +79,7 @@ export function validExtraPaperComparison(data){
     if(row.recent_winning_sells+row.recent_losing_sells+
        row.recent_flat_sells>row.recent_closed_sells)return false;
     if(row.recent_buys+row.recent_closed_sells>30)return false;
-    return typeof row.budget_usd==='number'&&
-      row.budget_usd>=100&&row.budget_usd<=5000;
+    // User-selected paper capital may exceed 5,000; that is not a system cap.
+    return typeof row.budget_usd==='number'&&row.budget_usd>0;
   });
 }

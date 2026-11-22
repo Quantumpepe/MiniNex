@@ -60,6 +60,17 @@ test('comparison is exactly ten additional coins including ARB, not BTC or ETH',
   }),false);
 });
 
+test('comparison renders user-chosen paper budgets above 5000',()=>{
+  const record={...defaultRow('QNT'),status:'ACTIVE',budget_usd:25000,
+    quote_valid:true,estimated_equity_usd:25250,
+    estimated_total_pnl_usd:250,estimated_net_return_pct:1,
+    cumulative_realized_pnl_usd:0,
+    recent_realized_pnl_usd:0,recent_estimated_costs_usd:0,
+    analysis_status:'EARLY_SAMPLE'};
+  const report={...base,assets:rows.map(row=>row.asset==='QNT'?record:row)};
+  assert.equal(validExtraPaperComparison(report),true);
+});
+
 test('contract permits legitimate marked equity but refuses unverified net returns',()=>{
   const entry={...defaultRow('SOL'),status:'ACTIVE',budget_usd:500,
     quote_valid:true,estimated_equity_usd:476.33,
@@ -93,7 +104,7 @@ test('contract permits legitimate marked equity but refuses unverified net retur
     {cost_model:'LIVE_FEES'},{quote_valid:false},{estimated_equity_usd:null},
     {estimated_net_return_pct:NaN},{trade_count:-1},
     {recent_buys:0.3},{recent_costs_complete:'true'},
-    {budget_usd:5001},
+    {budget_usd:0},
     {recent_sell_win_rate_pct:101},
     {recent_trade_sample_count:31},
     {recent_exit_reason_counts:{TRAILING:1,RISK:-1,SPOT:1,PAUSE:0,OTHER:0}},
