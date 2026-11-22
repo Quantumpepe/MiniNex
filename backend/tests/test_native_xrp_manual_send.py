@@ -11,6 +11,7 @@ import hashlib
 from backend.native_xrp_manual_send import (
     amount_to_drops, original_xrp_wallet, prepare_mainnet_payment,
     verified_signed_blob, verify_privy_xrp_remote_owner, _same_privy_user_id,
+    _safe_privy_error_category,
 )
 from backend.tests.test_native_xrp_thor_payment_tx import OWNER, VAULT
 
@@ -186,3 +187,17 @@ def test_prefix_free_privy_id_matching_is_exact(other_id):
         verify_privy_xrp_remote_owner(remote,
             wallet_id="wallet_123456789",address=OWNER,did=did)
     assert exc.value.status_code==409
+
+
+@pytest.mark.parametrize("payload, expected", [
+    ({"error":{"message":"params.transaction: Expected string, received object"}}, "transaction_schema"),
+    ({"error":{"message":"params.encoding: Invalid literal value"}}, "encoding_schema"),
+    ({"error":{"message":"Unsupported method xrpl_signTransaction"}}, "unsupported_rpc_method"),
+    ({"error":{"message":"Signer not configured"}}, "signer_configuration"),
+    ({"error":{"message":"Wallet authorization required"}}, "wallet_authorization"),
+    ({"error":{"message":"invalid chain_type xrpl"}}, "unsupported_chain"),
+    ({"error":{"message":"Sensitive wallet identifier 1234567890"}}, "unclassified_privy_validation"),
+    ({}, "missing_error_detail"),
+])
+def test_safe_privy_rejection_category_does_not_echo_remote_message(payload,expected):
+    assert _safe_privy_error_category(payload)==expected
