@@ -70,6 +70,7 @@ from .shared_evm_swap_receipts import check_user_evm_swap
 from .shared_evm_fill_history import get_owner_evm_fill_history
 from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
+from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
@@ -1017,6 +1018,23 @@ async def owner_confirm_signed_evm_fee_payment(
         did=did,asset=asset,execution_id=execution_id,
         tx_hash=request.tx_hash)
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/evm/wallet-policy/status")
+async def original_owner_one_signer_wallet_policy_status(
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated READ-ONLY original one-signer policy verification.
+
+    Cannot create/update/attach a Privy signer or activate trading.
+    Current legacy single-coin LIVE routes are unaffected.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await read_owner_central_wallet_policy_status(did)
+    return JSONResponse(status,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.get("/api/live/evm/auto-session/{asset}")
