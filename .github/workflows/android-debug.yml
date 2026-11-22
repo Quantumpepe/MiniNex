@@ -2,6 +2,10 @@ name: MiniNex Android validation (manual only)
 
 on:
   workflow_dispatch:
+  # Package precisely this main revision without changing the production branch.
+  push:
+    branches:
+      - apk/current-8e2d1157-20261122
 
 permissions:
   contents: read
