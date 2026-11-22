@@ -2519,79 +2519,16 @@ async def send_xrp(
     body: dict,
     authorization: str | None = Header(default=None),
 ):
-    """Send XRP from user's wallet. Privy signs, backend submits to XRPL."""
-    import os, httpx
-    user = verify_privy_bearer(authorization)
-    from_addr = body.get("from")
-    to_addr = body.get("to")
-    amount = body.get("amount")
-    if not from_addr or not to_addr or not amount:
-        raise HTTPException(400, "Missing from, to, or amount")
-    # XRP uses drops (1 XRP = 1,000,000 drops)
-    amount_drops = int(float(amount) * 1_000_000)
-    app_id = APP_ID
-    app_secret = os.environ.get("MININEX_PRIVY_APP_SECRET", "")
-    if not app_id or not app_secret:
-        raise HTTPException(500, "Privy credentials not configured")
-    async with httpx.AsyncClient() as client:
-        # Get wallet ID
-        resp = await client.get(
-            f"https://api.privy.io/v1/users/{user['user_id']}",
-            auth=(app_id, app_secret),
-            headers={"privy-app-id": app_id}
-        )
-        if resp.status_code != 200:
-            raise HTTPException(500, "Failed to fetch user wallets")
-        user_data = resp.json()
-        xrp_wallet = None
-        for acc in user_data.get("linked_accounts", []):
-            if acc.get("type") == "wallet" and acc.get("chain_type") == "xrpl":
-                xrp_wallet = acc
-                break
-        if not xrp_wallet:
-            raise HTTPException(400, "No XRP wallet found")
-        wallet_id = xrp_wallet.get("id")
-        # Sign transaction via Privy
-        sign_resp = await client.post(
-            f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
-            auth=(app_id, app_secret),
-            headers={"privy-app-id": app_id, "Content-Type": "application/json"},
-            json={
-                "method": "xrpl_signTransaction",
-                "params": {
-                    "transaction": {
-                        "TransactionType": "Payment",
-                        "Account": from_addr,
-                        "Destination": to_addr,
-                        "Amount": str(amount_drops)
-                    }
-                }
-            }
-        )
-        if sign_resp.status_code != 200:
-            raise HTTPException(500, f"Sign failed: {sign_resp.text}")
-        signed = sign_resp.json()
-        # Submit to XRPL (using public endpoint)
-        tx_blob = signed.get("data", {}).get("signed_transaction", "")
-        if not tx_blob:
-            raise HTTPException(500, "No signed transaction returned")
-        submit_resp = await client.post(
-            "https://xrplcluster.com/",
-            json={
-                "method": "submit",
-                "params": [{"tx_blob": tx_blob}]
-            }
-        )
-        if submit_resp.status_code != 200:
-            raise HTTPException(500, "XRPL submission failed")
-        result = submit_resp.json()
-        return JSONResponse({
-            "status": "submitted",
-            "txid": result.get("result", {}).get("tx_json", {}).get("hash", "unknown"),
-            "from": from_addr,
-            "to": to_addr,
-            "amount": amount,
-        }, headers={"Cache-Control": "no-store"})
+    """Manual owner-only XRP transfer with canonical Privy XRPL signing."""
+    from .native_xrp_manual_send import submit_manual_xrp
+    did = verify_privy_bearer(authorization)["user_id"]
+    if not isinstance(body, dict):
+        raise HTTPException(422, "Invalid XRP send request")
+    result = await submit_manual_xrp(
+        did, source=body.get("from"), destination=body.get("to"),
+        amount=body.get("amount"),
+    )
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 
 @app.post("/api/wallet/send/trx")
