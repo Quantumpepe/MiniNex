@@ -478,7 +478,7 @@ export default function App() {
                   <div className="time-switch" role="group" aria-label="Chart period"><button type="button" className={period==='m15'?'active':''} onClick={()=>setPeriod('m15')}>{t.quarterHour}</button><button type="button" className={period==='h1'?'active':''} onClick={()=>setPeriod('h1')}>{t.hourly}</button><button type="button" disabled title={t.historyLimit}>{t.day}</button></div>
                 </div>
                 <PriceChart history={history} asset={asset} period={period} market={mk} trades={[]} t={t} lang={language}/>
-              {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
+              {!paperVisible&&!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
                 <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
               

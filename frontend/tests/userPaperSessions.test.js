@@ -7,6 +7,15 @@ const ui=read('../src/UserPaperSessions.jsx');
 const dict=read('../src/i18n.js');
 
 test("skip wallet",()=>{});
+test('BTC and ETH wallet show actual server-persisted 5000 USD paper start budget',()=>{
+  assert.match(ui,/const initialBudget=Number\(current\.demo_start_cash\)/);
+  assert.match(ui,/hasVirtualBudget\?formatNumber\(initialBudget,lang,2\):'—'/);
+  assert.match(ui,/t\.personalDemoBudget/);
+  assert.match(dict,/personalDemoBudget: 'Virtual starting budget'/);
+  assert.match(dict,/personalDemoBudget: 'Virtuelles Startbudget'/);
+  assert.doesNotMatch(ui,/initialBudget=5000/);
+});
+
 test('automatic paper start pause resume never calls wallet signer',()=>{
   assert.match(ui,/command\('start'\)/);
   assert.doesNotMatch(ui,/command\('evaluate'\)/);

@@ -28,10 +28,12 @@ const base={
   ],
 };
 
-test('all eleven ready paper coins can appear in one home list, not ARB',()=>{
+test('all twelve active paper coins, including ARB and QNT, appear in home history',()=>{
   assert.deepEqual([...HOME_PAPER_COINS],[
-    'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI']);
-  assert.equal(HOME_PAPER_COINS.includes('ARB'),false);
+    'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB']);
+  assert.equal(HOME_PAPER_COINS.includes('ARB'),true);
+  assert.equal(HOME_PAPER_COINS.includes('QNT'),true);
+  assert.equal(HOME_PAPER_COINS.includes('DOGE'),false);
   assert.equal(validHomePaperFeed(base),true);
   for(const symbol of HOME_PAPER_COINS){
     assert.equal(validHomePaperFeed({...base,trades:[
@@ -54,7 +56,7 @@ test('only account-owned PAPER fields, strict newest-first timestamps and unique
     {selected_asset:undefined},
     {assets:[...HOME_PAPER_COINS,'ARB']},
     {assets:[...HOME_PAPER_COINS].reverse()},
-    {trades:[a('ARB',1,'2026-11-13T18:15:00Z')]},
+    {trades:[a('DOGE',1,'2026-11-13T18:15:00Z')]},
     {trades:[a('BTC',1,'2026-11-13T18:15:00Z'),a('BTC',1,'2026-11-13T18:10:00Z')]},
     {trades:base.trades.slice().reverse()},
     {trades:[{...base.trades[0],real_trade:true}]},
@@ -124,7 +126,12 @@ test('default history is selected coin only; ALL is voluntary',()=>{
   assert.equal(validHomePaperFeed(selected,'ALL'),false);
   assert.equal(validHomePaperFeed({...selected,trades:base.trades},'BTC'),false);
   assert.equal(validHomePaperFeed({...base,selected_asset:'ALL'},'ALL'),true);
-  assert.equal(validHomePaperFeed(base,'ARB'),false);
+  assert.equal(validHomePaperFeed({...base,
+    selected_asset:'ARB',
+    trades:[a('ARB',1,'2026-11-13T18:15:00Z','PAPER_SELL')]
+  },'ARB'),true);
+  assert.equal(validHomePaperFeed({...base,selected_asset:'ARB',
+    trades:[a('QNT',1,'2026-11-13T18:15:00Z')]},'ARB'),false);
   assert.match(app,/const \[showAllPaperHistory,setShowAllPaperHistory\]=useState\(false\)/);
   assert.match(app,/const homePaperScope=showAllPaperHistory\?'ALL':asset/);
   assert.match(app,/setShowAllPaperHistory\(false\);setAsset\(symbol\)/);

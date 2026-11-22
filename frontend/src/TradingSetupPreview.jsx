@@ -5,7 +5,7 @@ import {coinBySymbol} from './coins.js';
 import ExtraCoinStrategyReplay from './ExtraCoinStrategyReplay.jsx';
 import LiveBtcControls from './LiveBtcControls.jsx';
 import ExtraPaperComparison from './ExtraPaperComparison.jsx';
-import {EXTRA_REPLAY_COINS,defaultReplayOption} from './extraReplayRules.js';
+import {EXTRA_REPLAY_COINS,defaultReplayOption,validExtraReplayBudget} from './extraReplayRules.js';
 import {validSavedExtraCoinPreferences,savedExtraOptions,coinPreferenceChanged}
   from './extraCoinPreferenceRules.js';
 
@@ -111,14 +111,14 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
     return()=>{active=false;};
   },[enabled,getAccessToken,userId,extraRefresh]);
 
-  const saveExtra=async asset=>{
-    const selected=replayOptions[asset];
+  const saveExtra=async (asset,selected)=>{
+    // Save the edited snapshot, not the value from before the last keystroke.
+    selected=selected||replayOptions[asset];
     const prior=savedExtra?.[asset];
     if(!enabled||!getAccessToken||extraSettingsStatus!=='ready'||
        extraSaving||!EXTRA_REPLAY_COINS.includes(asset)||!prior||
        !coinPreferenceChanged(selected,prior)||
-       !Number.isSafeInteger(Number(selected?.budget))||
-       Number(selected.budget)<=0)return;
+       !validExtraReplayBudget(selected?.budget))return;
     setExtraSaving(asset);
     try{
       const token=await getAccessToken();
@@ -137,9 +137,13 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       const next=await response.json();
       if(!validSavedExtraCoinPreferences(next))throw Error('Invalid saved settings');
       setSavedExtra(next.settings);
-      setReplayOptions(old=>({
-        ...old,[asset]:savedExtraOptions(next)[asset],
-      }));
+      setReplayOptions(old=>{
+        // Never overwrite newer keystrokes with an earlier server response.
+        const latest=old[asset];
+        if(latest&&['mode','stable','horizon','budget'].some(
+          key=>latest[key]!==selected[key]))return old;
+        return {...old,[asset]:savedExtraOptions(next)[asset]};
+      });
       setExtraSettingsStatus('ready');
     }catch{
       setExtraSettingsStatus('failed');
@@ -193,12 +197,24 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
 
   const changeReplay=(asset,key,value)=>{
     if(!EXTRA_REPLAY_COINS.includes(asset)||!['mode','horizon','budget','stable'].includes(key))return;
-    setReplayOptions(old=>{
-      const next={...old,[asset]:{...old[asset],[key]:value}};
-      setTimeout(()=>saveExtra(asset),0);
-      return next;
-    });
+    setReplayOptions(old=>({
+      ...old,[asset]:{...old[asset],[key]:value},
+    }));
   };
+  // Autosave the latest complete amount after input, not a stale value
+  // every keystroke. Coin saves are serialized without arbitrary caps.
+  useEffect(()=>{
+    if(!enabled||!getAccessToken||extraSettingsStatus!=='ready'||
+       extraSaving||!savedExtra)return;
+    const asset=EXTRA_REPLAY_COINS.find(coin=>
+      validExtraReplayBudget(replayOptions[coin]?.budget)&&
+      coinPreferenceChanged(replayOptions[coin],savedExtra[coin]));
+    if(!asset)return;
+    const value=replayOptions[asset];
+    const timer=setTimeout(()=>{void saveExtra(asset,value);},400);
+    return()=>clearTimeout(timer);
+  },[enabled,getAccessToken,extraSettingsStatus,extraSaving,
+     savedExtra,replayOptions]);
   const selectedCoin=coinBySymbol(opened);
   const selectedSettings=opened==='BTC'||opened==='ETH'?settings[opened]:null;
 

@@ -135,7 +135,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         <span>{t.spreadCheck}</span><b>{valid&&selected?.price_divergence_pct!=null?formatNumber(selected.price_divergence_pct,lang,3)+'%':'—'}</b>
       </div>
     </section>
-    {!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{lang==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
+    {!showSimulatedTrades&&!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{lang==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
     <section className="compact-recent-trades" aria-label={t.recentTrades}>
       <div className="compact-recent-heading">
         <strong>{t.recentTrades} · {showAllTrades?t.homeAllCoins:asset}

@@ -1,7 +1,9 @@
-/** Strict client boundary for the account's newest saved PAPER events. */
-export const HOME_PAPER_COINS=Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI',
-]);
+/** Strict client boundary for the account's newest saved PAPER events.
+ * Use the same approved twelve-coin catalog as the wallet and main page:
+ * retired DOGE is not a substitute for QNT or ARB.
+ */
+import {COINS} from './coins.js';
+export const HOME_PAPER_COINS=Object.freeze(COINS.map(coin=>coin.symbol));
 
 const positive=n=>typeof n==='number'&&Number.isFinite(n)&&n>0;
 const finite=n=>typeof n==='number'&&Number.isFinite(n);
