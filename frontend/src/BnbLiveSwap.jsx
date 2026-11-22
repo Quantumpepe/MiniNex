@@ -49,7 +49,7 @@ export default function BnbLiveSwap({enabled,userId,side,stable,amount,t}){
   return <div className="mininex-bnb-swap">
     <button type="button" className="privy-wallet-action" disabled={busy||!amount}
       onClick={executeSwap}>
-      {busy?'Signiere...':'Swap BNB → '+stable}
+      {busy?'Signiere...':'Swap starten'}
     </button>
     {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
     {hash&&<p className="privy-wallet-description">TX: {hash.slice(0,10)}...</p>}
