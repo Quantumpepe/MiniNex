@@ -517,7 +517,7 @@ SCHEMA = (
     """CREATE TABLE IF NOT EXISTS mininex_extra_coin_preferences (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
-            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')),
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','QNT','UNI','ARB')),
         budget_usd BIGINT NOT NULL DEFAULT 500
             CHECK (budget_usd > 0),
         mode TEXT NOT NULL DEFAULT 'LONG'
@@ -535,7 +535,7 @@ SCHEMA = (
     """CREATE TABLE IF NOT EXISTS mininex_extra_paper_sessions (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK (asset IN
-            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB')),
+            ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','QNT','UNI','ARB')),
         status TEXT NOT NULL DEFAULT 'ACTIVE'
             CHECK (status IN ('ACTIVE','PAUSED')),
         settlement TEXT NOT NULL CHECK (settlement IN ('USDC','USDT')),
@@ -930,14 +930,14 @@ SCHEMA = (
     """ALTER TABLE mininex_extra_coin_preferences
        ADD CONSTRAINT mininex_extra_coin_preferences_asset_check
        CHECK (asset IN
-         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
+         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','QNT','UNI','ARB'))""",
     """ALTER TABLE mininex_extra_paper_sessions
        DROP CONSTRAINT IF EXISTS
        mininex_extra_paper_sessions_asset_check""",
     """ALTER TABLE mininex_extra_paper_sessions
        ADD CONSTRAINT mininex_extra_paper_sessions_asset_check
        CHECK (asset IN
-         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB'))""",
+         ('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','QNT','UNI','ARB'))""",
     # The common per-coin AUTO strategy exists in application code; repair the
     # historic SQL check so independently selected AUTO settings can persist.
     """ALTER TABLE mininex_extra_paper_sessions
