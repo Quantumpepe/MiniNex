@@ -50,7 +50,9 @@ def _require_unattached_original_wallet(user:dict, did:str, metadata:dict)->dict
             or metadata.get("id")!=owned["wallet_id"]
             or metadata.get("chain_type")!="ethereum"
             or str(metadata.get("address","")).lower()!=owned["address"]
-            or metadata.get("entity")!={"type":"user","id":did}
+            or type(metadata.get("entity")) is not dict
+            or metadata["entity"].get("type")!="user"
+            or metadata["entity"].get("id")!=did
             or metadata.get("archived_at") is not None
             or metadata.get("additional_signers")!=[]):
         raise HTTPException(
