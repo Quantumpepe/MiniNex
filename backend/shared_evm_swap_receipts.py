@@ -39,7 +39,7 @@ def _pair(asset: str, stable: str, side: str) -> dict:
     chain, network = chain_for_asset(asset)
     if type(side) is not str or side not in ("BUY","SELL"):
         raise ValueError("Invalid EVM swap side")
-    if asset in ("ETH", "LINK", "UNI"):
+    if asset in ("ETH", "LINK", "QNT", "UNI"):
         if stable not in STABLES:
             raise ValueError("Invalid Ethereum settlement token")
         traded = (WETH_MAINNET if asset=="ETH" else _ETH_TOKENS[asset])
