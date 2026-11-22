@@ -168,10 +168,10 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
           role="status">{t.walletSwapUnsupported}</p>}
         {supportedPair&&amount&&!request&&<p className="privy-wallet-description"
           role="alert">{t.walletSwapInvalidAmount}</p>}
-        <button className="privy-wallet-action" type="submit"
+        {from!=='BNB'&&to!=='BNB'&&<button className="privy-wallet-action" type="submit"
           disabled={!enabled||!request||busy}>
           {busy?t.walletSwapChecking:t.walletSwapCheck}
-        </button>
+        </button>}
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
       {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
@@ -207,7 +207,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         enabled={enabled} userId={userId}
         side={from==='BNB'?'BUY':'SELL'} stable={from==='BNB'?to:from}
         amount={request.body.amount} t={t}/>}
-      {!ethManualPair&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
+      {!ethManualPair&&from!=='BNB'&&to!=='BNB'&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
       </p>}
     </div>}
