@@ -78,7 +78,7 @@ def test_signed_blob_must_match_wallet_and_exact_payment():
     # Deterministic fixture: signing key produces a genuine XRPL public key.
     key = ed25519.Ed25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
     from cryptography.hazmat.primitives import serialization
-    public = b"\\xED" + key.public_key().public_bytes(
+    public = bytes([0xED]) + key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
