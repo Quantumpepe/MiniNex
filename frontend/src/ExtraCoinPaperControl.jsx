@@ -104,7 +104,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       });
       if(!response.ok)throw Error('Paper command failed');
       const result=await response.json();
-      if(!liveMode && !validExtraPaperState(result,asset))throw Error('Invalid response');
+      if(!liveMode && !['BTC','ETH'].includes(asset) && !validExtraPaperState(result,asset))throw Error('Invalid response');
       if(request===activeRef.current)setData(result);
     }catch{
       if(request===activeRef.current)setFailed(true);
