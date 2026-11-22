@@ -42,6 +42,7 @@ def _inert_response(status: str = "NOT_CONFIGURED") -> dict:
         "one_scoped_signer_verified": False,
         "remote_policy_exactly_verified": False,
         "backend_quorum_current": False,
+        "policy_owner_quorum_current": False,
         "legacy_reconciliation_required": True,
         "privy_wallet_grant_changed": False,
         "new_policy_created": False,
@@ -165,6 +166,13 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         quorum=await check_privy_backend_quorum(
             expected_quorum_id=expected_signer,
         )
+        # The policy OWNER, not its additional signer, must authorize PATCH.
+        # The same pinned P-256 key may be a member of both registered
+        # distinct quorums. Report owner authority separately without
+        # pretending a valid signer can update a policy.
+        owner_quorum=await check_privy_backend_quorum(
+            expected_quorum_id=record["owner_id"],
+        )
     except Exception:
         LOG.warning("Original central Privy wallet audit not confirmed")
         return {**result,"status":"REQUIRES_RECONCILIATION"}
@@ -175,6 +183,9 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         "one_scoped_signer_verified":verified["one_scoped_signer_verified"],
         "remote_policy_exactly_verified":verified["remote_policy_exactly_verified"],
         "backend_quorum_current":True,
+        "policy_owner_quorum_current":(
+            owner_quorum.get("remote_quorum_public_key_verified") is True
+        ),
     })
     # Automatic signing is NOT connected to these consolidated records yet.
     return result
