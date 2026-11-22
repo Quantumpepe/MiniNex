@@ -49,17 +49,17 @@ export default function SolanaSend({t,enabled,userId}) {
       <Send size={16}/> {t.walletSendTitle||'Senden'} SOL
     </button>
     {open&&<div className="mininex-send-content">
-      <label><span>Empfänger</span>
+      <label><span>{t.walletSendRecipient||'Empfänger'}</span>
         <input value={destination} onChange={e=>setDestination(e.target.value)} placeholder={t.walletSendRecipient||'Solana-Adresse'}/>
       </label>
-      <label><span>Betrag (SOL)</span>
+      <label><span>{t.walletSendAmount||'Betrag'} · SOL</span>
         <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.01"/>
       </label>
       <button type="button" className="privy-wallet-action" disabled={busy||!destination||!amount} onClick={send}>
         {busy?(t.walletSendReviewing||'Senden…'):(t.walletSendTitle||'Senden')}
       </button>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
-      {txSig&&<p className="privy-wallet-description">Gesendet: {txSig.slice(0,16)}…</p>}
+      {txSig&&<p className="privy-wallet-description">{t.walletSendSubmitted||'Gesendet'}: {txSig.slice(0,16)}…</p>}
     </div>}
   </section>;
 }
