@@ -169,7 +169,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
           role="status">{t.walletSwapUnsupported}</p>}
         {supportedPair&&amount&&!request&&<p className="privy-wallet-description"
           role="alert">{t.walletSwapInvalidAmount}</p>}
-        {from!=='BNB'&&to!=='BNB'&&<button className="privy-wallet-action" type="submit"
+        {!['BNB','POL','AVAX','ARB'].includes(from)&&!['BNB','POL','AVAX','ARB'].includes(to)&&<button className="privy-wallet-action" type="submit"
           disabled={!enabled||!request||busy}>
           {busy?t.walletSwapChecking:t.walletSwapCheck}
         </button>}
@@ -204,11 +204,13 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         enabled={enabled} userId={userId} getAccessToken={getAccessToken}
         side={request.body.side} stable={request.body.stable}
         amount={request.body.amount} t={t}/>}
-      {(from==='BNB'||to==='BNB')&&<BnbLiveSwap
-        enabled={enabled} userId={userId}
-        side={from==='BNB'?'BUY':'SELL'} stable={from==='BNB'?to:from}
-        amount={amount} t={t}/>}
-      {!ethManualPair&&from!=='BNB'&&to!=='BNB'&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
+      {['BNB','POL','AVAX','ARB'].includes(from)&&<EvmLiveSwap
+        enabled={enabled} userId={userId} chain={from}
+        side='BUY' stable={to} amount={amount} t={t}/>}
+      {['BNB','POL','AVAX','ARB'].includes(to)&&from!==to&&<EvmLiveSwap
+        enabled={enabled} userId={userId} chain={to}
+        side='SELL' stable={from} amount={amount} t={t}/>}
+      {!ethManualPair&&!['BNB','POL','AVAX','ARB'].includes(from)&&!['BNB','POL','AVAX','ARB'].includes(to)&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
       </p>}
     </div>}
