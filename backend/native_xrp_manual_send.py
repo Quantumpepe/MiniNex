@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from decimal import Decimal, InvalidOperation
 import hashlib
+import json
 import logging
 import os
 import re
@@ -80,21 +81,64 @@ def _safe_privy_error_category(payload: object) -> str:
     return "unclassified_privy_validation"
 
 
+def _safe_privy_schema_issue(payload: object) -> str:
+    """Extract only error PATH and schema CODE from Privy, not submitted values.
+
+    Privy can return Zod validation issues in a JSON-encoded cause. Those can
+    contain signed transaction bytes or address text. Never log raw causes.
+    """
+    if type(payload) is not dict:
+        return "none"
+    raw = payload.get("cause")
+    if raw is None and type(payload.get("error")) is dict:
+        raw = payload["error"].get("cause")
+    if type(raw) is str and len(raw) <= 8192:
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            raw = None
+    if type(raw) is dict:
+        raw = raw.get("issues", raw.get("errors"))
+    if type(raw) is not list:
+        return "none"
+    for issue in raw[:8]:
+        if type(issue) is not dict:
+            continue
+        p = issue.get("path")
+        code = issue.get("code")
+        if p == ["params", "transaction"]:
+            if code == "invalid_type":
+                return "transaction_invalid_type"
+            if code in ("invalid_format", "invalid_string"):
+                return "transaction_invalid_hex"
+            if code in ("too_small", "too_big"):
+                return "transaction_invalid_length"
+            if code in ("invalid_value", "invalid_enum_value", "invalid_literal"):
+                return "transaction_invalid_value"
+            return "transaction_other_validation"
+        if p == ["params", "encoding"]:
+            return "encoding_invalid_value"
+    return "other_validation_path"
+
+
 def privy_signing_failure(response: httpx.Response) -> HTTPException:
     """Classify remote rejection without leaking transaction or wallet data."""
     status = response.status_code
     try:
-        category = _safe_privy_error_category(response.json())
+        payload = response.json()
+        category = _safe_privy_error_category(payload)
+        detail = _safe_privy_schema_issue(payload)
     except (ValueError, TypeError):
         category = "non_json_error"
-    LOG.warning("Privy XRP sign refused: http_status=%d category=%s", status, category)
+        detail = "none"
+    LOG.warning("Privy XRP sign refused: http_status=%d category=%s schema_issue=%s", status, category, detail)
     if status in (401, 403) or category == "wallet_authorization":
         return HTTPException(403,
             "Privy has not authorized signing for this XRP wallet. "
             "Owner approval or a verified delegated signer is required.")
     if status in (400, 422):
         return HTTPException(502,
-            f"Privy XRP signing request rejected (HTTP {status}; reason: {category}). "
+            f"Privy XRP signing request rejected (HTTP {status}; reason: {category}; issue: {detail}). "
             "No XRP was sent.")
     if status == 404:
         return HTTPException(502, "Privy XRP signing method is not available (404)")
@@ -345,6 +389,8 @@ async def submit_manual_xrp(
                 # transaction, not a prehashed/detached-signature STX payload.
                 # Do not assume a raw-signing API schema here.
                 encoded = encode(unsigned)
+                if decode(encoded) != unsigned:
+                    raise ValueError("XRPL canonical serialization mismatch")
             except (ValueError, TypeError, KeyError):
                 raise HTTPException(503, "Cannot encode XRP payment") from None
             # Privy's XRPL method accepts a HEX string and explicit encoding;
