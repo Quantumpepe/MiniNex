@@ -38,7 +38,7 @@ function MarketChart({history,period,valid,t,asset}) {
 }
 
 
-function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status}) {
+function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
   const chart=useMemo(()=>paperSparkline(samples),[samples]);
   const positive=summary?.pnl!=null&&summary.pnl>=0;
   const color=positive?'#5bf2b6':'#ff9388';
@@ -48,7 +48,7 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
     status==='loading'?t.homePortfolioLoading:
     status==='error'?t.homePortfolioUnavailable:
     summary&&!summary.valuationAvailable?t.homePortfolioNoPrice:
-    t.homePortfolioNoSession;
+    paperMode?t.homePortfolioNoSession:(lang==='de'?'Noch keine verifizierten Wallet-Bestände':'No verified wallet balances yet');
   return <section className="compact-wallet-portfolio" aria-label={label}>
     <div className="compact-wallet-top">
       <span>{label} · {scope==='ALL'?t.homeAllCoins:scope}</span>
@@ -57,12 +57,14 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
     <div className="compact-wallet-body">
       <div className="compact-wallet-values">
         <strong>{summary?.valuationAvailable?formatMoney(summary.equity,lang):'—'}</strong>
-        {summary?.valuationAvailable
+        {paperMode&&summary?.valuationAvailable
           ? <span className={positive?'text-positive':'text-negative'}>
               {formatSigned(summary.pnl,lang)} ({summary.pnlPct>=0?'+':''}{formatNumber(summary.pnlPct,lang,2)}%)
             </span>
-          : <small>{prompt}</small>}
-        {summary&&<small className="home-portfolio-capital">
+          : !summary?.valuationAvailable?<small>{prompt}</small>:null}
+        {!paperMode&&summary?.valuationAvailable&&<small>{lang==='de'?'Verifizierte Wallet-Bestände':'Verified wallet holdings'}{summary.incomplete?' · '+(lang==='de'?'Teilwert, Daten fehlen':'Partial value, data unavailable'):''}</small>}
+        {!paperMode&&summary?.holdings?.length>0&&<small>{summary.holdings.map(h=>h.asset+' '+h.balance).join(' · ')}</small>}
+        {paperMode&&summary&&<small className="home-portfolio-capital">
           {t.homePortfolioCapital}: {formatMoney(summary.startingCapital,lang)}
         </small>}
       </div>
@@ -81,13 +83,13 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
       </div>
     </div>
     <div className="compact-wallet-foot">
-      <span>PAPER · {lang==='de'?'kein Echtgeld':'no real funds'}</span>
+      <span>{paperMode?'PAPER · '+(lang==='de'?'kein Echtgeld':'no real funds'):'LIVE · '+(lang==='de'?'Wallet-Bestände':'Wallet balances')}</span>
       <span>{chart ? chartLabel : (lang==='de'?'Werte nach geschätzten Verkaufskosten':'After estimated exit costs')}</span>
     </div>
   </section>;
 }
 
-export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,portfolioStatus='ready',tradesStatus='ready',showAllTrades=false,onToggleAllTrades}) {
+export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period,setPeriod,history,market,valid,marketSnapshot,syncedAt=0,trades,goTo,showSimulatedTrades=true,portfolioSummary=null,portfolioSamples=[],portfolioAuthenticated=false,portfolioStatus='ready',walletPortfolio=null,tradesStatus='ready',showAllTrades=false,onToggleAllTrades}) {
   const selected=valid?market:null;
   const change=selected?.change_24h_pct;
   const formatChange=value=>value==null||!Number.isFinite(Number(value))?'—':(Number(value)>0?'+':'')+formatNumber(value,lang)+'%';
@@ -110,8 +112,11 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
       </div>
     </div>
     <PaperPortfolioCard t={t} lang={lang}
-      summary={portfolioSummary} samples={portfolioSamples}
-      authenticated={portfolioAuthenticated} status={portfolioStatus}
+      summary={showSimulatedTrades?portfolioSummary:walletPortfolio?.summary}
+      samples={showSimulatedTrades?portfolioSamples:(walletPortfolio?.samples||[])}
+      authenticated={showSimulatedTrades?portfolioAuthenticated:walletPortfolio?.authenticated}
+      status={showSimulatedTrades?portfolioStatus:walletPortfolio?.status}
+      paperMode={showSimulatedTrades}
       scope="ALL" goTo={goTo}/>
     <CoinGrid t={t} lang={lang} selected={asset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="home"
