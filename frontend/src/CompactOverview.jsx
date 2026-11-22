@@ -41,7 +41,7 @@ function MarketChart({history,period,valid,t,asset}) {
 function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
   const chart=useMemo(()=>paperSparkline(samples),[samples]);
   const positive=summary?.pnl!=null&&summary.pnl>=0;
-  const color=positive?'#5bf2b6':'#ff9388';
+  const color=!paperMode||positive?'#5bf2b6':'#ff9388';
   const label=lang==='de'?'Portfolio (Gesamtwert)':'Portfolio (total value)';
   const chartLabel=lang==='de'?'Beobachteter Verlauf seit App-Start':'Observed since opening the app';
   const prompt=!authenticated?t.homeTradesSignIn:
@@ -84,7 +84,7 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
     </div>
     <div className="compact-wallet-foot">
       <span>{paperMode?'PAPER · '+(lang==='de'?'kein Echtgeld':'no real funds'):'LIVE · '+(lang==='de'?'Wallet-Bestände':'Wallet balances')}</span>
-      <span>{chart ? chartLabel : (lang==='de'?'Werte nach geschätzten Verkaufskosten':'After estimated exit costs')}</span>
+      <span>{paperMode?(chart?chartLabel:(lang==='de'?'Werte nach geschätzten Verkaufskosten':'After estimated exit costs')):(lang==='de'?'USD-Schätzung aus aktuellen Kursen':'USD estimate at current prices')}</span>
     </div>
   </section>;
 }
