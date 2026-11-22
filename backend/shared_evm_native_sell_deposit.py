@@ -34,7 +34,7 @@ from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 _SIG=re.compile(r"^[0-9a-f]{64}$")
 _FLAGS=("owner_wallet_current","exact_remote_policy_rules_verified",
         "privy_additional_signer_scoped","backend_quorum_current",
@@ -92,7 +92,7 @@ async def estimate_native_sell_fee_reserve(
     wallet=source_evidence.get("wallet_address")
     if type(wallet) is not str or not re.fullmatch(r"0x[0-9a-f]{40}",wallet):
         raise ValueError("Missing verified owner wallet")
-    chain,network,fallback,env=_RPC[asset]
+    chain,network,fallback,env=_RPC["ETH_TOKENS" if asset=="ETH" else asset]
     if (chain!=pair["chain_id"] or network!=pair["network"]):
         raise ValueError("Native gas route differs from onchain pair")
     url=os.getenv(env,"").strip() or fallback

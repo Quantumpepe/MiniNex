@@ -14,8 +14,8 @@ import re
 from .shared_evm_net_costs import calculate_verified_evm_net_costs
 from .shared_evm_swap_receipts import _pair
 
-_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB"))
-_NATIVE = frozenset(("BNB", "POL", "AVAX"))
+_ASSETS = frozenset(("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB"))
+_NATIVE = frozenset(("ETH", "BNB", "POL", "AVAX"))
 _HASH = re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
 _CENT_12 = Decimal("0.000000000001")

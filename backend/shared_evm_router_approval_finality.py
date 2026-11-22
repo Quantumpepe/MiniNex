@@ -65,7 +65,7 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
                               tx:object,receipt:object,
                               finalized:object,canonical:object=None)->str|None:
     if type(row) is not dict or row.get("asset") not in (
-            "BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","SOL","XRP",
+            "ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","SOL","XRP",
             "TRX","DOGE"):
         raise ValueError("Unsupported originally submitted approval")
     mode=row.get("approval_mode","ROUTER02_FINITE")

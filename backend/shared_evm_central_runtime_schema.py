@@ -27,3 +27,17 @@ CENTRAL_EVM_SCHEMA = (
        ADD COLUMN IF NOT EXISTS grant_source TEXT NOT NULL DEFAULT 'LEGACY_COIN'
        CHECK(grant_source IN ('LEGACY_COIN','PRIVY_CENTRAL_ONE_SIGNER'))""",
 )
+
+
+# Preserve original native execution/receipt tables; only extend exact ETH chain scopes.
+CENTRAL_EVM_SCHEMA += (
+    "ALTER TABLE mininex_live_evm_native_sell_intents DROP CONSTRAINT IF EXISTS mininex_live_evm_native_sell_intents_asset_check",
+    "ALTER TABLE mininex_live_evm_native_sell_intents DROP CONSTRAINT IF EXISTS mininex_live_evm_native_sell_intents_chain_id_check",
+    "DO $mininex$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='mininex_live_evm_native_sell_intents'::regclass AND conname='mininex_live_evm_native_sell_intents_central_asset_check') THEN ALTER TABLE mininex_live_evm_native_sell_intents ADD CONSTRAINT mininex_live_evm_native_sell_intents_central_asset_check CHECK (asset IN ('ETH','BNB','POL','AVAX')); END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='mininex_live_evm_native_sell_intents'::regclass AND conname='mininex_live_evm_native_sell_intents_central_chain_check') THEN ALTER TABLE mininex_live_evm_native_sell_intents ADD CONSTRAINT mininex_live_evm_native_sell_intents_central_chain_check CHECK (chain_id IN (1,56,137,43114)); END IF; END $mininex$;",
+    "ALTER TABLE mininex_live_evm_native_auto_steps DROP CONSTRAINT IF EXISTS mininex_live_evm_native_auto_steps_asset_check",
+    "ALTER TABLE mininex_live_evm_native_auto_steps DROP CONSTRAINT IF EXISTS mininex_live_evm_native_auto_steps_chain_id_check",
+    "DO $mininex$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='mininex_live_evm_native_auto_steps'::regclass AND conname='mininex_live_evm_native_auto_steps_central_asset_check') THEN ALTER TABLE mininex_live_evm_native_auto_steps ADD CONSTRAINT mininex_live_evm_native_auto_steps_central_asset_check CHECK (asset IN ('ETH','BNB','POL','AVAX')); END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='mininex_live_evm_native_auto_steps'::regclass AND conname='mininex_live_evm_native_auto_steps_central_chain_check') THEN ALTER TABLE mininex_live_evm_native_auto_steps ADD CONSTRAINT mininex_live_evm_native_auto_steps_central_chain_check CHECK (chain_id IN (1,56,137,43114)); END IF; END $mininex$;",
+    "ALTER TABLE mininex_live_evm_completed_native_cycles DROP CONSTRAINT IF EXISTS mininex_live_evm_completed_native_cycles_asset_check",
+    "ALTER TABLE mininex_live_evm_completed_native_cycles DROP CONSTRAINT IF EXISTS mininex_live_evm_completed_native_cycles_chain_id_check",
+    "DO $mininex$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='mininex_live_evm_completed_native_cycles'::regclass AND conname='mininex_live_evm_completed_native_cycles_central_asset_check') THEN ALTER TABLE mininex_live_evm_completed_native_cycles ADD CONSTRAINT mininex_live_evm_completed_native_cycles_central_asset_check CHECK (asset IN ('ETH','BNB','POL','AVAX')); END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='mininex_live_evm_completed_native_cycles'::regclass AND conname='mininex_live_evm_completed_native_cycles_central_chain_check') THEN ALTER TABLE mininex_live_evm_completed_native_cycles ADD CONSTRAINT mininex_live_evm_completed_native_cycles_central_chain_check CHECK (chain_id IN (1,56,137,43114)); END IF; END $mininex$;",
+)

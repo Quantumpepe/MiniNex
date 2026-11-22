@@ -29,7 +29,7 @@ from .shared_native_evm_receipts import check_user_native_evm_conversion
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.native_evm_sell_reconcile")
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 _NATIVE_SELL_CYCLE_PAGE_LOCK=Lock()
 _NATIVE_SELL_CYCLE_PAGE_OFFSET=0
 _NATIVE_SELL_SWAP_PAGE_LOCK=Lock()
@@ -48,7 +48,7 @@ def pending_native_sell_deposits(limit:int=20)->list[dict]:
     query="""SELECT privy_did,asset,intent_key,chain_id,tx_hash
                    FROM mininex_live_evm_native_sell_intents
                    WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
-                     AND asset IN ('BNB','POL','AVAX')
+                     AND asset IN ('ETH','BNB','POL','AVAX')
                    ORDER BY created_at ASC,privy_did,asset,intent_key LIMIT %s OFFSET %s"""
     # Unfinalized original conversions must not starve newer owner receipts;
     # scanning never authorizes or retries a wallet transaction.
@@ -159,7 +159,7 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
                    LEFT JOIN mininex_live_evm_auto_broadcasts b
                      ON b.privy_did=n.privy_did AND b.asset=n.asset
                     AND b.intent_key=n.intent_key
-                   WHERE n.asset IN ('BNB','POL','AVAX')
+                   WHERE n.asset IN ('ETH','BNB','POL','AVAX')
                      AND n.status='FINALIZED_SUCCESS'
                      AND s.status='ACTIVE'
                      AND s.budget_revision=n.budget_revision
@@ -212,7 +212,7 @@ def original_native_sells_needing_cycle(limit:int=20)->list[dict]:
                    LEFT JOIN mininex_live_evm_completed_native_cycles c
                      ON c.privy_did=b.privy_did AND c.asset=b.asset
                     AND c.intent_key=b.intent_key
-                   WHERE b.asset IN ('BNB','POL','AVAX')
+                   WHERE b.asset IN ('ETH','BNB','POL','AVAX')
                      AND b.status='FINALIZED_SUCCESS' AND b.side='SELL'
                      AND n.status='FINALIZED_SUCCESS' AND f.side='SELL'
                      AND r.state='RECONCILIATION_REQUIRED'

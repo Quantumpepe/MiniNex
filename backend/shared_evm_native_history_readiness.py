@@ -25,7 +25,7 @@ from .shared_evm_historical_fill_bridge import independently_price_stored_evm_fi
 from .shared_evm_native_value_interval_audit import audit_original_native_value_interval
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 
 
 def _load_all_verified_owner_native_fills(did:str,asset:str)->list[dict]:

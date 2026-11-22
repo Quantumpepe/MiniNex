@@ -23,7 +23,7 @@ from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.native_evm_buy_reconcile")
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 _NATIVE_BUY_UNWRAP_PAGE_LOCK=Lock()
 _NATIVE_BUY_UNWRAP_PAGE_OFFSET=0
 _NATIVE_BUY_CYCLE_PAGE_LOCK=Lock()
@@ -44,7 +44,7 @@ def pending_native_steps(limit:int=20)->list[dict]:
                    FROM mininex_live_evm_native_auto_steps
                    WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
                      AND operation='WITHDRAW'
-                     AND asset IN ('BNB','POL','AVAX')
+                     AND asset IN ('ETH','BNB','POL','AVAX')
                    ORDER BY created_at ASC,privy_did,asset,intent_key LIMIT %s OFFSET %s"""
     # Unfinalized original conversions must not starve newer owner receipts;
     # scanning never authorizes or retries a wallet transaction.
@@ -148,7 +148,7 @@ def completed_native_buys_needing_cycle(limit:int=20)->list[dict]:
                    JOIN mininex_live_evm_budget_reservations r
                      ON r.privy_did=b.privy_did AND r.asset=b.asset
                     AND r.intent_key=b.intent_key
-                   WHERE b.asset IN ('BNB','POL','AVAX')
+                   WHERE b.asset IN ('ETH','BNB','POL','AVAX')
                      AND b.status='FINALIZED_SUCCESS' AND b.side='BUY'
                      AND n.status='FINALIZED_SUCCESS'
                      AND r.state='RECONCILIATION_REQUIRED'
@@ -187,7 +187,7 @@ def original_native_buys_without_step(limit:int=20)->list[dict]:
                    LEFT JOIN mininex_live_evm_native_auto_steps n
                      ON n.privy_did=b.privy_did AND n.asset=b.asset
                     AND n.intent_key=b.intent_key AND n.operation='WITHDRAW'
-                   WHERE b.asset IN ('BNB','POL','AVAX')
+                   WHERE b.asset IN ('ETH','BNB','POL','AVAX')
                      AND b.status='FINALIZED_SUCCESS' AND b.side='BUY'
                      AND f.side='BUY'
                      AND s.status='ACTIVE' AND s.started_by_owner_at IS NOT NULL

@@ -73,7 +73,7 @@ def _assess_locked(
     # Native EVM SELL is not economically settled by its Router02 swap
     # alone. Require the separately verified preceding WETH9-style DEPOSIT
     # and completed native cycle under the same owner, chain and signal.
-    if asset in ("BNB","POL","AVAX"):
+    if asset in ("ETH","BNB","POL","AVAX"):
         cur.execute(
             """SELECT swap_tx_hash,conversion_tx_hash,chain_id,side,stable
                FROM mininex_live_evm_completed_native_cycles
