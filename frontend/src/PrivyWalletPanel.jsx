@@ -461,7 +461,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     {asset==='BTC'&&<BtcSendEntry key={'btc-send-'+user?.id}
       t={t} lang={lang} userId={user?.id}
       wallet={btcWallet.wallet} enabled={verifiedAccount}/>}
-    {['ETH','BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset)&&
+    {['ETH','BNB','POL','AVAX','LINK','UNI','ARB','QNT'].includes(asset)&&
       <WalletSend key={'send-'+asset} initialCoin={asset} lockedCoin
         t={t} enabled={verifiedAccount} userId={user?.id}/>}
     {
