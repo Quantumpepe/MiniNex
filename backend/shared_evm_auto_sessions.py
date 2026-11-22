@@ -40,9 +40,13 @@ def _remote_ready(report:object,asset:str)->None:
         raise HTTPException(409,"Current approved Privy owner grant is missing")
 
 
-def _start_locked(cur,*,did:str,asset:str)->dict:
-    """Lock independently verified consent/policy and current user budget."""
-    record=_read_grant_evidence_locked(cur,did=did,asset=asset)
+def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
+    """Lock independently verified original Privy grant and selected coin budget."""
+    if central:
+        from .shared_evm_central_runtime import _locked_original_evm_coin
+        record=_locked_original_evm_coin(cur,did=did,asset=asset)
+    else:
+        record=_read_grant_evidence_locked(cur,did=did,asset=asset)
     cur.execute(
         """SELECT stable,revision,budget_usd
            FROM mininex_extra_coin_preferences
@@ -99,19 +103,26 @@ def _stop_locked(cur,*,did:str,asset:str)->dict:
     }
 
 
-async def start_owner_evm_auto(did:str,asset:str)->dict:
+async def start_owner_evm_auto(
+    did:str,asset:str,*,central:bool=False,
+)->dict:
     did=_safe_did(did)
     asset=_require_asset(asset)
     # Must be independent live Privy REST readback, never a cached frontend
     # checkbox or an unverified 'policy ready' database string.
-    report=await get_owner_evm_remote_grant_audit(did,asset)
+    report=(await get_owner_evm_remote_grant_audit(
+        did,asset,central=True,
+    ) if central else await get_owner_evm_remote_grant_audit(did,asset))
     _remote_ready(report,asset)
     try:
         url=_db_url()
         _ensure_schema(url)
         with psycopg.connect(url,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                return _start_locked(cur,did=did,asset=asset)
+                return _start_locked(
+                    cur,did=did,asset=asset,
+                    **({"central":True} if central else {}),
+                )
     except psycopg.Error:
         LOG.warning("Owner EVM live session startup persistence unavailable")
         raise HTTPException(503,"Cannot durably start EVM live session") from None

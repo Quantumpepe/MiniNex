@@ -1188,6 +1188,17 @@ def owner_evm_auto_session(
     })
 
 
+@app.post("/api/live/evm/wallet-policy/auto-session/{asset}/start")
+async def owner_start_one_signer_evm_auto_session(
+    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Explicit owner Start Trade after original one-signer remote audit."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await start_owner_evm_auto(did,asset,central=True)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
 @app.post("/api/live/evm/auto-session/{asset}/start")
 async def owner_start_evm_auto_session(
     asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],

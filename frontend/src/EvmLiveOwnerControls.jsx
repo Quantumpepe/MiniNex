@@ -190,13 +190,16 @@ export default function EvmLiveOwnerControls({
         asset,stable,address,request,addSigners,signMessage,
       });
       setCentralStatus(current);
-      // Authorization alone does NOT prove a working LIVE worker. Keep
-      // this path separate from the legacy start endpoint until the
-      // backend has a properly audited central policy execution route.
       if(!centralWalletHasCoin(current,asset)){
         throw Error('Original combined EVM wallet grant is not verified');
       }
-      setError(t.centralPending);
+      const started=await request(
+        path+'/wallet-policy/auto-session/'+asset+'/start','POST',
+      );
+      if(!validEvmAutoSession(started,asset)||
+         started.status!=='ACTIVE'||started.started_by_owner!==true){
+        throw Error('Original wallet LIVE session could not be started');
+      }
       return;
     }
     let state=freshPermission.status;

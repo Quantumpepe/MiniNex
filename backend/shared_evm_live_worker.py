@@ -95,6 +95,12 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
     sql="""SELECT s.privy_did,s.asset,s.stable,s.chain_id,
                           s.budget_revision,s.started_by_owner_at,
                           p.budget_usd,p.mode,p.horizon,
+                          (c.status='GRANT_VERIFIED'
+                           AND c.revoked_at IS NULL
+                           AND c.legacy_reconciliation_required=FALSE
+                           AND c.scopes_json ? s.asset
+                           AND c.revisions_json->>s.asset=s.budget_revision::text)
+                             AS central,
                           COALESCE((
                               SELECT SUM(r.amount_usd)
                               FROM mininex_live_evm_budget_reservations r
@@ -107,17 +113,30 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                    FROM mininex_live_evm_auto_sessions s
                    JOIN mininex_extra_coin_preferences p
                      ON p.privy_did=s.privy_did AND p.asset=s.asset
-                   JOIN mininex_live_evm_owner_permissions g
+                   LEFT JOIN mininex_live_evm_owner_permissions g
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
+                   LEFT JOIN mininex_live_evm_wallet_policy_grants c
+                     ON c.privy_did=s.privy_did
                    WHERE s.status='ACTIVE'
                      AND s.asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND p.revision=s.budget_revision
                      AND p.stable=s.stable
-                     AND g.status='GRANT_VERIFIED'
-                     AND g.revoked_at IS NULL
-                     AND g.expires_at>now()
-                     AND g.budget_revision=s.budget_revision
+                     AND (
+                       (g.status='GRANT_VERIFIED' AND g.revoked_at IS NULL
+                        AND g.expires_at>now()
+                        AND g.budget_revision=s.budget_revision)
+                       OR
+                       (c.status='GRANT_VERIFIED'
+                        AND c.revoked_at IS NULL
+                        AND c.legacy_reconciliation_required=FALSE
+                        AND c.wallet_address=s.wallet_address
+                        AND c.scopes_json ? s.asset
+                        AND c.scopes_json->s.asset->>'stable'=s.stable
+                        AND c.revisions_json->>s.asset=s.budget_revision::text
+                        AND (c.scopes_json->s.asset->>'expires_at')::bigint>
+                            extract(epoch from now())::bigint)
+                     )
                    ORDER BY s.updated_at ASC,s.privy_did,s.asset
                    LIMIT %s OFFSET %s"""
     with _EVM_SESSION_PAGE_LOCK:
@@ -306,7 +325,8 @@ async def execute_owner_evm_live_tick(
             did=did,asset=asset,side=side,stable=stable,
             amount_atomic=int(required_atomic),
             budget_revision=row["budget_revision"],
-            signal_event_id=event,client=client)
+            signal_event_id=event,client=client,
+            **({"central":True} if row.get("central") is True else {}))
         return {"asset":asset,"state":submitted["state"],
                 "reason":"ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP",
                 "approval_tx_hash":submitted.get("tx_hash")}
@@ -316,7 +336,8 @@ async def execute_owner_evm_live_tick(
     return await execute_internal_evm_strategy_signal(
         did=did,asset=asset,strategy_run_id=run,
         signal_event_id=event,side=side,stable=stable,amount=amount,
-        budget_revision=row["budget_revision"],client=client)
+        budget_revision=row["budget_revision"],client=client,
+        **({"central":True} if row.get("central") is True else {}))
 
 
 async def run_owner_evm_live_batch(
