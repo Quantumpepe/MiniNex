@@ -19,7 +19,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 
-_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
+_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _approved_quote_pair(quote: object, allowance: object, *,
@@ -129,7 +129,7 @@ async def prepare_owner_evm_swap(
         quote_fn=make_policy_compatible_eth_quote(
             did,side=side,stable=stable,amount=amount,
             include_user_transaction=True)
-    elif asset in ("LINK","UNI"):
+    elif asset in ("LINK","QNT","UNI"):
         quote_fn=quote_owner_erc20_trade(
             did,asset=asset,side=side,stable=stable,amount=amount,
             include_user_transaction=True)

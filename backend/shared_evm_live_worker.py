@@ -47,7 +47,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
 _INTERVAL_SECONDS=30
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _NATIVE=frozenset(("BNB","POL","AVAX"))
 
 # Rotate the worker query across all owner-activated sessions. This is a
@@ -118,7 +118,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
                    WHERE s.status='ACTIVE'
-                     AND s.asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
+                     AND s.asset IN ('BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND p.revision=s.budget_revision
                      AND p.stable=s.stable

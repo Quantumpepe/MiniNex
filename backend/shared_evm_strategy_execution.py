@@ -38,7 +38,7 @@ from .shared_evm_coin_budget_reserve import (
 from .storage import _safe_did
 
 LOG=logging.getLogger("mininex.evm_approved_signal")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _SIGNAL_REF=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 
 

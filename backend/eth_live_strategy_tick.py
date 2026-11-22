@@ -36,7 +36,7 @@ _HORIZON_WINDOWS={
 }
 
 
-_EVM_MARKETS=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
+_EVM_MARKETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _NATIVE_MARKETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 
 
