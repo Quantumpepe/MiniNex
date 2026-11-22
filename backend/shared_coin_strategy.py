@@ -17,7 +17,7 @@ from .strategy_replay import REPLAY_ASSETS, WINDOWS
 
 COINS = tuple(REPLAY_ASSETS)
 assert COINS == ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
-                 "AVAX", "LINK", "DOGE", "UNI", "ARB")
+                 "AVAX", "LINK", "QNT", "UNI", "ARB")
 
 
 @dataclass(frozen=True)
