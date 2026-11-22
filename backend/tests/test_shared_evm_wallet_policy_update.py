@@ -273,3 +273,46 @@ def test_schema_and_endpoints_hold_duplicate_or_uncertain_authorizations():
     assert route.methods=={"POST"}
     import inspect
     assert "verify_privy_bearer" in inspect.getsource(route.endpoint)
+
+
+
+def test_get_only_reconciliation_can_finalize_a_previous_uncertain_patch(
+    monkeypatch,
+):
+    budget_stub(monkeypatch)
+    claim,g,i,proof=claim_for_finish()
+    g["status"]="UPDATE_UNCERTAIN"
+    i["status"]="PATCH_UNCERTAIN"
+    cur=Cur([g,i,{"status":"GRANT_VERIFIED"},{"status":"PATCH_VERIFIED"}])
+    result=m._finish_locked(cur,did=DID,claim=claim,remote=proof)
+    assert result["status"]=="GRANT_VERIFIED"
+    assert result["new_coin"]=="QNT"
+    assert result["additional_signer_created"] is False
+    assert "UPDATE_UNCERTAIN" in cur.calls[2][0]
+    assert "PATCH_UNCERTAIN" in cur.calls[3][0]
+
+
+def test_unproven_uncertain_patch_never_clears_the_wallet_hold(monkeypatch):
+    budget_stub(monkeypatch)
+    claim,g,i,_=claim_for_finish()
+    g["status"]="UPDATE_UNCERTAIN"
+    i["status"]="PATCH_UNCERTAIN"
+    cur=Cur([g,i])
+    result=m._finish_locked(cur,did=DID,claim=claim,remote=None)
+    assert result["status"]=="UPDATE_UNCERTAIN"
+    assert result["retry_forbidden"] is True
+    assert len(cur.calls)==2
+
+
+def test_reconcile_endpoint_uses_only_previous_signed_nonce_and_remote_get():
+    route=next(r for r in app.routes if
+        r.path=="/api/live/evm/wallet-policy/extend/reconcile")
+    assert route.methods=={"POST"}
+    import inspect
+    body=inspect.getsource(route.endpoint)
+    assert "verify_privy_bearer" in body
+    assert "reconcile_original_wallet_extension" in body
+    assert "apply_original_wallet_coin_extension" not in body
+    helper=inspect.getsource(m.reconcile_original_wallet_extension)
+    assert "_observe_remote_patch_without_sending" in helper
+    assert "_patch_once" not in helper
