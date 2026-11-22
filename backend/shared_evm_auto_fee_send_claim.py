@@ -104,6 +104,44 @@ def _claim_single_auto_fee_locked(
            FROM mininex_evm_fee_auto_permissions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     grant=cur.fetchone()
+    if grant is None and remote.get("source")=="ORIGINAL_CENTRAL_WALLET":
+        from .shared_evm_central_runtime import (
+            _locked_original_evm_coin,central_policy_rule,
+        )
+        from .shared_evm_remote_grant_audit import _lte
+        original=_locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=remote["stable"],now=now,
+        )
+        if (original["policy_id"]!=remote.get("policy_id")
+                or original["policy_sha256"]!=remote.get("policy_sha256")
+                or original["wallet_id"]!=remote.get("wallet_id")
+                or original["wallet_address"]!=remote.get("owner_wallet")
+                or original["chain_id"]!=remote.get("chain_id")):
+            raise HTTPException(409,"Original combined Privy fee grant changed")
+        rule=central_policy_rule(
+            original,asset=asset,kind="fee",stable=original["stable"],now=now,
+        )
+        cap=_lte(rule,"transfer.value")
+        if not any(
+            c.get("field")=="transfer.to"
+            and c.get("operator")=="eq"
+            and str(c.get("value","")).lower()==treasury
+            for c in rule["conditions"]
+        ):
+            raise HTTPException(409,"Combined fee rule changed treasury")
+        grant={
+            "status":"GRANT_VERIFIED","stable":original["stable"],
+            "chain_id":original["chain_id"],"wallet_id":original["wallet_id"],
+            "wallet_address":original["wallet_address"],
+            "treasury_wallet":treasury,"owner_max_fee_atomic":cap,
+            "expires_at":original["expires_at"],
+            "policy_id":original["policy_id"],
+            "policy_sha256":original["policy_sha256"],
+            "remote_policy_sha256":original["remote_policy_sha256"],
+            "owner_signed_at":original["owner_signed_at"],
+            "grant_verified_at":original["grant_verified_at"],
+            "revoked_at":None,
+        }
     if grant is None and remote.get("source")=="ONE_PRIVY_OWNER_GRANT":
         # One first wallet-owner approval already included the exact
         # bounded Treasury transfer. An existing separate fee enrollment,
