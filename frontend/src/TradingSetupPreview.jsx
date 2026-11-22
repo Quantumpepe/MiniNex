@@ -216,47 +216,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </div>
       {renderCoinAddress?.(opened)}
       {renderCoinActions?.(opened)}
-      {selectedSettings ? <>
-        <div className="privy-asset-settings-fields">
-          <label>
-            <span>{t.privySetupMode}</span>
-            <select value={selectedSettings.mode} disabled={status!=='ready'||busy}
-              onChange={event=>change(opened,'mode',event.target.value)}>
-              <option value="LONG">{t.privySetupLong}</option>
-              <option value="SPOT_SHORT">{t.privySetupSpotShort}</option>
-            <option value="AUTO">{t.privySetupAuto}</option>
-            </select>
-          </label>
-          <label>
-            <span>{t.privySetupStable}</span>
-            <select value={selectedSettings.stable} disabled={status!=='ready'||busy}
-              onChange={event=>change(opened,'stable',event.target.value)}>
-              {STABLES.map(value=><option key={value} value={value}>{value}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>{t.privySetupHorizon}</span>
-            <select value={selectedSettings.horizon} disabled={status!=='ready'||busy}
-              onChange={event=>change(opened,'horizon',event.target.value)}>
-              <option value="5m">5m</option><option value="15m">15m</option>
-              <option value="1h">1h</option><option value="24h">24h</option>
-            </select>
-          </label>
-        </div>
-        
-        <label>
-            <span>{t.extraReplayBudget||'Budget (USD)'}</span>
-            <input type="number" min="1" step="1"
-              value={replayOptions[opened]?.budget||''}
-              disabled={status!=='ready'||busy}
-              onChange={event=>changeReplay(opened,'budget',event.target.value)}/>
-          </label>
-        {renderSessionControls?.(opened)}
-        {renderLiveControls?.(opened,selectedSettings.stable)}
-        {opened==='BTC'&&<LiveBtcControls t={t} enabled={enabled}
-          userId={userId} getAccessToken={getAccessToken}/>}
-
-      </> : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
+      {selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : selectedCoin && !selectedCoin.inProgress ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled} liveMode={!paperAvailable}
         t={t} getAccessToken={getAccessToken} options={replayOptions[opened]||defaultReplayOption()}
