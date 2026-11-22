@@ -203,10 +203,10 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         enabled={enabled} userId={userId} getAccessToken={getAccessToken}
         side={request.body.side} stable={request.body.stable}
         amount={request.body.amount} t={t}/>}
-      {(from==='BNB'||to==='BNB')&&request&&<BnbLiveSwap
+      {(from==='BNB'||to==='BNB')&&<BnbLiveSwap
         enabled={enabled} userId={userId}
         side={from==='BNB'?'BUY':'SELL'} stable={from==='BNB'?to:from}
-        amount={request.body.amount} t={t}/>}
+        amount={amount} t={t}/>}
       {!ethManualPair&&from!=='BNB'&&to!=='BNB'&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
       </p>}
