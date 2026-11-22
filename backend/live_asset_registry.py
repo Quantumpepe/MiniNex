@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 # UI order for all twelve independent owner wallets and real-market engines.
 ASSET_ORDER = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
-               "AVAX", "LINK", "DOGE", "UNI", "ARB")
+               "AVAX", "LINK", "QNT", "UNI", "ARB")
 
 # Human-readable network metadata; actual venue/token details come from
 # exact source adapters rather than an additional global approval flag.
@@ -97,7 +97,9 @@ _REGISTRY_UNSORTED = (
         "Verify Ethereum LINK token address, decimals, allowances, fee and route",
     ),
     CoinNetwork(
-        "DOGE", "Dogecoin", "dogecoin-mainnet", "dogecoin-utxo", None,
+        "QNT", "Quant", "ethereum-mainnet", "evm-erc20", 1,
+        "Privy EVM wallet on Ethereum; QNT is an ERC-20 token, ETH pays network gas",
+        "QNT contract 0x4a220e6096b25eadb88358cb44068a3248254675",
         "Dedicated user-owned native Dogecoin wallet and separate signer required",
         ("USDC", "USDT"), "external-provider-required",
         "No native stablecoin settlement on Dogecoin mainnet; independently vet "
@@ -141,8 +143,8 @@ _MANDATORY_SAFETY_GATES = (
 # metadata, NOT a claim that an owner's Privy policy or native SELL signer
 # has been verified. The native BUY route is funded from the user's ETH
 # USDC/USDT wallet via THORChain; refunds/receipts are chain-specific.
-_EVM_SOURCES = frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
-_NATIVE_SOURCES = frozenset(("BTC","SOL","XRP","TRX","DOGE"))
+_EVM_SOURCES = frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB","QNT"))
+_NATIVE_SOURCES = frozenset(("BTC","SOL","XRP","TRX"))
 
 
 def get_asset(symbol: str) -> CoinNetwork:
