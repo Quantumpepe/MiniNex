@@ -180,8 +180,13 @@ export async function authorizeCentralEvmWalletCoin({
     if(typeof signMessage!=='function'){
       throw Error('Wallet scope extension requires a signature');
     }
+    const originalCoins=[...report.scope_coins];
     const stage=await request(root+'/extend/'+asset+'/prepare','POST');
     validateChallenge(stage,{asset,address});
+    if(stage.scope_coins.length!==originalCoins.length+1||
+       !originalCoins.every(coin=>stage.scope_coins.includes(coin))){
+      throw Error('Previously approved EVM coin was removed from wallet scope');
+    }
     // This is the ONE wallet confirmation for another EVM coin.
     const signed=await signMessage(
       {message:stage.challenge},{address},
@@ -205,11 +210,19 @@ export async function authorizeCentralEvmWalletCoin({
        result.new_coin!==asset||
        result.additional_signer_created!==false||
        result.remote_policy_verified!==true||
-       result.can_submit!==false){
+       result.can_submit!==false||
+       !Array.isArray(result.scope_coins)||
+       result.scope_coins.length!==originalCoins.length+1||
+       !originalCoins.every(coin=>result.scope_coins.includes(coin))){
       throw Error('Original Privy policy PATCH requires remote reconciliation');
     }
     report=requireStatus(await request(root+'/status'));
-    return requireCurrent(report,asset);
+    requireCurrent(report,asset);
+    if(report.scope_coins.length!==originalCoins.length+1||
+       !originalCoins.every(coin=>report.scope_coins.includes(coin))){
+      throw Error('Previously approved wallet signer or coin policy changed');
+    }
+    return report;
   }
   // An uncertain publish/patch, a revoked signer, or an existing draft for
   // another coin must NEVER be automatically retried or replaced.
