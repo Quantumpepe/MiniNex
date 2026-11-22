@@ -287,15 +287,27 @@ def _claim_native_sell_locked(
             or type(unfinished.get("pending")) is not int
             or unfinished["pending"]!=0):
         raise HTTPException(409,"Prior native SELL awaits its original swap")
-    cur.execute(
-        """INSERT INTO mininex_live_evm_native_sell_intents
-           (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
-            chain_id,stable,wallet_id,wallet_address,budget_revision,
-            amount_wei,request_digest,status)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
-        (did,asset,key,run_id,event_id,pair["chain_id"],stable,
-         record["wallet_id"],record["wallet_address"],
-         budget_revision,amount_wei,digest))
+    if central:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_native_sell_intents
+               (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
+                chain_id,stable,wallet_id,wallet_address,budget_revision,
+                amount_wei,request_digest,status,grant_source)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                       'SENDING','PRIVY_CENTRAL_ONE_SIGNER')""",
+            (did,asset,key,run_id,event_id,pair["chain_id"],stable,
+             record["wallet_id"],record["wallet_address"],
+             budget_revision,amount_wei,digest))
+    else:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_native_sell_intents
+               (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
+                chain_id,stable,wallet_id,wallet_address,budget_revision,
+                amount_wei,request_digest,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
+            (did,asset,key,run_id,event_id,pair["chain_id"],stable,
+             record["wallet_id"],record["wallet_address"],
+             budget_revision,amount_wei,digest))
 
 
 def _save_native_sell_result_locked(

@@ -152,7 +152,7 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
     _ensure_schema(db)
     query="""SELECT n.privy_did,n.asset,n.intent_key,n.strategy_run_id,
                           n.signal_event_id,n.stable,n.chain_id,
-                          n.budget_revision,n.amount_wei
+                          n.budget_revision,n.amount_wei,n.grant_source
                    FROM mininex_live_evm_native_sell_intents n
                    JOIN mininex_live_evm_auto_sessions s
                      ON s.privy_did=n.privy_did AND s.asset=n.asset
@@ -313,7 +313,9 @@ async def reconcile_native_sell_once(
                     did=row["privy_did"],asset=row["asset"],side="SELL",
                     stable=row["stable"],amount_atomic=int(atomic),
                     budget_revision=row["budget_revision"],
-                    signal_event_id=row["signal_event_id"],client=client)
+                    signal_event_id=row["signal_event_id"],client=client,
+                    **({"central":True} if row.get("grant_source")==
+                        "PRIVY_CENTRAL_ONE_SIGNER" else {}))
                 # This is at most an independently claimed approval, not a
                 # completed trade. Its original hash must finalize first.
                 result["pending"]+=1
@@ -323,7 +325,9 @@ async def reconcile_native_sell_once(
                 strategy_run_id=row["strategy_run_id"],
                 signal_event_id=row["signal_event_id"],
                 side="SELL",stable=row["stable"],amount=amount,
-                budget_revision=row["budget_revision"],client=client)
+                budget_revision=row["budget_revision"],client=client,
+                **({"central":True} if row.get("grant_source")==
+                    "PRIVY_CENTRAL_ONE_SIGNER" else {}))
             if sent.get("state")=="SUBMITTED":
                 result["original_swaps_submitted"]+=1
         except asyncio.CancelledError:

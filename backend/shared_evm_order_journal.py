@@ -54,7 +54,8 @@ def immutable_evm_send_identity(
     }
 
 
-def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
+def _claim_locked(cur,*,did:str,key:str,identity:dict,
+                  central:bool=False)->None:
     """Atomic per-wallet/per-chain claim, invoked only from an approved worker.
 
     The database lock ensures two engine slots on one network cannot race
@@ -193,15 +194,27 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
             raise HTTPException(503,"Cannot verify ETH native conversion status")
         if native["pending"]!=0:
             raise HTTPException(409,"An ETH native conversion is unresolved")
-    # No upsert: a repeated key conflicts even after a confirmed transaction.
-    cur.execute(
-        """INSERT INTO mininex_live_evm_auto_broadcasts
-           (privy_did,asset,chain_id,intent_key,wallet_address,wallet_id,
-            request_digest,side,stable,status)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
-        (did,asset,pair["chain_id"],key,identity["wallet_address"],
-         identity["wallet_id"],identity["request_digest"],
-         identity["side"],identity["stable"]))
+    # Existing rows use the LEGACY_COIN default; new central rows are
+    # identified for downstream native conversion and real PnL finality.
+    if central:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_auto_broadcasts
+               (privy_did,asset,chain_id,intent_key,wallet_address,wallet_id,
+                request_digest,side,stable,status,grant_source)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                       'SENDING','PRIVY_CENTRAL_ONE_SIGNER')""",
+            (did,asset,pair["chain_id"],key,identity["wallet_address"],
+             identity["wallet_id"],identity["request_digest"],
+             identity["side"],identity["stable"]))
+    else:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_auto_broadcasts
+               (privy_did,asset,chain_id,intent_key,wallet_address,wallet_id,
+                request_digest,side,stable,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
+            (did,asset,pair["chain_id"],key,identity["wallet_address"],
+             identity["wallet_id"],identity["request_digest"],
+             identity["side"],identity["stable"]))
 
 
 def _claim_authorized_evm_order_locked(
@@ -332,7 +345,10 @@ def _claim_authorized_evm_order_locked(
         raise HTTPException(409,"Owner has not started this coin's LIVE session")
     # This helper also atomically guards all unresolved same-wallet network
     # transactions, including ETH native conversions for LINK and UNI.
-    _claim_locked(cur,did=did,key=key,identity=identity)
+    _claim_locked(
+        cur,did=did,key=key,identity=identity,
+        **({"central":True} if central else {}),
+    )
     cur.execute(
         """UPDATE mininex_live_evm_budget_reservations
            SET state='SENDING',updated_at=now()

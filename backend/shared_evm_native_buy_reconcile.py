@@ -174,7 +174,7 @@ def original_native_buys_without_step(limit:int=20)->list[dict]:
     global _NATIVE_BUY_UNWRAP_PAGE_OFFSET
     db=_db_url()
     _ensure_schema(db)
-    query="""SELECT b.privy_did,b.asset,b.intent_key
+    query="""SELECT b.privy_did,b.asset,b.intent_key,b.grant_source
                    FROM mininex_live_evm_auto_broadcasts b
                    JOIN mininex_live_evm_verified_fills f
                      ON f.privy_did=b.privy_did AND f.asset=b.asset
@@ -248,7 +248,9 @@ async def reconcile_native_buy_cycle_once(*,client:httpx.AsyncClient,
         try:
             submitted=await submit_internal_native_evm_buy_completion(
                 did=row["privy_did"],asset=row["asset"],
-                intent_key=row["intent_key"],client=client)
+                intent_key=row["intent_key"],client=client,
+                **({"central":True} if row.get("grant_source")==
+                    "PRIVY_CENTRAL_ONE_SIGNER" else {}))
             if submitted.get("state")=="SUBMITTED":
                 result["new_native_sends"]+=1
         except asyncio.CancelledError:
