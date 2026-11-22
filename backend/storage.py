@@ -1320,6 +1320,13 @@ SCHEMA += (
     )""",
 )
 
+# New one-signer wallet grant tables do not change legacy grants or enable LIVE.
+from .shared_evm_wallet_policy_schema import WALLET_POLICY_SCHEMA
+from .shared_evm_central_runtime_schema import CENTRAL_EVM_SCHEMA
+SCHEMA += WALLET_POLICY_SCHEMA
+# Expands EXISTING journals in place without altering user grants/holds.
+SCHEMA += CENTRAL_EVM_SCHEMA
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

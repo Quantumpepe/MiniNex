@@ -20,7 +20,7 @@ from .shared_evm_swap_receipts import _pair
 
 _ADDR = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
-_ASSETS = frozenset(("BNB", "POL", "AVAX", "LINK", "UNI", "ARB"))
+_ASSETS = frozenset(("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB"))
 
 ERC20_TRANSFER_ABI = [{
     "type": "function", "name": "transfer",

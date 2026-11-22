@@ -24,7 +24,7 @@ from .storage import _db_url,_ensure_schema
 
 LOG=logging.getLogger("mininex.evm_auto_fee_finality")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _AUTO_FEE_FINALITY_LOCK=Lock()
 _AUTO_FEE_FINALITY_OFFSET=0
 

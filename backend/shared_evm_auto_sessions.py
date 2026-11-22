@@ -8,6 +8,7 @@ already committed blockchain transaction. Capital remains per-coin.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 import psycopg
 from fastapi import HTTPException
@@ -20,7 +21,7 @@ from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.evm_live_auto_sessions")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _require_asset(asset:object)->str:
@@ -40,19 +41,35 @@ def _remote_ready(report:object,asset:str)->None:
         raise HTTPException(409,"Current approved Privy owner grant is missing")
 
 
-def _start_locked(cur,*,did:str,asset:str)->dict:
-    """Lock independently verified consent/policy and current user budget."""
-    record=_read_grant_evidence_locked(cur,did=did,asset=asset)
-    cur.execute(
-        """SELECT stable,revision,budget_usd
-           FROM mininex_extra_coin_preferences
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    settings=cur.fetchone()
+def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
+    """Lock independently verified original Privy grant and selected coin budget."""
+    if central:
+        from .shared_evm_central_runtime import _locked_original_evm_coin
+        record=_locked_original_evm_coin(cur,did=did,asset=asset)
+    else:
+        record=_read_grant_evidence_locked(cur,did=did,asset=asset)
+    if central and asset=="ETH":
+        from .shared_evm_central_eth_settings import locked_original_eth_settings
+        settings=locked_original_eth_settings(
+            cur,did=did,stable=record["stable"],
+            revision=record["budget_revision"])
+        cur.execute(
+            "SELECT trading_paused FROM mininex_live_eth_limits "
+            "WHERE privy_did=%s FOR UPDATE",(did,))
+        paused=cur.fetchone()
+        if type(paused) is not dict or paused.get("trading_paused") is not True:
+            raise HTTPException(409,"Previous ETH trading engine is still active")
+    else:
+        cur.execute(
+            """SELECT stable,revision,budget_usd
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        settings=cur.fetchone()
     pair=_pair(asset,record["stable"],"BUY")
     if (type(settings) is not dict
             or settings.get("revision")!=record.get("budget_revision")
             or settings.get("stable")!=record["stable"]
-            or type(settings.get("budget_usd")) is not int
+            or type(settings.get("budget_usd")) not in (int,Decimal)
             or settings["budget_usd"]<=0
             or record.get("chain_id")!=pair["chain_id"]
             or record.get("wallet_address") is None):
@@ -99,19 +116,26 @@ def _stop_locked(cur,*,did:str,asset:str)->dict:
     }
 
 
-async def start_owner_evm_auto(did:str,asset:str)->dict:
+async def start_owner_evm_auto(
+    did:str,asset:str,*,central:bool=False,
+)->dict:
     did=_safe_did(did)
     asset=_require_asset(asset)
     # Must be independent live Privy REST readback, never a cached frontend
     # checkbox or an unverified 'policy ready' database string.
-    report=await get_owner_evm_remote_grant_audit(did,asset)
+    report=(await get_owner_evm_remote_grant_audit(
+        did,asset,central=True,
+    ) if central else await get_owner_evm_remote_grant_audit(did,asset))
     _remote_ready(report,asset)
     try:
         url=_db_url()
         _ensure_schema(url)
         with psycopg.connect(url,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                return _start_locked(cur,did=did,asset=asset)
+                return _start_locked(
+                    cur,did=did,asset=asset,
+                    **({"central":True} if central else {}),
+                )
     except psycopg.Error:
         LOG.warning("Owner EVM live session startup persistence unavailable")
         raise HTTPException(503,"Cannot durably start EVM live session") from None

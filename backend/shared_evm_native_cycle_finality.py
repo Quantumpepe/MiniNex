@@ -19,7 +19,7 @@ from .shared_native_evm_receipts import check_user_native_evm_conversion
 from .shared_evm_trade_cycle_proof import verify_evm_trade_cycle
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 
 

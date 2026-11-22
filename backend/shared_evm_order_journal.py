@@ -33,10 +33,11 @@ _ACTIVE=frozenset(("SENDING","SUBMITTED","RECONCILIATION_REQUIRED"))
 def immutable_evm_send_identity(
     *,asset:str,wallet_id:str,wallet:str,tx:dict,side:str,
     stable:str,input_atomic:str,minimum_output_atomic:str,
+    central:bool=False,
 )->dict:
     """Canonical identity based on actual Privy CAIP2 RPC, not UI values."""
-    if asset=="ETH":
-        raise ValueError("ETH uses its existing durable send journal")
+    if asset=="ETH" and not central:
+        raise ValueError("Legacy ETH keeps its existing durable send journal")
     pair=_pair(asset,stable,side)
     url,body=bound_privy_evm_swap_request(
         asset=asset,wallet_id=wallet_id,wallet=wallet,tx=tx,
@@ -54,20 +55,23 @@ def immutable_evm_send_identity(
     }
 
 
-def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
+def _claim_locked(cur,*,did:str,key:str,identity:dict,
+                  central:bool=False)->None:
     """Atomic per-wallet/per-chain claim, invoked only from an approved worker.
 
     The database lock ensures two engine slots on one network cannot race
     the same Privy account nonce. Different chains need not block each other.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI","ARB")
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")
             or type(identity.get("wallet_address")) is not str
             or not _ADDR.fullmatch(identity["wallet_address"])
             or type(identity.get("request_digest")) is not str
             or not _SHA.fullmatch(identity["request_digest"])):
         raise ValueError("Invalid durable EVM order identity")
     asset=identity["asset"]
+    if asset=="ETH" and not central:
+        raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if (identity.get("chain_id")!=pair["chain_id"]
             or identity.get("network")!=pair["network"]
@@ -193,20 +197,33 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
             raise HTTPException(503,"Cannot verify ETH native conversion status")
         if native["pending"]!=0:
             raise HTTPException(409,"An ETH native conversion is unresolved")
-    # No upsert: a repeated key conflicts even after a confirmed transaction.
-    cur.execute(
-        """INSERT INTO mininex_live_evm_auto_broadcasts
-           (privy_did,asset,chain_id,intent_key,wallet_address,wallet_id,
-            request_digest,side,stable,status)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
-        (did,asset,pair["chain_id"],key,identity["wallet_address"],
-         identity["wallet_id"],identity["request_digest"],
-         identity["side"],identity["stable"]))
+    # Existing rows use the LEGACY_COIN default; new central rows are
+    # identified for downstream native conversion and real PnL finality.
+    if central:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_auto_broadcasts
+               (privy_did,asset,chain_id,intent_key,wallet_address,wallet_id,
+                request_digest,side,stable,status,grant_source)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                       'SENDING','PRIVY_CENTRAL_ONE_SIGNER')""",
+            (did,asset,pair["chain_id"],key,identity["wallet_address"],
+             identity["wallet_id"],identity["request_digest"],
+             identity["side"],identity["stable"]))
+    else:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_auto_broadcasts
+               (privy_did,asset,chain_id,intent_key,wallet_address,wallet_id,
+                request_digest,side,stable,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
+            (did,asset,pair["chain_id"],key,identity["wallet_address"],
+             identity["wallet_id"],identity["request_digest"],
+             identity["side"],identity["stable"]))
 
 
 def _claim_authorized_evm_order_locked(
     cur,*,did:str,key:str,identity:dict,
-    quote_sha256:str,budget_revision:int,
+    quote_sha256:str,budget_revision:int,central:bool=False,
+    remote_verified_policy_sha256:str|None=None,
 )->None:
     """Atomic last-mile gate before any Privy RPC or signer use.
 
@@ -216,21 +233,34 @@ def _claim_authorized_evm_order_locked(
     been freshly verified by the caller before entering this transaction.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","UNI","ARB")
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")
+            or (identity.get("asset")=="ETH" and not central)
             or type(quote_sha256) is not str
             or not _SHA.fullmatch(quote_sha256)
             or type(budget_revision) is not int or budget_revision<1):
         raise ValueError("Unverified executable coin order")
     asset=identity["asset"]
+    if asset=="ETH" and not central:
+        raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
-    cur.execute(
-        """SELECT status,stable,chain_id,wallet_id,wallet_address,
-                  policy_id,remote_policy_sha256,policy_sha256,
-                  consent_sha256,expires_at,revoked_at,budget_revision,
-                  authorization_method,owner_id,signer_id,asset
-           FROM mininex_live_evm_owner_permissions
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    policy=cur.fetchone()
+    if central:
+        from .shared_evm_central_runtime import _locked_original_evm_coin
+        policy=_locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=identity["stable"],
+            revision=budget_revision,
+        )
+        if (type(remote_verified_policy_sha256) is not str
+                or policy["policy_sha256"]!=remote_verified_policy_sha256):
+            raise HTTPException(409,"Privy policy changed after remote audit")
+    else:
+        cur.execute(
+            """SELECT status,stable,chain_id,wallet_id,wallet_address,
+                      policy_id,remote_policy_sha256,policy_sha256,
+                      consent_sha256,expires_at,revoked_at,budget_revision,
+                      authorization_method,owner_id,signer_id,asset
+               FROM mininex_live_evm_owner_permissions
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        policy=cur.fetchone()
     from datetime import datetime,timezone
     if (type(policy) is not dict
             or policy.get("status")!="GRANT_VERIFIED"
@@ -248,7 +278,7 @@ def _claim_authorized_evm_order_locked(
             or policy["expires_at"]<=datetime.now(timezone.utc)):
         raise HTTPException(409,"Current owner-approved EVM signer grant required")
     single=policy.get("authorization_method")=="PRIVY_SCOPED_GRANT"
-    if not single:
+    if not single and not central:
         # Legacy authorization retains its original independent EIP-191
         # proof. A scoped Privy owner grant never inherits that pathway.
         cur.execute(
@@ -267,10 +297,15 @@ def _claim_authorized_evm_order_locked(
                 or consent.get("budget_revision")!=budget_revision
                 or consent.get("message_sha256")!=policy["consent_sha256"]):
             raise HTTPException(409,"Matching signed coin consent required")
-    cur.execute(
-        """SELECT stable,revision,budget_usd FROM mininex_extra_coin_preferences
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    settings=cur.fetchone()
+    if central and asset=="ETH":
+        from .shared_evm_central_eth_settings import locked_original_eth_settings
+        settings=locked_original_eth_settings(
+            cur,did=did,stable=identity["stable"],revision=budget_revision)
+    else:
+        cur.execute(
+            """SELECT stable,revision,budget_usd FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        settings=cur.fetchone()
     if (type(settings) is not dict
             or settings.get("revision")!=budget_revision
             or settings.get("stable")!=identity["stable"]):
@@ -321,7 +356,10 @@ def _claim_authorized_evm_order_locked(
         raise HTTPException(409,"Owner has not started this coin's LIVE session")
     # This helper also atomically guards all unresolved same-wallet network
     # transactions, including ETH native conversions for LINK and UNI.
-    _claim_locked(cur,did=did,key=key,identity=identity)
+    _claim_locked(
+        cur,did=did,key=key,identity=identity,
+        **({"central":True} if central else {}),
+    )
     cur.execute(
         """UPDATE mininex_live_evm_budget_reservations
            SET state='SENDING',updated_at=now()
@@ -403,7 +441,7 @@ def record_internal_authorized_evm_send_result(
     """Internal approved executor only, never a public HTTP writer."""
     did=_safe_did(did)
     key=valid_order_key(intent_key)
-    if (asset not in ("BNB","POL","AVAX","LINK","UNI","ARB")
+    if (asset not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB")
             or type(digest) is not str or not _SHA.fullmatch(digest)
             or tx_hash is not None and (
                 type(tx_hash) is not str or not _HASH.fullmatch(tx_hash))):

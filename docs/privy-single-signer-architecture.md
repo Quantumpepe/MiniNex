@@ -1,0 +1,172 @@
+# MiniNex: one backend signer, scoped policies for all 12 coins
+
+**Product requirement (2026-11-22):** The owner configures Privy once. Users log
+in and select a coin plus their own budget; when they press Start Trade they
+approve only the wallet authority required for that trading scope. No manual
+per-coin key quorum, no per-coin Render signer ENV, no global Allow-all policy.
+
+## Privy constraint
+
+Privy currently permits only **one override policy per additional signer on
+a given wallet**. Thus aliasing the existing six `MININEX_PRIVY_EVM_*_TRADE_SIGNER_ID`
+variables to the same quorum would **overwrite or conflict with other coins'
+policies**. Simply removing the existing uniqueness checks is prohibited.
+
+The same server-held signing key/quorum may be registered once and reused
+across user wallets. For each **EVM wallet**, create **one scoped combined policy**
+whose rules are the union of explicitly consented, budget-bound, chain-bound
+coin rules. Only one signer/policy pair belongs to that wallet. Each native
+wallet chain requires a separate policy with its own `chain_type`; use the
+same central technical key/quorum only where Privy actually supports that
+chain/signature type.
+
+## Existing and target scope
+
+- Existing ETH and six additional EVM coin LIVE routes remain separate
+  and continue unchanged until a verified migration. QNT is Ethereum ERC-20
+  but not yet in the original six-coin automatic LIVE grant routes.
+  The OFFLINE one-wallet composer now covers **all eight EVM assets**:
+  ETH, BNB, POL, AVAX, LINK, QNT, UNI and ARB.
+- Backend-only strict combined policy composer:
+  `backend/shared_evm_consolidated_wallet_policy.py` (**OFFLINE**).
+  `shared_evm_wallet_scope_transition.py` compares current/new policies
+  and produces an original-wallet-bound, short-lived EIP-191 challenge for
+  scope increases; no separate preliminary intent on first Privy addSigners.
+  `shared_evm_wallet_policy_intent_ledger.py` stores and consumes one-use
+  signed update intents under DB locks (no remote write).
+  `shared_evm_wallet_policy_schema.py` defines the durable wallet grant
+  and consent journals.
+  `shared_evm_wallet_policy_remote_review.py` strictly verifies the
+  original user wallet, single matching signer, rules and hashes.
+  A new authenticated **READ-ONLY** endpoint
+  `GET /api/live/evm/wallet-policy/status` independently verifies all
+  original budget revisions, Privy owner/signing quorum and policy.
+  The read-only endpoint cannot change a signer or start a LIVE trade.
+- **New first-wallet enrollment endpoints (implemented in the Draft branch):**
+  `POST /api/live/evm/wallet-policy/prepare/{asset}` builds an immutable
+  first-coin policy using the original user's saved capital and fresh
+  ETH/QNT/EVM quotes. `POST /api/live/evm/wallet-policy/publish` claims
+  a one-shot durable policy POST and independently reads Privy back;
+  uncertain POST results are never replayed. `GET
+  /api/live/evm/wallet-policy/grant-offer` returns the exact wallet-owner
+  approval request; after a single explicit Privy `addSigners` call,
+  `POST /api/live/evm/wallet-policy/confirm-grant` verifies the matching
+  signer, precise policy and original wallet using Privy GET before
+  recording `GRANT_VERIFIED`. None of these endpoints executes an
+  automatic trade, and the existing Android `Start Trade` is **NOT yet
+  connected** to them. Old per-coin signers cannot be silently replaced.
+  Backend tests cover all eight EVM assets, invalid budget revisions,
+  legacy signer races, duplicate grant attempts and remote mismatches.
+- **Existing-wallet extension now has a backend + Start Trade UI consent-to-PATCH
+  workflow in PR #208:** The user chooses one new EVM coin; the server
+  independently verifies the original wallet, sole signer, Policy Owner,
+  current policy and all coin budgets. A one-use, five-minute EIP-191
+  message authorizes exactly the added coin. After the user's EIP-191
+  confirmation, `POST /api/live/evm/wallet-policy/extend/apply`
+  durably claims **one** Policy-Owner-signed Privy PATCH, checks
+  original wallet and complete policy via Privy GET, and advances the
+  same wallet grant to the exact combined rules without a second signer.
+  Any uncertain remote result holds the local grant in
+  `UPDATE_UNCERTAIN` without retry. An authenticated
+  `POST /api/live/evm/wallet-policy/extend/reconcile` uses remote
+  GETs **only** to resolve a proven successful update, never repeats
+  the PATCH. The new original `Start Trade` UI is wired for ETH and
+  the six current additional LIVE EVM controls (BNB/POL/AVAX/LINK/UNI/ARB).
+  For a new wallet the first scoped coin needs ONE Privy `addSigners`
+  confirmation; another coin only needs ONE EIP-191 `signMessage`
+  to update the SAME signer/policy. A second click for an already
+  approved coin needs no further wallet prompt. Existing LEGACY
+  per-coin grants are preserved, never silently migrated.
+  **Important:** authorizing a combined policy does NOT start LIVE
+  trading. The EVM order sender, approval reservation, HWM fee, order
+  receipts, and worker are still bound to the previous per-coin
+  ledger. QNT is supported by the backend policy but has no visible
+  LIVE control yet. A new authenticated revocation endpoint,
+  `POST /api/live/evm/wallet-policy/confirm-revocation`, verifies
+  remote Privy signer absence after the user's `removeSigners`
+  action, then revokes the shared grant, terminates unused consents,
+  and pauses EVM sessions. No native BTC/SOL/XRP/TRX path changed.
+  The `/api/coin-preferences` API now accepts arbitrary positive
+  user-selected capital within JSON-safe integer transport bounds,
+  removing an unintended old 100–5,000 API limit.
+- **Verified backend CI:** [Run 45055610579](https://github.com/Quantumpepe/MiniNex/actions/runs/45055610579):
+  **5,163 passed, 0 failed** (1 warning). No real Privy PATCH or
+  on-chain trade has been claimed; PR #208 remains Draft/unmerged.
+- Future one-time owner configuration uses the already registered
+  `MiniNex-Backend-Signer-V2` quorum ID and matching existing P-256 key.
+  **Do not hardcode the dashboard quorum ID or introduce twelve new secrets.**
+- Wallet-specific aggregate policies must include *only* coins explicitly
+  enabled by that user and exactly the user's chosen budget. Other coins
+  default to DENY.
+- A new coin or larger budget must **not** silently expand an existing
+  wallet policy. At the user's Start Trade action, obtain affirmative wallet
+  consent and atomically update its one EVM policy under the policy owner;
+  verify Privy's current remote policy and the signer assignment.
+- Existing approvals, active orders and finalized receipts must be
+  reconciled before modifying or replacing an in-use permission. A pause or
+  revocation must immediately block future new orders without erasing
+  historical user transactions.
+- Trading fee rules remain exact, chain-specific, recipient-specific and
+  limited to 5% of independently verified net profit above HWM. A policy
+  rule authorizes *potential* fee transfers, not an actual liability.
+- Non-EVM assets BTC, SOL, XRP, TRX need chain-specific delegated signer
+  compatibility, source-wallet, nonce/UTXO, receipt, route, and finality
+  verification. A shared quorum by itself does **not** make them live.
+- User has **no additional work in Privy or Render** merely to represent
+  additional coins. A **Policy Owner quorum** remains distinct from the
+  technical trading signer ID. Privy requires an **authorization signature
+  from the policy owner quorum** to PATCH an existing policy. The read-only
+  diagnostic now checks if the existing pinned P-256 member actually belongs
+  to that registered owner quorum. If not, one legitimate owner signing
+  credential must be provisioned after verification; it must never be
+  replaced with an unrestricted or unsigned policy update.
+  This is a single operator-level issue, not per-coin setup.
+  Any unavoidable native-chain support limitations must be disclosed.
+
+## Implementation sequence and acceptance
+
+1. **DONE (offline):** Extend the strict EVM policy factory to ETH and
+   QNT, using exact Router02, native wrap for ETH and ERC-20 for QNT;
+   no new LIVE trading endpoints or owner grants.
+2. **DONE (foundations):** Add durable wallet-policy/one-use-consent tables,
+   original DID/wallet/coin budget revision checks, remote Policy Owner
+   quorum diagnostics and strictly pinned remote policy audit. An old
+   legacy grant never automatically becomes a shared wallet grant.
+3. **PARTIAL:** Existing user wallet scope expansion now has an
+   authenticated one-coin EIP-191 intent staging and confirmation:
+   `POST /api/live/evm/wallet-policy/extend/{asset}/prepare`,
+   `POST /api/live/evm/wallet-policy/extend/confirm`. Both validate
+   the current original wallet, backend signer, Privy policy and current
+   coin-budget revisions. They store an immutable, five-minute user-signed
+   policy digest. The backend now has the owner-signed,
+   once-claimed Privy PATCH plus separate read-only reconciliation,
+   always retaining the original signer. First-wallet owner
+   `addSigners` confirmation is independently verified.
+   **Still OPEN:** frontend Start Trade, LIVE worker/grant migration,
+   real user/Privy signing confirmation and one-wallet multicoin
+   execution validation. Never silently migrate an existing signer.
+4. **PARTIAL:** `Start Trade` can now establish or extend the
+   common Privy policy with one wallet action and correctly report
+   authorization-only state. The user still cannot start a new central
+   LIVE order session until all worker/fee paths are rewired.
+   An existing legacy grant requires explicit migration.
+5. Rewire all EVM auto-order, receipt, HWM fee and pause/revoke checks to
+   the wallet-wide grant plus separate per-coin budget. Migrate legacy
+   per-coin grants with owner approval, never silently.
+6. Implement native BTC, SOL, XRP, TRX under their actual supported wallet
+   APIs and per-chain policy types; do not infer chain authority.
+7. Confirm CI, Privy SDK integration, two simultaneous EVM coins and both
+   sequential grant increases, reject unsupported token/recipient,
+   revoke/paused cases, then explicit owner-approved mainnet smoke tests.
+
+**Current verified progress (2026-11-22):** Draft PR #208 is isolated
+from `main` and Render. See GitHub backend auth checks for this branch.
+The new status endpoint is owner-authenticated and read-only. New initial
+policy preparation, publication and signed-wallet grant confirmation
+endpoints are also implemented but **not wired to the production frontend
+or LIVE worker**; production Start Trade, native coins, and per-coin
+signers have NOT been switched to this design.
+
+**Release gate:** Not complete until multi-coin trading from one original EVM
+wallet is proven without creating extra quorums and without either policy
+overriding the other; all 12 coins require independent evidence.

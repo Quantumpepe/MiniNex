@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from .shared_evm_swap_receipts import _pair
 
 _NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
-_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","UNI","ARB"))
+_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _amount(value:object)->Decimal:

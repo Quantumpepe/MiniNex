@@ -65,7 +65,7 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
                               tx:object,receipt:object,
                               finalized:object,canonical:object=None)->str|None:
     if type(row) is not dict or row.get("asset") not in (
-            "BNB","POL","AVAX","LINK","UNI","ARB","BTC","SOL","XRP",
+            "ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","SOL","XRP",
             "TRX","DOGE"):
         raise ValueError("Unsupported originally submitted approval")
     mode=row.get("approval_mode","ROUTER02_FINITE")
@@ -167,7 +167,7 @@ async def reconcile_original_router_approvals_once(
     for row in rows:
         try:
             asset=row["asset"]
-            if asset in ("LINK","UNI","BTC","SOL","XRP","TRX","DOGE"):
+            if asset in ("ETH","LINK","QNT","UNI","BTC","SOL","XRP","TRX","DOGE"):
                 chain,network,fallback,env=_RPC["ETH_TOKENS"]
             elif asset=="ARB":
                 chain,network,fallback,env=_RPC["ARB_TOKENS"]

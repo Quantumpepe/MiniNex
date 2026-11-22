@@ -117,7 +117,7 @@ def test_single_owner_granted_live_worker_also_enables_real_hwm_fee_reconciliati
     monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_EVM_AUTO_FEES_ENABLED",raising=False)
-    assert autosend.automatic_fee_transfer_worker_enabled() is False
+    assert autosend.automatic_fee_transfer_worker_enabled() is True
     monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
     assert autosend.automatic_fee_transfer_worker_enabled() is True
     monkeypatch.setenv("MININEX_EVM_AUTO_FEES_ENABLED","disabled")

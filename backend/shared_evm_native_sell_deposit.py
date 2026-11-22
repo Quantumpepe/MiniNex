@@ -34,7 +34,7 @@ from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .eth_privy_p256_signer import sign_privy_rpc_payload
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 _SIG=re.compile(r"^[0-9a-f]{64}$")
 _FLAGS=("owner_wallet_current","exact_remote_policy_rules_verified",
         "privy_additional_signer_scoped","backend_quorum_current",
@@ -92,7 +92,7 @@ async def estimate_native_sell_fee_reserve(
     wallet=source_evidence.get("wallet_address")
     if type(wallet) is not str or not re.fullmatch(r"0x[0-9a-f]{40}",wallet):
         raise ValueError("Missing verified owner wallet")
-    chain,network,fallback,env=_RPC[asset]
+    chain,network,fallback,env=_RPC["ETH_TOKENS" if asset=="ETH" else asset]
     if (chain!=pair["chain_id"] or network!=pair["network"]):
         raise ValueError("Native gas route differs from onchain pair")
     url=os.getenv(env,"").strip() or fallback
@@ -123,6 +123,7 @@ async def estimate_native_sell_fee_reserve(
 async def prepare_original_native_sell_amount(
     *,did:str,asset:str,stable:str,source_evidence:dict,
     client:httpx.AsyncClient,
+    central:bool=False,
 )->int:
     """Use exact owner native balance minus real gas and owner Privy policy."""
     did=_safe_did(did)
@@ -138,13 +139,26 @@ async def prepare_original_native_sell_amount(
             or source_evidence.get("wallet_identity_verified") is not True
             or type(source_evidence.get("native_gas_balance_atomic")) is not str):
         raise ValueError("Unverified native wallet inventory")
-    record=await asyncio.to_thread(_read_grant_record,did,asset)
+    record=await asyncio.to_thread(
+        _read_grant_record,did,asset,
+        **({"central":True} if central else {}),
+    )
     if (record.get("wallet_address")!=source_evidence.get("wallet_address")
             or record.get("stable")!=stable
             or record.get("chain_id")!=pair["chain_id"]):
         raise HTTPException(409,"Native SELL wallet grant differs from owner")
-    expected=validate_pinned_evm_policy(record,asset=asset,now=int(time.time()))
-    cap=_lte(expected["rules"][2],"value")
+    if central:
+        from .shared_evm_central_runtime import central_policy_rule
+        native_rule=central_policy_rule(
+            record,asset=asset,kind="native_deposit",
+            stable=stable,now=int(time.time()),
+        )
+    else:
+        expected=validate_pinned_evm_policy(
+            record,asset=asset,now=int(time.time()),
+        )
+        native_rule=expected["rules"][2]
+    cap=_lte(native_rule,"value")
     gas=await estimate_native_sell_fee_reserve(
         asset=asset,stable=stable,source_evidence=source_evidence,client=client)
     return exact_native_sell_wei(
@@ -155,6 +169,7 @@ async def prepare_original_native_sell_amount(
 def _claim_native_sell_locked(
     cur,*,did:str,asset:str,key:str,run_id:str,event_id:str,
     record:dict,amount_wei:int,digest:str,budget_revision:int,
+    central:bool=False,remote_verified_policy_sha256:str|None=None,
 )->None:
     if (asset not in _NATIVE or type(record) is not dict
             or type(amount_wei) is not int or not 0<amount_wei<10**45
@@ -166,9 +181,28 @@ def _claim_native_sell_locked(
             did=did,asset=asset,side="SELL",stable=stable,
             strategy_run_id=run_id,signal_event_id=event_id)):
         raise ValueError("Native original strategy signal changed")
-    grant=_read_grant_evidence_locked(cur,did=did,asset=asset)
-    policy=validate_pinned_evm_policy(grant,asset=asset,now=int(time.time()))
-    cap=int(_lte(policy["rules"][2],"value"))
+    if central:
+        from .shared_evm_central_runtime import (
+            _locked_original_evm_coin,central_policy_rule,
+        )
+        grant=_locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=stable,
+            revision=budget_revision,
+        )
+        if (type(remote_verified_policy_sha256) is not str
+                or grant["policy_sha256"]!=remote_verified_policy_sha256):
+            raise HTTPException(409,"Original native Privy remote scope changed")
+        native_rule=central_policy_rule(
+            grant,asset=asset,kind="native_deposit",
+            stable=stable,now=int(time.time()),
+        )
+    else:
+        grant=_read_grant_evidence_locked(cur,did=did,asset=asset)
+        policy=validate_pinned_evm_policy(
+            grant,asset=asset,now=int(time.time()),
+        )
+        native_rule=policy["rules"][2]
+    cap=int(_lte(native_rule,"value"))
     if (grant.get("wallet_id")!=record.get("wallet_id")
             or grant.get("wallet_address")!=record.get("wallet_address")
             or grant.get("policy_sha256")!=record.get("policy_sha256")
@@ -253,15 +287,27 @@ def _claim_native_sell_locked(
             or type(unfinished.get("pending")) is not int
             or unfinished["pending"]!=0):
         raise HTTPException(409,"Prior native SELL awaits its original swap")
-    cur.execute(
-        """INSERT INTO mininex_live_evm_native_sell_intents
-           (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
-            chain_id,stable,wallet_id,wallet_address,budget_revision,
-            amount_wei,request_digest,status)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
-        (did,asset,key,run_id,event_id,pair["chain_id"],stable,
-         record["wallet_id"],record["wallet_address"],
-         budget_revision,amount_wei,digest))
+    if central:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_native_sell_intents
+               (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
+                chain_id,stable,wallet_id,wallet_address,budget_revision,
+                amount_wei,request_digest,status,grant_source)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                       'SENDING','PRIVY_CENTRAL_ONE_SIGNER')""",
+            (did,asset,key,run_id,event_id,pair["chain_id"],stable,
+             record["wallet_id"],record["wallet_address"],
+             budget_revision,amount_wei,digest))
+    else:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_native_sell_intents
+               (privy_did,asset,intent_key,strategy_run_id,signal_event_id,
+                chain_id,stable,wallet_id,wallet_address,budget_revision,
+                amount_wei,request_digest,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
+            (did,asset,key,run_id,event_id,pair["chain_id"],stable,
+             record["wallet_id"],record["wallet_address"],
+             budget_revision,amount_wei,digest))
 
 
 def _save_native_sell_result_locked(
@@ -290,17 +336,28 @@ def _save_native_sell_result(**kwargs):
 async def submit_internal_native_evm_sell_deposit(
     *,did:str,asset:str,strategy_run_id:str,signal_event_id:str,
     budget_revision:int,native_amount_wei:int,client:httpx.AsyncClient,
+    central:bool=False,
 )->dict:
     did=_safe_did(did)
     if (asset not in _NATIVE or type(budget_revision) is not int
             or budget_revision<1 or type(client) is not httpx.AsyncClient):
         raise ValueError("Invalid internal native SELL event")
-    report=await get_owner_evm_remote_grant_audit(did,asset)
+    report=(await get_owner_evm_remote_grant_audit(
+        did,asset,central=True,
+    ) if central else await get_owner_evm_remote_grant_audit(did,asset))
     if type(report) is not dict or report.get("asset")!=asset or any(
         report.get(field) is not True for field in _FLAGS
     ):
         raise HTTPException(409,"Current owner-approved native SELL grant missing")
-    record=await asyncio.to_thread(_read_grant_record,did,asset)
+    record=await asyncio.to_thread(
+        _read_grant_record,did,asset,
+        **({"central":True} if central else {}),
+    )
+    if central and (
+        record["policy_sha256"]!=report.get("remote_verified_policy_sha256")
+        or record["wallet_id"]!=report.get("remote_verified_wallet_id")
+    ):
+        raise HTTPException(409,"Original native SELL wallet remote grant changed")
     key=derive_evm_strategy_signal_key(
         did=did,asset=asset,side="SELL",stable=record["stable"],
         strategy_run_id=strategy_run_id,signal_event_id=signal_event_id)
@@ -328,7 +385,12 @@ async def submit_internal_native_evm_sell_deposit(
                     cur,did=did,asset=asset,key=key,
                     run_id=strategy_run_id,event_id=signal_event_id,
                     record=record,amount_wei=native_amount_wei,
-                    budget_revision=budget_revision,digest=digest)
+                    budget_revision=budget_revision,digest=digest,
+                    **({
+                        "central":True,
+                        "remote_verified_policy_sha256":
+                            report["remote_verified_policy_sha256"],
+                    } if central else {}))
     except psycopg.Error:
         raise HTTPException(503,"Native SELL original order claim unavailable") from None
     native_key=native_sell_deposit_key(did,asset,key)

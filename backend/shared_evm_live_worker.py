@@ -47,8 +47,8 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
 _INTERVAL_SECONDS=30
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 
 # Rotate the worker query across all owner-activated sessions. This is a
 # database work page only; it never restricts trading volumes or active users.
@@ -94,7 +94,16 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
     _ensure_schema(db)
     sql="""SELECT s.privy_did,s.asset,s.stable,s.chain_id,
                           s.budget_revision,s.started_by_owner_at,
-                          p.budget_usd,p.mode,p.horizon,
+                          COALESCE(p.budget_usd::numeric,l.planned_capital_usd)
+                             AS budget_usd,
+                           COALESCE(p.mode,t.mode) AS mode,
+                           COALESCE(p.horizon,t.horizon) AS horizon,
+                          (c.status='GRANT_VERIFIED'
+                           AND c.revoked_at IS NULL
+                           AND c.legacy_reconciliation_required=FALSE
+                           AND c.scopes_json ? s.asset
+                           AND c.revisions_json->>s.asset=s.budget_revision::text)
+                             AS central,
                           COALESCE((
                               SELECT SUM(r.amount_usd)
                               FROM mininex_live_evm_budget_reservations r
@@ -105,19 +114,46 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                                    'RECONCILIATION_REQUIRED')
                           ),0) AS pending_buy_usd
                    FROM mininex_live_evm_auto_sessions s
-                   JOIN mininex_extra_coin_preferences p
+                   LEFT JOIN mininex_extra_coin_preferences p
                      ON p.privy_did=s.privy_did AND p.asset=s.asset
-                   JOIN mininex_live_evm_owner_permissions g
+                    AND s.asset<>'ETH'
+                   LEFT JOIN mininex_live_eth_limits l
+                     ON l.privy_did=s.privy_did AND s.asset='ETH'
+                   LEFT JOIN mininex_trade_preferences t
+                     ON t.privy_did=s.privy_did AND t.asset='ETH'
+                    AND s.asset='ETH'
+                   LEFT JOIN mininex_live_evm_owner_permissions g
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
+                   LEFT JOIN mininex_live_evm_wallet_policy_grants c
+                     ON c.privy_did=s.privy_did
                    WHERE s.status='ACTIVE'
-                     AND s.asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
+                     AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
-                     AND p.revision=s.budget_revision
-                     AND p.stable=s.stable
-                     AND g.status='GRANT_VERIFIED'
-                     AND g.revoked_at IS NULL
-                     AND g.expires_at>now()
-                     AND g.budget_revision=s.budget_revision
+                     AND (
+                          (s.asset='ETH'
+                           AND l.revision=s.budget_revision
+                           AND t.stable=s.stable
+                           AND l.trading_paused=TRUE)
+                          OR
+                          (s.asset<>'ETH'
+                           AND p.revision=s.budget_revision
+                           AND p.stable=s.stable)
+                     )
+                     AND (
+                       (g.status='GRANT_VERIFIED' AND g.revoked_at IS NULL
+                        AND g.expires_at>now()
+                        AND g.budget_revision=s.budget_revision)
+                       OR
+                       (c.status='GRANT_VERIFIED'
+                        AND c.revoked_at IS NULL
+                        AND c.legacy_reconciliation_required=FALSE
+                        AND c.wallet_address=s.wallet_address
+                        AND c.scopes_json ? s.asset
+                        AND c.scopes_json->s.asset->>'stable'=s.stable
+                        AND c.revisions_json->>s.asset=s.budget_revision::text
+                        AND (c.scopes_json->s.asset->>'expires_at')::bigint>
+                            extract(epoch from now())::bigint)
+                     )
                    ORDER BY s.updated_at ASC,s.privy_did,s.asset
                    LIMIT %s OFFSET %s"""
     with _EVM_SESSION_PAGE_LOCK:
@@ -146,7 +182,7 @@ def _trusted_live_session(row:dict)->dict:
     except (ArithmeticError,ValueError,TypeError):
         raise ValueError("Unverified outstanding coin buy capital") from None
     if (type(started) is not datetime or started.tzinfo is None
-            or type(row.get("budget_usd")) is not int
+            or type(row.get("budget_usd")) not in (int,Decimal)
             or row["budget_usd"]<=0
             or type(row.get("budget_revision")) is not int
             or row["budget_revision"]<=0
@@ -170,7 +206,7 @@ def exact_user_coin_live_amount(
     Native gas remains independent of the EVM ERC20 source amount.
     """
     pair=_pair(asset,stable,side)
-    if (type(budget_usd) is not int or budget_usd<=0
+    if (type(budget_usd) not in (int,Decimal) or budget_usd<=0
             or type(source_evidence) is not dict
             or source_evidence.get("mode")!="SHARED_EVM_SOURCE_ALLOWANCE_READ_ONLY"
             or source_evidence.get("asset")!=asset
@@ -267,12 +303,14 @@ async def execute_owner_evm_live_tick(
                         "reason":"ORIGINAL_NATIVE_SELL_CYCLE_REQUIRED"}
             amount_wei=await prepare_original_native_sell_amount(
                 did=did,asset=asset,stable=stable,
-                source_evidence=evidence,client=client)
+                source_evidence=evidence,client=client,
+                **({"central":True} if row.get("central") is True else {}))
             return await submit_internal_native_evm_sell_deposit(
                 did=did,asset=asset,strategy_run_id=run,
                 signal_event_id=event,
                 budget_revision=row["budget_revision"],
-                native_amount_wei=amount_wei,client=client)
+                native_amount_wei=amount_wei,client=client,
+                **({"central":True} if row.get("central") is True else {}))
         except (ValueError,KeyError,ArithmeticError):
             return {"asset":asset,"state":"WAIT",
                     "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}
@@ -306,7 +344,8 @@ async def execute_owner_evm_live_tick(
             did=did,asset=asset,side=side,stable=stable,
             amount_atomic=int(required_atomic),
             budget_revision=row["budget_revision"],
-            signal_event_id=event,client=client)
+            signal_event_id=event,client=client,
+            **({"central":True} if row.get("central") is True else {}))
         return {"asset":asset,"state":submitted["state"],
                 "reason":"ORIGINAL_ROUTER_APPROVAL_BEFORE_SWAP",
                 "approval_tx_hash":submitted.get("tx_hash")}
@@ -316,7 +355,8 @@ async def execute_owner_evm_live_tick(
     return await execute_internal_evm_strategy_signal(
         did=did,asset=asset,strategy_run_id=run,
         signal_event_id=event,side=side,stable=stable,amount=amount,
-        budget_revision=row["budget_revision"],client=client)
+        budget_revision=row["budget_revision"],client=client,
+        **({"central":True} if row.get("central") is True else {}))
 
 
 async def run_owner_evm_live_batch(

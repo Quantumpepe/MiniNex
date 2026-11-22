@@ -17,14 +17,14 @@ def params(asset,stable):
         buy_source_atomic_cap="123000000000000000",
         sell_source_atomic_cap="1000000000000000000",
         native_wrap_atomic_cap=(
-            "1000000000000000000" if asset in ("BNB","POL","AVAX") else None),
+            "1000000000000000000" if asset in ("ETH","BNB","POL","AVAX") else None),
         expires_at=2000000000,now=1999990000,
     )
 
 
 @pytest.mark.parametrize("asset,stable,chain,rule_count",[
-    ("BNB","USDT",56,4),("POL","USDC",137,4),
-    ("AVAX","USDC",43114,4),("LINK","USDC",1,2),
+    ("ETH","USDC",1,4),("BNB","USDT",56,4),("POL","USDC",137,4),
+    ("AVAX","USDC",43114,4),("LINK","USDC",1,2),("QNT","USDC",1,2),
     ("UNI","USDT",1,2),
 ])
 def test_all_five_assets_share_exact_privy_chain_bound_rules(
@@ -58,8 +58,8 @@ def test_all_five_assets_share_exact_privy_chain_bound_rules(
 
 
 @pytest.mark.parametrize("asset,stable",[
-    ("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
-    ("LINK","USDC"),("UNI","USDT"),
+    ("ETH","USDC"),("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
+    ("LINK","USDC"),("QNT","USDC"),("UNI","USDT"),
 ])
 @pytest.mark.parametrize("tamper",[
     lambda p:p["rules"][0]["conditions"].pop(),
@@ -78,7 +78,7 @@ def test_privy_blueprint_rejects_missing_replaced_or_broad_allow_rules(
 
 
 @pytest.mark.parametrize("asset,stable",[
-    ("ETH","USDC"),("BTC","USDC"),
+    ("BTC","USDC"),
     ("LINK","DAI"),("AVAX","USDT"),
     ("BNB","USDC"),
 ])

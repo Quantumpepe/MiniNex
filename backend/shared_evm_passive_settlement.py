@@ -21,7 +21,7 @@ from .storage import _db_url, _ensure_schema
 
 LOG=logging.getLogger("mininex.evm_passive_settlement")
 _INTERVAL_SECONDS=30
-_SUPPORTED=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_SUPPORTED=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _PASSIVE_PAGE_LOCK=Lock()
 _PASSIVE_PAGE_OFFSET=0
 
@@ -55,7 +55,7 @@ def _pending_submitted(limit:int=25)->list[dict]:
     sql="""SELECT privy_did,asset,intent_key,tx_hash,side,stable,chain_id
            FROM mininex_live_evm_auto_broadcasts
            WHERE status='SUBMITTED' AND tx_hash IS NOT NULL
-             AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')
+             AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
            ORDER BY created_at ASC,privy_did,asset,intent_key
            LIMIT %s OFFSET %s"""
     with _PASSIVE_PAGE_LOCK:

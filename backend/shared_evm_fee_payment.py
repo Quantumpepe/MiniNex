@@ -30,7 +30,7 @@ from .wallet_balances import verified_addresses
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.evm_verified_fee_payment")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 
 

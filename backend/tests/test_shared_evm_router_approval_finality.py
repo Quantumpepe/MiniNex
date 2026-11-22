@@ -11,7 +11,7 @@ BLOCK="0x"+"ef"*32
 
 @pytest.mark.parametrize("asset,stable",[
     ("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
-    ("LINK","USDC"),("UNI","USDT"),("ARB","USDC"),
+    ("LINK","USDC"),("QNT","USDC"),("UNI","USDT"),("ARB","USDC"),
 ])
 def test_exact_original_allowance_finality_and_reorg_guards(asset,stable):
     pair=_pair(asset,stable,"BUY")

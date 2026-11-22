@@ -105,7 +105,7 @@ def test_original_usd_capture_prioritizes_newest_finalized_arb_token_fill(monkey
     monkeypatch.setattr(worker,"_USD_FILL_PAGE_OFFSET",0)
     assert worker._read_pending_original_usd_fills(limit=40)==[]
     sql,params=queries[0]
-    assert "f.asset IN ('LINK','UNI','ARB')" in sql
+    assert "f.asset IN ('LINK','QNT','UNI','ARB')" in sql
     assert "b.status='FINALIZED_SUCCESS'" in sql
     assert "ORDER BY f.created_at DESC" in sql
     assert "n.quoted_asset='ETH'" in sql  # ARB pays native gas in ETH

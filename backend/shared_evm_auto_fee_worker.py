@@ -112,8 +112,10 @@ def _pending_combined_grant_fee_obligations(limit:int=25)->list[dict]:
               JOIN mininex_live_evm_auto_broadcasts b
                 ON b.privy_did=o.privy_did AND b.asset=o.asset
                AND b.intent_key=o.execution_id
-              JOIN mininex_live_evm_owner_permissions g
+              LEFT JOIN mininex_live_evm_owner_permissions g
                 ON g.privy_did=o.privy_did AND g.asset=o.asset
+              LEFT JOIN mininex_live_evm_wallet_policy_grants c
+                ON c.privy_did=o.privy_did
               LEFT JOIN mininex_evm_fee_auto_permissions separate
                 ON separate.privy_did=o.privy_did
                AND separate.asset=o.asset
@@ -129,16 +131,34 @@ def _pending_combined_grant_fee_obligations(limit:int=25)->list[dict]:
                 AND o.fee_due_usd>0
                 AND b.status='FINALIZED_SUCCESS' AND b.side='SELL'
                 AND e.source_tx_hash=b.tx_hash
-                AND b.wallet_address=g.wallet_address
-                AND b.stable=g.stable AND b.chain_id=g.chain_id
-                AND g.authorization_method='PRIVY_SCOPED_GRANT'
-                AND g.status='GRANT_VERIFIED'
-                AND g.grant_verified_at IS NOT NULL
-                AND g.consent_verified_at IS NOT NULL
-                AND g.revoked_at IS NULL
-                AND g.expires_at>now()
-                AND g.policy_id IS NOT NULL
-                AND g.remote_policy_sha256=g.policy_sha256
+                AND (
+                  (
+                    b.wallet_address=g.wallet_address
+                    AND b.stable=g.stable AND b.chain_id=g.chain_id
+                    AND g.authorization_method='PRIVY_SCOPED_GRANT'
+                    AND g.status='GRANT_VERIFIED'
+                    AND g.grant_verified_at IS NOT NULL
+                    AND g.consent_verified_at IS NOT NULL
+                    AND g.revoked_at IS NULL
+                    AND g.expires_at>now()
+                    AND g.policy_id IS NOT NULL
+                    AND g.remote_policy_sha256=g.policy_sha256
+                  )
+                  OR
+                  (
+                    c.status='GRANT_VERIFIED'
+                    AND c.revoked_at IS NULL
+                    AND c.legacy_reconciliation_required=FALSE
+                    AND c.original_owner_granted_at IS NOT NULL
+                    AND c.policy_id IS NOT NULL
+                    AND c.policy_sha256 IS NOT NULL
+                    AND c.wallet_address=b.wallet_address
+                    AND c.scopes_json ? o.asset
+                    AND c.scopes_json->o.asset->>'stable'=b.stable
+                    AND (c.scopes_json->o.asset->>'expires_at')::bigint>
+                        extract(epoch from now())::bigint
+                  )
+                )
                 AND separate.privy_did IS NULL
                 AND p.execution_id IS NULL AND a.execution_id IS NULL
               ORDER BY o.created_at,o.privy_did,o.asset,o.execution_id

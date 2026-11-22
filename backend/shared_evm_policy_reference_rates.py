@@ -20,7 +20,7 @@ from .coingecko_provider import coingecko_request_settings, COIN_IDS
 
 LOG=logging.getLogger("mininex.evm_policy_market_caps")
 _IDS={asset:COIN_IDS[asset] for asset in (
-    "BNB","POL","AVAX","LINK","UNI","ARB","USDC","USDT"
+    "ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","USDC","USDT"
 )}
 # All active EVM coins share ONE bounded reference quote, not one API request
 # for every user/coin on each strategy tick. It is not a trading throttle:
@@ -62,14 +62,20 @@ def derive_user_budget_evm_atomic_caps(
     coin owner can change their configured budget; that changes its revision
     and requires a new signed policy, not silent reuse of an old grant.
     """
-    if (type(budget_usd) is not int or budget_usd<=0
-            or type(now) is not int or now<=0):
+    if type(budget_usd) not in (int, Decimal, str):
+        raise ValueError("Exact user-selected USD budget required")
+    try:
+        budget = Decimal(str(budget_usd))
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError("Exact user-selected USD budget required") from None
+    if (not budget.is_finite() or budget <= 0
+            or budget.as_tuple().exponent < -6
+            or type(now) is not int or now <= 0):
         raise ValueError("Exact user-selected USD budget required")
     pair=_pair(asset,stable,"BUY")
     native=_pair(asset,stable,"SELL")
     price_coin=_price(snapshot,asset,now)
     price_stable=_price(snapshot,stable,now)
-    budget=Decimal(budget_usd)
     buy=int((budget/price_stable*
              (Decimal(10)**pair["source_decimals"])).to_integral_value(
                  rounding=ROUND_FLOOR))
@@ -82,8 +88,9 @@ def derive_user_budget_evm_atomic_caps(
         "buy_source_atomic_cap":str(buy),
         "sell_source_atomic_cap":str(sell),
         "native_wrap_atomic_cap":(
-            str(sell) if asset in ("BNB","POL","AVAX") else None),
-        "budget_usd_user_selected":budget_usd,
+            str(sell) if asset in ("ETH","BNB","POL","AVAX") else None),
+        "budget_usd_user_selected":(budget_usd if type(budget_usd) is int
+                                     else format(budget,"f")),
         "pricing_snapshot_unix":now,
         "price_feed":"COINGECKO_REFERENCE_ONLY",
         "swap_quote_ready":False,

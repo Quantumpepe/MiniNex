@@ -77,7 +77,7 @@ test('each coin panel displays only its own network address or remains unavailab
   for(const symbol of ['BNB','POL','SOL','TRX']) {
     assert.match(walletUI,new RegExp("asset==='"+symbol+"'"));
   }
-  assert.match(walletUI,/\['BNB','POL','AVAX','LINK','UNI','ARB'\]\.includes\(asset\)/);
+  assert.match(walletUI,/\['BNB','POL','AVAX','LINK','QNT','UNI','ARB'\]\.includes\(asset\)/);
   assert.match(walletUI,/evmNetworkAddress\(chain,address\)/);
   assert.match(walletUI,/extraWallets\.solana/);
   assert.match(walletUI,/extraWallets\.tron/);

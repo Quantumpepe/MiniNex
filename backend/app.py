@@ -70,6 +70,19 @@ from .shared_evm_swap_receipts import check_user_evm_swap
 from .shared_evm_fill_history import get_owner_evm_fill_history
 from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
+from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
+from .shared_evm_wallet_policy_prepare import prepare_owner_central_evm_wallet_policy
+from .shared_evm_wallet_policy_publish import publish_initial_owner_wallet_policy
+from .shared_evm_wallet_policy_revoke import confirm_original_wallet_policy_revocation
+from .shared_evm_wallet_policy_update import (
+    apply_original_wallet_coin_extension,reconcile_original_wallet_extension,
+)
+from .shared_evm_wallet_policy_extend import (
+    prepare_existing_wallet_coin_extension, confirm_existing_wallet_coin_extension,
+)
+from .shared_evm_wallet_policy_grant import (
+    get_original_one_signer_grant_offer,confirm_original_one_signer_grant,
+)
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
@@ -1019,9 +1032,181 @@ async def owner_confirm_signed_evm_fee_payment(
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
+@app.get("/api/live/evm/wallet-policy/grant-offer")
+async def owner_one_signer_central_evm_grant_offer(
+    authorization: str | None = Header(default=None),
+):
+    """Independently verify original one-signer grant before Privy UI."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await get_original_one_signer_grant_offer(did)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/confirm-grant")
+async def owner_confirm_one_signer_central_evm_grant(
+    authorization: str | None = Header(default=None),
+):
+    """Independently re-read actual Privy addSigners result, then persist."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await confirm_original_one_signer_grant(did)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
+class CentralWalletScopeSignatureRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    nonce: str = Field(min_length=64,max_length=64,pattern=r"^[0-9a-f]{64}$")
+    signature: str = Field(
+        min_length=132,max_length=132,pattern=r"^0x[0-9a-fA-F]{130}$")
+
+
+class CentralEvmScopeApplyRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    nonce: str = Field(min_length=64,max_length=64,pattern=r"^[0-9a-f]{64}$")
+
+
+@app.post("/api/live/evm/wallet-policy/confirm-revocation")
+async def owner_confirm_central_evm_wallet_signer_removed(
+    authorization: str | None = Header(default=None),
+):
+    """Confirm Privy user-controlled signer removal, stop all future EVM orders."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await confirm_original_wallet_policy_revocation(did)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/extend/reconcile")
+async def owner_reconcile_original_wallet_policy_update(
+    request: CentralEvmScopeApplyRequest,
+    authorization: str | None = Header(default=None),
+):
+    """GET Privy only; finish previously signed update without new PATCH."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await reconcile_original_wallet_extension(
+        did,nonce=request.nonce,
+    )
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/extend/apply")
+async def owner_apply_one_signed_wallet_scope_change(
+    request: CentralEvmScopeApplyRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Only an EIP-191-confirmed original wallet policy may be PATCHed."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await apply_original_wallet_coin_extension(
+        did,nonce=request.nonce,
+    )
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/extend/{asset}/prepare")
+async def owner_prepare_shared_evm_scope_extension(
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await prepare_existing_wallet_coin_extension(did,asset)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/extend/confirm")
+async def owner_confirm_shared_evm_scope_extension(
+    request: CentralWalletScopeSignatureRequest,
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=confirm_existing_wallet_coin_extension(
+        did,nonce=request.nonce,signature=request.signature,
+    )
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/publish")
+async def owner_publish_first_central_evm_wallet_policy(
+    authorization: str | None = Header(default=None),
+):
+    """Publish a restrictive wallet-wide draft once, without granting signer.
+
+    Only the original signed-in wallet owner may request first publication.
+    This endpoint does not enable a trading session and cannot send funds.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await publish_initial_owner_wallet_policy(did)
+    return JSONResponse(status,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/wallet-policy/prepare/{asset}")
+async def owner_prepare_first_shared_evm_wallet_policy(
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Explicit original owner's initial central signer POLICY DRAFT only.
+
+    Reads saved owner-selected coin capital server-side and never sends,
+    attaches, publishes or changes a Privy signer. Existing legacy signers
+    are not silently migrated.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await prepare_owner_central_evm_wallet_policy(did,asset)
+    return JSONResponse(result,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/evm/wallet-policy/status")
+async def original_owner_one_signer_wallet_policy_status(
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated READ-ONLY original one-signer policy verification.
+
+    Cannot create/update/attach a Privy signer or activate trading.
+    Current legacy single-coin LIVE routes are unaffected.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await read_owner_central_wallet_policy_status(did)
+    return JSONResponse(status,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.get("/api/live/evm/wallet-policy/permission-status/QNT")
+async def owner_one_signer_qnt_permission_status(
+    authorization: str | None = Header(default=None),
+):
+    """QNT has no legacy coin signer row. Report only real central proof."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await read_owner_central_wallet_policy_status(did)
+    approved=(status.get("status")=="REMOTE_VERIFIED_READONLY"
+        and "QNT" in status.get("scope_coins",[])
+        and status.get("one_scoped_signer_verified") is True
+        and status.get("remote_policy_exactly_verified") is True
+        and status.get("backend_quorum_current") is True
+        and status.get("current_user_budgets_verified") is True
+        and status.get("legacy_reconciliation_required") is False)
+    response={
+        "mode":"OWNER_EVM_PRIVY_PERMISSION_STATUS_ONLY",
+        "asset":"QNT","chain_id":1,"network":"ethereum-mainnet",
+        "status":("GRANT_VERIFIED" if approved
+                  else "REVOKED" if status.get("status")=="REVOKED"
+                  else "NOT_PREPARED"),
+        "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER",
+        "policy_published":approved,
+        "signer_grant_recorded":approved,
+        "auto_execution_enabled":False,
+        "can_submit":False,
+    }
+    return JSONResponse(response,headers={"Cache-Control":"private, no-store"})
+
+
 @app.get("/api/live/evm/auto-session/{asset}")
 def owner_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only per-coin user LIVE session, never implied by login."""
@@ -1030,6 +1215,17 @@ def owner_evm_auto_session(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+@app.post("/api/live/evm/wallet-policy/auto-session/{asset}/start")
+async def owner_start_one_signer_evm_auto_session(
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Explicit owner Start Trade after original one-signer remote audit."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await start_owner_evm_auto(did,asset,central=True)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/live/evm/auto-session/{asset}/start")
@@ -1047,7 +1243,7 @@ async def owner_start_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/pause")
 def owner_pause_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Stops future per-coin sends without retrying an in-flight tx."""
@@ -1174,7 +1370,7 @@ def owner_evm_permission_status(
 
 @app.get("/api/live/evm/order-status/{asset}")
 def owner_evm_order_status(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -1188,7 +1384,7 @@ def owner_evm_order_status(
 
 @app.get("/api/live/evm/verified-fills/{asset}")
 def owner_finalized_evm_fills(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     limit: int = 30,
     authorization: str | None = Header(default=None),
 ):
@@ -2006,7 +2202,8 @@ def budgets_update(
 
 class IndependentCoinPreferenceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    budget_usd: StrictInt = Field(ge=100, le=5000)
+    # The user chooses the capital; only positive JSON-safe integers are valid.
+    budget_usd: StrictInt = Field(gt=0, le=9007199254740991)
     mode: Literal["LONG", "SPOT_SHORT", "AUTO"]
     stable: Literal["USDC", "USDT"]
     horizon: Literal["5m", "15m", "1h", "24h"]
@@ -2017,7 +2214,7 @@ class IndependentCoinPreferenceRequest(BaseModel):
 def coin_preferences_status(
     authorization: str | None = Header(default=None),
 ):
-    """Load nine independent saved preferences for this one Privy account."""
+    """Load ten independent saved preferences for this one Privy account."""
     did = verify_privy_bearer(authorization)["user_id"]
     return JSONResponse(get_coin_preferences(did), headers={
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",

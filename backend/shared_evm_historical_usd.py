@@ -19,7 +19,7 @@ from .coingecko_provider import coingecko_request_settings, COIN_IDS
 
 # Keep the historical EVM-asset allowlist; resolve IDs centrally.
 _IDS={asset: COIN_IDS[asset] for asset in (
-    "ETH", "BNB", "POL", "AVAX", "LINK", "UNI", "ARB", "USDC", "USDT"
+    "ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB", "USDC", "USDT"
 )}
 LOG=logging.getLogger("mininex.real_historical_usd")
 _BASE="https://api.coingecko.com/api/v3/coins"

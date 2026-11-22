@@ -17,7 +17,7 @@ from .shared_evm_swap_receipts import _pair, _receipt_rpc
 from .multicoin_evm_balances import _RPC
 from .treasury import validate_treasury_address
 
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _TRANSFER_TOPIC=("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
