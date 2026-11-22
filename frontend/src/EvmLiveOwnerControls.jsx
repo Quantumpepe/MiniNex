@@ -30,6 +30,7 @@ const WORDS={
     signing:'Wallet-Freigabe wird geprüft …',
     centralReady:'Eine gemeinsame Privy-Wallet-Freigabe ist verifiziert.',
     centralPending:'Der gemeinsame LIVE-Handelsworker ist noch nicht verbunden. Es wurde kein Echtgeldhandel gestartet.',
+    centralRevoke:'Gemeinsame Wallet-Freigabe widerrufen',
     history:'LIVE-Aufträge',buy:'Kauf',sell:'Verkauf',
     empty:'Noch keine gesendeten echten Trades.',
     unproven:'Bestätigung offen',notSent:'Sendestatus noch nicht bestätigt',
@@ -58,6 +59,7 @@ const WORDS={
     signing:'Checking wallet grant …',
     centralReady:'One combined Privy wallet grant has been verified.',
     centralPending:'The combined LIVE trading worker is not yet connected. No real trading session has been started.',
+    centralRevoke:'Revoke combined wallet authorization',
     history:'LIVE orders',buy:'Buy',sell:'Sell',
     empty:'No submitted real trades yet.',
     unproven:'Confirmation pending',notSent:'Submission not yet verified',
@@ -73,7 +75,7 @@ const WORDS={
 export default function EvmLiveOwnerControls({
   asset,stable,address,userId,getAccessToken,enabled,lang='de',
 }){
-  const {addSigners}=useSigners();
+  const {addSigners,removeSigners}=useSigners();
   const {signMessage}=useSignMessage();
   const t=WORDS[lang==='de'?'de':'en'];
   const [permission,setPermission]=useState(null);
@@ -264,6 +266,23 @@ export default function EvmLiveOwnerControls({
        result.started_by_owner!==true)
       throw Error('LIVE session was not independently started');
   });
+  const revokeCentral=()=>command(async()=>{
+    if(!centralStatus||![
+      'REMOTE_VERIFIED_READONLY','UPDATE_UNCERTAIN',
+    ].includes(centralStatus.status))return;
+    // One explicit action revokes the ONE original wallet signer for all
+    // combined EVM coins. Backend GET must prove actual absence before
+    // invalidating every local coin session.
+    await removeSigners({address});
+    const confirmed=await request(
+      path+'/wallet-policy/confirm-revocation','POST',
+    );
+    if(confirmed?.status!=='REVOKED'||
+       confirmed.wallet_signer_absence_verified!==true||
+       confirmed.future_auto_orders_blocked!==true){
+      throw Error('Privy signer removal requires independent verification');
+    }
+  });
   const pause=()=>command(async()=>{
     const result=await request(path+'/auto-session/'+asset+'/pause','POST');
     if(!validEvmAutoSession(result,asset)||result.status!=='PAUSED')
@@ -343,6 +362,10 @@ export default function EvmLiveOwnerControls({
         {' · '}{lang==='de'?'Empfänger':'Recipient'}: <code>{offeredFeeScope.treasury_wallet}</code>
         {' · '}{lang==='de'?'Maximaler Transfer in Token-Atomeinheiten':'Maximum transfer in token atomic units'}: {offeredFeeScope.fee_max_atomic}
       </p>}
+    {centralStatus&&['REMOTE_VERIFIED_READONLY','UPDATE_UNCERTAIN'].includes(centralStatus.status)&&
+      <button type="button"
+        className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={busy} onClick={revokeCentral}>{t.centralRevoke}</button>}
     {busy&&<p className="privy-wallet-description" role="status">{t.signing}</p>}
     {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
   </section>;
