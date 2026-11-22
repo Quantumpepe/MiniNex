@@ -23,7 +23,7 @@ from .storage import _db_url, _ensure_schema, _safe_did
 
 LOG=logging.getLogger("mininex.immutable_evm_usd")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _QUOTED=frozenset(("ETH","BNB","POL","AVAX","QNT","USDC","USDT"))
 
 

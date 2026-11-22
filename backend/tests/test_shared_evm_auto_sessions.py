@@ -109,7 +109,7 @@ def test_user_endpoints_required_and_no_implicit_auto_start():
     assert "mininex_live_evm_auto_sessions" in "\n".join(SCHEMA)
 
 
-@pytest.mark.parametrize("asset",["ETH","DOGE","BTC","ADA"])
+@pytest.mark.parametrize("asset",["DOGE","BTC","ADA"])
 def test_unscheduled_assets_never_inherit_other_coin_live_grant(asset):
     with pytest.raises(HTTPException) as e:
         m._require_asset(asset)

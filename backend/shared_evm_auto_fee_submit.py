@@ -36,7 +36,7 @@ from .storage import _safe_did
 from .live_orders import valid_order_key
 
 LOG=logging.getLogger("mininex.owner_fee_auto_submit")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def automatic_fee_transfer_worker_enabled()->bool:

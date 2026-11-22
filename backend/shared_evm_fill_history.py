@@ -18,7 +18,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
 
 LOG=logging.getLogger("mininex.evm_real_fill_history")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _verified_fill_row(row: object,asset:str) -> dict:

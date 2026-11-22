@@ -29,7 +29,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 from .live_orders import valid_order_key
 
 LOG=logging.getLogger("mininex.evm_fee_auto_send_claim")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 
