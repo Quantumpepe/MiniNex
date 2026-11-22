@@ -1,0 +1,76 @@
+name: MiniNex iOS validation (unsigned)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ios/build-8e2d1157-20261122
+
+permissions:
+  contents: read
+
+jobs:
+  ios-build:
+    runs-on: macos-15
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout current MiniNex code
+        uses: actions/checkout@v4
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build current MiniNex web assets
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://mininex-backend.onrender.com
+          VITE_PRIVY_APP_ID: cmw7sb7ty013o0gl55aqyzi3y
+          VITE_MININEX_NATIVE_ABI: ${{ github.sha }}
+          VITE_MININEX_BUILD_SHA: ${{ github.sha }}
+      - name: Generate native iOS application
+        run: |
+          xcodebuild -version
+          npx cap add ios
+          npx cap sync ios
+          xcodebuild -list -workspace ios/App/App.xcworkspace
+      - name: Build unsigned iOS Simulator app
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/mininex-ios-simulator" \
+            CODE_SIGNING_ALLOWED=NO build
+          test -d "$RUNNER_TEMP/mininex-ios-simulator/Build/Products/Debug-iphonesimulator/App.app"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/mininex-ios-simulator/Build/Products/Debug-iphonesimulator/App.app" \
+            "$RUNNER_TEMP/MiniNex-iOS-Simulator.zip"
+      - name: Build unsigned iPhoneOS payload (requires Apple signing before installation)
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/mininex-ios-device" \
+            CODE_SIGNING_ALLOWED=NO build
+          test -d "$RUNNER_TEMP/mininex-ios-device/Build/Products/Release-iphoneos/App.app"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          ditto "$RUNNER_TEMP/mininex-ios-device/Build/Products/Release-iphoneos/App.app" \
+            "$RUNNER_TEMP/Payload/App.app"
+          (cd "$RUNNER_TEMP" && zip -q -r MiniNex-iOS-UNSIGNED.ipa Payload)
+      - name: Upload simulator ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiniNex-iOS-Simulator
+          path: ${{ runner.temp }}/MiniNex-iOS-Simulator.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload unsigned iPhoneOS IPA for later Apple signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiniNex-iOS-UNSIGNED
+          path: ${{ runner.temp }}/MiniNex-iOS-UNSIGNED.ipa
+          retention-days: 7
+          if-no-files-found: error
