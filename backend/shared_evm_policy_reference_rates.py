@@ -20,7 +20,7 @@ from .coingecko_provider import coingecko_request_settings, COIN_IDS
 
 LOG=logging.getLogger("mininex.evm_policy_market_caps")
 _IDS={asset:COIN_IDS[asset] for asset in (
-    "BNB","POL","AVAX","LINK","UNI","ARB","USDC","USDT"
+    "ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","USDC","USDT"
 )}
 # All active EVM coins share ONE bounded reference quote, not one API request
 # for every user/coin on each strategy tick. It is not a trading throttle:
@@ -82,7 +82,7 @@ def derive_user_budget_evm_atomic_caps(
         "buy_source_atomic_cap":str(buy),
         "sell_source_atomic_cap":str(sell),
         "native_wrap_atomic_cap":(
-            str(sell) if asset in ("BNB","POL","AVAX") else None),
+            str(sell) if asset in ("ETH","BNB","POL","AVAX") else None),
         "budget_usd_user_selected":budget_usd,
         "pricing_snapshot_unix":now,
         "price_feed":"COINGECKO_REFERENCE_ONLY",
