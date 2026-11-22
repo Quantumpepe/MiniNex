@@ -57,6 +57,18 @@ chain/signature type.
   connected** to them. Old per-coin signers cannot be silently replaced.
   Backend tests cover all eight EVM assets, invalid budget revisions,
   legacy signer races, duplicate grant attempts and remote mismatches.
+- **New policy-owner PATCH signing primitive (not connected to an update
+  controller):** `backend/shared_evm_wallet_policy_owner_signature.py`
+  builds the exact signed PATCH payload with `privy-request-expiry`,
+  idempotency key and verified Policy Owner quorum P-256 key. It can
+  *sign* only an exact bounded combined policy; it does not send a
+  PATCH, expand wallet rights, alter a user's session or bypass
+  existing budget consent. This follows Privy's official authorization
+  signature payload. Remote PATCH, durable transition claim and
+  EIP-191 intent-consumption workflow still need to be connected.
+- **Current passing CI:** [GitHub Actions run 45054190252](https://github.com/Quantumpepe/MiniNex/actions/runs/45054190252)
+  has **5,130 passing backend tests**, no failures (1 warning).
+  This is not a mainnet signing or trade test.
 - Future one-time owner configuration uses the already registered
   `MiniNex-Backend-Signer-V2` quorum ID and matching existing P-256 key.
   **Do not hardcode the dashboard quorum ID or introduce twelve new secrets.**
