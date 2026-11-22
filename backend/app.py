@@ -73,6 +73,9 @@ from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_wallet_policy_prepare import prepare_owner_central_evm_wallet_policy
 from .shared_evm_wallet_policy_publish import publish_initial_owner_wallet_policy
+from .shared_evm_wallet_policy_grant import (
+    get_original_one_signer_grant_offer,confirm_original_one_signer_grant,
+)
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
@@ -1020,6 +1023,26 @@ async def owner_confirm_signed_evm_fee_payment(
         did=did,asset=asset,execution_id=execution_id,
         tx_hash=request.tx_hash)
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/evm/wallet-policy/grant-offer")
+async def owner_one_signer_central_evm_grant_offer(
+    authorization: str | None = Header(default=None),
+):
+    """Independently verify original one-signer grant before Privy UI."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await get_original_one_signer_grant_offer(did)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/confirm-grant")
+async def owner_confirm_one_signer_central_evm_grant(
+    authorization: str | None = Header(default=None),
+):
+    """Independently re-read actual Privy addSigners result, then persist."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await confirm_original_one_signer_grant(did)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/live/evm/wallet-policy/publish")
