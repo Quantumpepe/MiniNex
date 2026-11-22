@@ -206,7 +206,7 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
 
 def _claim_authorized_evm_order_locked(
     cur,*,did:str,key:str,identity:dict,
-    quote_sha256:str,budget_revision:int,
+    quote_sha256:str,budget_revision:int,central:bool=False,
 )->None:
     """Atomic last-mile gate before any Privy RPC or signer use.
 
@@ -223,14 +223,21 @@ def _claim_authorized_evm_order_locked(
         raise ValueError("Unverified executable coin order")
     asset=identity["asset"]
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
-    cur.execute(
-        """SELECT status,stable,chain_id,wallet_id,wallet_address,
-                  policy_id,remote_policy_sha256,policy_sha256,
-                  consent_sha256,expires_at,revoked_at,budget_revision,
-                  authorization_method,owner_id,signer_id,asset
-           FROM mininex_live_evm_owner_permissions
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    policy=cur.fetchone()
+    if central:
+        from .shared_evm_central_runtime import _locked_original_evm_coin
+        policy=_locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=identity["stable"],
+            revision=budget_revision,
+        )
+    else:
+        cur.execute(
+            """SELECT status,stable,chain_id,wallet_id,wallet_address,
+                      policy_id,remote_policy_sha256,policy_sha256,
+                      consent_sha256,expires_at,revoked_at,budget_revision,
+                      authorization_method,owner_id,signer_id,asset
+               FROM mininex_live_evm_owner_permissions
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        policy=cur.fetchone()
     from datetime import datetime,timezone
     if (type(policy) is not dict
             or policy.get("status")!="GRANT_VERIFIED"
@@ -248,7 +255,7 @@ def _claim_authorized_evm_order_locked(
             or policy["expires_at"]<=datetime.now(timezone.utc)):
         raise HTTPException(409,"Current owner-approved EVM signer grant required")
     single=policy.get("authorization_method")=="PRIVY_SCOPED_GRANT"
-    if not single:
+    if not single and not central:
         # Legacy authorization retains its original independent EIP-191
         # proof. A scoped Privy owner grant never inherits that pathway.
         cur.execute(
