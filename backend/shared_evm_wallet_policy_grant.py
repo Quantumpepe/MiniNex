@@ -77,8 +77,10 @@ async def _read_current_original_candidate(did:str)->tuple[dict,dict,dict,dict]:
     record,scopes=await asyncio.to_thread(
         _read_saved_and_current_preferences,did,
     )
-    if record is None or len(scopes)!=1:
-        raise HTTPException(409,"No one-signer original owner draft available")
+    if (record is None or len(scopes)!=1
+            or record.get("status")!="REMOTE_VERIFIED_UNATTACHED"
+            or type(record.get("policy_id")) is not str):
+        raise HTTPException(409,"No published original one-signer policy available")
     user=await fetch_privy_user(did)
     wallet=await fetch_privy_wallet_metadata(record["wallet_id"])
     policy=await _fetch_policy(record["policy_id"])
