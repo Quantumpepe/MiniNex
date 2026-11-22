@@ -1,4 +1,4 @@
-"""Private, read-only latest PAPER buys and sells across BTC, ETH and nine coins.
+"""Private, read-only latest PAPER buys and sells across all twelve MiniNex coins.
 
 The personal paper engines already persist every fill in two account-owned
 PostgreSQL tables. This endpoint joins only their READ views, never touches
@@ -16,11 +16,12 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from .storage import _db_url, _ensure_schema, _safe_did
+from .extra_market_data import EXTRA_ASSETS as ACTIVE_EXTRA_ASSETS
 
 LOG=logging.getLogger("mininex.home_paper_trades")
 
 CORE_ASSETS=("BTC","ETH")
-EXTRA_ASSETS=("BNB","SOL","XRP","TRX","POL","AVAX","LINK","DOGE","UNI")
+EXTRA_ASSETS=tuple(ACTIVE_EXTRA_ASSETS)
 ALL_ASSETS=CORE_ASSETS+EXTRA_ASSETS
 MAX_TRADES=60
 

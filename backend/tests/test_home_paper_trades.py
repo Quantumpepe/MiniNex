@@ -1,4 +1,4 @@
-"""Unified, owner-only eleven-coin PAPER trade feed regression tests."""
+"""Unified, owner-only twelve-coin PAPER trade feed regression tests."""
 from __future__ import annotations
 
 from datetime import datetime,timezone,timedelta
@@ -28,10 +28,11 @@ def fill(asset,event_id,kind="PAPER_BUY",moment=WHEN,**patch):
 def test_exact_coin_roster_and_ada_always_excluded():
     assert home.ALL_ASSETS==(
         "BTC","ETH","BNB","SOL","XRP","TRX","POL","AVAX",
-        "LINK","DOGE","UNI"
+        "LINK","QNT","UNI","ARB"
     )
     assert "ADA" not in home.ALL_ASSETS
-    assert len(set(home.ALL_ASSETS))==11
+    assert "DOGE" not in home.ALL_ASSETS
+    assert len(set(home.ALL_ASSETS))==12
     for asset in home.ALL_ASSETS:
         row=home.normalize_home_trade(fill(asset,1))
         assert row is not None
@@ -39,6 +40,24 @@ def test_exact_coin_roster_and_ada_always_excluded():
         assert row["paper_only"] is True
         assert row["real_trade"] is False
     assert home.normalize_home_trade(fill("ADA",1)) is None
+
+
+def test_arb_qnt_saved_trades_are_available_to_home_without_cross_coin_mix(monkeypatch):
+    db=FakeDB([
+        fill("ARB",31,"PAPER_SELL",realized_net_profit=2.75),
+        fill("QNT",14,"PAPER_BUY"),
+    ])
+    monkeypatch.setattr(home,"_db_url",lambda:"postgresql://fake")
+    monkeypatch.setattr(home,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(home.psycopg,"connect",lambda *a,**kw:db)
+    selected=home.recent_home_trades("did:privy:arb-owner",asset="ARB")
+    assert [r["id"] for r in selected["trades"]]==["ARB:31"]
+    assert selected["trades"][0]["kind"]=="PAPER_SELL"
+    assert selected["trades"][0]["realized_net_profit"]==2.75
+    assert db.calls[-1][1]==("did:privy:arb-owner","ARB",60)
+    all_coins=home.recent_home_trades("did:privy:arb-owner")
+    assert {r["asset"] for r in all_coins["trades"]}=={"ARB","QNT"}
+    assert "ARB" in all_coins["assets"] and "QNT" in all_coins["assets"]
 
 
 def test_canonical_paper_fields_show_amount_price_sell_profit_and_no_real_execution():
@@ -196,7 +215,7 @@ def test_wrong_coin_results_cannot_leak_into_selected_view(monkeypatch):
     monkeypatch.setattr(home.psycopg,"connect",lambda *a,**kw:db)
     result=home.recent_home_trades("did:privy:owner",asset="BTC")
     assert [x["asset"] for x in result["trades"]]==["BTC"]
-    for invalid in ("ADA","DOGE2","BTC;DROP",None,12):
+    for invalid in ("ADA","DOGE","DOGE2","BTC;DROP",None,12):
         with pytest.raises(HTTPException) as err:
             home.recent_home_trades("did:privy:owner",asset=invalid)
         assert err.value.status_code==422
@@ -209,7 +228,7 @@ def test_explicit_all_coin_mode_remains_available_in_private_api(monkeypatch):
     monkeypatch.setattr(api,"recent_home_trades",lambda did,asset:
         (checked.append((did,asset)) or {"selected_asset":asset,"trades":[]}))
     client=TestClient(api.app)
-    for symbol in ("BTC","ETH","SOL","ALL"):
+    for symbol in ("BTC","ETH","SOL","ARB","QNT","ALL"):
         reply=client.get("/api/home/paper-trades?asset="+symbol,
             headers={"Authorization":"Bearer valid"})
         assert reply.status_code==200
