@@ -22,12 +22,26 @@ chain/signature type.
 
 ## Existing and target scope
 
-- Existing ETH and six additional EVM coin flows are separate and must
-  continue to work until a verified migration. QNT is Ethereum ERC-20 but
-  is not yet in the original six-coin automatic grant implementation.
-- Backend-only policy composer:
-  `backend/shared_evm_consolidated_wallet_policy.py`; currently an **OFFLINE
-  primitive**, not connected to owner grant, broadcast, or live session start.
+- Existing ETH and six additional EVM coin LIVE routes remain separate
+  and continue unchanged until a verified migration. QNT is Ethereum ERC-20
+  but not yet in the original six-coin automatic LIVE grant routes.
+  The OFFLINE one-wallet composer now covers **all eight EVM assets**:
+  ETH, BNB, POL, AVAX, LINK, QNT, UNI and ARB.
+- Backend-only strict combined policy composer:
+  `backend/shared_evm_consolidated_wallet_policy.py` (**OFFLINE**).
+  `shared_evm_wallet_scope_transition.py` compares current/new policies
+  and produces an original-wallet-bound, short-lived EIP-191 challenge for
+  scope increases; no separate preliminary intent on first Privy addSigners.
+  `shared_evm_wallet_policy_intent_ledger.py` stores and consumes one-use
+  signed update intents under DB locks (no remote write).
+  `shared_evm_wallet_policy_schema.py` defines the durable wallet grant
+  and consent journals.
+  `shared_evm_wallet_policy_remote_review.py` strictly verifies the
+  original user wallet, single matching signer, rules and hashes.
+  A new authenticated **READ-ONLY** endpoint
+  `GET /api/live/evm/wallet-policy/status` independently verifies all
+  original budget revisions, Privy owner/signing quorum and policy.
+  None of these steps changes a wallet signer or starts a LIVE trade.
 - Future one-time owner configuration uses the already registered
   `MiniNex-Backend-Signer-V2` quorum ID and matching existing P-256 key.
   **Do not hardcode the dashboard quorum ID or introduce twelve new secrets.**
@@ -48,20 +62,30 @@ chain/signature type.
 - Non-EVM assets BTC, SOL, XRP, TRX need chain-specific delegated signer
   compatibility, source-wallet, nonce/UTXO, receipt, route, and finality
   verification. A shared quorum by itself does **not** make them live.
-- User has **no additional work in Privy or Render** just to represent more
-  coins; any unavoidable chain capability limitations belong in product
-  engineering and must be disclosed.
+- User has **no additional work in Privy or Render** merely to represent
+  additional coins. A **Policy Owner quorum** remains distinct from the
+  technical trading signer ID. Privy requires an **authorization signature
+  from the policy owner quorum** to PATCH an existing policy. The read-only
+  diagnostic now checks if the existing pinned P-256 member actually belongs
+  to that registered owner quorum. If not, one legitimate owner signing
+  credential must be provisioned after verification; it must never be
+  replaced with an unrestricted or unsigned policy update.
+  This is a single operator-level issue, not per-coin setup.
+  Any unavoidable native-chain support limitations must be disclosed.
 
 ## Implementation sequence and acceptance
 
-1. Extend the offline EVM composer to ETH and QNT after their strict
-   policy/Router02 routes are proven, using the correct native ERC-20 rules.
-2. Add durable per-wallet aggregate-policy record with locked per-coin
-   budgets, current consent revision, active coin list, policy ID and
-   digest, bound to the original authenticated Privy DID and wallet ID.
-3. Implement Privy policy creation and owner-authorized rule updates,
-   including uncertain POST reconciliation and remote readback, without
-   replacing or escalating an existing signer implicitly.
+1. **DONE (offline):** Extend the strict EVM policy factory to ETH and
+   QNT, using exact Router02, native wrap for ETH and ERC-20 for QNT;
+   no new LIVE trading endpoints or owner grants.
+2. **DONE (foundations):** Add durable wallet-policy/one-use-consent tables,
+   original DID/wallet/coin budget revision checks, remote Policy Owner
+   quorum diagnostics and strictly pinned remote policy audit. An old
+   legacy grant never automatically becomes a shared wallet grant.
+3. **OPEN:** Implement actual owner-authenticated Privy policy creation and
+   PATCH, with durable one-attempt claims, original wallet EIP-191 consent,
+   uncertain-outcome reconciliation and independent remote readback,
+   without replacing or escalating a wallet signer implicitly.
 4. Update `Start Trade` to present **one clear wallet confirmation** for a
    new or expanded user scope, and to start only after the aggregate remote
    policy / signer / budget / quorum are independently verified.
@@ -73,6 +97,11 @@ chain/signature type.
 7. Confirm CI, Privy SDK integration, two simultaneous EVM coins and both
    sequential grant increases, reject unsupported token/recipient,
    revoke/paused cases, then explicit owner-approved mainnet smoke tests.
+
+**Current verified progress (2026-11-22):** Draft PR #208 is isolated
+from `main` and Render. See GitHub backend auth checks for this branch.
+The new status endpoint is owner-authenticated and read-only; production
+Start Trade and per-coin signers have NOT been switched to this design.
 
 **Release gate:** Not complete until multi-coin trading from one original EVM
 wallet is proven without creating extra quorums and without either policy
