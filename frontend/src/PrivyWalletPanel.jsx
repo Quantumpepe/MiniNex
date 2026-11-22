@@ -459,8 +459,8 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
 
   const renderCoinActions = asset => <div className="mininex-coin-wallet-actions">
     {asset==='SOL'&&<SolanaSend key={'sol-send-'+user?.id} t={t} enabled={verifiedAccount} userId={user?.id}/>}
-    {asset==='XRP'&&<XrpSend key={'xrp-send-'+user?.id} t={t} enabled={verifiedAccount} userId={user?.id} address={xrpWallet?.address||verifiedXrp?.XRP}/>}
-    {asset==='TRX'&&<TrxSend key={'trx-send-'+user?.id} t={t} enabled={verifiedAccount} userId={user?.id} address={extraWallets?.tron?.address}/>}
+    {asset==='XRP'&&<XrpSend key={'xrp-send-'+user?.id} t={t} enabled={verifiedAccount} userId={user?.id} address={xrpWallet?.address||verifiedXrp?.XRP} getAccessToken={getAccessToken}/>}
+    {asset==='TRX'&&<TrxSend key={'trx-send-'+user?.id} t={t} enabled={verifiedAccount} userId={user?.id} address={extraWallets?.tron?.address} getAccessToken={getAccessToken}/>}
     {asset==='DOGE'&&<NativeSendEntry key={'native-send-'+asset} t={t} asset={asset} enabled={verifiedAccount}/>}
     {asset==='BTC'&&<BtcSendEntry key={'btc-send-'+user?.id}
       t={t} lang={lang} userId={user?.id}
