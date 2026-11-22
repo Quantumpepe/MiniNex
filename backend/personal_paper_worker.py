@@ -19,6 +19,7 @@ from psycopg.rows import dict_row
 from .storage import _db_url, _ensure_schema
 from .user_paper import step_user_paper
 from .extra_paper import tick as tick_extra_paper
+from .strategy_replay import EXTRA_REPLAY_ASSETS
 
 LOG=logging.getLogger("mininex.personal_paper_worker")
 INTERVAL_SECONDS=15
@@ -79,10 +80,11 @@ def active_extra_keys(limit: int = EXTRA_BATCH_LIMIT) -> list[tuple[str,str]]:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("""SELECT privy_did,asset
                 FROM mininex_extra_paper_sessions
-                WHERE status='ACTIVE'
-                   OR (status='PAUSED' AND state_json->>'pause_exit_pending'='true')
+                WHERE asset = ANY(%s)
+                  AND (status='ACTIVE'
+                    OR (status='PAUSED' AND state_json->>'pause_exit_pending'='true'))
                 ORDER BY updated_at ASC,privy_did,asset
-                LIMIT %s""",(min(max(1,limit),EXTRA_BATCH_LIMIT),))
+                LIMIT %s""",(list(EXTRA_REPLAY_ASSETS),min(max(1,limit),EXTRA_BATCH_LIMIT)))
             return [(row["privy_did"],row["asset"]) for row in cur.fetchall()]
 
 
