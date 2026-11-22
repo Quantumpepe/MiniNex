@@ -60,7 +60,7 @@ def _read_pending_original_usd_fills(limit:int=40)->list[dict]:
            LEFT JOIN mininex_evm_immutable_fill_usd_prices n
              ON n.privy_did=f.privy_did AND n.asset=f.asset
             AND n.tx_hash=f.tx_hash AND n.quoted_asset='ETH'
-           WHERE f.asset IN ('LINK','UNI','ARB')
+           WHERE f.asset IN ('LINK','QNT','UNI','ARB')
              AND b.status='FINALIZED_SUCCESS'
              AND (s.tx_hash IS NULL OR n.tx_hash IS NULL)
            ORDER BY f.created_at DESC,f.privy_did,f.asset,f.tx_hash
@@ -103,7 +103,7 @@ def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
                    LEFT JOIN mininex_evm_fee_events e
                      ON e.privy_did=f.privy_did AND e.asset=f.asset
                     AND e.execution_id=f.intent_key
-                   WHERE f.asset IN ('LINK','UNI','ARB')
+                   WHERE f.asset IN ('LINK','QNT','UNI','ARB')
                      AND f.side='SELL' AND b.status='FINALIZED_SUCCESS'
                      AND e.execution_id IS NULL
                    GROUP BY f.privy_did,f.asset
@@ -151,7 +151,7 @@ async def reconcile_verified_erc20_fees_once(
         if (type(item) is not dict
                 or type(item.get("did")) is not str
                 or type(item.get("fill")) is not dict
-                or item["fill"].get("asset") not in ("LINK","UNI","ARB")):
+                or item["fill"].get("asset") not in ("LINK","QNT","UNI","ARB")):
             result["accounts_needing_manual_evidence"]+=1
             continue
         buckets.setdefault((item["did"],item["fill"]["asset"]),[]).append(item)
@@ -193,7 +193,7 @@ async def reconcile_verified_erc20_fees_once(
     async def account_one_owner(owner:dict)->tuple[int,int]:
         if (type(owner) is not dict
                 or type(owner.get("privy_did")) is not str
-                or owner.get("asset") not in ("LINK","UNI","ARB")):
+                or owner.get("asset") not in ("LINK","QNT","UNI","ARB")):
             return 0,1
         async with oracle_slots:
             try:

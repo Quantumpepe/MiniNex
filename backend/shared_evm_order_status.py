@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
 
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _STATES=frozenset((
     "SENDING","SUBMITTED","RECONCILIATION_REQUIRED",
     "FINALIZED_SUCCESS","FINALIZED_REVERTED",
