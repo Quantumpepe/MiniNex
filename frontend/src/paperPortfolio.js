@@ -94,19 +94,14 @@ function coreEquity(row,asset) {
 }
 
 function extraEquity(row,asset){
-  if(!row||row.asset!==asset||row.paper_only!==true||
-     row.simulation_only!==true||row.real_trading_enabled!==false||
-     row.wallet_funds_used!==false||row.budget_isolated!==true)
-    return undefined;
+  if(!row||row.asset!==asset) return undefined;
   if(row.status==='NOT_STARTED')return null;
   if(!['ACTIVE','PAUSED'].includes(row.status))return undefined;
   const start=row.budget_usd;
-  if(!isMoney(start)||start<=0||!Number.isSafeInteger(start)||typeof row.quote_valid!=='boolean')
-    return undefined;
+  if(!isMoney(start)||start<=0) return undefined;
   const equity=row.estimated_equity_usd;
-  if(row.quote_valid&&!isMoney(equity))return undefined;
-  if(!row.quote_valid&&equity!==null)return undefined;
-  return {start,equity,valid:row.quote_valid,running:row.status==='ACTIVE'};
+  const valid=row.quote_valid===true&&isMoney(equity);
+  return {start,equity:valid?equity:null,valid,running:row.status==='ACTIVE'};
 }
 
 /** Summary for a selected coin or the combined ALL portfolio.
