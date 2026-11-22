@@ -387,7 +387,8 @@ def _load_reconcilable_claim(did,nonce):
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """SELECT g.wallet_id,g.wallet_address,g.owner_id,g.signer_id,
-                          g.policy_id,g.policy_sha256,g.revision AS original_revision,
+                          g.policy_id,g.policy_sha256,g.scopes_json AS original_scopes_json,
+                          g.revision AS original_revision,
                           g.status AS grant_status,
                           i.status AS intent_status,i.source_grant_revision,
                           i.previous_policy_sha256,i.target_policy_sha256,
@@ -404,6 +405,7 @@ def _load_reconcilable_claim(did,nonce):
             or saved.get("intent_status") not in ("PATCH_SUBMITTING","PATCH_UNCERTAIN")
             or saved.get("source_grant_revision")!=saved.get("original_revision")
             or saved.get("previous_policy_sha256")!=saved.get("policy_sha256")
+            or type(saved.get("original_scopes_json")) is not dict
             or type(saved.get("target_scopes_json")) is not dict
             or type(saved.get("target_revisions_json")) is not dict
             or len(saved["target_scopes_json"])<2
@@ -423,9 +425,12 @@ def _load_reconcilable_claim(did,nonce):
         raise HTTPException(409,"Previously consented policy scope expired") from None
     if digest!=saved["target_policy_sha256"]:
         raise HTTPException(409,"Saved remote update digest mismatch")
-    old=set(saved["target_scopes_json"])-set(saved["target_revisions_json"])
-    if old:
-        raise HTTPException(409,"Unrecognized original wallet update")
+    source=saved["original_scopes_json"]
+    target=saved["target_scopes_json"]
+    added=set(target)-set(source)
+    if (len(added)!=1 or not set(source).issubset(target)
+            or any(target.get(a)!=v for a,v in source.items())):
+        raise HTTPException(409,"Original user-approved coin scope was replaced")
     return {
         "did":did,"nonce":nonce,"policy_id":saved["policy_id"],
         "wallet_id":saved["wallet_id"],
@@ -439,7 +444,7 @@ def _load_reconcilable_claim(did,nonce):
         "target_revisions_json":saved["target_revisions_json"],
         "idempotency_key":saved["update_idempotency_key"],
         "candidate":policy,
-        "new_coin":sorted(saved["target_scopes_json"])[-1],
+        "new_coin":next(iter(added)),
     }
 
 
