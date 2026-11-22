@@ -206,6 +206,24 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
           try{await request('/api/live/eth/policy/confirm-revocation','POST');}
           catch{ /* Only independent remote signer absence is reported. */ }
         }
+        if(remotelyVerified){
+          // One original combined signer may cover ETH and all other EVM
+          // assets. Revoke its wallet-wide ledger only after remote
+          // Privy signer absence, never by trusting an SDK success alone.
+          try{
+            const aggregate=await request(
+              '/api/live/evm/wallet-policy/confirm-revocation','POST',
+            );
+            if(!['REVOKED','NOT_CONFIGURED'].includes(aggregate?.status)||
+               aggregate.wallet_signer_absence_verified!==true){
+              remotelyVerified=false;
+            }
+          }catch{
+            // The wallet itself may be safe, but the local grant needs
+            // reconciliation before an ETH revocation can be reported.
+            remotelyVerified=false;
+          }
+        }
       }catch{ /* Remotely unverified is NOT a successful revocation. */ }
     }
     setConfirmRevoke(false);
