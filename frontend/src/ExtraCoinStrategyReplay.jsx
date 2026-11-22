@@ -84,6 +84,13 @@ export default function ExtraCoinStrategyReplay({
           {HORIZONS.map(value=><option key={value} value={value}>{value}</option>)}
         </select>
       </label>
+      <label><span>{t.privySetupStable||'Handelswährung'}</span>
+        <select value={options.stable||'USDC'} disabled={!enabled||busy}
+          onChange={event=>onChange(asset,'stable',event.target.value)}>
+          <option value="USDC">USDC</option>
+          <option value="USDT">USDT</option>
+        </select>
+      </label>
       <button type="submit" className="privy-wallet-action"
         disabled={!enabled||busy||!budgetOk}>
         {busy?t.extraReplayRunning:(liveMode?t.extraReplayRunLive:t.extraReplayRun)}
