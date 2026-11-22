@@ -73,6 +73,7 @@ from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_wallet_policy_prepare import prepare_owner_central_evm_wallet_policy
 from .shared_evm_wallet_policy_publish import publish_initial_owner_wallet_policy
+from .shared_evm_wallet_policy_revoke import confirm_original_wallet_policy_revocation
 from .shared_evm_wallet_policy_update import (
     apply_original_wallet_coin_extension,reconcile_original_wallet_extension,
 )
@@ -1061,6 +1062,16 @@ class CentralWalletScopeSignatureRequest(BaseModel):
 class CentralEvmScopeApplyRequest(BaseModel):
     model_config=ConfigDict(extra="forbid")
     nonce: str = Field(min_length=64,max_length=64,pattern=r"^[0-9a-f]{64}$")
+
+
+@app.post("/api/live/evm/wallet-policy/confirm-revocation")
+async def owner_confirm_central_evm_wallet_signer_removed(
+    authorization: str | None = Header(default=None),
+):
+    """Confirm Privy user-controlled signer removal, stop all future EVM orders."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await confirm_original_wallet_policy_revocation(did)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/live/evm/wallet-policy/extend/reconcile")
