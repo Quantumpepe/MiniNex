@@ -19,8 +19,8 @@ import json
 
 from .shared_evm_single_grant_policy import build_single_grant_evm_policy
 
-# Canonical deterministic order; ETH and QNT will require equivalent adapters.
-_EVM_ASSETS = ("BNB", "POL", "AVAX", "LINK", "UNI", "ARB")
+# Canonical order; ETH and QNT share the existing exact EVM contract route factory.
+_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
 _REQUIRED_SCOPE_FIELDS = frozenset((
     "asset", "stable", "treasury", "buy_source_atomic_cap",
     "sell_source_atomic_cap", "native_wrap_atomic_cap",
