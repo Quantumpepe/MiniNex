@@ -72,6 +72,7 @@ from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_wallet_policy_prepare import prepare_owner_central_evm_wallet_policy
+from .shared_evm_wallet_policy_publish import publish_initial_owner_wallet_policy
 from .shared_evm_live_readiness import get_owner_evm_auto_readiness
 from .shared_evm_remote_grant_audit import get_owner_evm_remote_grant_audit
 from .shared_evm_policy_candidate_stage import stage_owner_evm_policy_from_budget
@@ -1019,6 +1020,23 @@ async def owner_confirm_signed_evm_fee_payment(
         did=did,asset=asset,execution_id=execution_id,
         tx_hash=request.tx_hash)
     return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/live/evm/wallet-policy/publish")
+async def owner_publish_first_central_evm_wallet_policy(
+    authorization: str | None = Header(default=None),
+):
+    """Publish a restrictive wallet-wide draft once, without granting signer.
+
+    Only the original signed-in wallet owner may request first publication.
+    This endpoint does not enable a trading session and cannot send funds.
+    """
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await publish_initial_owner_wallet_policy(did)
+    return JSONResponse(status,headers={
+        "Cache-Control":"private, no-store",
+        "X-Content-Type-Options":"nosniff",
+    })
 
 
 @app.post("/api/live/evm/wallet-policy/prepare/{asset}")
