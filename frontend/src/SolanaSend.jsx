@@ -48,16 +48,23 @@ export default function SolanaSend({t,enabled,userId}) {
     <button type="button" className="privy-wallet-action" onClick={()=>setOpen(v=>!v)}>
       <Send size={16}/> {t.walletSendTitle||'Senden'} SOL
     </button>
-    {open&&<div className="mininex-send-content">
-      <label><span>{t.walletSendRecipient||'Empfänger'}</span>
-        <input value={destination} onChange={e=>setDestination(e.target.value)} placeholder={t.walletSendRecipient||'Solana-Adresse'}/>
-      </label>
-      <label><span>{t.walletSendAmount||'Betrag'} · SOL</span>
-        <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.01"/>
-      </label>
-      <button type="button" className="privy-wallet-action" disabled={busy||!destination||!amount} onClick={send}>
-        {busy?(t.walletSendReviewing||'Senden…'):(t.walletSendTitle||'Senden')}
-      </button>
+    {open&&<div className="mininex-swap-content">
+      <p className="privy-wallet-description">Solana Mainnet · manual transfers from your SOL wallet</p>
+      <form className="mininex-send-form" onSubmit={e=>{e.preventDefault();send();}}>
+        <label><span>{t.walletSendRecipient}</span>
+          <input value={destination} autoComplete="off" spellCheck={false}
+            placeholder="Solana address..." disabled={busy}
+            onChange={e=>setDestination(e.target.value)}/>
+        </label>
+        <label><span>{t.walletSendAmount} · SOL</span>
+          <input value={amount} autoComplete="off" inputMode="decimal"
+            placeholder="0.00" disabled={busy}
+            onChange={e=>setAmount(e.target.value)}/>
+        </label>
+        <button type="submit" className="privy-wallet-action" disabled={busy||!destination||!amount}>
+          {busy?(t.walletSendReviewing||'Sending…'):(t.walletSendTitle||'Send')}
+        </button>
+      </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
       {txSig&&<p className="privy-wallet-description">{t.walletSendSubmitted||'Gesendet'}: {txSig.slice(0,16)}…</p>}
     </div>}
