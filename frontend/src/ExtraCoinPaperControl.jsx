@@ -27,7 +27,10 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     const result=await response.json();
     // BTC/ETH user-paper has different format; normalize for display
     if(['BTC','ETH'].includes(asset)&&result.position){
-      result.budget_usd=result.demo_start_cash||result.position?.demo_start_cash||0;
+      // Server returns persisted virtual start capital as a decimal string.
+      // A string was previously displayed as "—" by the numeric formatter.
+      const initial=Number(result.demo_start_cash??result.position?.demo_start_cash);
+      result.budget_usd=Number.isFinite(initial)&&initial>0?initial:null;
       result.settlement=result.settlement||'USDC';
       result.strategy_mode=result.strategy_mode||'LONG';
       result.horizon=result.horizon||'15m';

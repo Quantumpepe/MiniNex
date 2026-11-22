@@ -49,7 +49,7 @@ const base={
 test('comparison is exactly ten additional coins including ARB, not BTC or ETH',()=>{
   assert.equal(rows.length,10);
   assert.deepEqual(rows.map(r=>r.asset),[
-    'BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB']);
+    'BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB']);
   assert.equal(validExtraPaperComparison(base),true);
   assert.equal(validExtraPaperComparison({...base,assets:rows.slice(0,9)}),false);
   assert.equal(validExtraPaperComparison({

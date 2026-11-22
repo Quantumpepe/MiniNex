@@ -79,6 +79,11 @@ function PersonalDemo({t,lang,paperAvailable=true}) {
   };
   const current=data[asset]||empty;
   const position=current.position||{};
+  // Always show the started session's actual virtual USD capital, never
+  // guess 5000 from the wallet balance or from a paper preference.
+  const initialBudget=Number(current.demo_start_cash);
+  const hasVirtualBudget=current.status!=='NOT_STARTED'&&
+    Number.isFinite(initialBudget)&&initialBudget>0;
   if(!paperAvailable)return null;
   return <section className="privy-hwm-box personal-paper" aria-label={t.personalDemoTitle}>
     <div className="privy-hwm-title"><strong>{t.personalDemoTitle}</strong></div>
@@ -107,6 +112,9 @@ function PersonalDemo({t,lang,paperAvailable=true}) {
           {String(position.last_signal_summary)}
         </p>}
       {current.status!=='NOT_STARTED'&&<div className="balance-grid">
+        <div className="balance-line"><span>{t.personalDemoBudget}</span>
+          <b>{hasVirtualBudget?formatNumber(initialBudget,lang,2):'—'} {hasVirtualBudget?'USD':''}</b>
+        </div>
         <div className="balance-line"><span>{t.personalDemoCash}</span><b>{formatNumber(position.stable_cash??0,lang,2)} {current.settlement}</b></div>
         <div className="balance-line"><span>{t.personalDemoCoin}</span><b>{formatNumber(position.coin_quantity??0,lang,asset==='BTC'?8:6)} {asset}</b></div>
         <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{formatSigned(position.realized_net_profit??0,lang,current.settlement)}</b></div>
