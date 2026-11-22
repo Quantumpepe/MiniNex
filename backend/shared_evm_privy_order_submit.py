@@ -113,6 +113,7 @@ async def submit_internal_privy_evm_order(
     *,did:str,asset:str,intent_key:str,side:str,stable:str,
     amount:str,budget_revision:int,client:httpx.AsyncClient,
     prepared_quote:dict|None=None,
+    central:bool=False,
 )->dict:
     """Send exactly once after independent real quote, consent and grant.
 
@@ -128,7 +129,9 @@ async def submit_internal_privy_evm_order(
         raise ValueError("Untrusted internal EVM execution context")
     # This independently reads signed owner intent, wallet metadata, Privy
     # remote policy rules, restricted additional signer and P-256 quorum.
-    report=await get_owner_evm_remote_grant_audit(did,asset)
+    report=(await get_owner_evm_remote_grant_audit(
+        did,asset,central=True,
+    ) if central else await get_owner_evm_remote_grant_audit(did,asset))
     if (report.get("asset")!=asset
             or report.get("owner_wallet_current") is not True
             or report.get("exact_remote_policy_rules_verified") is not True
@@ -137,7 +140,10 @@ async def submit_internal_privy_evm_order(
             or report.get("signed_coin_budget_intent_in_ledger") is not True):
         raise HTTPException(409,"Current owner-approved Privy grant not verified")
     owned_record=await __import__("asyncio").to_thread(
-        _read_grant_record,did,asset)
+        _read_grant_record,did,asset,central=True,
+    ) if central else await __import__("asyncio").to_thread(
+        _read_grant_record,did,asset,
+    )
     # This function alone does NOT activate a user session; the trusted
     # caller additionally requires a user-started live trading session.
     # A trusted strategy may pass the exact server-generated quote that it
@@ -171,7 +177,8 @@ async def submit_internal_privy_evm_order(
             with conn.cursor(row_factory=dict_row) as cur:
                 _claim_authorized_evm_order_locked(
                     cur,did=did,key=key,identity=identity,
-                    quote_sha256=quote_sha,budget_revision=budget_revision)
+                    quote_sha256=quote_sha,budget_revision=budget_revision,
+                    **({"central":True} if central else {}))
     except psycopg.Error:
         raise HTTPException(503,"Cannot durably claim user-approved EVM order") from None
     tx_hash=None

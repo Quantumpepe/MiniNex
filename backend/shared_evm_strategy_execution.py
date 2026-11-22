@@ -123,6 +123,7 @@ async def execute_internal_evm_strategy_signal(
     *,did:str,asset:str,strategy_run_id:str,signal_event_id:str,
     side:str,stable:str,amount:str,budget_revision:int,
     client:httpx.AsyncClient,
+    central:bool=False,
 )->dict:
     """Process a single server-originated strategy event without requoting.
 
@@ -153,13 +154,15 @@ async def execute_internal_evm_strategy_signal(
     reserve_internal_evm_coin_budget(
         did=did,asset=asset,intent_key=key,side=side,stable=stable,
         amount_usd=amount_usd,quote_sha256=quote_sha,
-        expected_revision=budget_revision)
+        expected_revision=budget_revision,
+        **({"central":True} if central else {}))
     try:
         return await submit_internal_privy_evm_order(
             did=did,asset=asset,intent_key=key,side=side,
             stable=stable,amount=amount,
             budget_revision=budget_revision,client=client,
-            prepared_quote=prepared)
+            prepared_quote=prepared,
+            **({"central":True} if central else {}))
     except BaseException:
         # Release only if the order has NEVER been durably claimed as
         # SENDING. Cancellation and claim both lock the same owner row.
