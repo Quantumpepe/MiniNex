@@ -1,6 +1,10 @@
 import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import EthLiveWalletEquity from './EthLiveWalletEquity.jsx';
+import {
+  authorizeCentralEvmWalletCoin,validCentralWalletStatus,
+  centralWalletHasCoin,
+} from './centralEvmWalletFlow.js';
 import EthAutoOwnerApproval from './EthAutoOwnerApproval.jsx';
 import {API_BASE} from './data.js';
 import {validLiveEthLimits,validSignerStatus,validatedLiveEthDraft,validWalletSignerAbsence,validEthPolicyLifecycle,validScopedGrantOffer,validEthReadOnlySafetyReport,validEthPrivyIncidentReview,verifiedLocalPrivyRevocationPending,usdUnits} from './liveEthRules.js';
@@ -12,7 +16,7 @@ const IS_ETH_ADDRESS=/^0x[a-fA-F0-9]{40}$/;
 // delegation requires a SEPARATE user-approved Privy addSigners call, and is
 // hidden unless the server has independently verified an audited policy.
 // The existing revoke button removes ALL additional signers per Privy's API.
-export default function LiveEthControls({t,user,address,getAccessToken,enabled,compact=false,stable='USDC'}) {
+export default function LiveEthControls({t,user,address,getAccessToken,enabled,compact=false,stable='USDC',lang='de'}) {
   const {removeSigners,addSigners}=useSigners();
   const {signMessage}=useSignMessage();
   const [limits,setLimits]=useState(null);
@@ -302,7 +306,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
   // model is consolidated. Do not make any grant silently on login.
   const startTradeOnce=async()=>{
     if(busy||phase!=='ready'||!ownAddress||!limits?.trading_paused||
-       !ethAuto?.worker_deployed||ethAuto?.status==='ACTIVE')return;
+       ethAuto?.status==='ACTIVE')return;
     const payload=validatedLiveEthDraft(draft);
     if(!payload||usdUnits(payload.planned_capital_usd)<=0n){
       setMessage(t.liveEthInvalidLimits);
@@ -322,9 +326,31 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
         stored=revised;
       }
       if(!stored.trading_paused)throw Error('ETH trading must start from pause');
-      let lifecycle=await request('/api/live/eth/policy/lifecycle');
-      if(!validEthPolicyLifecycle(lifecycle))
-        throw Error('ETH owner policy state unavailable');
+      // A single combined Privy signer must also work with ETH. Choose it
+      // for a new original wallet or an already-authorized central wallet,
+      // never silently replacing an existing ETH legacy grant.
+      const [central,lifecycle]=await Promise.all([
+        request('/api/live/evm/wallet-policy/status'),
+        request('/api/live/eth/policy/lifecycle'),
+      ]);
+      if(!validCentralWalletStatus(central)||
+         !validEthPolicyLifecycle(lifecycle))
+        throw Error('Original ETH wallet authorization cannot be verified');
+      if(central.status!=='NOT_CONFIGURED'||
+         lifecycle.status==='NOT_PREPARED'){
+        const shared=await authorizeCentralEvmWalletCoin({
+          asset:'ETH',stable:compact?stable:(ethAuto?.stable||stable),
+          address:ownAddress,request,addSigners,signMessage,
+        });
+        if(!centralWalletHasCoin(shared,'ETH'))
+          throw Error('Central ETH policy was not independently verified');
+        setMessage(lang==='de'
+          ? 'Eine gemeinsame Privy-Freigabe bestätigt. Der gemeinsame LIVE-Handelsworker ist noch nicht verbunden; kein Handel gestartet.'
+          : 'Combined Privy grant verified. The shared LIVE trading worker is not connected yet; no trade started.');
+        return;
+      }
+      if(!ethAuto?.worker_deployed)
+        throw Error('Original ETH LIVE worker is not available');
       let stage=lifecycle.status;
       if(stage==='NOT_PREPARED'){
         // Restricted policy preparation is NOT wallet authorization.
