@@ -14,6 +14,7 @@ import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
 import BtcSendEntry from './BtcSendEntry.jsx';
 import SolanaSend from './SolanaSend.jsx';
+import NativeSendEntry from './NativeSendEntry.jsx';
 import {useAdditionalCoinWallets} from './useAdditionalCoinWallets.js';
 import {evmNetworkAddress,validEvmAddress} from './nativeCoinAddresses.js';
 import {linkedVerifiedNativeAddress} from './xrpAdaWalletAddresses.js';
@@ -456,6 +457,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
 
   const renderCoinActions = asset => <div className="mininex-coin-wallet-actions">
     {asset==='SOL'&&<SolanaSend key={'sol-send-'+user?.id} t={t} enabled={verifiedAccount} userId={user?.id}/>}
+    {['TRX','XRP','DOGE'].includes(asset)&&<NativeSendEntry key={'native-send-'+asset} t={t} asset={asset} enabled={verifiedAccount}/>}
     {asset==='BTC'&&<BtcSendEntry key={'btc-send-'+user?.id}
       t={t} lang={lang} userId={user?.id}
       wallet={btcWallet.wallet} enabled={verifiedAccount}/>}
