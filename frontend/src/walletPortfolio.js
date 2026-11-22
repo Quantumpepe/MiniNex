@@ -39,8 +39,8 @@ export function summarizeVerifiedWalletPortfolio(sources,markets,syncedAt,now=Da
   }
   holdings.sort((a,b)=>b.value-a.value);
   return {
-    equity:priced||positiveUnpriced===0?Math.round(amountUSD*100)/100:null,
-    valuationAvailable:priced>0||positiveUnpriced===0,
+    equity:priced>0||(!incomplete&&positiveUnpriced===0)?Math.round(amountUSD*100)/100:null,
+    valuationAvailable:priced>0||(!incomplete&&positiveUnpriced===0),
     incomplete,holdings,positiveUnpriced,
     assetCount:holdings.length,mode:'LIVE_WALLET',currency:'USD',
   };
