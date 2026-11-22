@@ -476,7 +476,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
 
   const renderLiveControls = (asset,stable) => asset==='ETH' ?
     <LiveEthControls compact t={t} user={user} address={address}
-      stable={stable} getAccessToken={getAccessToken}
+      stable={stable} lang={lang} getAccessToken={getAccessToken}
       enabled={verifiedAccount}/> :
     ['BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset) ?
       <div className="mininex-coin-live-permissions">
