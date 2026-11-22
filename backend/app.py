@@ -2344,19 +2344,65 @@ async def send_trx(
     body: dict,
     authorization: str | None = Header(default=None),
 ):
-    """Send TRX from user's wallet. Privy signs and broadcasts."""
+    """Send TRX from user's wallet via Privy tron_sendTransaction."""
+    import os, httpx
     user = verify_privy_bearer(authorization)
     from_addr = body.get("from")
     to_addr = body.get("to")
     amount = body.get("amount")
     if not from_addr or not to_addr or not amount:
         raise HTTPException(400, "Missing from, to, or amount")
-    # TRX send via Privy tron_sendTransaction
-    # This is a placeholder - actual implementation needs tron library
-    return JSONResponse({
-        "status": "pending",
-        "message": "TRX send implementation pending.",
-        "from": from_addr,
-        "to": to_addr,
-        "amount": amount,
-    }, headers={"Cache-Control": "no-store"})
+    # Convert TRX to sun (1 TRX = 1,000,000 sun)
+    amount_sun = int(float(amount) * 1_000_000)
+    # Get wallet ID from Privy user
+    app_id = os.environ.get("MININEX_PRIVY_APP_ID", "")
+    app_secret = os.environ.get("MININEX_PRIVY_APP_SECRET", "")
+    if not app_id or not app_secret:
+        raise HTTPException(500, "Privy credentials not configured")
+    # Find TRX wallet for user
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"https://api.privy.io/v1/users/{user['user_id']}",
+            auth=(app_id, app_secret),
+            headers={"privy-app-id": app_id}
+        )
+        if resp.status_code != 200:
+            raise HTTPException(500, "Failed to fetch user wallets")
+        user_data = resp.json()
+        trx_wallet = None
+        for acc in user_data.get("linked_accounts", []):
+            if acc.get("type") == "wallet" and acc.get("chain_type") == "tron":
+                trx_wallet = acc
+                break
+        if not trx_wallet:
+            raise HTTPException(400, "No TRX wallet found")
+        wallet_id = trx_wallet.get("id")
+        # Send via Privy
+        send_resp = await client.post(
+            f"https://api.privy.io/v1/wallets/{wallet_id}/rpc",
+            auth=(app_id, app_secret),
+            headers={"privy-app-id": app_id, "Content-Type": "application/json"},
+            json={
+                "method": "tron_sendTransaction",
+                "params": {
+                    "raw_data": {
+                        "contract": [{
+                            "type": "TransferContract",
+                            "owner_address": from_addr,
+                            "to_address": to_addr,
+                            "amount": amount_sun
+                        }]
+                    }
+                }
+            }
+        )
+        if send_resp.status_code != 200:
+            raise HTTPException(500, f"Send failed: {send_resp.text}")
+        result = send_resp.json()
+        return JSONResponse({
+            "status": "submitted",
+            "txid": result.get("data", {}).get("txid", "unknown"),
+            "from": from_addr,
+            "to": to_addr,
+            "amount": amount,
+        }, headers={"Cache-Control": "no-store"})
