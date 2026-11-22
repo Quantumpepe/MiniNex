@@ -25,7 +25,13 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     });
     if(!response.ok)throw Error(liveMode?'Live session unavailable':'Personal paper state unavailable');
     const result=await response.json();
-    if(!validExtraPaperState(result,asset))throw Error('Invalid paper session');
+    // BTC/ETH user-paper has different format; normalize for display
+    if(['BTC','ETH'].includes(asset)&&result.position){
+      result.budget_usd=result.demo_start_cash||result.position?.demo_start_cash||0;
+      result.settlement=result.settlement||'USDC';
+      result.strategy_mode=result.strategy_mode||'LONG';
+      result.horizon=result.horizon||'15m';
+    }
     return result;
   },[asset,getAccessToken]);
 
