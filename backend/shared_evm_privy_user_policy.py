@@ -23,8 +23,8 @@ from .shared_evm_swap_receipts import _pair
 
 _ADDRESS=re.compile(r"^0x[0-9a-fA-F]{40}$")
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
-_NATIVE=frozenset(("BNB","POL","AVAX"))
-_ADDITIONAL=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
+_ADDITIONAL=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def build_user_evm_policy_blueprint(
