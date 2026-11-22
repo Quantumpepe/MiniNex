@@ -207,6 +207,7 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict)->None:
 def _claim_authorized_evm_order_locked(
     cur,*,did:str,key:str,identity:dict,
     quote_sha256:str,budget_revision:int,central:bool=False,
+    remote_verified_policy_sha256:str|None=None,
 )->None:
     """Atomic last-mile gate before any Privy RPC or signer use.
 
@@ -229,6 +230,9 @@ def _claim_authorized_evm_order_locked(
             cur,did=did,asset=asset,stable=identity["stable"],
             revision=budget_revision,
         )
+        if (type(remote_verified_policy_sha256) is not str
+                or policy["policy_sha256"]!=remote_verified_policy_sha256):
+            raise HTTPException(409,"Privy policy changed after remote audit")
     else:
         cur.execute(
             """SELECT status,stable,chain_id,wallet_id,wallet_address,

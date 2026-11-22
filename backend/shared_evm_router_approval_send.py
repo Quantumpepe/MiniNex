@@ -47,6 +47,7 @@ def _claim_once_locked(
     record:dict,reviewed:dict,revision:int,
     amount_atomic:int,key:str,request_digest:str,now:int,
     central:bool=False,
+    remote_verified_policy_sha256:str|None=None,
 )->None:
     pair=_pair(asset,stable,side)
     cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",
@@ -59,6 +60,9 @@ def _claim_once_locked(
         permission=_locked_original_evm_coin(
             cur,did=did,asset=asset,stable=stable,revision=revision,now=now,
         )
+        if (type(remote_verified_policy_sha256) is not str
+                or permission["policy_sha256"]!=remote_verified_policy_sha256):
+            raise HTTPException(409,"Original wallet policy changed since Privy GET")
     else:
         cur.execute(
             """SELECT asset,stable,chain_id,wallet_id,wallet_address,owner_id,
@@ -171,7 +175,8 @@ def _claim_once_locked(
 
 def _claim(*,did:str,asset:str,side:str,stable:str,record:dict,
            reviewed:dict,revision:int,amount_atomic:int,key:str,
-           digest:str,now:int,central:bool=False)->None:
+           digest:str,now:int,central:bool=False,
+           remote_verified_policy_sha256:str|None=None)->None:
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -180,7 +185,10 @@ def _claim(*,did:str,asset:str,side:str,stable:str,record:dict,
                 record=record,reviewed=reviewed,revision=revision,
                 amount_atomic=amount_atomic,key=key,
                 request_digest=digest,now=now,
-                **({"central":True} if central else {}))
+                **({
+                    "central":True,
+                    "remote_verified_policy_sha256":remote_verified_policy_sha256,
+                } if central else {}))
 
 
 def _finish(*,did:str,asset:str,key:str,digest:str,tx_hash:str|None)->str:
@@ -229,6 +237,13 @@ async def submit_scoped_router_approval_once(
         _read_grant_record,did,asset,
         **({"central":True} if central else {}),
     )
+    if central and (
+        record.get("policy_sha256")!=proof.get("remote_verified_policy_sha256")
+        or record.get("wallet_id")!=proof.get("remote_verified_wallet_id")
+        or record.get("signer_id")!=proof.get("remote_verified_signer_id")
+        or record.get("budget_revision")!=proof.get("current_user_budget_revision")
+    ):
+        raise HTTPException(409,"Privy remote grant changed before approval")
     now=int(time.time())
     reviewed=inspect_combined_grant_router_approval(
         record=record,asset=asset,side=side,stable=stable,
@@ -267,7 +282,10 @@ async def submit_scoped_router_approval_once(
         _claim,did=did,asset=asset,side=side,stable=stable,
         record=record,reviewed=reviewed,revision=budget_revision,
         amount_atomic=amount_atomic,key=key,digest=digest,now=now,
-        **({"central":True} if central else {}))
+        **({
+            "central":True,
+            "remote_verified_policy_sha256":proof["remote_verified_policy_sha256"],
+        } if central else {}))
     tx_hash=None
     try:
         signature=sign_privy_rpc_payload(

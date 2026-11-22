@@ -42,6 +42,9 @@ def _inert_response(status: str = "NOT_CONFIGURED") -> dict:
         "one_scoped_signer_verified": False,
         "remote_policy_exactly_verified": False,
         "backend_quorum_current": False,
+        "verified_policy_sha256": None,
+        "verified_wallet_id": None,
+        "verified_signer_id": None,
         "policy_owner_quorum_current": False,
         "legacy_reconciliation_required": True,
         "privy_wallet_grant_changed": False,
@@ -186,6 +189,9 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         "policy_owner_quorum_current":(
             owner_quorum.get("remote_quorum_public_key_verified") is True
         ),
+        "verified_policy_sha256":record["policy_sha256"],
+        "verified_wallet_id":record["wallet_id"],
+        "verified_signer_id":record["signer_id"],
     })
     # Automatic signing is NOT connected to these consolidated records yet.
     return result

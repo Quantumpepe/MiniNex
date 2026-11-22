@@ -144,6 +144,13 @@ async def submit_internal_privy_evm_order(
     ) if central else await __import__("asyncio").to_thread(
         _read_grant_record,did,asset,
     )
+    if central and (
+        owned_record.get("policy_sha256")!=report.get("remote_verified_policy_sha256")
+        or owned_record.get("wallet_id")!=report.get("remote_verified_wallet_id")
+        or owned_record.get("signer_id")!=report.get("remote_verified_signer_id")
+        or owned_record.get("budget_revision")!=report.get("current_user_budget_revision")
+    ):
+        raise HTTPException(409,"Privy remote proof changed before order claim")
     # This function alone does NOT activate a user session; the trusted
     # caller additionally requires a user-started live trading session.
     # A trusted strategy may pass the exact server-generated quote that it
@@ -178,7 +185,11 @@ async def submit_internal_privy_evm_order(
                 _claim_authorized_evm_order_locked(
                     cur,did=did,key=key,identity=identity,
                     quote_sha256=quote_sha,budget_revision=budget_revision,
-                    **({"central":True} if central else {}))
+                    **({
+                        "central":True,
+                        "remote_verified_policy_sha256":
+                            report["remote_verified_policy_sha256"],
+                    } if central else {}))
     except psycopg.Error:
         raise HTTPException(503,"Cannot durably claim user-approved EVM order") from None
     tx_hash=None

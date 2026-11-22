@@ -179,6 +179,10 @@ async def audit_original_evm_coin(did:str,asset:str)->dict:
         record=await asyncio.to_thread(original_evm_coin_record,did,asset)
     except psycopg.Error:
         raise HTTPException(503,"Original wallet coin scope unavailable") from None
+    if (record["policy_sha256"]!=status.get("verified_policy_sha256")
+            or record["wallet_id"]!=status.get("verified_wallet_id")
+            or record["signer_id"]!=status.get("verified_signer_id")):
+        raise HTTPException(409,"Original Privy remote proof became stale")
     return {
         "mode":"EVM_PRIVY_REMOTE_GRANT_INDEPENDENT_AUDIT",
         "grant_source":"PRIVY_CENTRAL_ONE_SIGNER",
@@ -189,6 +193,9 @@ async def audit_original_evm_coin(did:str,asset:str)->dict:
         "backend_quorum_current":True,
         "signed_coin_budget_intent_in_ledger":True,
         "current_user_budget_revision":record["budget_revision"],
+        "remote_verified_policy_sha256":status["verified_policy_sha256"],
+        "remote_verified_wallet_id":status["verified_wallet_id"],
+        "remote_verified_signer_id":status["verified_signer_id"],
         "unresolved_budget_reservations_checked":False,
         "live_session_verified":False,
         "can_broadcast":False,
