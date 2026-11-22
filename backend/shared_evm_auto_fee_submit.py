@@ -50,14 +50,10 @@ def automatic_fee_transfer_worker_enabled()->bool:
     override=os.getenv("MININEX_EVM_AUTO_FEES_ENABLED","").strip()
     if override and override!="explicit-owner-privy-grant":
         return False
-    return (
-        os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        and bool(os.getenv("DATABASE_URL","").strip())
-        and (
-            override=="explicit-owner-privy-grant"
-            or os.getenv("MININEX_EVM_AUTO_WORKER_ENABLED")=="explicit-live"
-        )
-    )
+    # No additional owner/operator ENV setup per coin: each real HWM
+    # liability is checked against the original exact user-granted wallet
+    # policy, immutable fee journal and finality before a sender can act.
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 async def submit_original_owner_auto_fee_once(
@@ -136,6 +132,45 @@ async def get_effective_owner_fee_grant(*,did:str,asset:str)->dict:
         get_owner_evm_remote_grant_audit,_read_grant_record,
         validate_pinned_evm_policy,_lte,
     )
+    from .shared_evm_wallet_policy_status import (
+        read_owner_central_wallet_policy_status,
+    )
+    from .shared_evm_central_runtime import (
+        audit_original_evm_coin,original_evm_coin_record,central_policy_rule,
+    )
+    central=await read_owner_central_wallet_policy_status(did)
+    if central.get("status")!="NOT_CONFIGURED":
+        # A pending, revoked or uncertain central grant must not silently
+        # fall back to any unrelated older coin fee permission.
+        verified=await audit_original_evm_coin(did,asset)
+        if verified.get("grant_source")!="PRIVY_CENTRAL_ONE_SIGNER":
+            raise HTTPException(409,"No currently delegated original fee owner")
+        record=await asyncio.to_thread(original_evm_coin_record,did,asset)
+        rule=central_policy_rule(
+            record,asset=asset,kind="fee",stable=record["stable"],
+            now=int(time.time()),
+        )
+        cap=_lte(rule,"transfer.value")
+        treasury=owner_fee_treasury(asset=asset,stable=record["stable"])
+        if not any(
+            x.get("field")=="transfer.to"
+            and x.get("operator")=="eq"
+            and str(x.get("value","")).lower()==treasury
+            for x in rule["conditions"]
+        ):
+            raise HTTPException(409,"Original owner did not approve fee treasury")
+        return {
+            "source":"ORIGINAL_CENTRAL_WALLET",
+            "asset":asset,"chain_id":record["chain_id"],
+            "owner_wallet":record["wallet_address"],
+            "treasury_wallet":treasury,"stable":record["stable"],
+            "wallet_id":record["wallet_id"],"policy_id":record["policy_id"],
+            "policy_sha256":record["policy_sha256"],
+            "owner_max_fee_atomic":cap,
+            "owner_fee_grant_remotely_verified":True,
+            "signer_quorum_remotely_verified":True,
+            "fee_transfer_sent":False,
+        }
     audit=await get_owner_evm_remote_grant_audit(did,asset)
     fields=(
         "owner_wallet_current","exact_remote_policy_rules_verified",
