@@ -142,9 +142,9 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     {failed&&<p className="privy-wallet-description" role="alert">
       {liveMode?'Live-Session noch nicht gestartet oder nicht verfügbar.':t.extraPaperUnavailable}
     </p>}
-    {(state==='NOT_STARTED'||failed||!data)&&<button type="button" className="privy-wallet-action" disabled={busy||!canStart}
+    {!liveMode&&(state==='NOT_STARTED'||failed||!data)&&<button type="button" className="privy-wallet-action" disabled={busy||!canStart}
         onClick={()=>command('start')}>
-        {liveMode?t.extraPaperStartLive:t.extraPaperStart} · {asset}
+        {t.extraPaperStart} · {asset}
       </button>}
     {['ACTIVE','PAUSED'].includes(state)&&<>
       <div className="mininex-extra-paper-balances">
