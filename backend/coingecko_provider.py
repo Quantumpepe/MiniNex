@@ -16,14 +16,14 @@ PUBLIC_INTERVAL = 120
 AUTH_INTERVAL = 60
 
 # Covers the current twelve in one batched call; settlement stablecoins are separate.
-MARKET_ASSETS = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
+MARKET_ASSETS = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
 
 # Canonical CoinGecko IDs; never derive them from an untrusted ticker.
 COIN_IDS = {
     "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin",
     "SOL": "solana", "XRP": "ripple", "TRX": "tron",
     "POL": "polygon-ecosystem-token", "AVAX": "avalanche-2",
-    "LINK": "chainlink", "DOGE": "dogecoin",
+    "LINK": "chainlink", "QNT": "quant-network",
     "UNI": "uniswap", "ARB": "arbitrum",
     "USDC": "usd-coin", "USDT": "tether",
 }
