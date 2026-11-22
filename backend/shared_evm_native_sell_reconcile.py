@@ -92,7 +92,9 @@ def _finalize_native_sell_deposit_locked(
     if (type(row) is not dict
             or row.get("status")!="SUBMITTED"
             or row.get("chain_id")!=pair["chain_id"]
-            or row.get("stable")!=pair["stable"]
+            or row.get("stable") not in (
+                ("USDC","USDT") if asset=="ETH" else (pair["stable"],)
+            )
             or row.get("wallet_address")!=proof.get("wallet_address")
             or row.get("tx_hash")!=proof.get("tx_hash")):
         raise HTTPException(409,"Native SELL receipt differs from durable deposit")
