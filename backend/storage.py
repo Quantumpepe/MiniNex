@@ -1320,6 +1320,1633 @@ SCHEMA += (
     )""",
 )
 
+# Per-wallet ONE-Privy-signer EVM policy journal (future migration).
+# No row implies authorization. Only independently checked remote user grants
+# can ever transition a DRAFT to GRANT_VERIFIED. This schema doesn't send
+# money, add signers, or replace the legacy per-coin permissions.
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_wallet_policy_grants (
+        privy_did TEXT PRIMARY KEY REFERENCES mininex_accounts(privy_did),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL
+            CHECK(wallet_address ~ '^0x[0-9a-f]{40}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        owner_id TEXT NOT NULL CHECK(length(owner_id) BETWEEN 6 AND 160),
+        signer_id TEXT NOT NULL CHECK(length(signer_id) BETWEEN 6 AND 160),
+        policy_id TEXT UNIQUE CHECK(policy_id IS NULL OR
+            policy_id ~ '^[A-Za-z0-9_-]{6,160}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        policy_sha256 TEXT CHECK(policy_sha256 IS NULL OR
+            policy_sha256 ~ '^[0-9a-f]{64}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        scopes_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            CHECK(jsonb_typeof(scopes_json)='object'),
+        revisions_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            CHECK(jsonb_typeof(revisions_json)='object'),
+        status TEXT NOT NULL DEFAULT 'DRAFT'
+            CHECK(status IN (
+                'DRAFT','SUBMITTING','UNCERTAIN',
+                'REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED',
+                'UPDATE_PENDING','UPDATING','UPDATE_UNCERTAIN',
+                'REVOKED')),
+        legacy_reconciliation_required BOOLEAN NOT NULL DEFAULT TRUE,
+        revision BIGINT NOT NULL DEFAULT 1 CHECK(revision>0),
+        remote_verified_at TIMESTAMPTZ,
+        original_owner_granted_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        revoked_at TIMESTAMPTZ,
+        CHECK(owner_id <> signer_id),
+        CHECK(status NOT IN ('REMOTE_VERIFIED_UNATTACHED','GRANT_VERIFIED')
+              OR (policy_id IS NOT NULL AND policy_sha256 IS NOT NULL
+                  AND remote_verified_at IS NOT NULL)),
+        CHECK(status <> 'GRANT_VERIFIED' OR
+              original_owner_granted_at IS NOT NULL),
+        CHECK(status <> 'REVOKED' OR revoked_at IS NOT NULL)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_wallet_policy_intents (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        nonce TEXT NOT NULL CHECK(nonce ~ '^[0-9a-f]{64}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        wallet_id TEXT NOT NULL CHECK(length(wallet_id) BETWEEN 6 AND 160),
+        wallet_address TEXT NOT NULL
+            CHECK(wallet_address ~ '^0x[0-9a-f]{40}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        previous_policy_sha256 TEXT NOT NULL
+            CHECK(previous_policy_sha256 ~ '^[0-9a-f]{64}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        target_policy_sha256 TEXT NOT NULL
+            CHECK(target_policy_sha256 ~ '^[0-9a-f]{64}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        challenge_text TEXT NOT NULL CHECK(length(challenge_text) <= 3500),
+        challenge_sha256 TEXT NOT NULL
+            CHECK(challenge_sha256 ~ '^[0-9a-f]{64}    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        raise HTTPException(503, "MiniNex persistent database not configured")
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise HTTPException(503, "MiniNex persistent database URL invalid")
+    return url
+
+
+def _ensure_schema(url: str) -> None:
+    global _BOOTSTRAPPED
+    if _BOOTSTRAPPED:
+        return
+    with _BOOTSTRAP_LOCK:
+        if _BOOTSTRAPPED:
+            return
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor() as cur:
+                for statement in SCHEMA:
+                    cur.execute(statement)
+        _BOOTSTRAPPED = True
+
+
+def _safe_did(privy_did: str) -> str:
+    if not isinstance(privy_did, str) or not privy_did.startswith("did:privy:") or len(privy_did) > 256:
+        raise ValueError("verified Privy DID required")
+    return privy_did
+
+
+def _prepare_rows(cur, did: str) -> None:
+    cur.execute(
+        """INSERT INTO mininex_accounts(privy_did) VALUES (%s)
+           ON CONFLICT (privy_did) DO UPDATE SET last_seen_at=now()""",
+        (did,),
+    )
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_asset_hwm(privy_did,asset) VALUES (%s,%s)
+               ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+    # Budget preferences are inert settings, not wallet permissions.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_budget_preferences(privy_did,asset,percent)
+               VALUES (%s,%s,0) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+    # Independent LIVE limits are OFF by default. The paper slider never
+    # authorizes real transfers, even when set to 100%.
+    cur.execute(
+        """INSERT INTO mininex_live_eth_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Independent BTC LIVE limits are separate from ETH and always paused.
+    cur.execute(
+        """INSERT INTO mininex_live_btc_limits(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Initialize a single cross-coin strategy template, without touching
+    # any already running session or existing per-coin allocation.
+    cur.execute(
+        """INSERT INTO mininex_unified_strategy_profiles(privy_did)
+           VALUES (%s) ON CONFLICT (privy_did) DO NOTHING""",
+        (did,),
+    )
+    # Strategy settings are user preferences, never trading authorization.
+    for asset in ASSETS:
+        cur.execute(
+            """INSERT INTO mininex_trade_preferences(privy_did,asset)
+               VALUES (%s,%s) ON CONFLICT (privy_did,asset) DO NOTHING""",
+            (did,asset),
+        )
+
+
+def get_account_summary(privy_did: str) -> dict:
+    """Create/read a private account only after successful JWT verification."""
+    did = _safe_did(privy_did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                _prepare_rows(cur, did)
+                cur.execute(
+                    """SELECT asset, cumulative_realized_net_usd,high_water_mark_usd,
+                              total_fees_assessed_usd
+                       FROM mininex_asset_hwm WHERE privy_did=%s ORDER BY asset""",
+                    (did,),
+                )
+                ledgers = list(cur.fetchall())
+    except psycopg.Error:
+        LOG.warning("MiniNex database unavailable (error details withheld)")
+        raise HTTPException(503, "MiniNex database currently unavailable") from None
+
+    return {
+        "authenticated": True,
+        "account_persistent": True,
+        "mode": "PAPER_ONLY_NO_LIVE_ORDERS",
+        "wallet_connected": False,
+        "trading_enabled": False,
+        "performance_fee_pct": "5.00",
+        "hwm_mode": "REALIZED_NET_USD_PREPARED_NOT_COLLECTED",
+        "ledger": {
+            row["asset"]: {
+                "cumulative_realized_net_usd": str(row["cumulative_realized_net_usd"]),
+                "high_water_mark_usd": str(row["high_water_mark_usd"]),
+                "total_fees_assessed_usd": str(row["total_fees_assessed_usd"]),
+            }
+            for row in ledgers
+        },
+    }
+
+
+def record_trusted_realized_close(
+    *, privy_did: str, asset: str, execution_id: str, realized_net_usd: object
+) -> dict:
+    """Server-INTERNAL accounting only. NOT called by current paper executor.
+
+    Execute only after an independently confirmed, immutable live trade fill and
+    correct cost basis are reconciled. Actual fee collection is not implemented.
+    A repeated execution ID is idempotent even under concurrent workers.
+    """
+    did = _safe_did(privy_did)
+    if asset not in ASSETS:
+        raise ValueError("asset must be BTC or ETH")
+    if not isinstance(execution_id, str) or not 1 <= len(execution_id) <= 180:
+        raise ValueError("invalid execution id")
+    if any(c.isspace() for c in execution_id):
+        raise ValueError("execution id cannot contain whitespace")
+    delta = decimal_amount(realized_net_usd)
+    url = _db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url, connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            _prepare_rows(cur,did)
+            cur.execute(
+                """SELECT cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_asset_hwm WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+                (did,asset),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """SELECT fee_assessed_usd,realized_net_delta_usd,
+                          cumulative_realized_net_usd,high_water_mark_usd
+                   FROM mininex_fee_events
+                   WHERE privy_did=%s AND asset=%s AND execution_id=%s""",
+                (did,asset,execution_id),
+            )
+            existing=cur.fetchone()
+            if existing:
+                # Idempotency does not permit silently changing a previously
+                # reconciled trade's realized PnL under the same execution ID.
+                # Treat differing economic facts as an accounting conflict.
+                if Decimal(str(existing["realized_net_delta_usd"])) != delta:
+                    raise HTTPException(409, "Execution accounting conflict")
+                return {"duplicate":True,"fee_assessed_usd":str(existing["fee_assessed_usd"]),
+                        "high_water_mark_usd":str(existing["high_water_mark_usd"]),
+                        "cumulative_realized_net_usd":str(existing["cumulative_realized_net_usd"])}
+            assessment=assess_realized_gain(
+                row["cumulative_realized_net_usd"],row["high_water_mark_usd"],delta,
+            )
+            cur.execute(
+                """INSERT INTO mininex_fee_events
+                   (privy_did,asset,execution_id,realized_net_delta_usd,
+                    cumulative_realized_net_usd,high_water_mark_usd,fee_rate,fee_assessed_usd)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (did,asset,execution_id,delta,assessment.cumulative_usd,
+                 assessment.high_water_mark_usd,RATE,assessment.fee_assessed_usd),
+            )
+            cur.execute(
+                """UPDATE mininex_asset_hwm
+                   SET cumulative_realized_net_usd=%s,high_water_mark_usd=%s,
+                       total_fees_assessed_usd=total_fees_assessed_usd+%s,
+                       updated_at=now()
+                   WHERE privy_did=%s AND asset=%s""",
+                (assessment.cumulative_usd,assessment.high_water_mark_usd,
+                 assessment.fee_assessed_usd,did,asset),
+            )
+            if assessment.fee_assessed_usd>0:
+                # This is a USD-denominated ACCOUNTING obligation, not an
+                # ERC20 transfer instruction. No paper event can reach here.
+                cur.execute(
+                    """INSERT INTO mininex_treasury_obligations
+                       (privy_did,asset,execution_id,fee_due_usd)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (privy_did,asset,execution_id) DO NOTHING""",
+                    (did,asset,execution_id,assessment.fee_assessed_usd),
+                )
+    return {"duplicate":False,"fee_assessed_usd":str(assessment.fee_assessed_usd),
+            "high_water_mark_usd":str(assessment.high_water_mark_usd),
+            "cumulative_realized_net_usd":str(assessment.cumulative_usd)}
+),
+        status TEXT NOT NULL DEFAULT 'PENDING'
+            CHECK(status IN ('PENDING','SIGNED_INTENT','CONSUMED',
+                             'REVOKED','UNCERTAIN')),
+        issued_at TIMESTAMPTZ NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        signed_at TIMESTAMPTZ,
+        consumed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,nonce),
+        CHECK(expires_at > issued_at AND
+              expires_at <= issued_at + interval '5 minutes'),
+        CHECK(status NOT IN ('SIGNED_INTENT','CONSUMED') OR
+              signed_at IS NOT NULL),
+        CHECK(status <> 'CONSUMED' OR consumed_at IS NOT NULL)
+    )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS
+       mininex_live_evm_wallet_policy_intent_active_once
+       ON mininex_live_evm_wallet_policy_intents(privy_did)
+       WHERE status IN ('PENDING','SIGNED_INTENT')""",
+)
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
