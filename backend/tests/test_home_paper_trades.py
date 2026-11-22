@@ -234,4 +234,4 @@ def test_explicit_all_coin_mode_remains_available_in_private_api(monkeypatch):
         assert reply.status_code==200
         assert reply.json()["selected_asset"]==symbol
     assert checked==[("did:privy:alice",x) for x in
-                    ("BTC","ETH","SOL","ALL")]
+                    ("BTC","ETH","SOL","ARB","QNT","ALL")]
