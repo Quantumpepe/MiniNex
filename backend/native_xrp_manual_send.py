@@ -179,7 +179,7 @@ def verified_signed_blob(privy_response: dict, unsigned: dict) -> tuple[str, str
         signed = decode(tx_blob)
     except (ValueError, TypeError, KeyError):
         raise HTTPException(502, "Privy signed XRP transaction is malformed") from None
-    if (set(signed) != set(unsigned) | {"SigningPubKey", "TxnSignature"}
+    if (set(signed) != set(unsigned) | {"TxnSignature"}
             or any(signed.get(k) != v for k, v in unsigned.items())
             or type(signed.get("SigningPubKey")) is not str
             or type(signed.get("TxnSignature")) is not str):
