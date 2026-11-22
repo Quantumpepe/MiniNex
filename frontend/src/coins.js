@@ -12,7 +12,7 @@ export const COINS=Object.freeze([
   Object.freeze({symbol:'POL',name:'Polygon',glyph:'⬡',network:'polygon-pos-mainnet',paperSettingsReady:false}),
   Object.freeze({symbol:'AVAX',name:'Avalanche',glyph:'▲',network:'avalanche-c-mainnet',paperSettingsReady:false}),
   Object.freeze({symbol:'LINK',name:'Chainlink',glyph:'⬡',network:'ethereum-mainnet',paperSettingsReady:false,token:true}),
-  Object.freeze({symbol:'DOGE',name:'Dogecoin',glyph:'Ð',network:'dogecoin-mainnet',paperSettingsReady:false}),
+  Object.freeze({symbol:'QNT',name:'Quant',glyph:'Q',network:'ethereum-mainnet',paperSettingsReady:false,token:true}),
   Object.freeze({symbol:'UNI',name:'Uniswap',glyph:'🦄',network:'ethereum-mainnet',paperSettingsReady:false,token:true}),
   Object.freeze({symbol:'ARB',name:'Arbitrum',glyph:'◆',network:'arbitrum-one-mainnet',paperSettingsReady:false,token:true}),
 ]);
