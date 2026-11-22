@@ -176,3 +176,19 @@ def test_schema_creates_independent_settings_without_modifying_existing_sessions
     assert "PRIMARY KEY (privy_did,asset)" in schema
     assert "mininex_extra_paper_sessions" in schema
     assert "mininex_user_paper_sessions" in schema
+
+
+def test_trade_budget_has_no_artificial_100_to_5000_api_cap(db,signed):
+    """Positive user-chosen capital is not a platform trading range."""
+    c=TestClient(api.app)
+    endpoint="/api/coin-preferences/QNT"
+    original={"budget_usd":25000,"mode":"AUTO","stable":"USDC",
+              "horizon":"15m","expected_revision":0}
+    accepted=c.put(endpoint,json=original,headers=signed(DID))
+    assert accepted.status_code==200
+    assert accepted.json()["settings"]["QNT"]["budget_usd"]==25000
+    assert cp.get_coin_preferences(DID)["settings"]["QNT"]["revision"]==1
+    for forbidden in (0,-1,9007199254740992):
+        denied=c.put(endpoint,json={**original,"budget_usd":forbidden,
+            "expected_revision":1},headers=signed(DID))
+        assert denied.status_code==422
