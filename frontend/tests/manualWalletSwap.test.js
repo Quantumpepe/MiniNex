@@ -51,7 +51,7 @@ test('all twelve coins can request real venue quotes; ETH/BTC keep dedicated rou
   });
   for(const [from,to,amount] of [
     ['ETH','BTC','2'],['LINK','USDC','10'],['ARB','USDC','20'],
-    ['DOGE','USDT','100'],['USDC','USDT','1'],
+    ['QNT','USDT','100'],['USDC','USDT','1'],
     ['SOL','XRP','5'],['POL','AVAX','1'],['UNI','BNB','3'],
   ]) assert.deepEqual(manualSwapQuoteRequest(from,to,amount),{
     path:'/api/wallet/swap/live-quote',
@@ -303,7 +303,7 @@ test('all twelve coins and ETH stables validate exact route classification only'
     BTC:'bitcoin-mainnet',ETH:'ethereum-mainnet',BNB:'bsc-mainnet',
     SOL:'solana-mainnet',XRP:'xrpl-mainnet',TRX:'tron-mainnet',
     POL:'polygon-pos-mainnet',AVAX:'avalanche-c-mainnet',
-    LINK:'ethereum-mainnet',DOGE:'dogecoin-mainnet',
+    LINK:'ethereum-mainnet',QNT:'dogecoin-mainnet',
     UNI:'ethereum-mainnet',ARB:'arbitrum-one-mainnet',
     USDC:'ethereum-mainnet',USDT:'ethereum-mainnet',
   };
@@ -423,7 +423,7 @@ test('real provider quotes reject native network forgery and any executable inst
   assert.equal(validManualSwapQuote({...good,quote_expires_at:'tomorrow'},req),false);
   assert.equal(validManualSwapQuote({...good,quote_expires_at:undefined},req),false);
   for(const change of [
-    {source_asset:'ETH'},{destination_asset:'DOGE'},
+    {source_asset:'ETH'},{destination_asset:'QNT'},
     {source_network:'ethereum-mainnet'},
     {destination_network:'bitcoin-mainnet'},
     {quote_provider:'UNKNOWN'}, {pool_route_quoted:false},
