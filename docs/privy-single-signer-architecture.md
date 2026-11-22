@@ -41,7 +41,22 @@ chain/signature type.
   A new authenticated **READ-ONLY** endpoint
   `GET /api/live/evm/wallet-policy/status` independently verifies all
   original budget revisions, Privy owner/signing quorum and policy.
-  None of these steps changes a wallet signer or starts a LIVE trade.
+  The read-only endpoint cannot change a signer or start a LIVE trade.
+- **New first-wallet enrollment endpoints (implemented in the Draft branch):**
+  `POST /api/live/evm/wallet-policy/prepare/{asset}` builds an immutable
+  first-coin policy using the original user's saved capital and fresh
+  ETH/QNT/EVM quotes. `POST /api/live/evm/wallet-policy/publish` claims
+  a one-shot durable policy POST and independently reads Privy back;
+  uncertain POST results are never replayed. `GET
+  /api/live/evm/wallet-policy/grant-offer` returns the exact wallet-owner
+  approval request; after a single explicit Privy `addSigners` call,
+  `POST /api/live/evm/wallet-policy/confirm-grant` verifies the matching
+  signer, precise policy and original wallet using Privy GET before
+  recording `GRANT_VERIFIED`. None of these endpoints executes an
+  automatic trade, and the existing Android `Start Trade` is **NOT yet
+  connected** to them. Old per-coin signers cannot be silently replaced.
+  Backend tests cover all eight EVM assets, invalid budget revisions,
+  legacy signer races, duplicate grant attempts and remote mismatches.
 - Future one-time owner configuration uses the already registered
   `MiniNex-Backend-Signer-V2` quorum ID and matching existing P-256 key.
   **Do not hardcode the dashboard quorum ID or introduce twelve new secrets.**
@@ -82,10 +97,13 @@ chain/signature type.
    original DID/wallet/coin budget revision checks, remote Policy Owner
    quorum diagnostics and strictly pinned remote policy audit. An old
    legacy grant never automatically becomes a shared wallet grant.
-3. **OPEN:** Implement actual owner-authenticated Privy policy creation and
-   PATCH, with durable one-attempt claims, original wallet EIP-191 consent,
-   uncertain-outcome reconciliation and independent remote readback,
-   without replacing or escalating a wallet signer implicitly.
+3. **PARTIAL:** A new first-wallet policy can now be prepared/published
+   (with one-shot DB claim and remote policy GET) and user-authorized
+   `addSigners` can be independently verified/recorded. **Still OPEN:**
+   update an existing policy via Privy PATCH with Policy Owner quorum
+   signature after a user-approved one-use EIP-191 scope-change intent,
+   durable one-attempt claim and uncertain-outcome reconciliation. Never
+   replace or escalate an original signer implicitly.
 4. Update `Start Trade` to present **one clear wallet confirmation** for a
    new or expanded user scope, and to start only after the aggregate remote
    policy / signer / budget / quorum are independently verified.
@@ -100,8 +118,11 @@ chain/signature type.
 
 **Current verified progress (2026-11-22):** Draft PR #208 is isolated
 from `main` and Render. See GitHub backend auth checks for this branch.
-The new status endpoint is owner-authenticated and read-only; production
-Start Trade and per-coin signers have NOT been switched to this design.
+The new status endpoint is owner-authenticated and read-only. New initial
+policy preparation, publication and signed-wallet grant confirmation
+endpoints are also implemented but **not wired to the production frontend
+or LIVE worker**; production Start Trade, native coins, and per-coin
+signers have NOT been switched to this design.
 
 **Release gate:** Not complete until multi-coin trading from one original EVM
 wallet is proven without creating extra quorums and without either policy
