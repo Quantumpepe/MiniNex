@@ -4,7 +4,7 @@
 const EVM_ADDRESS=/^0x[0-9a-fA-F]{40}$/;
 const MAX_UINT256=(1n<<256n)-1n;
 const ALL=Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB','USDC','USDT',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB','USDC','USDT',
 ]);
 const EVM=Object.freeze({
   ETH: Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'native'}),
@@ -25,7 +25,7 @@ const EVM=Object.freeze({
 // Show the right address family without pretending every chain can send yet.
 export function sendAddressPlaceholder(symbol) {
   const hints={BTC:'bc1…',SOL:'Base58…',XRP:'r…',TRX:'T…',
-    DOGE:'D…',ARB:'0x…'};
+    QNT:'0x…',ARB:'0x…'};
   return hints[symbol]||'0x…';
 }
 export const SEND_ASSETS=ALL;
