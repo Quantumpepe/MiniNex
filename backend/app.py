@@ -15,6 +15,7 @@ from .market_data import MarketDataService
 from .extra_market_data import ExtraMarketData, EXTRA_ASSETS
 from .auto_engine import PaperAutoEngine
 from .auth import verify_privy_bearer
+from .privy_wallet_verification import APP_ID
 from .storage import get_account_summary
 from .budgets import get_budget_preferences, save_budget_preference
 from .trade_preferences import get_trade_preferences, save_trade_preference
@@ -2528,7 +2529,7 @@ async def send_xrp(
         raise HTTPException(400, "Missing from, to, or amount")
     # XRP uses drops (1 XRP = 1,000,000 drops)
     amount_drops = int(float(amount) * 1_000_000)
-    app_id = os.environ.get("MININEX_PRIVY_APP_ID", "")
+    app_id = APP_ID
     app_secret = os.environ.get("MININEX_PRIVY_APP_SECRET", "")
     if not app_id or not app_secret:
         raise HTTPException(500, "Privy credentials not configured")
@@ -2609,7 +2610,7 @@ async def send_trx(
     # Convert TRX to sun (1 TRX = 1,000,000 sun)
     amount_sun = int(float(amount) * 1_000_000)
     # Get wallet ID from Privy user
-    app_id = os.environ.get("MININEX_PRIVY_APP_ID", "")
+    app_id = APP_ID
     app_secret = os.environ.get("MININEX_PRIVY_APP_SECRET", "")
     if not app_id or not app_secret:
         raise HTTPException(500, "Privy credentials not configured")
