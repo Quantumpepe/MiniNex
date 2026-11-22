@@ -31,13 +31,13 @@ def test_reference_rates_require_recent_exact_coin_and_stable_snapshot():
 
 def test_cross_stable_unclosed_native_buys_are_not_ignored_after_setting_change():
     rows=[
-        {"asset":"TRX","side":"BUY","stable":"USDC",
+        {"asset":"SOL","side":"BUY","stable":"USDC",
          "status":"SOURCE_FINALIZED","input_amount":Decimal("150")},
-        {"asset":"TRX","side":"BUY","stable":"USDT",
+        {"asset":"SOL","side":"BUY","stable":"USDT",
          "status":"SENDING","input_amount":Decimal("25")},
     ]
     p={"USDC":Decimal("1.001"),"USDT":Decimal("0.999")}
-    assert m._pending_usd(rows,"TRX",p)==Decimal("175.125")
+    assert m._pending_usd(rows,"SOL",p)==Decimal("175.125")
     with pytest.raises(ValueError):
         m._pending_usd(rows+[{"asset":"XRP","side":"BUY",
              "stable":"USDT","status":"SENDING",
