@@ -55,8 +55,8 @@ def test_one_wallet_one_quorum_policy_merges_exact_active_coin_rules():
 
 def test_unapproved_or_duplicate_coin_scope_rejected():
     valid = scope("LINK")
-    for scopes in ([], [valid, valid], [scope("BTC")], [scope("ETH")],
-                   [scope("QNT")], [dict(valid, any_unverified_key=True)]):
+    for scopes in ([], [valid, valid], [scope("BTC")],
+                   [scope("XRP")], [dict(valid, any_unverified_key=True)]):
         with pytest.raises(ValueError):
             compose_scoped_evm_wallet_policy(**kwargs(scopes))
 
