@@ -23,7 +23,7 @@ import websockets
 from .coingecko_provider import coingecko_request_settings, COIN_IDS, MARKET_ASSETS
 
 LOGGER = logging.getLogger("mininex.extra_markets")
-EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "DOGE", "UNI", "ARB")
+EXTRA_ASSETS = ("BNB", "SOL", "XRP", "TRX", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
 GECKO_IDS = {asset: COIN_IDS[asset] for asset in EXTRA_ASSETS}
 SYMBOLS = {asset + "USDT": asset for asset in EXTRA_ASSETS}
 WS_URL = ("wss://data-stream.binance.vision/stream?streams=" +
@@ -91,7 +91,7 @@ def discover_kraken_usd_pairs(payload: object) -> dict[str, str]:
         if not isinstance(wsname, str) or not wsname.endswith("/USD"):
             continue
         base = wsname[:-4]
-        asset = "DOGE" if base in ("XDG", "DOGE") else base
+        asset = "QNT" if base in ("XDG", "QNT") else base
         if asset in EXTRA_ASSETS and asset not in matches:
             matches[asset] = pair_key
     return matches
