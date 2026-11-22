@@ -67,7 +67,7 @@ export function paperSparkline(samples) {
 
 /** Exactly the 12 opt-in, independent PAPER portfolios. Never mix real wallet funds. */
 export const HOME_PAPER_PORTFOLIO_COINS=Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB',
 ]);
 
 const EXTRA_COINS=HOME_PAPER_PORTFOLIO_COINS.slice(2);
