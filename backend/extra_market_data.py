@@ -91,7 +91,8 @@ def discover_kraken_usd_pairs(payload: object) -> dict[str, str]:
         if not isinstance(wsname, str) or not wsname.endswith("/USD"):
             continue
         base = wsname[:-4]
-        asset = "QNT" if base in ("XDG", "QNT") else base
+        # Kraken XDG is DOGE, never Quant (QNT). Retired markets are ignored.
+        asset = base
         if asset in EXTRA_ASSETS and asset not in matches:
             matches[asset] = pair_key
     return matches
