@@ -17,7 +17,8 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   const fetchOne=useCallback(async(signal)=>{
     const token=await getAccessToken();
     if(!token)throw Error('Login required');
-    const response=await fetch(API_BASE+(liveMode?'/api/live/evm/auto-session/':'/api/extra-paper/')+asset,{
+    const paperPath=['BTC','ETH'].includes(asset)?'/api/user-paper/':'/api/extra-paper/';
+    const response=await fetch(API_BASE+(liveMode?'/api/live/evm/auto-session/':paperPath)+asset,{
       method:'GET',
       headers:{Authorization:'Bearer '+token,Accept:'application/json'},
       cache:'no-store',signal,
