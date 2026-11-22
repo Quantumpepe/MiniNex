@@ -7,10 +7,19 @@ export const PRIVY_PROVIDER_CONFIG = {
   appearance: {
     theme: 'dark',
     accentColor: '#51e4b0',
-    walletChainType: 'ethereum-only',
+    walletChainType: 'ethereum-and-solana',
     showWalletLoginFirst: false,
   },
   embeddedWallets: {
     ethereum: {createOnLogin: 'all-users'},
+    solana: {createOnLogin: 'all-users'},
+  },
+  solana: {
+    rpcs: {
+      'solana:mainnet': {
+        rpc: 'https://api.mainnet-beta.solana.com',
+        rpcSubscriptions: 'wss://api.mainnet-beta.solana.com',
+      },
+    },
   },
 };
