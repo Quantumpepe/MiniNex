@@ -90,11 +90,16 @@ def _claim_once_locked(
             or not isinstance(permission.get("expires_at"),datetime)
             or permission["expires_at"]<=datetime.fromtimestamp(now,timezone.utc)):
         raise HTTPException(409,"Original owner Privy grant changed")
-    cur.execute(
-        """SELECT stable,revision,budget_usd
-           FROM mininex_extra_coin_preferences
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    settings=cur.fetchone()
+    if central and asset=="ETH":
+        from .shared_evm_central_eth_settings import locked_original_eth_settings
+        settings=locked_original_eth_settings(
+            cur,did=did,stable=stable,revision=revision)
+    else:
+        cur.execute(
+            """SELECT stable,revision,budget_usd
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        settings=cur.fetchone()
     if (type(settings) is not dict or settings.get("stable")!=stable
             or settings.get("revision")!=revision):
         raise HTTPException(409,"Owner coin budget changed before approval")

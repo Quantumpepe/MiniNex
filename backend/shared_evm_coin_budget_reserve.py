@@ -23,7 +23,7 @@ from .shared_evm_central_runtime import _locked_original_evm_coin
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
@@ -50,14 +50,19 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             cur,did=did,asset=asset,stable=stable,
             revision=expected_revision,
         )
-    cur.execute(
-        """SELECT budget_usd,stable,revision
-           FROM mininex_extra_coin_preferences
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",
-        (did,asset))
-    settings=cur.fetchone()
+    if central and asset=="ETH":
+        from .shared_evm_central_eth_settings import locked_original_eth_settings
+        settings=locked_original_eth_settings(
+            cur,did=did,stable=stable,revision=expected_revision)
+    else:
+        cur.execute(
+            """SELECT budget_usd,stable,revision
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+            (did,asset))
+        settings=cur.fetchone()
     if (type(settings) is not dict
-            or type(settings.get("budget_usd")) is not int
+            or type(settings.get("budget_usd")) not in (int,Decimal)
             or settings["budget_usd"]<=0
             or settings.get("revision")!=expected_revision
             or settings.get("stable")!=stable):

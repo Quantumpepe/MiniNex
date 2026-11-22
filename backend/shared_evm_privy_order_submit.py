@@ -40,7 +40,7 @@ from .shared_evm_privy_transport import (
 from .shared_evm_privy_signer import sign_privy_evm_swap_request
 
 LOG=logging.getLogger("mininex.evm_privy_order_submit")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _fingerprint_prepared_quote(prepared:dict)->str:
@@ -168,7 +168,7 @@ async def submit_internal_privy_evm_order(
         asset=asset,wallet_id=owned_record["wallet_id"],
         wallet=owned_record["wallet_address"],tx=tx,
         side=side,stable=stable,input_atomic=input_atomic,
-        minimum_output_atomic=minimum_out)
+        minimum_output_atomic=minimum_out,central=central)
     url,body=bound_privy_evm_swap_request(
         asset=asset,wallet_id=owned_record["wallet_id"],
         wallet=owned_record["wallet_address"],tx=tx,

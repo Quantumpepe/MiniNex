@@ -33,10 +33,11 @@ _ACTIVE=frozenset(("SENDING","SUBMITTED","RECONCILIATION_REQUIRED"))
 def immutable_evm_send_identity(
     *,asset:str,wallet_id:str,wallet:str,tx:dict,side:str,
     stable:str,input_atomic:str,minimum_output_atomic:str,
+    central:bool=False,
 )->dict:
     """Canonical identity based on actual Privy CAIP2 RPC, not UI values."""
-    if asset=="ETH":
-        raise ValueError("ETH uses its existing durable send journal")
+    if asset=="ETH" and not central:
+        raise ValueError("Legacy ETH keeps its existing durable send journal")
     pair=_pair(asset,stable,side)
     url,body=bound_privy_evm_swap_request(
         asset=asset,wallet_id=wallet_id,wallet=wallet,tx=tx,
@@ -62,13 +63,15 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
     the same Privy account nonce. Different chains need not block each other.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB")
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")
             or type(identity.get("wallet_address")) is not str
             or not _ADDR.fullmatch(identity["wallet_address"])
             or type(identity.get("request_digest")) is not str
             or not _SHA.fullmatch(identity["request_digest"])):
         raise ValueError("Invalid durable EVM order identity")
     asset=identity["asset"]
+    if asset=="ETH" and not central:
+        raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if (identity.get("chain_id")!=pair["chain_id"]
             or identity.get("network")!=pair["network"]
@@ -230,12 +233,15 @@ def _claim_authorized_evm_order_locked(
     been freshly verified by the caller before entering this transaction.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB")
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")
+            or (identity.get("asset")=="ETH" and not central)
             or type(quote_sha256) is not str
             or not _SHA.fullmatch(quote_sha256)
             or type(budget_revision) is not int or budget_revision<1):
         raise ValueError("Unverified executable coin order")
     asset=identity["asset"]
+    if asset=="ETH" and not central:
+        raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if central:
         from .shared_evm_central_runtime import _locked_original_evm_coin
@@ -291,10 +297,15 @@ def _claim_authorized_evm_order_locked(
                 or consent.get("budget_revision")!=budget_revision
                 or consent.get("message_sha256")!=policy["consent_sha256"]):
             raise HTTPException(409,"Matching signed coin consent required")
-    cur.execute(
-        """SELECT stable,revision,budget_usd FROM mininex_extra_coin_preferences
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    settings=cur.fetchone()
+    if central and asset=="ETH":
+        from .shared_evm_central_eth_settings import locked_original_eth_settings
+        settings=locked_original_eth_settings(
+            cur,did=did,stable=identity["stable"],revision=budget_revision)
+    else:
+        cur.execute(
+            """SELECT stable,revision,budget_usd FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        settings=cur.fetchone()
     if (type(settings) is not dict
             or settings.get("revision")!=budget_revision
             or settings.get("stable")!=identity["stable"]):
