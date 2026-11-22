@@ -1175,9 +1175,38 @@ async def original_owner_one_signer_wallet_policy_status(
     })
 
 
+@app.get("/api/live/evm/wallet-policy/permission-status/QNT")
+async def owner_one_signer_qnt_permission_status(
+    authorization: str | None = Header(default=None),
+):
+    """QNT has no legacy coin signer row. Report only real central proof."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await read_owner_central_wallet_policy_status(did)
+    approved=(status.get("status")=="REMOTE_VERIFIED_READONLY"
+        and "QNT" in status.get("scope_coins",[])
+        and status.get("one_scoped_signer_verified") is True
+        and status.get("remote_policy_exactly_verified") is True
+        and status.get("backend_quorum_current") is True
+        and status.get("current_user_budgets_verified") is True
+        and status.get("legacy_reconciliation_required") is False)
+    response={
+        "mode":"OWNER_EVM_PRIVY_PERMISSION_STATUS_ONLY",
+        "asset":"QNT","chain_id":1,"network":"ethereum-mainnet",
+        "status":("GRANT_VERIFIED" if approved
+                  else "REVOKED" if status.get("status")=="REVOKED"
+                  else "NOT_PREPARED"),
+        "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER",
+        "policy_published":approved,
+        "signer_grant_recorded":approved,
+        "auto_execution_enabled":False,
+        "can_submit":False,
+    }
+    return JSONResponse(response,headers={"Cache-Control":"private, no-store"})
+
+
 @app.get("/api/live/evm/auto-session/{asset}")
 def owner_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only per-coin user LIVE session, never implied by login."""
@@ -1190,7 +1219,7 @@ def owner_evm_auto_session(
 
 @app.post("/api/live/evm/wallet-policy/auto-session/{asset}/start")
 async def owner_start_one_signer_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit owner Start Trade after original one-signer remote audit."""
@@ -1214,7 +1243,7 @@ async def owner_start_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/pause")
 def owner_pause_evm_auto_session(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Stops future per-coin sends without retrying an in-flight tx."""
@@ -1341,7 +1370,7 @@ def owner_evm_permission_status(
 
 @app.get("/api/live/evm/order-status/{asset}")
 def owner_evm_order_status(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -1355,7 +1384,7 @@ def owner_evm_order_status(
 
 @app.get("/api/live/evm/verified-fills/{asset}")
 def owner_finalized_evm_fills(
-    asset: Literal["BNB","POL","AVAX","LINK","UNI","ARB"],
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     limit: int = 30,
     authorization: str | None = Header(default=None),
 ):

@@ -1,5 +1,5 @@
 // MiniNex original EVM trading scope: strict owner/wallet/chain verification.
-const NETWORKS=Object.freeze({BNB:56,POL:137,AVAX:43114,LINK:1,UNI:1,ARB:42161});
+const NETWORKS=Object.freeze({BNB:56,POL:137,AVAX:43114,LINK:1,QNT:1,UNI:1,ARB:42161});
 const ETH_ADDRESS=/^0x[0-9a-fA-F]{40}$/;
 const POLICY_ID=/^[A-Za-z0-9_-]{6,160}$/;
 export const LIVE_EVM_ASSETS=Object.freeze(Object.keys(NETWORKS));
