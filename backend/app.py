@@ -73,6 +73,7 @@ from .shared_evm_permission_status import read_owner_evm_permission_status
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_wallet_policy_prepare import prepare_owner_central_evm_wallet_policy
 from .shared_evm_wallet_policy_publish import publish_initial_owner_wallet_policy
+from .shared_evm_wallet_policy_update import apply_original_wallet_coin_extension
 from .shared_evm_wallet_policy_extend import (
     prepare_existing_wallet_coin_extension, confirm_existing_wallet_coin_extension,
 )
@@ -1053,6 +1054,24 @@ class CentralWalletScopeSignatureRequest(BaseModel):
     nonce: str = Field(min_length=64,max_length=64,pattern=r"^[0-9a-f]{64}$")
     signature: str = Field(
         min_length=132,max_length=132,pattern=r"^0x[0-9a-fA-F]{130}$")
+
+
+class CentralEvmScopeApplyRequest(BaseModel):
+    model_config=ConfigDict(extra="forbid")
+    nonce: str = Field(min_length=64,max_length=64,pattern=r"^[0-9a-f]{64}$")
+
+
+@app.post("/api/live/evm/wallet-policy/extend/apply")
+async def owner_apply_one_signed_wallet_scope_change(
+    request: CentralEvmScopeApplyRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Only an EIP-191-confirmed original wallet policy may be PATCHed."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await apply_original_wallet_coin_extension(
+        did,nonce=request.nonce,
+    )
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/live/evm/wallet-policy/extend/{asset}/prepare")
