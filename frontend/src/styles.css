@@ -161,7 +161,9 @@
 .privy-wallet-address{font-size:13px;letter-spacing:.4px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#a3f6cb;overflow-wrap:anywhere}
 .privy-wallet-note{font-size:12px;line-height:1.5;color:#e7be86}
 .privy-wallet-description{font-size:12px;line-height:1.5;color:#87aeb2}
-.privy-wallet-action{justify-self:start;padding:10px 14px;border-radius:10px;background:#42dda8;border:1px solid #59e8b1;color:#04251d;font-size:12px;font-weight:800}
+.privy-wallet-action{justify-self:start;padding:10px 14px;border-radius:10px;background:#1a3a35;border:1px solid #3a6a60;color:#a8e0d0;font-size:12px;font-weight:700;transition:background .15s,border-color .15s}
+.privy-wallet-action:hover,.privy-wallet-action:focus{background:#2a5a50;border-color:#4a8a70}
+.privy-wallet-action:active{background:#42dda8;border-color:#59e8b1;color:#04251d}
 .privy-wallet-action--secondary{background:#132f36;color:#bbe9de;border-color:#31615f}
 .privy-wallet-action:disabled{opacity:.5;cursor:default}
 
