@@ -43,20 +43,20 @@ export default function SolanaSend({t,enabled,userId}) {
     }finally{setBusy(false);}
   }
 
-  if(!wallet)return <section className="mininex-wallet-send"><button type="button" className="privy-wallet-action" disabled><Send size={16}/> SOL-Wallet wird erstellt…</button></section>;
+  if(!wallet)return <section className="mininex-wallet-send"><button type="button" className="privy-wallet-action" disabled><Send size={16}/> {t.solWalletCreating||'SOL-Wallet wird erstellt…'}</button></section>;
   return <section className="mininex-wallet-send">
     <button type="button" className="privy-wallet-action" onClick={()=>setOpen(v=>!v)}>
       <Send size={16}/> {t.walletSendTitle||'Senden'} SOL
     </button>
     {open&&<div className="mininex-send-content">
       <label><span>Empfänger</span>
-        <input value={destination} onChange={e=>setDestination(e.target.value)} placeholder="Solana-Adresse"/>
+        <input value={destination} onChange={e=>setDestination(e.target.value)} placeholder={t.walletSendRecipient||'Solana-Adresse'}/>
       </label>
       <label><span>Betrag (SOL)</span>
         <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.01"/>
       </label>
       <button type="button" className="privy-wallet-action" disabled={busy||!destination||!amount} onClick={send}>
-        {busy?'Senden…':'Senden'}
+        {busy?(t.walletSendReviewing||'Senden…'):(t.walletSendTitle||'Senden')}
       </button>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
       {txSig&&<p className="privy-wallet-description">Gesendet: {txSig.slice(0,16)}…</p>}
