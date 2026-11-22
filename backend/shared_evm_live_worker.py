@@ -286,12 +286,14 @@ async def execute_owner_evm_live_tick(
                         "reason":"ORIGINAL_NATIVE_SELL_CYCLE_REQUIRED"}
             amount_wei=await prepare_original_native_sell_amount(
                 did=did,asset=asset,stable=stable,
-                source_evidence=evidence,client=client)
+                source_evidence=evidence,client=client,
+                **({"central":True} if row.get("central") is True else {}))
             return await submit_internal_native_evm_sell_deposit(
                 did=did,asset=asset,strategy_run_id=run,
                 signal_event_id=event,
                 budget_revision=row["budget_revision"],
-                native_amount_wei=amount_wei,client=client)
+                native_amount_wei=amount_wei,client=client,
+                **({"central":True} if row.get("central") is True else {}))
         except (ValueError,KeyError,ArithmeticError):
             return {"asset":asset,"state":"WAIT",
                     "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}

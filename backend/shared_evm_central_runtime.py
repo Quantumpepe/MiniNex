@@ -223,6 +223,12 @@ def central_policy_rule(record:dict,*,asset:str,kind:str,
         name=f"MiniNex {asset} {side} finite Router02 allowance"
     elif kind=="fee" and side is None:
         name=f"MiniNex {asset} {stable} owner-approved net-profit fee"
+    elif kind in ("native_deposit","native_withdraw") and side is None:
+        if asset not in ("ETH","BNB","POL","AVAX"):
+            raise ValueError("Token coin cannot use a native conversion")
+        name=f"MiniNex {asset} native "+(
+            "deposit" if kind=="native_deposit" else "withdraw"
+        )
     else:
         raise ValueError("No such original-wallet scoped operation")
     matched=[r for r in record["candidate_json"].get("rules",[])
