@@ -80,6 +80,7 @@ const extendConfirmed=()=>({
 });
 const applied=()=>({
   status:'GRANT_VERIFIED',one_original_signer:true,new_coin:'QNT',
+  scope_coins:['LINK','QNT'],
   additional_signer_created:false,remote_policy_verified:true,
   can_submit:false,
 });
