@@ -8,6 +8,7 @@ already committed blockchain transaction. Capital remains per-coin.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 import psycopg
 from fastapi import HTTPException
@@ -20,7 +21,7 @@ from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.evm_live_auto_sessions")
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def _require_asset(asset:object)->str:
@@ -47,16 +48,28 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
         record=_locked_original_evm_coin(cur,did=did,asset=asset)
     else:
         record=_read_grant_evidence_locked(cur,did=did,asset=asset)
-    cur.execute(
-        """SELECT stable,revision,budget_usd
-           FROM mininex_extra_coin_preferences
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
-    settings=cur.fetchone()
+    if central and asset=="ETH":
+        from .shared_evm_central_eth_settings import locked_original_eth_settings
+        settings=locked_original_eth_settings(
+            cur,did=did,stable=record["stable"],
+            revision=record["budget_revision"])
+        cur.execute(
+            "SELECT trading_paused FROM mininex_live_eth_limits "
+            "WHERE privy_did=%s FOR UPDATE",(did,))
+        paused=cur.fetchone()
+        if type(paused) is not dict or paused.get("trading_paused") is not True:
+            raise HTTPException(409,"Previous ETH trading engine is still active")
+    else:
+        cur.execute(
+            """SELECT stable,revision,budget_usd
+               FROM mininex_extra_coin_preferences
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+        settings=cur.fetchone()
     pair=_pair(asset,record["stable"],"BUY")
     if (type(settings) is not dict
             or settings.get("revision")!=record.get("budget_revision")
             or settings.get("stable")!=record["stable"]
-            or type(settings.get("budget_usd")) is not int
+            or type(settings.get("budget_usd")) not in (int,Decimal)
             or settings["budget_usd"]<=0
             or record.get("chain_id")!=pair["chain_id"]
             or record.get("wallet_address") is None):

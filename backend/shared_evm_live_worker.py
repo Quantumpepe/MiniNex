@@ -47,8 +47,8 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
 _INTERVAL_SECONDS=30
-_ASSETS=frozenset(("BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
-_NATIVE=frozenset(("BNB","POL","AVAX"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 
 # Rotate the worker query across all owner-activated sessions. This is a
 # database work page only; it never restricts trading volumes or active users.
@@ -94,7 +94,10 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
     _ensure_schema(db)
     sql="""SELECT s.privy_did,s.asset,s.stable,s.chain_id,
                           s.budget_revision,s.started_by_owner_at,
-                          p.budget_usd,p.mode,p.horizon,
+                          COALESCE(p.budget_usd::numeric,l.planned_capital_usd)
+                             AS budget_usd,
+                           COALESCE(p.mode,t.mode) AS mode,
+                           COALESCE(p.horizon,t.horizon) AS horizon,
                           (c.status='GRANT_VERIFIED'
                            AND c.revoked_at IS NULL
                            AND c.legacy_reconciliation_required=FALSE
@@ -111,17 +114,31 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                                    'RECONCILIATION_REQUIRED')
                           ),0) AS pending_buy_usd
                    FROM mininex_live_evm_auto_sessions s
-                   JOIN mininex_extra_coin_preferences p
+                   LEFT JOIN mininex_extra_coin_preferences p
                      ON p.privy_did=s.privy_did AND p.asset=s.asset
+                    AND s.asset<>'ETH'
+                   LEFT JOIN mininex_live_eth_limits l
+                     ON l.privy_did=s.privy_did AND s.asset='ETH'
+                   LEFT JOIN mininex_trade_preferences t
+                     ON t.privy_did=s.privy_did AND t.asset='ETH'
+                    AND s.asset='ETH'
                    LEFT JOIN mininex_live_evm_owner_permissions g
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
                    WHERE s.status='ACTIVE'
-                     AND s.asset IN ('BNB','POL','AVAX','LINK','QNT','UNI','ARB')
+                     AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
-                     AND p.revision=s.budget_revision
-                     AND p.stable=s.stable
+                     AND (
+                          (s.asset='ETH'
+                           AND l.revision=s.budget_revision
+                           AND t.stable=s.stable
+                           AND l.trading_paused=TRUE)
+                          OR
+                          (s.asset<>'ETH'
+                           AND p.revision=s.budget_revision
+                           AND p.stable=s.stable)
+                     )
                      AND (
                        (g.status='GRANT_VERIFIED' AND g.revoked_at IS NULL
                         AND g.expires_at>now()
@@ -165,7 +182,7 @@ def _trusted_live_session(row:dict)->dict:
     except (ArithmeticError,ValueError,TypeError):
         raise ValueError("Unverified outstanding coin buy capital") from None
     if (type(started) is not datetime or started.tzinfo is None
-            or type(row.get("budget_usd")) is not int
+            or type(row.get("budget_usd")) not in (int,Decimal)
             or row["budget_usd"]<=0
             or type(row.get("budget_revision")) is not int
             or row["budget_revision"]<=0
@@ -189,7 +206,7 @@ def exact_user_coin_live_amount(
     Native gas remains independent of the EVM ERC20 source amount.
     """
     pair=_pair(asset,stable,side)
-    if (type(budget_usd) is not int or budget_usd<=0
+    if (type(budget_usd) not in (int,Decimal) or budget_usd<=0
             or type(source_evidence) is not dict
             or source_evidence.get("mode")!="SHARED_EVM_SOURCE_ALLOWANCE_READ_ONLY"
             or source_evidence.get("asset")!=asset
