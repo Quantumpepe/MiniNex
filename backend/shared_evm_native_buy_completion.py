@@ -75,7 +75,8 @@ def actual_buy_fill_wei(row:object,*,asset:str,stable:str)->int:
 
 def _post_buy_claim_locked(
     cur,*,did:str,asset:str,key:str,record:dict,
-    amount_wei:int,digest:str,
+    amount_wei:int,digest:str,central:bool=False,
+    remote_verified_policy_sha256:str|None=None,
 )->None:
     """Under one account lock, prove full owner trade and claim SENDING."""
     if (asset not in _NATIVE or type(record) is not dict
@@ -84,9 +85,27 @@ def _post_buy_claim_locked(
         raise ValueError("Invalid native EVM conversion claim")
     stable=record.get("stable")
     pair=_pair(asset,stable,"BUY")
-    grant=_read_grant_evidence_locked(cur,did=did,asset=asset)
-    policy=validate_pinned_evm_policy(grant,asset=asset,now=int(time.time()))
-    native_rule=policy["rules"][3]
+    if central:
+        from .shared_evm_central_runtime import (
+            _locked_original_evm_coin,central_policy_rule,
+        )
+        grant=_locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=stable,
+            revision=record["budget_revision"],
+        )
+        if (type(remote_verified_policy_sha256) is not str
+                or grant["policy_sha256"]!=remote_verified_policy_sha256):
+            raise HTTPException(409,"Original native completion Privy policy changed")
+        native_rule=central_policy_rule(
+            grant,asset=asset,kind="native_withdraw",
+            stable=stable,now=int(time.time()),
+        )
+    else:
+        grant=_read_grant_evidence_locked(cur,did=did,asset=asset)
+        policy=validate_pinned_evm_policy(
+            grant,asset=asset,now=int(time.time()),
+        )
+        native_rule=policy["rules"][3]
     cap=int(_lte(native_rule,"withdraw.wad"))
     if (grant.get("wallet_id")!=record.get("wallet_id")
             or grant.get("wallet_address")!=record.get("wallet_address")
@@ -201,18 +220,30 @@ def _persist_native_result(**kwargs)->str:
 
 async def submit_internal_native_evm_buy_completion(
     *,did:str,asset:str,intent_key:str,client:httpx.AsyncClient,
+    central:bool=False,
 )->dict:
     """One real Privy native WITHDRAW after the actual finalized BUY fill."""
     did=_safe_did(did)
     key=valid_order_key(intent_key)
     if asset not in _NATIVE or type(client) is not httpx.AsyncClient:
         raise ValueError("Unsupported internal completed native BUY")
-    report=await get_owner_evm_remote_grant_audit(did,asset)
+    report=(await get_owner_evm_remote_grant_audit(
+        did,asset,central=True,
+    ) if central else await get_owner_evm_remote_grant_audit(did,asset))
     if type(report) is not dict or report.get("asset")!=asset or any(
         report.get(field) is not True for field in _REQUIRED
     ):
         raise HTTPException(409,"Current owner-approved native grant not verified")
-    record=await asyncio.to_thread(_read_grant_record,did,asset)
+    record=await asyncio.to_thread(
+        _read_grant_record,did,asset,
+        **({"central":True} if central else {}),
+    )
+    if central and (
+        record["policy_sha256"]!=report.get("remote_verified_policy_sha256")
+        or record["wallet_id"]!=report.get("remote_verified_wallet_id")
+        or record["signer_id"]!=report.get("remote_verified_signer_id")
+    ):
+        raise HTTPException(409,"Original Privy native completion grant changed")
     # A separate read of the real final swap fill determines the exact
     # quantity. The claim checks the same data again under FOR UPDATE.
     db=_db_url()
@@ -249,7 +280,12 @@ async def submit_internal_native_evm_buy_completion(
             with conn.cursor(row_factory=dict_row) as cur:
                 _post_buy_claim_locked(
                     cur,did=did,asset=asset,key=key,record=record,
-                    amount_wei=amount_wei,digest=digest)
+                    amount_wei=amount_wei,digest=digest,
+                    **({
+                        "central":True,
+                        "remote_verified_policy_sha256":
+                            report["remote_verified_policy_sha256"],
+                    } if central else {}))
     except psycopg.Error:
         raise HTTPException(503,"Cannot claim original native BUY completion") from None
     tx_hash=None
