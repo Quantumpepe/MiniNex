@@ -109,6 +109,23 @@ def original_xrp_wallet(user: dict, did: str, source: str) -> str:
     return matches[0]["id"]
 
 
+
+def _same_privy_user_id(remote_id: object, verified_did: str) -> bool:
+    """Match Privy's full DID or exact prefix-free user ID, never an email.
+
+    The DID comes from a verified Privy JWT AND an independently fetched
+    Privy user record with the same DID. A wallet ID and address must already
+    be linked to that user before this helper is invoked.
+    """
+    prefix = "did:privy:"
+    if (type(verified_did) is not str or not verified_did.startswith(prefix)
+            or len(verified_did) <= len(prefix)):
+        return False
+    if type(remote_id) is not str:
+        return False
+    return remote_id in (verified_did, verified_did[len(prefix):])
+
+
 def verify_privy_xrp_remote_owner(remote: object, *, wallet_id: str, address: str, did: str) -> None:
     """Cross-check the API wallet with the authenticated user's linked XRPL ID.
 
@@ -135,7 +152,7 @@ def verify_privy_xrp_remote_owner(remote: object, *, wallet_id: str, address: st
             raise HTTPException(
                 409, "Privy XRP wallet has an unexpected owner entity type. "
                      "Its ownership must be reconciled before sending.")
-        if entity.get("id") != did:
+        if not _same_privy_user_id(entity.get("id"), did):
             LOG.warning("Privy XRP ownership mismatch: reason=user_id")
             raise HTTPException(
                 409, "Privy XRP wallet is attributed to a different user ID. "
