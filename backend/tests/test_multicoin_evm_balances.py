@@ -79,9 +79,9 @@ def test_five_real_onchain_balances_and_token_addresses(monkeypatch, rpc_client)
         return owner()
     monkeypatch.setattr(evm, "fetch_privy_user", fetch)
     result = asyncio.run(evm.get_multicoin_evm_balances(DID))
-    assert result["asset_order"] == ["BNB", "POL", "AVAX", "LINK", "UNI", "ARB"]
+    assert result["asset_order"] == ["BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB"]
     assert [result["assets"][k]["balance"] for k in result["asset_order"]] == [
-        "3", "4", "5", "7", "9", "7",
+        "3", "4", "5", "7", "9", "9", "7",
     ]
     assert all(result["assets"][k]["status"] == "verified" for k in result["asset_order"])
     assert result["real_trading_enabled"] is False
@@ -89,7 +89,7 @@ def test_five_real_onchain_balances_and_token_addresses(monkeypatch, rpc_client)
     chain_checks = [req for req in rpc_client if req["json"]["method"] == "eth_chainId"]
     assert len(chain_checks) == 5
     token_calls = [req for req in rpc_client if req["json"]["method"] == "eth_call"]
-    assert len(token_calls) == 3
+    assert len(token_calls) == 4
     assert {call["json"]["params"][0]["to"] for call in token_calls} == set(evm._ETH_TOKENS.values()) | set(evm._ARB_TOKENS.values())
     assert all(call["json"]["params"][0]["data"].startswith("0x70a08231") for call in token_calls)
     assert all(ADDR.lower()[2:] in call["json"]["params"][0]["data"] for call in token_calls)
