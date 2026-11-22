@@ -10,7 +10,7 @@ import hashlib
 
 from backend.native_xrp_manual_send import (
     amount_to_drops, original_xrp_wallet, prepare_mainnet_payment,
-    verified_signed_blob,
+    verified_signed_blob, verify_privy_xrp_remote_owner,
 )
 from backend.tests.test_native_xrp_thor_payment_tx import OWNER, VAULT
 
@@ -103,3 +103,36 @@ def sample_for(address):
     server, fee, account = sample()
     account["result"]["account_data"]["Account"] = address
     return server, fee, account
+
+
+def test_nullable_privy_entity_still_matches_owner_linked_wallet():
+    remote = {
+        "id": "wallet_123456789", "address": OWNER, "chain_type": "xrpl",
+        "entity": None, "archived_at": None,
+    }
+    verify_privy_xrp_remote_owner(remote,
+        wallet_id="wallet_123456789", address=OWNER, did=DID)
+    verify_privy_xrp_remote_owner({k:v for k,v in remote.items() if k!="entity"},
+        wallet_id="wallet_123456789", address=OWNER, did=DID)
+    verify_privy_xrp_remote_owner({
+        **remote, "entity": {"type": "user", "id": DID},
+    }, wallet_id="wallet_123456789", address=OWNER, did=DID)
+
+
+@pytest.mark.parametrize("different", [
+    {"id": "wallet_other"},
+    {"address": VAULT},
+    {"chain_type": "ethereum"},
+    {"entity": {"type": "user", "id": "did:privy:other"}},
+    {"entity": {"type": "organization", "id": DID}},
+    {"archived_at": "2026-01-01T00:00:00Z"},
+])
+def test_remote_wallet_contradictions_rejected(different):
+    remote = {
+        "id": "wallet_123456789", "address": OWNER, "chain_type": "xrpl",
+        "entity": None, "archived_at": None,
+        **different,
+    }
+    with pytest.raises(HTTPException):
+        verify_privy_xrp_remote_owner(remote,
+            wallet_id="wallet_123456789", address=OWNER, did=DID)
