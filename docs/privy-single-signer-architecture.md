@@ -57,18 +57,24 @@ chain/signature type.
   connected** to them. Old per-coin signers cannot be silently replaced.
   Backend tests cover all eight EVM assets, invalid budget revisions,
   legacy signer races, duplicate grant attempts and remote mismatches.
-- **New policy-owner PATCH signing primitive (not connected to an update
-  controller):** `backend/shared_evm_wallet_policy_owner_signature.py`
-  builds the exact signed PATCH payload with `privy-request-expiry`,
-  idempotency key and verified Policy Owner quorum P-256 key. It can
-  *sign* only an exact bounded combined policy; it does not send a
-  PATCH, expand wallet rights, alter a user's session or bypass
-  existing budget consent. This follows Privy's official authorization
-  signature payload. Remote PATCH, durable transition claim and
-  EIP-191 intent-consumption workflow still need to be connected.
-- **Current passing CI:** [GitHub Actions run 45054190252](https://github.com/Quantumpepe/MiniNex/actions/runs/45054190252)
-  has **5,130 passing backend tests**, no failures (1 warning).
-  This is not a mainnet signing or trade test.
+- **Existing-wallet extension now has a BACKEND-only consent-to-PATCH
+  workflow in PR #208:** The user chooses one new EVM coin; the server
+  independently verifies the original wallet, sole signer, Policy Owner,
+  current policy and all coin budgets. A one-use, five-minute EIP-191
+  message authorizes exactly the added coin. After the user's EIP-191
+  confirmation, `POST /api/live/evm/wallet-policy/extend/apply`
+  durably claims **one** Policy-Owner-signed Privy PATCH, checks
+  original wallet and complete policy via Privy GET, and advances the
+  same wallet grant to the exact combined rules without a second signer.
+  Any uncertain remote result holds the local grant in
+  `UPDATE_UNCERTAIN` without retry. An authenticated
+  `POST /api/live/evm/wallet-policy/extend/reconcile` uses remote
+  GETs **only** to resolve a proven successful update, never repeats
+  the PATCH. Frontend Start Trade, LIVE auto orders, fees/HWM, stop,
+  and all native coins are **not yet** switched to the shared grant.
+- **Verified backend CI:** [Run 45055610579](https://github.com/Quantumpepe/MiniNex/actions/runs/45055610579):
+  **5,163 passed, 0 failed** (1 warning). No real Privy PATCH or
+  on-chain trade has been claimed; PR #208 remains Draft/unmerged.
 - Future one-time owner configuration uses the already registered
   `MiniNex-Backend-Signer-V2` quorum ID and matching existing P-256 key.
   **Do not hardcode the dashboard quorum ID or introduce twelve new secrets.**
@@ -115,14 +121,13 @@ chain/signature type.
    `POST /api/live/evm/wallet-policy/extend/confirm`. Both validate
    the current original wallet, backend signer, Privy policy and current
    coin-budget revisions. They store an immutable, five-minute user-signed
-   policy digest but do NOT send Privy PATCH, add signers or start trading.
-   A new first-wallet policy can now be prepared/published
-   (with one-shot DB claim and remote policy GET) and user-authorized
-   `addSigners` can be independently verified/recorded. **Still OPEN:**
-   update an existing policy via Privy PATCH with Policy Owner quorum
-   signature after a user-approved one-use EIP-191 scope-change intent,
-   durable one-attempt claim and uncertain-outcome reconciliation. Never
-   replace or escalate an original signer implicitly.
+   policy digest. The backend now has the owner-signed,
+   once-claimed Privy PATCH plus separate read-only reconciliation,
+   always retaining the original signer. First-wallet owner
+   `addSigners` confirmation is independently verified.
+   **Still OPEN:** frontend Start Trade, LIVE worker/grant migration,
+   real user/Privy signing confirmation and one-wallet multicoin
+   execution validation. Never silently migrate an existing signer.
 4. Update `Start Trade` to present **one clear wallet confirmation** for a
    new or expanded user scope, and to start only after the aggregate remote
    policy / signer / budget / quorum are independently verified.
