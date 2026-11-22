@@ -75,6 +75,20 @@ def _claim_first_policy_locked(
         cur,did=did,asset=asset,stable=scope["stable"],
         expected_revision=revision,
     )
+    # A legacy signer staged AFTER the initial wallet policy draft could
+    # otherwise race its remote POST. Do not replace or widen old grants.
+    cur.execute(
+        """SELECT asset FROM mininex_live_evm_owner_permissions
+           WHERE privy_did=%s LIMIT 1 FOR UPDATE""",(did,),
+    )
+    if cur.fetchone() is not None:
+        raise HTTPException(409,"Legacy EVM grant needs reconciliation before publish")
+    cur.execute(
+        """SELECT status FROM mininex_live_eth_policy_enrollments
+           WHERE privy_did=%s LIMIT 1 FOR UPDATE""",(did,),
+    )
+    if cur.fetchone() is not None:
+        raise HTTPException(409,"Legacy ETH grant needs reconciliation before publish")
     args=dict(
         wallet=owned["address"],owner_id=owner_id,
         executor_id=signer_id,scopes=[scope],now=now,
