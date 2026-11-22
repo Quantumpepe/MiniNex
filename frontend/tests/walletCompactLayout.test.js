@@ -68,3 +68,5 @@ test('compact bilingual UI preserves mobile access and wallet network explanatio
   assert.match(styles,/\.privy-disclosure>summary:focus-visible/);
   assert.match(styles,/\.privy-asset-settings-fields select/);
 });
+
+// Regression check: APK recovery build must retain the last verified Wallet UI.
