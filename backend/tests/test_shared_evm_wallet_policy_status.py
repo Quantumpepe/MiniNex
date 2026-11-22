@@ -69,15 +69,17 @@ def setup_policy():
     return record,scopes,user,metadata,remote
 
 
-def wire(monkeypatch,record,scopes,user,metadata,remote,quorum=True):
+def wire(monkeypatch,record,scopes,user,metadata,remote,quorum=True,owner_quorum=True):
     monkeypatch.setattr(mod,"_read_saved_and_current_preferences",
         lambda did:(record,scopes))
     monkeypatch.setenv("MININEX_PRIVY_ETH_SIGNER_ID",SIGNER)
     async def fake_user(_):return user
     async def fake_wallet(_):return metadata
     async def fake_policy(_):return remote
-    async def fake_quorum(**_):
-        return {"remote_quorum_public_key_verified":quorum}
+    async def fake_quorum(**kwargs):
+        enabled=(quorum if kwargs.get("expected_quorum_id")==SIGNER
+                 else owner_quorum)
+        return {"remote_quorum_public_key_verified":enabled}
     monkeypatch.setattr(mod,"fetch_privy_user",fake_user)
     monkeypatch.setattr(mod,"fetch_privy_wallet_metadata",fake_wallet)
     monkeypatch.setattr(mod,"_fetch_policy",fake_policy)
@@ -93,6 +95,7 @@ def test_one_signer_valid_wallet_has_readonly_remote_status(monkeypatch):
     assert out["one_scoped_signer_verified"] is True
     assert out["remote_policy_exactly_verified"] is True
     assert out["backend_quorum_current"] is True
+    assert out["policy_owner_quorum_current"] is True
     assert out["can_submit"] is False
     assert out["auto_execution_enabled"] is False
 
@@ -124,6 +127,17 @@ def test_unregistered_key_quorum_denies_verified_status(monkeypatch):
     out=asyncio.run(mod.read_owner_central_wallet_policy_status(DID))
     assert out["status"]=="REQUIRES_RECONCILIATION"
     assert out["backend_quorum_current"] is False
+
+
+def test_policy_owner_key_is_independent_of_backend_signer(monkeypatch):
+    record,scopes,user,metadata,remote=setup_policy()
+    wire(monkeypatch,record,scopes,user,metadata,remote,
+         owner_quorum=False)
+    out=asyncio.run(mod.read_owner_central_wallet_policy_status(DID))
+    assert out["status"]=="REMOTE_VERIFIED_READONLY"
+    assert out["backend_quorum_current"] is True
+    assert out["policy_owner_quorum_current"] is False
+    assert out["auto_execution_enabled"] is False
 
 
 def test_missing_policy_never_infers_authorization(monkeypatch):
