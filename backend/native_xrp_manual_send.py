@@ -33,43 +33,75 @@ _locks: dict[str, asyncio.Lock] = {}
 
 
 
-def privy_signing_failure(response: httpx.Response) -> HTTPException:
-    """Classify Privy wallet authorization/schema issues without exposing raw responses.
+def _safe_privy_error_category(payload: object) -> str:
+    """Report only known schema/permission error categories, never response text.
 
-    The user JWT proves their identity to MiniNex. It is not a Privy wallet
-    authorization signature and cannot authorize this server to spend XRP.
+    Privy's validation errors can include wallet IDs, addresses, request
+    parameters and transaction bytes. Do not print or send them verbatim.
     """
+    if type(payload) is not dict:
+        return "unknown"
+    errors = payload.get("error")
+    pieces = []
+    if type(errors) is str:
+        pieces.append(errors)
+    elif type(errors) is dict:
+        for key in ("code", "message", "detail"):
+            if type(errors.get(key)) is str:
+                pieces.append(errors[key])
+    elif type(errors) is list:
+        for item in errors[:4]:
+            if type(item) is dict:
+                for key in ("code", "message", "path"):
+                    if type(item.get(key)) is str:
+                        pieces.append(item[key])
+    for key in ("code", "message", "detail"):
+        if type(payload.get(key)) is str:
+            pieces.append(payload[key])
+    text = " ".join(pieces).lower()[:2000]
+    if not text:
+        return "missing_error_detail"
+    if any(part in text for part in ("unsupported method", "unknown method", "invalid method",
+                                     "method not found", "unrecognized method")):
+        return "unsupported_rpc_method"
+    if ("transaction" in text and any(part in text for part in
+            ("expected", "invalid", "required", "must be", "missing", "schema"))):
+        return "transaction_schema"
+    if ("encoding" in text and any(part in text for part in
+            ("expected", "invalid", "required", "must be", "missing", "schema"))):
+        return "encoding_schema"
+    if any(part in text for part in ("authorization", "not authorized", "permission",
+                                     "delegation", "delegate", "policy")):
+        return "wallet_authorization"
+    if any(part in text for part in ("signature", "signer", "signing")):
+        return "signer_configuration"
+    if any(part in text for part in ("chain type", "chain_type", "unsupported chain")):
+        return "unsupported_chain"
+    return "unclassified_privy_validation"
+
+
+def privy_signing_failure(response: httpx.Response) -> HTTPException:
+    """Classify remote rejection without leaking transaction or wallet data."""
     status = response.status_code
-    code = None
     try:
-        payload = response.json()
-        if type(payload) is dict:
-            nested = payload.get("error")
-            if type(nested) is dict:
-                code = nested.get("code")
-            elif type(nested) is str:
-                code = nested
-            if not code:
-                code = payload.get("code")
+        category = _safe_privy_error_category(response.json())
     except (ValueError, TypeError):
-        pass
-    if type(code) is not str or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", code):
-        code = "unknown"
-    LOG.warning("Privy XRP sign refused: http_status=%d error_code=%s", status, code)
-    if status in (401, 403):
+        category = "non_json_error"
+    LOG.warning("Privy XRP sign refused: http_status=%d category=%s", status, category)
+    if status in (401, 403) or category == "wallet_authorization":
         return HTTPException(403,
-            "Privy has not authorized this server to sign your XRP wallet. "
-            "Wallet-owner approval or a verified delegated signer is required.")
+            "Privy has not authorized signing for this XRP wallet. "
+            "Owner approval or a verified delegated signer is required.")
     if status in (400, 422):
         return HTTPException(502,
-            f"Privy rejected XRP signing format (HTTP {status}, code {code})")
+            f"Privy XRP signing request rejected (HTTP {status}; reason: {category}). "
+            "No XRP was sent.")
     if status == 404:
-        return HTTPException(502, "Privy XRPL signing is unavailable for this wallet (404)")
+        return HTTPException(502, "Privy XRP signing method is not available (404)")
     if status == 429:
         return HTTPException(503, "Privy is temporarily rate-limiting XRP signing")
     return HTTPException(502,
-        f"Privy XRP signing failed (HTTP {status}, code {code})")
-
+        f"Privy XRP signing failed (HTTP {status}; reason: {category}). No XRP was sent.")
 
 def amount_to_drops(amount: object) -> str:
     """Never round down a requested send or accept float precision loss."""
