@@ -11,7 +11,7 @@ import hashlib
 from backend.native_xrp_manual_send import (
     amount_to_drops, original_xrp_wallet, prepare_mainnet_payment,
     verified_signed_blob, verify_privy_xrp_remote_owner, _same_privy_user_id,
-    _safe_privy_error_category,
+    _safe_privy_error_category, _safe_privy_schema_issue,
 )
 from backend.tests.test_native_xrp_thor_payment_tx import OWNER, VAULT
 
@@ -201,3 +201,14 @@ def test_prefix_free_privy_id_matching_is_exact(other_id):
 ])
 def test_safe_privy_rejection_category_does_not_echo_remote_message(payload,expected):
     assert _safe_privy_error_category(payload)==expected
+
+
+@pytest.mark.parametrize("payload,expected", [
+    ({"cause":"[{\"code\":\"invalid_type\",\"path\":[\"params\",\"transaction\"],\"expected\":\"string\",\"received\":\"object\"}]"}, "transaction_invalid_type"),
+    ({"cause":[{"code":"invalid_format","path":["params","transaction"]}]}, "transaction_invalid_hex"),
+    ({"cause":"[{\"code\":\"invalid_value\",\"path\":[\"params\",\"encoding\"]}]"}, "encoding_invalid_value"),
+    ({"cause":"not-json-sensitive-address"}, "none"),
+    ({"cause":[{"code":"invalid_type","path":["params","unexpected"]}]}, "other_validation_path"),
+])
+def test_privy_schema_issue_does_not_echo_raw_transaction(payload,expected):
+    assert _safe_privy_schema_issue(payload)==expected
