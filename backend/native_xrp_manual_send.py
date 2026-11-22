@@ -16,7 +16,7 @@ import re
 
 import httpx
 from fastapi import HTTPException
-from xrpl.core.binarycodec import decode, encode
+from xrpl.core.binarycodec import decode, encode_for_signing
 
 from .native_coin_balances import _rpc_url, _valid_address
 from .native_xrp_signing_blob import _owner_pubkey
@@ -309,9 +309,13 @@ async def submit_manual_xrp(
             unsigned = prepare_mainnet_payment(source, destination, drops, server, fees, account)
             unsigned["SigningPubKey"] = pubkey.upper()
             try:
-                encoded = encode(unsigned)
+                # XRPL signing hashes the STX-prefixed canonical payload.
+                # A normal tx_blob from encode() does not contain that prefix.
+                encoded = encode_for_signing(unsigned)
+                if not encoded.upper().startswith("53545800"):
+                    raise ValueError("XRPL signing prefix unavailable")
             except (ValueError, TypeError, KeyError):
-                raise HTTPException(503, "Cannot encode XRP payment") from None
+                raise HTTPException(503, "Cannot encode canonical XRP signing payload") from None
             # Privy's XRPL method accepts a HEX string and explicit encoding;
             # passing a JSON object causes "Expected string, received object".
             try:
