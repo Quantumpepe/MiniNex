@@ -17,6 +17,8 @@ const EVM=Object.freeze({
     contract:'0x514910771af9ca656af840dff83e8264ecf986ca'}),
   UNI:Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'erc20',
     contract:'0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'}),
+  QNT:Object.freeze({chainId:1,decimals:18,feeSymbol:'ETH',kind:'erc20',
+    contract:'0x4a220e6096b25eadb88358cb44068a3248254675'}),
   USDC:Object.freeze({chainId:1,decimals:6,feeSymbol:'ETH',kind:'erc20',
     contract:'0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'}),
   USDT:Object.freeze({chainId:1,decimals:6,feeSymbol:'ETH',kind:'erc20',
