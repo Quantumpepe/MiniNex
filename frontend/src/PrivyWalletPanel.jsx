@@ -380,15 +380,15 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
       {address && <CopyWalletAddress address={address} network="ETH" t={t}/>}
     </div>;
 
-    if(['BNB','POL','AVAX','LINK','UNI','ARB'].includes(asset)){
+    if(['BNB','POL','AVAX','LINK','UNI','ARB','QNT'].includes(asset)){
       const network=asset==='BNB'?'BNB Smart Chain':
         asset==='POL'?'Polygon PoS':asset==='AVAX'?'Avalanche C-Chain':
         asset==='ARB'?'Arbitrum One (ARB ERC-20)':
-        asset==='LINK'?'Chainlink (Ethereum ERC-20)':'Uniswap (Ethereum ERC-20)';
+        asset==='LINK'?'Chainlink (Ethereum ERC-20)':asset==='QNT'?'Quant (Ethereum ERC-20)':'Uniswap (Ethereum ERC-20)';
       const chain=asset==='BNB'?'bsc-mainnet':
         asset==='POL'?'polygon-pos-mainnet':
         asset==='ARB'?'arbitrum-one-mainnet':'avalanche-c-mainnet';
-      const evmAddress=(asset==='LINK'||asset==='UNI')
+      const evmAddress=(asset==='LINK'||asset==='UNI'||asset==='QNT')
         ? (validEvmAddress(address)?address:null)
         : evmNetworkAddress(chain,address);
       return <div className="mininex-coin-wallet-address" role="group"
