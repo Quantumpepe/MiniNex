@@ -153,7 +153,8 @@ def test_extra_paper_schema_is_separate_and_per_account_coin():
     assert "CREATE TABLE IF NOT EXISTS mininex_extra_paper_trades" in sql
     assert "PRIMARY KEY (privy_did,asset,event_id)" in sql
     assert "FOREIGN KEY (privy_did,asset)" in sql
-    assert "('BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB')" in sql
+    assert "('BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','QNT','UNI','ARB')" in sql
+    # Legacy DOGE records remain readable; new sessions admit only current coins.
     assert "asset TEXT NOT NULL CHECK (asset IN ('BTC','ETH'))" in sql
     assert "mininex_live_order_intents" in sql
     assert "FOR UPDATE" in extra_paper._row.__code__.co_consts
