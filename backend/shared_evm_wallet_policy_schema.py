@@ -58,27 +58,7 @@ WALLET_POLICY_SCHEMA = (
             CHECK(target_policy_sha256 ~ '^[0-9a-f]{64}$'),
         challenge_text TEXT NOT NULL CHECK(length(challenge_text) <= 3500),
         challenge_sha256 TEXT NOT NULL
-            CHECK(challenge_sha256 ~ '^[0-9a-f]{64}
-            CHECK(status IN ('PENDING','SIGNED_INTENT','CONSUMED',
-                             'REVOKED','UNCERTAIN')),
-        issued_at TIMESTAMPTZ NOT NULL,
-        expires_at TIMESTAMPTZ NOT NULL,
-        signed_at TIMESTAMPTZ,
-        consumed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        PRIMARY KEY(privy_did,nonce),
-        CHECK(expires_at > issued_at AND
-              expires_at <= issued_at + interval '5 minutes'),
-        CHECK(status NOT IN ('SIGNED_INTENT','CONSUMED') OR
-              signed_at IS NOT NULL),
-        CHECK(status <> 'CONSUMED' OR consumed_at IS NOT NULL)
-    )""",
-    """CREATE UNIQUE INDEX IF NOT EXISTS
-       mininex_live_evm_wallet_policy_intent_active_once
-       ON mininex_live_evm_wallet_policy_intents(privy_did)
-       WHERE status IN ('PENDING','SIGNED_INTENT')""",
-)
-),
+            CHECK(challenge_sha256 ~ '^[0-9a-f]{64}$'),
         target_scopes_json JSONB NOT NULL DEFAULT '{}'::jsonb
             CHECK(jsonb_typeof(target_scopes_json)='object'),
         target_revisions_json JSONB NOT NULL DEFAULT '{}'::jsonb
