@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from .live_orders import valid_order_key,valid_notional
 from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
+from .shared_evm_central_runtime import _locked_original_evm_coin
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
@@ -27,7 +28,7 @@ _ASSETS=frozenset(("BNB","POL","AVAX","LINK","UNI","ARB"))
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
                     amount_usd:str,quote_sha256:str,
-                    expected_revision:int)->dict:
+                    expected_revision:int,central:bool=False)->dict:
     """Serialize one coin's reservations by locking its OWN preference row.
 
     Other coins are entirely independent; their selected budgets never
@@ -42,6 +43,13 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
     if type(expected_revision) is not int or expected_revision<1:
         raise ValueError("User budget revision required")
     amount=valid_notional(amount_usd)
+    # Central wallet-lock order must precede preference rows, matching
+    # extension/revocation and order claim transaction ordering.
+    if central:
+        _locked_original_evm_coin(
+            cur,did=did,asset=asset,stable=stable,
+            revision=expected_revision,
+        )
     cur.execute(
         """SELECT budget_usd,stable,revision
            FROM mininex_extra_coin_preferences
@@ -54,43 +62,44 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             or settings.get("revision")!=expected_revision
             or settings.get("stable")!=stable):
         raise HTTPException(409,"Independent coin budget changed or unavailable")
-    cur.execute(
-        """SELECT status,expires_at,revoked_at,stable,
-                  wallet_id,wallet_address,consent_sha256
-           FROM mininex_live_evm_owner_permissions
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",
-        (did,asset))
-    permission=cur.fetchone()
-    from datetime import datetime,timezone
-    if (type(permission) is not dict
-            or permission.get("status")!="GRANT_VERIFIED"
-            or permission.get("stable")!=stable
-            or permission.get("revoked_at") is not None
-            or not isinstance(permission.get("expires_at"),datetime)
-            or permission["expires_at"].tzinfo is None
-            or permission["expires_at"]<=datetime.now(timezone.utc)):
-        raise HTTPException(409,"This coin lacks verified, active user permission")
-    # The remote signer grant is not proof of the owner's EIP-191 intent.
-    # Bind both to the exact original wallet, budget revision, settlement
-    # and immutable signed text. A changed preference needs new consent.
-    cur.execute(
-        """SELECT status,wallet_id,wallet_address,chain_id,stable,
-                  budget_revision,budget_usd,message_sha256,confirmed_at
-           FROM mininex_live_evm_consent_challenges
-           WHERE privy_did=%s AND asset=%s FOR UPDATE""",
-        (did,asset))
-    consent=cur.fetchone()
-    if (type(consent) is not dict
-            or consent.get("status")!="SIGNED_INTENT"
-            or consent.get("chain_id")!=_pair(asset,stable,side)["chain_id"]
-            or consent.get("stable")!=stable
-            or consent.get("budget_revision")!=expected_revision
-            or Decimal(str(consent.get("budget_usd")))!=Decimal(settings["budget_usd"])
-            or consent.get("confirmed_at") is None
-            or consent.get("wallet_id")!=permission.get("wallet_id")
-            or consent.get("wallet_address")!=permission.get("wallet_address")
-            or consent.get("message_sha256")!=permission.get("consent_sha256")):
-        raise HTTPException(409,"Current wallet-signed coin budget consent required")
+    if not central:
+        cur.execute(
+            """SELECT status,expires_at,revoked_at,stable,
+                      wallet_id,wallet_address,consent_sha256
+               FROM mininex_live_evm_owner_permissions
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+            (did,asset))
+        permission=cur.fetchone()
+        from datetime import datetime,timezone
+        if (type(permission) is not dict
+                or permission.get("status")!="GRANT_VERIFIED"
+                or permission.get("stable")!=stable
+                or permission.get("revoked_at") is not None
+                or not isinstance(permission.get("expires_at"),datetime)
+                or permission["expires_at"].tzinfo is None
+                or permission["expires_at"]<=datetime.now(timezone.utc)):
+            raise HTTPException(409,"This coin lacks verified, active user permission")
+        # The remote signer grant is not proof of the owner's EIP-191 intent.
+        # Bind both to the exact original wallet, budget revision, settlement
+        # and immutable signed text. A changed preference needs new consent.
+        cur.execute(
+            """SELECT status,wallet_id,wallet_address,chain_id,stable,
+                      budget_revision,budget_usd,message_sha256,confirmed_at
+               FROM mininex_live_evm_consent_challenges
+               WHERE privy_did=%s AND asset=%s FOR UPDATE""",
+            (did,asset))
+        consent=cur.fetchone()
+        if (type(consent) is not dict
+                or consent.get("status")!="SIGNED_INTENT"
+                or consent.get("chain_id")!=_pair(asset,stable,side)["chain_id"]
+                or consent.get("stable")!=stable
+                or consent.get("budget_revision")!=expected_revision
+                or Decimal(str(consent.get("budget_usd")))!=Decimal(settings["budget_usd"])
+                or consent.get("confirmed_at") is None
+                or consent.get("wallet_id")!=permission.get("wallet_id")
+                or consent.get("wallet_address")!=permission.get("wallet_address")
+                or consent.get("message_sha256")!=permission.get("consent_sha256")):
+            raise HTTPException(409,"Current wallet-signed coin budget consent required")
     # BUY consumes the owner's selected per-coin buying budget.
     # SELL reduces an existing spot position: its appreciated USD value
     # must not become an artificial trading cap. Every SELL still requires
@@ -133,6 +142,7 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
 def reserve_internal_evm_coin_budget(
     *,did:str,asset:str,intent_key:str,side:str,stable:str,
     amount_usd:str,quote_sha256:str,expected_revision:int,
+    central:bool=False,
 )->dict:
     """Internal strategy path only. No user-facing writer or scheduler."""
     did=_safe_did(did)
@@ -144,7 +154,8 @@ def reserve_internal_evm_coin_budget(
                 return _reserve_locked(cur,did=did,asset=asset,
                     key=intent_key,side=side,stable=stable,
                     amount_usd=amount_usd,quote_sha256=quote_sha256,
-                    expected_revision=expected_revision)
+                    expected_revision=expected_revision,
+                    central=central)
     except psycopg.Error:
         LOG.warning("Independent EVM budget reservation unavailable")
         raise HTTPException(503,"EVM coin budget reservation unavailable") from None
