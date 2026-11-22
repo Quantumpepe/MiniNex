@@ -133,7 +133,7 @@ def test_each_coin_uses_same_trade_plan_and_correct_route(venues,asset,side):
         assert plan["source_chain_balance_verified"] is True
         assert plan["network_fee_spendability_verified"] is False
         assert plan["quote_level"]=="OWNER_WALLET_BALANCE_VERIFIED_NATIVE_INDICATIVE"
-    elif asset in ("LINK","UNI"):
+    elif asset in ("LINK","QNT","UNI"):
         assert venues==[("ERC20",DID,asset,side,stable,amount)]
         assert plan["wallet_funds_verified"] is True
         assert plan["quote_level"]=="WALLET_VERIFIED_UNSIGNED_ERC20_SWAP"
