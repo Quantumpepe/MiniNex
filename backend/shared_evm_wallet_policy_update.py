@@ -21,6 +21,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .eth_privy_policy_transport import _auth
+from .eth_privy_user_grant import _fetch_policy
+from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .privy_wallet_verification import APP_ID, fetch_privy_user
 from .privy_live_signer import (
     _owned_eth_wallet, _scoped_signer, fetch_privy_wallet_metadata,
@@ -241,13 +243,13 @@ def _finish_locked(cur,*,did,claim,remote):
     )
     intent=cur.fetchone()
     if (type(grant) is not dict or type(intent) is not dict
-            or grant.get("status")!="UPDATING"
+            or grant.get("status") not in ("UPDATING","UPDATE_UNCERTAIN")
             or grant.get("wallet_id")!=claim["wallet_id"]
             or grant.get("signer_id")!=claim["signer_id"]
             or grant.get("policy_id")!=claim["policy_id"]
             or grant.get("policy_sha256")!=claim["old_digest"]
             or grant.get("revision")!=claim["old_revision"]
-            or intent.get("status")!="PATCH_SUBMITTING"
+            or intent.get("status") not in ("PATCH_SUBMITTING","PATCH_UNCERTAIN")
             or intent.get("source_grant_revision")!=claim["old_revision"]
             or intent.get("previous_policy_sha256")!=claim["old_digest"]
             or intent.get("target_policy_sha256")!=claim["target_digest"]
@@ -269,6 +271,11 @@ def _finish_locked(cur,*,did,claim,remote):
                 )
         except (HTTPException,ValueError,KeyError,TypeError):
             verified=False
+    if not verified and grant["status"]=="UPDATE_UNCERTAIN":
+        # Already held after a committed remote attempt. No second PATCH and
+        # no second transition needed; only exact readback can release it.
+        return {"status":"UPDATE_UNCERTAIN","retry_forbidden":True,
+                "reconciliation_required":True,"can_submit":False}
     if not verified:
         cur.execute(
             """UPDATE mininex_live_evm_wallet_policy_intents
@@ -295,7 +302,7 @@ def _finish_locked(cur,*,did,claim,remote):
            SET status='GRANT_VERIFIED',policy_sha256=%s,
                scopes_json=%s,revisions_json=%s,revision=revision+1,
                remote_verified_at=now(),updated_at=now()
-           WHERE privy_did=%s AND status='UPDATING'
+           WHERE privy_did=%s AND status IN ('UPDATING','UPDATE_UNCERTAIN')
              AND revision=%s AND policy_sha256=%s
            RETURNING status""",(
                 claim["target_digest"],Jsonb(claim["target_scopes_json"]),
@@ -310,7 +317,8 @@ def _finish_locked(cur,*,did,claim,remote):
         """UPDATE mininex_live_evm_wallet_policy_intents
            SET status='PATCH_VERIFIED',consumed_at=now(),
                update_resolved_at=now()
-           WHERE privy_did=%s AND nonce=%s AND status='PATCH_SUBMITTING'
+           WHERE privy_did=%s AND nonce=%s
+             AND status IN ('PATCH_SUBMITTING','PATCH_UNCERTAIN')
            RETURNING status""",(did,claim["nonce"]),
     )
     y=cur.fetchone()
@@ -367,4 +375,131 @@ async def apply_original_wallet_coin_extension(did,nonce):
         raise HTTPException(503,"Original policy outcome requires audit") from None
     if result["status"]!="GRANT_VERIFIED":
         raise HTTPException(503,"Privy scope update uncertain; do not retry")
+    return result
+
+
+
+def _load_reconcilable_claim(did,nonce):
+    """Reconstruct remote GET target from a previously claimed update only."""
+    url=_db_url()
+    _ensure_schema(url)
+    with psycopg.connect(url,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """SELECT g.wallet_id,g.wallet_address,g.owner_id,g.signer_id,
+                          g.policy_id,g.policy_sha256,g.revision AS original_revision,
+                          g.status AS grant_status,
+                          i.status AS intent_status,i.source_grant_revision,
+                          i.previous_policy_sha256,i.target_policy_sha256,
+                          i.target_scopes_json,i.target_revisions_json,
+                          i.update_idempotency_key
+                   FROM mininex_live_evm_wallet_policy_grants g
+                   JOIN mininex_live_evm_wallet_policy_intents i
+                     ON g.privy_did=i.privy_did
+                   WHERE g.privy_did=%s AND i.nonce=%s""",(did,nonce),
+            )
+            saved=cur.fetchone()
+    if (type(saved) is not dict
+            or saved.get("grant_status") not in ("UPDATING","UPDATE_UNCERTAIN")
+            or saved.get("intent_status") not in ("PATCH_SUBMITTING","PATCH_UNCERTAIN")
+            or saved.get("source_grant_revision")!=saved.get("original_revision")
+            or saved.get("previous_policy_sha256")!=saved.get("policy_sha256")
+            or type(saved.get("target_scopes_json")) is not dict
+            or type(saved.get("target_revisions_json")) is not dict
+            or len(saved["target_scopes_json"])<2
+            or set(saved["target_scopes_json"])!=set(saved["target_revisions_json"])
+            or type(saved.get("update_idempotency_key")) is not str
+            or not re.fullmatch(r"[0-9a-f]{64}",saved["update_idempotency_key"])):
+        raise HTTPException(409,"No previously claimed original wallet policy update")
+    args=dict(
+        wallet=saved["wallet_address"],owner_id=saved["owner_id"],
+        executor_id=saved["signer_id"],
+        scopes=list(saved["target_scopes_json"].values()),now=int(time.time()),
+    )
+    try:
+        policy=compose_scoped_evm_wallet_policy(**args)
+        digest=verified_wallet_policy_digest(policy,**args)
+    except (ValueError,KeyError,TypeError):
+        raise HTTPException(409,"Previously consented policy scope expired") from None
+    if digest!=saved["target_policy_sha256"]:
+        raise HTTPException(409,"Saved remote update digest mismatch")
+    old=set(saved["target_scopes_json"])-set(saved["target_revisions_json"])
+    if old:
+        raise HTTPException(409,"Unrecognized original wallet update")
+    return {
+        "did":did,"nonce":nonce,"policy_id":saved["policy_id"],
+        "wallet_id":saved["wallet_id"],
+        "wallet_address":saved["wallet_address"],
+        "signer_id":saved["signer_id"],
+        "owner_id":saved["owner_id"],
+        "old_digest":saved["policy_sha256"],
+        "old_revision":saved["original_revision"],
+        "target_digest":digest,
+        "target_scopes_json":saved["target_scopes_json"],
+        "target_revisions_json":saved["target_revisions_json"],
+        "idempotency_key":saved["update_idempotency_key"],
+        "candidate":policy,
+        "new_coin":sorted(saved["target_scopes_json"])[-1],
+    }
+
+
+async def _observe_remote_patch_without_sending(claim):
+    """One GET-only original policy+wallet+owner quorum reconciliation."""
+    remote=await _fetch_policy(claim["policy_id"])
+    if verify_remote_combined_policy(
+        remote,expected=claim["candidate"],
+    )!=claim["policy_id"]:
+        raise ValueError("Privy has not confirmed the exact target policy")
+    user=await fetch_privy_user(claim["did"])
+    wallet=await fetch_privy_wallet_metadata(claim["wallet_id"])
+    owned=_owned_eth_wallet(user,claim["did"])
+    if (owned["delegated"] is not True
+            or owned["address"]!=claim["wallet_address"]
+            or owned["wallet_id"]!=claim["wallet_id"]
+            or type(wallet.get("additional_signers")) is not list
+            or len(wallet["additional_signers"])!=1
+            or not _scoped_signer(
+                wallet,did=claim["did"],address=owned["address"],
+                config={
+                    "signer_id":claim["signer_id"],
+                    "policy_id":claim["policy_id"],
+                })):
+        raise ValueError("Original wallet signer changed during uncertain PATCH")
+    for quorum_id in (claim["owner_id"],claim["signer_id"]):
+        evidence=await check_privy_backend_quorum(
+            expected_quorum_id=quorum_id,
+        )
+        if evidence.get("remote_quorum_public_key_verified") is not True:
+            raise ValueError("Registered original signer/owner quorum changed")
+    return {
+        "policy_id":claim["policy_id"],
+        "digest":claim["target_digest"],
+        "one_signer_verified":True,
+        "remote_rules_verified":True,
+    }
+
+
+async def reconcile_original_wallet_extension(did,nonce):
+    """Independent remote readback only; no second Privy PATCH or signer."""
+    did=_safe_did(did)
+    if type(nonce) is not str or not _NONCE.fullmatch(nonce):
+        raise HTTPException(422,"Previous wallet update nonce required")
+    try:
+        claim=await asyncio.to_thread(_load_reconcilable_claim,did,nonce)
+    except psycopg.Error:
+        raise HTTPException(503,"Original wallet update journal unavailable") from None
+    proof=None
+    try:
+        proof=await _observe_remote_patch_without_sending(claim)
+    except (ValueError,TypeError,KeyError,HTTPException,httpx.HTTPError):
+        LOG.warning("Original Privy wallet policy not yet independently reconcilable")
+    try:
+        url=_db_url()
+        with psycopg.connect(url,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                result=_finish_locked(cur,did=did,claim=claim,remote=proof)
+    except psycopg.Error:
+        raise HTTPException(503,"Cannot finalize original wallet remote readback") from None
+    if result["status"]!="GRANT_VERIFIED":
+        raise HTTPException(503,"Uncertain Privy policy update remains on hold")
     return result
