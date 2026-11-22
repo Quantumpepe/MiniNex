@@ -169,18 +169,22 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         quorum=await check_privy_backend_quorum(
             expected_quorum_id=expected_signer,
         )
-        # The policy OWNER, not its additional signer, must authorize PATCH.
-        # The same pinned P-256 key may be a member of both registered
-        # distinct quorums. Report owner authority separately without
-        # pretending a valid signer can update a policy.
-        owner_quorum=await check_privy_backend_quorum(
-            expected_quorum_id=record["owner_id"],
-        )
     except Exception:
         LOG.warning("Original central Privy wallet audit not confirmed")
         return {**result,"status":"REQUIRES_RECONCILIATION"}
     if quorum.get("remote_quorum_public_key_verified") is not True:
         return {**result,"status":"REQUIRES_RECONCILIATION"}
+    # A policy OWNER quorum signs future policy PATCH operations. It is NOT
+    # part of the already-consented additional-signature transaction path.
+    # A failed owner-quorum read must not invalidate an independently
+    # verified, unchanged wallet grant for existing coins.
+    try:
+        owner_quorum=await check_privy_backend_quorum(
+            expected_quorum_id=record["owner_id"],
+        )
+    except Exception:
+        LOG.warning("Original Privy policy-owner audit unavailable for scope updates")
+        owner_quorum={}
     result.update({
         "status":"REMOTE_VERIFIED_READONLY",
         "one_scoped_signer_verified":verified["one_scoped_signer_verified"],

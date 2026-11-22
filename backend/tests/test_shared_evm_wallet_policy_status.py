@@ -140,6 +140,41 @@ def test_policy_owner_key_is_independent_of_backend_signer(monkeypatch):
     assert out["auto_execution_enabled"] is False
 
 
+
+
+def test_policy_owner_quorum_read_error_does_not_mask_valid_existing_grant(monkeypatch):
+    record,scopes,user,metadata,remote=setup_policy()
+    wire(monkeypatch,record,scopes,user,metadata,remote)
+    async def quorum(**kwargs):
+        if kwargs.get("expected_quorum_id")==OWNER:
+            raise OSError("Policy owner quorum read temporarily unavailable")
+        return {"remote_quorum_public_key_verified":True}
+    monkeypatch.setattr(mod,"check_privy_backend_quorum",quorum)
+    out=asyncio.run(mod.read_owner_central_wallet_policy_status(DID))
+    assert out["status"]=="REMOTE_VERIFIED_READONLY"
+    assert out["one_scoped_signer_verified"] is True
+    assert out["remote_policy_exactly_verified"] is True
+    assert out["backend_quorum_current"] is True
+    assert out["policy_owner_quorum_current"] is False
+
+
+def test_original_coin_audit_needs_existing_owner_grant_not_owner_patch_quorum(monkeypatch):
+    from backend import shared_evm_central_runtime as runtime
+    record,scopes,user,metadata,remote=setup_policy()
+    wire(monkeypatch,record,scopes,user,metadata,remote,owner_quorum=False)
+    monkeypatch.setattr(runtime,"original_evm_coin_record",
+        lambda did,asset: {
+            "policy_sha256":record["policy_sha256"],
+            "wallet_id":record["wallet_id"],
+            "signer_id":record["signer_id"],
+            "budget_revision":record["revisions_json"][asset],
+            "chain_id":1,
+        })
+    audit=asyncio.run(runtime.audit_original_evm_coin(DID,"LINK"))
+    assert audit["grant_source"]=="PRIVY_CENTRAL_ONE_SIGNER"
+    assert audit["backend_quorum_current"] is True
+    assert audit["remote_verified_policy_sha256"]==record["policy_sha256"]
+
 def test_missing_policy_never_infers_authorization(monkeypatch):
     monkeypatch.setattr(mod,"_read_saved_and_current_preferences",
         lambda did:(None,[]))

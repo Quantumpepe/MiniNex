@@ -171,8 +171,9 @@ async def audit_original_evm_coin(did:str,asset:str)->dict:
                 "one_scoped_signer_verified",
                 "remote_policy_exactly_verified",
                 "current_user_budgets_verified",
+                # The distinct policy OWNER must sign any future scope PATCH;
+                # it is not the already user-approved transaction signer.
                 "backend_quorum_current",
-                "policy_owner_quorum_current",
             ))):
         raise HTTPException(409,"Original wallet signer or combined Privy policy not verified")
     try:
