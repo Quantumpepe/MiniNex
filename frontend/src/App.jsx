@@ -14,6 +14,7 @@ import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
 import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
 import useLiveHomeTrades from './useLiveHomeTrades.js';
+import useWalletPortfolioHome from './useWalletPortfolioHome.js';
 import {summarizeHomePaperPortfolio,HOME_PAPER_PORTFOLIO_COINS} from './paperPortfolio.js';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
@@ -406,6 +407,7 @@ export default function App() {
   // The capital card is ALWAYS the total across started PAPER coins.
   // Only the trade HISTORY follows the selected coin / optional ALL toggle.
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce,'ALL',page==='overview');
+  const walletHome=useWalletPortfolioHome(page==='overview',refreshNonce,market?.markets,syncedAt);
   const t=DICTIONARY[language];
   const mk=market?.markets?.[asset]||null;
   const valid=validMarket(mk) && Date.now()-syncedAt<FRESH_MS;
@@ -457,7 +459,7 @@ export default function App() {
              period={period} setPeriod={setPeriod}
             history={history} trades={paperVisible?homePaperTrades.trades:homeLiveTrades.trades} tradesStatus={paperVisible?homePaperTrades.status:homeLiveTrades.status} liveMode={!paperVisible} market={mk} marketSnapshot={market?.markets} syncedAt={syncedAt} valid={valid} portfolio={portfolio} showSimulatedTrades={paperVisible}
              portfolioSummary={paperHome.summary} portfolioSamples={paperHome.samples} portfolioAuthenticated={paperHome.authenticated}
-             portfolioStatus={paperHome.status}
+             portfolioStatus={paperHome.status} walletPortfolio={walletHome}
             paper={paper} workerOnline={workerOnline} goTo={navigate}
           />
           <div className="desktop-overview">
