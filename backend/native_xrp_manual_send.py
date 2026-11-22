@@ -129,9 +129,17 @@ def verify_privy_xrp_remote_owner(remote: object, *, wallet_id: str, address: st
     if remote.get("archived_at") is not None:
         raise HTTPException(503, "Privy XRP wallet is archived")
     entity = remote.get("entity")
-    if entity is not None and (type(entity) is not dict
-            or entity.get("type") != "user" or entity.get("id") != did):
-        raise HTTPException(403, "Privy XRP wallet belongs to a different user")
+    if entity is not None:
+        if type(entity) is not dict or entity.get("type") != "user":
+            LOG.warning("Privy XRP ownership mismatch: reason=entity_type")
+            raise HTTPException(
+                409, "Privy XRP wallet has an unexpected owner entity type. "
+                     "Its ownership must be reconciled before sending.")
+        if entity.get("id") != did:
+            LOG.warning("Privy XRP ownership mismatch: reason=user_id")
+            raise HTTPException(
+                409, "Privy XRP wallet is attributed to a different user ID. "
+                     "The wallet link must be reconciled before sending.")
 
 
 def prepare_mainnet_payment(
