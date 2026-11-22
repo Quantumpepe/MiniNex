@@ -136,3 +136,20 @@ def test_remote_wallet_contradictions_rejected(different):
     with pytest.raises(HTTPException):
         verify_privy_xrp_remote_owner(remote,
             wallet_id="wallet_123456789", address=OWNER, did=DID)
+
+
+@pytest.mark.parametrize("entity,expected", [
+    ({"type":"organization","id":"organization_abc"}, "unexpected owner entity type"),
+    ({"type":"user","id":"did:privy:someone_else"}, "different user ID"),
+])
+def test_owner_mismatch_has_distinct_diagnostic_without_revealing_ids(entity,expected):
+    remote = {
+        "id":"wallet_123456789", "address":OWNER, "chain_type":"xrpl",
+        "archived_at":None, "entity":entity,
+    }
+    with pytest.raises(HTTPException) as exc:
+        verify_privy_xrp_remote_owner(remote,
+            wallet_id="wallet_123456789", address=OWNER, did=DID)
+    assert exc.value.status_code == 409
+    assert expected in exc.value.detail
+    assert entity["id"] not in exc.value.detail
