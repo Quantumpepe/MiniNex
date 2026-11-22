@@ -1,8 +1,9 @@
 import React,{useState} from 'react';
 import {Send} from 'lucide-react';
+import {API_BASE} from './data.js';
 
-// TRX send following BTC/SOL pattern.
-export default function TrxSend({t,enabled,userId,address}){
+// TRX send via backend (Privy signs and broadcasts).
+export default function TrxSend({t,enabled,userId,address,getAccessToken}){
   const [open,setOpen]=useState(false);
   const [destination,setDestination]=useState('');
   const [amount,setAmount]=useState('');
@@ -14,8 +15,19 @@ export default function TrxSend({t,enabled,userId,address}){
     if(!enabled||!address||!destination||!amount||busy)return;
     setBusy(true);setError('');setTxHash('');
     try{
-      // TRX send logic will be added when wallet signing is available
-      setError(t.trxSendNotReady||'TRX send is being prepared. Please try again later.');
+      const token=await getAccessToken?.();
+      if(!token)throw new Error('Authentication required');
+      const response=await fetch(API_BASE+'/api/wallet/send/trx',{
+        method:'POST',
+        headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({from:address,to:destination,amount:Number(amount)})
+      });
+      if(!response.ok){
+        const err=await response.json().catch(()=>({}));
+        throw new Error(err.detail||'Send failed');
+      }
+      const data=await response.json();
+      setTxHash(data.txid||data.hash||'sent');
     }catch(e){
       setError(e.message||'Send failed');
     }finally{
