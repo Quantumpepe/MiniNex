@@ -38,7 +38,7 @@ def scope(asset="LINK"):
 def grant():
     original=[scope()]
     kwargs=dict(
-        wallet=WALLET,owner_id=OWNER,executor_id=SIGNER,
+        wallet=WALLET.lower(),owner_id=OWNER,executor_id=SIGNER,
         scopes=original,now=NOW,
     )
     candidate=compose_scoped_evm_wallet_policy(**kwargs)
@@ -136,11 +136,11 @@ def signed_fixture():
     g=grant()
     desired=[scope(),scope("QNT")]
     old=compose_scoped_evm_wallet_policy(
-        wallet=WALLET,owner_id=OWNER,executor_id=SIGNER,
+        wallet=WALLET.lower(),owner_id=OWNER,executor_id=SIGNER,
         scopes=[scope()],now=NOW,
     )
     plan=plan_wallet_policy_transition(
-        did=DID,wallet=WALLET,wallet_id=WID,
+        did=DID,wallet=WALLET.lower(),wallet_id=WID,
         owner_id=OWNER,executor_id=SIGNER,
         existing_scopes=[scope()],desired_scopes=desired,
         existing_policy=old,now=NOW,nonce=NONCE,
