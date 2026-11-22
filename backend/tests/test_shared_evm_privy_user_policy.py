@@ -17,7 +17,7 @@ def params(asset,stable):
         buy_source_atomic_cap="123000000000000000",
         sell_source_atomic_cap="1000000000000000000",
         native_wrap_atomic_cap=(
-            "1000000000000000000" if asset in ("BNB","POL","AVAX") else None),
+            "1000000000000000000" if asset in ("ETH","BNB","POL","AVAX") else None),
         expires_at=2000000000,now=1999990000,
     )
 
