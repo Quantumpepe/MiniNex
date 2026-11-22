@@ -109,7 +109,14 @@ chain/signature type.
    original DID/wallet/coin budget revision checks, remote Policy Owner
    quorum diagnostics and strictly pinned remote policy audit. An old
    legacy grant never automatically becomes a shared wallet grant.
-3. **PARTIAL:** A new first-wallet policy can now be prepared/published
+3. **PARTIAL:** Existing user wallet scope expansion now has an
+   authenticated one-coin EIP-191 intent staging and confirmation:
+   `POST /api/live/evm/wallet-policy/extend/{asset}/prepare`,
+   `POST /api/live/evm/wallet-policy/extend/confirm`. Both validate
+   the current original wallet, backend signer, Privy policy and current
+   coin-budget revisions. They store an immutable, five-minute user-signed
+   policy digest but do NOT send Privy PATCH, add signers or start trading.
+   A new first-wallet policy can now be prepared/published
    (with one-shot DB claim and remote policy GET) and user-authorized
    `addSigners` can be independently verified/recorded. **Still OPEN:**
    update an existing policy via Privy PATCH with Policy Owner quorum
