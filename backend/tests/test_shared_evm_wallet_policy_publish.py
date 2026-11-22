@@ -102,14 +102,16 @@ def test_previous_or_changed_owner_claim_is_never_republished(monkeypatch,change
     monkeypatch.setattr(pub,"_locked_selected_budget",
         lambda cur,**kwargs:(1000,3))
     stored=row();stored.update(change)
-    cur=Cur([stored])
+    # A wrong stored digest is detected only after both legacy-grant checks.
+    cur=Cur([stored,None,None] if "policy_sha256" in change else [stored])
     with pytest.raises(HTTPException) as exc:
         pub._claim_first_policy_locked(
             cur,did=DID,owned=OWNED,
             owner_id=OWNER,signer_id=SIGNER,now=NOW,
         )
     assert exc.value.status_code==409
-    assert len(cur.calls)==1
+    assert len(cur.calls)>=1
+    assert all("status='SUBMITTING'" not in sql for sql,_ in cur.calls)
 
 
 def test_exact_remote_create_then_independent_get(monkeypatch):
