@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {Send} from 'lucide-react';
 import {Buffer} from 'buffer';
 import {useSignRawHash} from '@privy-io/react-auth/extended-chains';
+import SendCompletion from './SendCompletion.jsx';
 import {btcSatoshis,btcOwnerScript,btcOwnedPublicKey,btcRecipientScript,
   btcFeeRate,btcValidatedUtxos,btcPlan,btcMaxPlan,btcDisplay,
   btcFetch,btcSignAndBroadcast,btcRecoverPublicKey,BTC_REVIEW_MAX_AGE_MS} from './btcSendRules.js';
@@ -158,6 +159,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
       <Send size={18} aria-hidden="true"/>{t.walletSendTitle} BTC
     </button>
     {open&&<div className="mininex-swap-content" id="mininex-btc-send-form">
+      {stage==='submitted'&&txid?<SendCompletion asset="BTC" txid={txid} userId={userId} t={t}/>:<>
       <p className="privy-wallet-description">
         {de?'Bitcoin Mainnet · nur manuell aus deiner BTC-Wallet':
           'Bitcoin Mainnet · manual transfers from your BTC wallet'}
@@ -220,11 +222,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         {' '}<a href={'https://mempool.space/tx/'+txid} target="_blank"
           rel="noopener noreferrer">{txid}</a>
       </p>}
-      {stage==='submitted'&&txid&&<p role="status" className="privy-wallet-description">
-        {de?'An Bitcoin-Netzwerk übermittelt':'Submitted to Bitcoin network'}:
-        {' '}<a href={'https://mempool.space/tx/'+txid} target="_blank"
-          rel="noopener noreferrer">{txid}</a>
-      </p>}
+
       {lastSignedTxid&&lastSignedTxid!==txid&&<p role="status"
         className="privy-wallet-description">
         {de?'Letzte signierte BTC-Transaktion (Blockchain-Status im Explorer prüfen)':
@@ -232,6 +230,7 @@ export default function BtcWalletSend({t,lang='de',userId,wallet,enabled}) {
         {' '}<a href={'https://mempool.space/tx/'+lastSignedTxid}
           target="_blank" rel="noopener noreferrer">{lastSignedTxid}</a>
       </p>}
+      </>}
     </div>}
   </section>;
 }
