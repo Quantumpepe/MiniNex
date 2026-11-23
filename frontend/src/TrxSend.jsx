@@ -1,6 +1,7 @@
 import React,{useState} from 'react';
 import {Send} from 'lucide-react';
 import {API_BASE} from './data.js';
+import SendCompletion from './SendCompletion.jsx';
 
 // TRX send via backend (Privy signs and broadcasts).
 export default function TrxSend({t,enabled,userId,address,getAccessToken}){
@@ -47,6 +48,7 @@ export default function TrxSend({t,enabled,userId,address,getAccessToken}){
       <Send size={18} aria-hidden="true"/>{t.walletSendTitle} TRX
     </button>
     {open&&<div className="mininex-swap-content">
+      {txHash?<SendCompletion asset="TRX" txid={txHash} userId={userId} t={t}/>:<>
       <p className="privy-wallet-description">TRON · manual transfers from your TRX wallet</p>
       <form className="mininex-send-form" onSubmit={e=>{e.preventDefault();send();}}>
         <label><span>{t.walletSendRecipient}</span>
@@ -64,7 +66,7 @@ export default function TrxSend({t,enabled,userId,address,getAccessToken}){
         </button>
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
-      {txHash&&<p className="privy-wallet-description">{t.walletSendSubmitted||'Sent'}: {txHash.slice(0,16)}…</p>}
+      </>
     </div>}
   </section>;
 }
