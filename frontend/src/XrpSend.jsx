@@ -1,35 +1,61 @@
 import React,{useState} from 'react';
+import {useSignRawHash} from '@privy-io/react-auth/extended-chains';
 import {Send} from 'lucide-react';
 import {API_BASE} from './data.js';
 
-// XRP send via backend (Privy signs, backend submits).
+// Only the signed-in Privy user may approve manual XRP payments.
+// The backend prepares immutable short-lived payment terms and verifies
+// the owner signature before submitting to the XRP Ledger.
 export default function XrpSend({t,enabled,userId,address,getAccessToken}){
+  const {signRawHash}=useSignRawHash();
   const [open,setOpen]=useState(false);
   const [destination,setDestination]=useState('');
   const [amount,setAmount]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
-  const [txHash,setTxHash]=useState('');
+  const [receipt,setReceipt]=useState(null);
+
+  async function request(path,body,token){
+    const response=await fetch(API_BASE+path,{
+      method:'POST',cache:'no-store',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body),
+    });
+    const json=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(
+      typeof json.detail==='string'?json.detail:'XRP transfer request failed');
+    return json;
+  }
 
   async function send(){
-    if(!enabled||!address||!destination||!amount||busy)return;
-    setBusy(true);setError('');setTxHash('');
+    if(!enabled||!userId||!address||!destination||!amount||busy)return;
+    setBusy(true);setError('');setReceipt(null);
     try{
       const token=await getAccessToken?.();
       if(!token)throw new Error('Authentication required');
-      const response=await fetch(API_BASE+'/api/wallet/send/xrp',{
-        method:'POST',
-        headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-        body:JSON.stringify({from:address,to:destination,amount:amount.trim()})
+      const prepared=await request('/api/wallet/send/xrp/prepare',{
+        from:address,to:destination.trim(),amount:amount.trim(),
+      },token);
+      if(prepared.source!==address||prepared.destination!==destination.trim()
+        ||prepared.amount!==amount.trim().replace(/^0+(?=\d)/,'')
+        ||typeof prepared.hash!=='string'
+        ||!/^0x[0-9a-fA-F]{64}$/.test(prepared.hash)
+        ||typeof prepared.authorization!=='string')
+        throw new Error('XRP payment terms changed. Nothing was sent.');
+      // Privy asks the logged-in wallet owner to approve this one hash.
+      const signed=await signRawHash({
+        address,chainType:'xrpl',hash:prepared.hash,
       });
-      if(!response.ok){
-        const err=await response.json().catch(()=>({}));
-        throw new Error(err.detail||'Send failed');
-      }
-      const data=await response.json();
-      setTxHash(data.txid||data.hash||'sent');
+      if(!signed?.signature||!/^0x[0-9a-fA-F]{128}$/.test(signed.signature))
+        throw new Error('No valid XRP wallet signature was received');
+      const submitted=await request('/api/wallet/send/xrp/submit',{
+        authorization:prepared.authorization,signature:signed.signature,
+      },token);
+      if(!submitted?.txid||submitted.status!=='submitted_pending_validation')
+        throw new Error('XRP submission status unknown; check wallet before retrying');
+      setReceipt({txid:submitted.txid,status:submitted.status});
     }catch(e){
-      setError(e.message||'Send failed');
+      setError(e?.message||'XRP send was not completed');
     }finally{
       setBusy(false);
     }
@@ -47,7 +73,7 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
       <Send size={18} aria-hidden="true"/>{t.walletSendTitle} XRP
     </button>
     {open&&<div className="mininex-swap-content">
-      <p className="privy-wallet-description">XRP Ledger · manual transfers from your XRP wallet</p>
+      <p className="privy-wallet-description">XRP Ledger · manual transfer · wallet approval required</p>
       <form className="mininex-send-form" onSubmit={e=>{e.preventDefault();send();}}>
         <label><span>{t.walletSendRecipient}</span>
           <input value={destination} autoComplete="off" spellCheck={false}
@@ -60,11 +86,13 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
             onChange={e=>setAmount(e.target.value)}/>
         </label>
         <button type="submit" className="privy-wallet-action" disabled={busy||!destination||!amount}>
-          {busy?(t.walletSendReviewing||'Sending…'):(t.walletSendTitle||'Send')}
+          {busy?(t.walletSendReviewing||'Signing…'):(t.walletSendTitle||'Send')}
         </button>
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
-      {txHash&&<p className="privy-wallet-description">{t.walletSendSubmitted||'Sent'}: {txHash.slice(0,16)}…</p>}
+      {receipt&&<p role="status" className="privy-wallet-description">
+        {('XRP transaction submitted; awaiting ledger confirmation. Hash: ')+receipt.txid.slice(0,16)+'…'}
+      </p>}
     </div>}
   </section>;
 }
