@@ -34,14 +34,13 @@ async function confirmedTransfer(asset,txid,token,signal){
         data?.source_wallet_signature_verified===true);
   }
   if(asset==='TRX'){
-    if(!/^[a-f0-9]{64}$/i.test(txid))return false;
-    const response=await fetch('https://api.trongrid.io/walletsolidity/gettransactioninfobyid',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({value:txid}),signal,cache:'no-store',
+    if(!token||!/^[a-f0-9]{64}$/i.test(txid))return false;
+    const response=await fetch(API_BASE+'/api/wallet/send/trx/receipt/'+encodeURIComponent(txid),{
+      headers:{Authorization:'Bearer '+token},cache:'no-store',signal,
     });
     if(!response.ok)return false;
     const data=await response.json();
-    return data?.id?.toLowerCase()===txid.toLowerCase() && data?.receipt?.result==='SUCCESS';
+    return data?.confirmed===true;
   }
   return false;
 }
@@ -60,7 +59,7 @@ export default function SendCompletion({asset,txid,t,userId,getAccessToken}){
       attempts+=1;
       abort=new AbortController();
       try{
-        const token=asset==='XRP'||asset==='SOL'?await getAccessToken?.():null;
+        const token=['XRP','SOL','TRX'].includes(asset)?await getAccessToken?.():null;
         const ok=await confirmedTransfer(asset,txid,token,abort.signal);
         if(!active)return;
         if(ok){
