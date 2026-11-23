@@ -18,6 +18,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
   const [busy,setBusy]=useState(false);
   const serial=useRef(0);
   const attempted=useRef(false);
+  const reportedReceipt=useRef('');
   const provider=useRef(null);
   const wallet=wallets.find(w=>w?.walletClientType==='privy'&&
     /^0x[0-9a-fA-F]{40}$/.test(w?.address||''));
@@ -171,6 +172,13 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       if(found.transactionHash?.toLowerCase()!==hash.toLowerCase()||
          found.from?.toLowerCase()!==wallet.address.toLowerCase()||
          found.status!=='0x1')throw Error('Reverted or untrusted receipt');
+      const receiptIdentity=userId+':1:'+hash.toLowerCase();
+      if(reportedReceipt.current!==receiptIdentity){
+        reportedReceipt.current=receiptIdentity;
+        // Refresh wallet readings on mined success; final ledger entry
+        // still depends on the separate verified finality read below.
+        notifyConfirmedWalletTransfer(userId,'ETH',hash);
+      }
       if(stage==='wrap-submitted'){
         const token=await getAccessToken();
         if(!token)throw Error('Login expired');
@@ -182,7 +190,6 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
         });
         if(!saved.ok)throw Error('ETH wrap confirmed; history sync pending');
         await refreshRealHistory();
-        notifyConfirmedWalletTransfer(userId,'ETH',hash);
       }
       if(stage==='approval-submitted'||stage==='wrap-submitted'){
         attempted.current=false;onTradePendingChange?.(false);
@@ -217,7 +224,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
              body.confirmed_native_conversion!==true){
             setError('Native ETH conversion is not finalized');return;
           }
-          notifyConfirmedWalletTransfer(userId,'ETH',hash);
+
           onTradePendingChange?.(false);
           setStage('native-complete');setReview(null);return;
         }
@@ -225,7 +232,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
            body.swap_erc20_leg_verified!==true){
           setError('Swap still waiting for finalized on-chain settlement');return;
         }
-        notifyConfirmedWalletTransfer(userId,'ETH',hash);
+
         if(side==='BUY'){
           const received=exactEthUnits(body.destination_received_amount);
           setReview({from:wallet.address,to:WETH9,

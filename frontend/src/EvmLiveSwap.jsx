@@ -27,6 +27,7 @@ export default function EvmLiveSwap({
   const [unwrapAmount,setUnwrapAmount]=useState(null);
   const serial=useRef(0);
   const attempt=useRef(false);
+  const reportedReceipt=useRef('');
   const words={
     de:{prepare:'Swap vorbereiten',approve:'Token-Freigabe bestätigen',
       wrap:'Coin für Swap vorbereiten',swap:'Swap mit Privy bestätigen',
@@ -195,6 +196,13 @@ export default function EvmLiveSwap({
       }
     }finally{setBusy(false);}
   }
+  const refreshIncludedBalance=hash=>{
+    const fingerprint=userId+':'+chain+':'+hash.toLowerCase();
+    if(reportedReceipt.current===fingerprint)return;
+    reportedReceipt.current=fingerprint;
+    // Inclusion refreshes on-chain wallet balances, NOT trade finality.
+    notifyConfirmedWalletTransfer(userId,asset,hash);
+  };
   useEffect(()=>{
     if(phase!=='submitted'||!pending||!enabled)return;
     let active=true,abort=false;
@@ -223,6 +231,7 @@ export default function EvmLiveSwap({
               ||original.to?.toLowerCase()!==pending.tx.to.toLowerCase()){
             setError('Swap calldata verification failed');setPhase('failed');return;
           }
+          refreshIncludedBalance(pending.hash);
           const saved=await backend('/api/live/evm/finalized-swap/'+asset+'/'+
             encodeURIComponent(pending.hash)+'?side='+side+'&stable='+stable);
           if(!active)return;
@@ -230,7 +239,6 @@ export default function EvmLiveSwap({
               ||saved?.swap_erc20_leg_verified!==true){
             timeout=setTimeout(check,16000);return;
           }
-          notifyConfirmedWalletTransfer(userId,asset,pending.hash);
           if(native&&side==='BUY'){
             // A native-coin buy yields wrapped BNB/POL/AVAX first. The
             // owner must explicitly unwrap the exact finalized amount.
@@ -242,13 +250,14 @@ export default function EvmLiveSwap({
           }
           setPhase('complete');return;
         }
+        // Approvals and wrap/unwrap also spend network gas; refresh their
+        // verified on-chain balances once, without implying a settled trade.
+        refreshIncludedBalance(pending.hash);
         if(pending.kind==='approval'){
           setPhase('approval-complete');
         }else if(pending.kind==='wrap'){
-          notifyConfirmedWalletTransfer(userId,asset,pending.hash);
           setPhase('wrap-complete');
         }else if(pending.kind==='unwrap'){
-          notifyConfirmedWalletTransfer(userId,asset,pending.hash);
           setPhase('complete');
         }
       }catch{
