@@ -282,13 +282,13 @@ def test_empty_mainnet_wallet_returns_verified_zero_for_four_assets(monkeypatch)
             seen.append(request)
             results={"eth_chainId":"0x1","eth_getBalance":"0x0"}
             return Reply({"id":request["id"],"jsonrpc":"2.0",
-                          "result":results.get(request["method"],"0x0")})
+                          "result":results.get(request["method"],"0x"+("0"*64))})
     monkeypatch.setattr(w.httpx,"AsyncClient",Client)
     result=asyncio.run(w.get_wallet_balances(DID))
     assert result["provider_status"]=="complete"
     assert [result["balances"][a]["balance"] for a in ("BTC","ETH","USDC","USDT")]==["0","0","0","0"]
     assert all(result["balances"][a]["status"]=="verified" for a in ("BTC","ETH","USDC","USDT"))
-    assert [r["method"] for r in seen]==["eth_chainId","eth_getBalance"]
+    assert [r["method"] for r in seen]==["eth_chainId","eth_getBalance","eth_call","eth_call"]
 
 
 def test_ethereum_rpc_token_fallback_checks_mainnet_and_known_contracts(monkeypatch):
@@ -365,3 +365,67 @@ def test_erc20_eth_call_requires_padded_32_byte_word():
     assert w._rpc_quantity({"jsonrpc":"2.0","result":"0x"+"0"*60+"f423"},fixed_word=True)==62499
     with pytest.raises(ValueError):
         w._rpc_quantity({"jsonrpc":"2.0","result":"0x0"},fixed_word=True)
+
+
+def test_ethereum_mainnet_usdc_deposit_is_fresh_even_when_explorer_still_reports_zero(monkeypatch):
+    """A confirmed 2 USDC incoming transfer must not wait for Blockscout index."""
+    async def user(did):
+        assert did == DID
+        return record(btc=None)
+    monkeypatch.setattr(w, "fetch_privy_user", user)
+    calls=[]
+    class Reply:
+        def __init__(self, data): self.data=data
+        def raise_for_status(self): pass
+        def json(self): return self.data
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def get(self, url, **kwargs):
+            if url.endswith("/token-balances"):
+                return Reply([])  # delayed index; previously wrongly displayed 0
+            return Reply({"coin_balance":"0"})
+        async def post(self, url, **kwargs):
+            assert url==w.ETH_RPC
+            q=kwargs["json"]
+            calls.append(q)
+            if q["method"]=="eth_chainId": result="0x1"
+            elif q["method"]=="eth_call" and q["params"][0]["to"]==CONTRACTS["USDC"]:
+                result="0x"+format(2000000,"064x")
+            elif q["method"]=="eth_call":
+                result="0x"+("0"*64)
+            else:
+                raise AssertionError("Unexpected Ethereum RPC query")
+            return Reply({"jsonrpc":"2.0","id":q["id"],"result":result})
+    monkeypatch.setattr(w.httpx,"AsyncClient",Client)
+    data=asyncio.run(w.get_wallet_balances(DID))
+    assert data["wallets"]["ETH"]==ETH
+    assert data["balances"]["USDC"]=={
+        "balance":"2","network":"ethereum-mainnet","status":"verified"}
+    assert data["balances"]["USDT"]["balance"]=="0"
+    assert len([q for q in calls if q["method"]=="eth_call"])==2
+
+
+def test_explorer_verified_usdc_is_preserved_when_ethereum_rpc_is_unavailable(monkeypatch):
+    async def user(did):return record(btc=None)
+    monkeypatch.setattr(w,"fetch_privy_user",user)
+    class Reply:
+        def __init__(self, data): self.data=data
+        def raise_for_status(self): pass
+        def json(self): return self.data
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def get(self,url,**kwargs):
+            if url.endswith("/token-balances"):
+                return Reply([{"token":{"address_hash":CONTRACTS["USDC"],
+                    "type":"ERC-20","decimals":"6"},"value":"2000000"}])
+            return Reply({"coin_balance":"0"})
+        async def post(self,url,**kwargs):
+            raise w.httpx.ReadTimeout("public RPC unavailable")
+    monkeypatch.setattr(w.httpx,"AsyncClient",Client)
+    data=asyncio.run(w.get_wallet_balances(DID))
+    assert data["balances"]["USDC"]["balance"]=="2"
+    assert data["balances"]["USDC"]["status"]=="verified"
