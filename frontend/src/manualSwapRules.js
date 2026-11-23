@@ -1,6 +1,8 @@
+import {coinBySymbol} from './coins.js';
+
 // Input gate for manual swap quote PREVIEWS only. No wallet operations.
 export const MANUAL_SWAP_ASSETS = Object.freeze([
-  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','DOGE','UNI','ARB','USDC','USDT',
+  'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','DOGE','UNI','ARB','USDC','USDT',
 ]);
 const STABLES = new Set(['USDC','USDT']);
 const RE_AMOUNT = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
@@ -14,8 +16,9 @@ export function manualSwapQuoteRequest(from, to, amount) {
   // ERC-20 on Arbitrum One, not a 6-decimal native network coin.
   const decimals = legacy
     ? (from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6)
-    : (from === 'ARB' ? 18 :
-       STABLES.has(from) || ['XRP','TRX'].includes(from) ? 6 : 8);
+    : (STABLES.has(from) || ['XRP','TRX'].includes(from) ? 6 :
+       from === 'SOL' ? 9 :
+       ['BTC','DOGE'].includes(from) ? 8 : 18);
   if (typeof amount !== 'string' || amount.length > 48 ||
       !RE_AMOUNT.test(amount) || !/^[0-9]+$/.test(amount.replace('.','')) ||
       amount.split('.')[1]?.length > decimals || !Number.isFinite(Number(amount)) ||
