@@ -166,7 +166,32 @@ def test_unavailable_or_malicious_provider_never_returns_executable_instructions
     monkeypatch.setattr(mq.httpx,"AsyncClient",client)
     with pytest.raises(HTTPException) as ex:
         asyncio.run(mq.get_native_swap_quote("QNT","ETH","2"))
-    assert ex.value.status_code == 503
+    if evil.get("recommended_min_amount_in"):
+        assert ex.value.status_code == 409
+        assert ex.value.detail == {
+            "code": "PROVIDER_MINIMUM",
+            "source_asset": "QNT",
+            "minimum_source_amount": "999.99999999",
+        }
+    else:
+        assert ex.value.status_code == 503
+
+
+def test_xrp_provider_minimum_is_reported_from_real_venue_without_quoting_or_sending(monkeypatch):
+    original=httpx.AsyncClient
+    def client(*args,**kwargs):
+        return original(*args,transport=httpx.MockTransport(
+            lambda request:httpx.Response(200,json=provider(
+                recommended_min_amount_in="975000000"))),**kwargs)
+    monkeypatch.setattr(mq.httpx,"AsyncClient",client)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(mq.get_native_swap_quote("XRP","USDT","3"))
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {
+        "code": "PROVIDER_MINIMUM",
+        "source_asset": "XRP",
+        "minimum_source_amount": "9.75",
+    }
 
 
 @pytest.fixture

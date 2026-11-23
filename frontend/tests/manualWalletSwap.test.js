@@ -112,3 +112,11 @@ test('manual EVM price failures show distinct quoted RPC and allowance stages',(
   assert.match(signer,/EVM swap quote and wallet proofs do not match/);
   assert.match(signer,/Kein Swap gesendet/);
 });
+
+test('native quote shows the actual venue floor instead of generic 503 for 3 XRP',()=>{
+  assert.match(component,/response.status===409 && request.coin==='MULTICHAIN'/);
+  assert.match(component,/info\.detail\.source_asset===request\.from/);
+  assert.match(component,/minimum_source_amount/);
+  assert.match(component,/THORChain verlangt mindestens/);
+  assert.match(component,/Es wurde kein Swap gesendet/);
+});

@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from .live_btc_quotes import (
     BTC_QUOTE_URL, MCP_HEADERS, _amount_to_mcp_units, _provider_quote,
-    _decode_mcp_quote_response,
+    _decode_mcp_quote_response, ProviderMinimumNotMet,
 )
 from .live_eth_quotes import STABLES
 from .manual_swap_routes import ALL_SWAP_ASSETS, _asset_network, build_manual_swap_route
@@ -92,6 +92,15 @@ async def get_native_swap_quote(source: str, target: str, amount: str) -> dict:
                 _decode_mcp_quote_response(response), from_asset=from_asset,
                 to_asset=to_asset, input_units=units,
             )
+    except ProviderMinimumNotMet as exc:
+        # Exact public venue minimum, measured in THORChain's 1e8 quote units.
+        # Never replace it with a hard-coded application trading limit.
+        minimum=format(Decimal(exc.minimum_units) / Decimal(10**8), "f")
+        raise HTTPException(409, detail={
+            "code": "PROVIDER_MINIMUM",
+            "source_asset": source,
+            "minimum_source_amount": minimum,
+        }) from None
     except (httpx.HTTPError, ValueError, TypeError, OverflowError,
             asyncio.TimeoutError) as exc:
         # Public asset symbols and our own fixed parser error messages only.

@@ -113,6 +113,15 @@ def _decode_mcp_quote_response(response: httpx.Response) -> dict:
     raise ValueError("Unexpected core MCP transport")
 
 
+
+class ProviderMinimumNotMet(ValueError):
+    """Provider-set, fee-effective real swap floor; never MiniNex budget cap."""
+
+    def __init__(self, minimum_units: str):
+        self.minimum_units = minimum_units
+        super().__init__("Input amount below fee-effective swap minimum")
+
+
 def _provider_quote(raw: object, *, from_asset: str,
                     to_asset: str, input_units: str) -> dict:
     if not isinstance(raw, dict) or raw.get("jsonrpc") != "2.0" or raw.get("id") != 1:
@@ -185,7 +194,7 @@ def _provider_quote(raw: object, *, from_asset: str,
         if not isinstance(recommended, str) or not _UNITS.fullmatch(recommended):
             raise ValueError("Unverified minimum swap quantity")
         if int(input_units) < int(recommended):
-            raise ValueError("Input amount below fee-effective swap minimum")
+            raise ProviderMinimumNotMet(recommended)
     # An indicative quote may expire before MiniNex's 30-second UI preview.
     # Honor the provider's expiry if supplied; never accept a stale or
     # implausibly distant timestamp. No address/memo is requested here.

@@ -115,6 +115,20 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         body:JSON.stringify(request.body),
       });
       if(!response.ok){
+        if(response.status===409 && request.coin==='MULTICHAIN'){
+          const info=await response.json().catch(()=>null);
+          const minimum=info?.detail?.minimum_source_amount;
+          if(info?.detail?.code==='PROVIDER_MINIMUM'&&
+             info.detail.source_asset===request.from&&
+             typeof minimum==='string'&&
+             /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(minimum)){
+            throw Error(lang==='de'
+              ?'THORChain verlangt mindestens '+minimum+' '+request.from+
+                ' für diesen Swap. Es wurde kein Swap gesendet.'
+              :'THORChain requires at least '+minimum+' '+request.from+
+                ' for this swap. No swap was sent.');
+          }
+        }
         if(response.status===503 && request.coin==='MULTICHAIN')
           throw Error(lang==='de'
             ?'Für dieses Coin-Paar ist derzeit kein Kurs beim Liquiditätsanbieter verfügbar. Es wurde kein Swap gesendet.'
@@ -129,7 +143,9 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     }catch(error) {
       if(id===requestId.current)setError(
         error?.message?.includes('No live liquidity quote')||
-        error?.message?.includes('kein Kurs beim Liquiditätsanbieter')
+        error?.message?.includes('kein Kurs beim Liquiditätsanbieter')||
+        error?.message?.includes('THORChain verlangt mindestens')||
+        error?.message?.includes('THORChain requires at least')
           ?error.message:t.walletSwapFailed);
     }finally {
       clearTimeout(timeout);
