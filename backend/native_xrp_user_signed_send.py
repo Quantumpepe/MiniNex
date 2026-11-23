@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 from decimal import Decimal
 import hashlib
 import hmac
@@ -71,7 +72,7 @@ def _unseal(token: object, did: str) -> dict:
                 or type(data.get("nonce")) is not str or len(data["nonce"]) != 32):
             raise ValueError()
         return data
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (ValueError, KeyError, TypeError, binascii.Error):
         raise HTTPException(422, "XRP authorization expired or invalid") from None
 
 
@@ -95,7 +96,7 @@ async def _owned(did: str, source: str) -> tuple[str, str]:
 
 
 async def prepare_xrp(did: str, *, source: object, destination: object, amount: object) -> dict:
-    from .native_coin_balances import _valid_address, _rpc_url
+    from .native_coin_balances import _valid_address
     did = _safe_did(did)
     if (not _valid_address("XRP", source) or not _valid_address("XRP", destination)
             or source == destination):
@@ -178,7 +179,6 @@ async def submit_user_signed_xrp(did: str, *, authorization: object, signature: 
             raise HTTPException(409, "This XRP transaction was already submitted")
         _INFLIGHT.add(txid)
     try:
-        from .native_coin_balances import _rpc_url
         async with httpx.AsyncClient(timeout=httpx.Timeout(12), follow_redirects=False) as client:
             ledger = await _ledger_rpc(client, "ledger", [{"ledger_index": "validated"}])
             index = ledger.get("result", {}).get("ledger_index")
