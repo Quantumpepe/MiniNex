@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {RefreshCcw,Send} from 'lucide-react';
 import WalletSend from './WalletSend.jsx';
 import {API_BASE} from './data.js';
@@ -17,6 +17,28 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   const [evmStatus,setEvmStatus]=useState('loading');
   const [nativeBalances,setNativeBalances]=useState(null);
   const [nativeStatus,setNativeStatus]=useState('loading');
+  const displayedUser=useRef(userId);
+
+  // A newly logged-in user must never see the previous user's holdings.
+  // Preserve existing verified values during same-user background refreshes
+  // to avoid flashing zero/unavailable every few seconds.
+  useEffect(()=>{
+    if(displayedUser.current===userId)return;
+    displayedUser.current=userId;
+    setBalances(null);setEvmBalances(null);setNativeBalances(null);
+    setStatus('loading');setEvmStatus('loading');setNativeStatus('loading');
+  },[userId]);
+
+  // Incoming transfers do not originate in this app, so no send-completion
+  // event is available. Refresh while this wallet screen is visible; pause
+  // polling in the background and release the interval on unmount.
+  useEffect(()=>{
+    if(!userId)return;
+    const interval=window.setInterval(()=>{
+      if(!document.hidden)setRequest(n=>n+1);
+    },15000);
+    return()=>window.clearInterval(interval);
+  },[userId]);
 
   // Re-fetch authenticated, on-chain holdings whenever ANY coin transfer is
   // finalized. No manual app restart, local subtraction or synthetic balance.
@@ -38,8 +60,6 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   useEffect(()=>{
     if(!userId){setBalances(null);setStatus('idle');return;}
     let current=true;
-    setBalances(null);
-    setStatus('loading');
     (async()=>{
       try{
         const token=await getAccessToken();
@@ -80,7 +100,6 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   useEffect(()=>{
     if(!userId){setEvmBalances(null);setEvmStatus('idle');return;}
     let current=true;
-    setEvmBalances(null);setEvmStatus('loading');
     (async()=>{
       try{
         const token=await getAccessToken();
@@ -106,7 +125,6 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   useEffect(()=>{
     if(!userId){setNativeBalances(null);setNativeStatus('idle');return;}
     let active=true;
-    setNativeBalances(null);setNativeStatus('loading');
     (async()=>{
       try{
         const token=await getAccessToken();
