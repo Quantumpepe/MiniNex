@@ -4,7 +4,20 @@ import {Send} from 'lucide-react';
 import {address,createSolanaRpc,pipe,createTransactionMessage,setTransactionMessageFeePayer,setTransactionMessageLifetimeUsingBlockhash,appendTransactionMessageInstructions,compileTransaction,createNoopSigner,getTransactionEncoder} from '@solana/kit';
 import {getTransferSolInstruction} from '@solana-program/system';
 
-export default function SolanaSend({t,enabled,userId}) {
+export function exactSolLamports(raw) {
+  if(typeof raw!=='string'||!/^\d+(?:\.\d{1,9})?$/.test(raw)||raw.length>32)return null;
+  const [whole,frac='']=raw.split('.');
+  const result=BigInt(whole)*1000000000n+BigInt(frac.padEnd(9,'0')||'0');
+  return result>0n && result<=18446744073709551615n?result:null;
+}
+
+export function ownedSolanaWallet(wallets,expectedAddress) {
+  if(!Array.isArray(wallets)||!expectedAddress)return null;
+  const matches=wallets.filter(w=>w?.walletClientType==='privy'&&w?.address===expectedAddress);
+  return matches.length===1?matches[0]:null;
+}
+
+export default function SolanaSend({t,enabled,userId,expectedAddress}) {
   const {wallets}=useWallets();
   const {signAndSendTransaction}=useSignAndSendTransaction();
   const [open,setOpen]=useState(false);
@@ -14,13 +27,15 @@ export default function SolanaSend({t,enabled,userId}) {
   const [error,setError]=useState('');
   const [txSig,setTxSig]=useState('');
 
-  const wallet=wallets.find(w=>w?.walletClientType==='privy'||w?.chainType==='solana'||w?.address);
+  const wallet=ownedSolanaWallet(wallets,expectedAddress);
 
   async function send() {
-    if(!enabled||!wallet||!destination||!amount)return;
+    if(!enabled||!wallet||!destination||!amount||busy)return;
     setBusy(true);setError('');setTxSig('');
     try{
-      const lamports=BigInt(Math.round(Number(amount)*1_000_000_000));
+      const lamports=exactSolLamports(amount);
+      if(lamports===null)throw new Error('Enter a valid positive SOL amount (up to 9 decimals)');
+      if(destination===wallet.address)throw new Error('Recipient must be different from your SOL wallet');
       const rpc=createSolanaRpc('https://api.mainnet-beta.solana.com');
       const {value:latestBlockhash}=await rpc.getLatestBlockhash().send();
       const instruction=getTransferSolInstruction({
@@ -37,7 +52,11 @@ export default function SolanaSend({t,enabled,userId}) {
         tx=>new Uint8Array(getTransactionEncoder().encode(tx)),
       );
       const result=await signAndSendTransaction({transaction,wallet});
-      setTxSig(Buffer.from(result.signature).toString('base64'));
+      const signature=result?.signature;
+      const sig=typeof signature==='string'?signature:
+        signature instanceof Uint8Array?Array.from(signature,x=>x.toString(16).padStart(2,'0')).join(''):null;
+      if(!sig)throw new Error('SOL submission outcome not confirmed; check wallet history before retrying');
+      setTxSig(sig);
     }catch(err){
       setError(err?.message||'Send failed');
     }finally{setBusy(false);}
