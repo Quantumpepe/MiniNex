@@ -2515,18 +2515,40 @@ def extra_paper_action(asset: str,action: str,
 
 # Native coin send endpoints (XRP, TRX)
 @app.post("/api/wallet/send/xrp")
-async def send_xrp(
+async def send_xrp_legacy_disabled(
+    authorization: str | None = Header(default=None),
+):
+    """Refuse server-side signing without the user's explicit wallet signature."""
+    verify_privy_bearer(authorization)
+    raise HTTPException(409, "XRP sending requires user wallet approval. Update MiniNex app.")
+
+
+@app.post("/api/wallet/send/xrp/prepare")
+async def prepare_xrp_transfer(
     body: dict,
     authorization: str | None = Header(default=None),
 ):
-    """Manual owner-only XRP transfer with canonical Privy XRPL signing."""
-    from .native_xrp_manual_send import submit_manual_xrp
+    """Prepare a short-lived owner-bound XRP payment; no signing or submission."""
+    from .native_xrp_user_signed_send import prepare_xrp
     did = verify_privy_bearer(authorization)["user_id"]
-    if not isinstance(body, dict):
-        raise HTTPException(422, "Invalid XRP send request")
-    result = await submit_manual_xrp(
+    result = await prepare_xrp(
         did, source=body.get("from"), destination=body.get("to"),
         amount=body.get("amount"),
+    )
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/api/wallet/send/xrp/submit")
+async def submit_signed_xrp_transfer(
+    body: dict,
+    authorization: str | None = Header(default=None),
+):
+    """Verify a user-wallet signature before broadcasting an exact XRP Payment."""
+    from .native_xrp_user_signed_send import submit_user_signed_xrp
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await submit_user_signed_xrp(
+        did, authorization=body.get("authorization"),
+        signature=body.get("signature"),
     )
     return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
