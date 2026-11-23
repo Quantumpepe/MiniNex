@@ -170,8 +170,18 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       if(id!==serial.current)return;
       if(!found){setError('Not confirmed yet');return;}
       if(found.transactionHash?.toLowerCase()!==hash.toLowerCase()||
-         found.from?.toLowerCase()!==wallet.address.toLowerCase()||
-         found.status!=='0x1')throw Error('Reverted or untrusted receipt');
+         found.from?.toLowerCase()!==wallet.address.toLowerCase())
+        throw Error('Untrusted receipt');
+      if(found.status==='0x0'){
+        // Only a chain-confirmed REVERT may release a submitted transaction's
+        // one-shot lock. New quote + new user signature remain mandatory.
+        notifyConfirmedWalletTransfer(userId,'ETH',hash);
+        attempted.current=false;onTradePendingChange?.(false);
+        setReview(null);setStage('failed');
+        setError('Transaction reverted on-chain. Prepare a new quote.');
+        return;
+      }
+      if(found.status!=='0x1')throw Error('Untrusted receipt status');
       const receiptIdentity=userId+':1:'+hash.toLowerCase();
       if(reportedReceipt.current!==receiptIdentity){
         reportedReceipt.current=receiptIdentity;

@@ -42,3 +42,14 @@ test('QNT and EVM preview amounts retain 18 decimal precision and resolve networ
   };
   assert.equal(validManualSwapWalletReadiness(ready,'QNT','USDC'),true);
 });
+
+// A confirmed reverted transaction must not leave the manual swap UI
+// permanently locked, while unknown or mismatched receipts stay blocked.
+test('only an identity-matched on-chain revert permits explicit re-prepare',()=>{
+  const ethSigner=readFileSync(new URL('../src/EthLiveSwap.jsx',import.meta.url),'utf8');
+  assert.match(signer,/receipt\.status==='0x0'[\s\S]*?attempt\.current=false/);
+  assert.match(signer,/setPending\(null\);setPlan\(null\)/);
+  assert.match(signer,/receipt\.status!=='0x1'[\s\S]*?setPhase\('uncertain'\)/);
+  assert.match(ethSigner,/found\.status==='0x0'[\s\S]*?attempted\.current=false/);
+  assert.match(ethSigner,/found\.status!=='0x1'/);
+});

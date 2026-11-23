@@ -217,10 +217,25 @@ export default function EvmLiveSwap({
         if(!receipt){timeout=setTimeout(check,13000);return;}
         if(receipt.transactionHash?.toLowerCase()!==pending.hash.toLowerCase()
            ||receipt.from?.toLowerCase()!==wallet.address.toLowerCase()
-           ||receipt.to?.toLowerCase()!==pending.tx.to.toLowerCase()
-           ||receipt.status!=='0x1'){
-          setError('Transaction reverted or receipt does not match');
+           ||receipt.to?.toLowerCase()!==pending.tx.to.toLowerCase()){
+          // An unexpected receipt is NOT evidence that the original send
+          // reverted. Keep its one-shot lock until the owner reconciles it.
+          setError(words.uncertain);setPhase('uncertain');return;
+        }
+        if(receipt.status==='0x0'){
+          // A matching mined REVERT proves this particular send did not
+          // execute. Chargeable gas may have changed the native balance;
+          // offer a NEW owner-approved quote, never replay the old bytes.
+          refreshIncludedBalance(pending.hash);
+          attempt.current=false;
+          setPending(null);setPlan(null);
+          setError(lang==='de'
+            ?'Transaktion auf der Blockchain fehlgeschlagen. Bitte neu vorbereiten.'
+            :'Transaction reverted on-chain. Prepare a new quote.');
           setPhase('failed');return;
+        }
+        if(receipt.status!=='0x1'){
+          setError(words.uncertain);setPhase('uncertain');return;
         }
         if(pending.kind==='swap'){
           const original=await p.request({method:'eth_getTransactionByHash',
