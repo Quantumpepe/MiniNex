@@ -39,9 +39,12 @@ def wallet_balances(*,btc="1.0",eth="0.5",usdc="1000",usdt="500"):
 def provider_quote(out="200000000",slippage=75):
     return {"jsonrpc":"2.0","id":1,"result":{
         "structuredContent":{
-            "expected_amount_out":out,
-            "slippage_bps":slippage,
-            "recommended_min_amount_in":"100000",
+            "data":{
+                "expected_amount_out":out,
+                "slippage_bps":slippage,
+                "recommended_min_amount_in":"100000",
+            },
+            "_metadata":{"source_used":"thornode","canonical":True},
         },
     }}
 
@@ -96,14 +99,14 @@ def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms()
     assert good["provider_expiry"] is None
     current=int(time.time())
     valid_expiring=provider_quote()
-    valid_expiring["result"]["structuredContent"]["expiry"]=current+20
+    valid_expiring["result"]["structuredContent"]["data"]["expiry"]=current+20
     result=q._provider_quote(valid_expiring,from_asset=from_asset,
                              to_asset=to_asset,input_units="100000000")
     assert result["provider_expiry"]==current+20
     # Allow CI wall-clock to tick before validation; +3601 may cross the boundary.
     for invalid_expiry in (current-1,current+7200,"invalid",True,0):
         invalid=provider_quote()
-        invalid["result"]["structuredContent"]["expiry"]=invalid_expiry
+        invalid["result"]["structuredContent"]["data"]["expiry"]=invalid_expiry
         with pytest.raises(ValueError):
             q._provider_quote(invalid,from_asset=from_asset,
                               to_asset=to_asset,input_units="100000000")
@@ -121,7 +124,7 @@ def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms()
         {"amount":"200000000"},
     ]:
         altered=provider_quote()
-        altered["result"]["structuredContent"].update(changed)
+        altered["result"]["structuredContent"]["data"].update(changed)
         with pytest.raises(ValueError):
             q._provider_quote(altered,from_asset=from_asset,
                               to_asset=to_asset,input_units="100000000")
@@ -140,12 +143,14 @@ def test_true_provider_call_has_no_destination_or_memo(monkeypatch,wallets):
             assert kwargs.get("follow_redirects") is False
             payload=json.loads(request.content)
             assert payload["method"]=="tools/call"
-            assert payload["params"]["name"]=="get_swap_quote"
+            assert payload["params"]["name"]=="quote_swap"
+            assert request.headers["accept"]=="application/json, text/event-stream"
+            assert request.headers["mcp-protocol-version"]=="2025-06-18"
             args=payload["params"]["arguments"]
             assert set(args)=={"from_asset","to_asset","amount"}
             assert args["from_asset"]=="BTC.BTC"
             assert args["to_asset"].startswith("ETH.USDC-")
-            assert args["amount"]=="10000000"
+            assert args["amount"]==10000000
             assert BTC not in str(payload)
             assert ETH not in str(payload)
             observed.append(payload)
@@ -176,7 +181,7 @@ def test_reverse_quote_uses_native_btc_destination(monkeypatch,wallets):
             args=payload["params"]["arguments"]
             assert args["from_asset"].startswith("ETH.USDT-")
             assert args["to_asset"]=="BTC.BTC"
-            assert args["amount"]=="2500000000"
+            assert args["amount"]==2500000000
             return httpx.Response(200,json=provider_quote(out="170000"))
         return original(*args,transport=httpx.MockTransport(reply),**kwargs)
     monkeypatch.setattr(q.httpx,"AsyncClient",mock_client)
@@ -222,3 +227,25 @@ def test_private_btc_quote_endpoint_rejects_destination_injections(headers):
         json={**payload,"stable":"USDCx"}).status_code==422
     assert client.get("/api/live/btc/quote",headers=headers).status_code==405
     assert not any(route.path=="/api/live/btc/send" for route in api.app.routes)
+
+
+def test_core_mcp_parser_accepts_one_sse_jsonrpc_event_and_rejects_ambiguity():
+    payload=provider_quote(out="23456789",slippage=19)
+    body=": heartbeat\n\n"+"event: message\n"+"data: "+json.dumps(payload)+"\n\n"
+    response=httpx.Response(200,headers={"content-type":"text/event-stream"},text=body)
+    parsed=q._decode_mcp_quote_response(response)
+    value=q._provider_quote(parsed,from_asset="BTC.BTC",
+        to_asset="ETH.USDC-0XABC",input_units="100000000")
+    assert value["estimated_output_units_1e8"]=="23456789"
+    assert value["slippage_bps"]==19
+    for invalid in [
+        body+body,
+        "event: message\ndata: {bad JSON}\n\n",
+        "event: message\ndata: "+json.dumps({"jsonrpc":"2.0","id":9})+"\n\n",
+    ]:
+        with pytest.raises(ValueError):
+            q._decode_mcp_quote_response(httpx.Response(
+                200,headers={"content-type":"text/event-stream"},text=invalid))
+    with pytest.raises(ValueError):
+        q._decode_mcp_quote_response(httpx.Response(
+            200,headers={"content-type":"text/html"},text="<h1>308 redirect</h1>"))

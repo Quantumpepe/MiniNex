@@ -23,7 +23,14 @@ from .live_eth_quotes import STABLES, ETH_GAS_RESERVE
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import get_wallet_balances, verified_addresses
 
-BTC_QUOTE_URL = "https://swap.thorchain.org/mcp"
+# Official core MCP endpoint (the former swap.thorchain.org/mcp now 308
+# redirects, and the old get_swap_quote contract is no longer supported).
+BTC_QUOTE_URL = "https://mcp.thorchain.org/mcp"
+MCP_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+    "MCP-Protocol-Version": "2025-06-18",
+}
 BTC_GAS_RESERVE = Decimal("0.0001")
 MAX_SLIPPAGE_BPS = 500  # Indicative filter only. Not an executable min-out.
 MAX_INPUT_UNITS = 10**15
@@ -60,6 +67,52 @@ def _decimal(raw: object) -> Decimal:
     return result
 
 
+
+def _decode_mcp_quote_response(response: httpx.Response) -> dict:
+    """Read exactly one JSON-RPC message from official core MCP JSON or SSE.
+
+    The canonical server often replies with text/event-stream, not the old
+    swap.thorchain.org JSON-only format. Never follow a redirect to a
+    third-party quote service or deserialize arbitrary instruction text.
+    """
+    if len(response.content) > 256_000:
+        raise ValueError("Oversized THORChain provider response")
+    content_type = response.headers.get("content-type", "").lower()
+    if "text/event-stream" in content_type:
+        messages = []
+        chunks = []
+        for line in response.text.splitlines():
+            if line.startswith("data:"):
+                chunks.append(line[5:].strip())
+            elif line == "":
+                if chunks:
+                    try:
+                        event = json.loads("\n".join(chunks))
+                    except (ValueError, TypeError):
+                        raise ValueError("Malformed core MCP JSON-RPC event") from None
+                    if (isinstance(event, dict) and event.get("jsonrpc") == "2.0"
+                            and event.get("id") == 1):
+                        messages.append(event)
+                    chunks = []
+        if chunks:
+            try:
+                event = json.loads("\n".join(chunks))
+            except (ValueError, TypeError):
+                raise ValueError("Malformed core MCP JSON-RPC event") from None
+            if (isinstance(event, dict) and event.get("jsonrpc") == "2.0"
+                    and event.get("id") == 1):
+                messages.append(event)
+        if len(messages) != 1:
+            raise ValueError("Missing or ambiguous core MCP quote message")
+        return messages[0]
+    if "application/json" in content_type:
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid core MCP quote document")
+        return payload
+    raise ValueError("Unexpected core MCP transport")
+
+
 def _provider_quote(raw: object, *, from_asset: str,
                     to_asset: str, input_units: str) -> dict:
     if not isinstance(raw, dict) or raw.get("jsonrpc") != "2.0" or raw.get("id") != 1:
@@ -70,6 +123,9 @@ def _provider_quote(raw: object, *, from_asset: str,
     if not isinstance(result, dict) or result.get("isError") is True:
         raise ValueError("Cross-chain provider returned no valid quote")
     parsed = result.get("structuredContent")
+    if isinstance(parsed, dict) and "data" in parsed:
+        # Canonical org.thorchain/thorchain-mcp returns data + _metadata.
+        parsed = parsed["data"]
     if parsed is None:
         content = result.get("content")
         if not isinstance(content, list) or len(content) != 1:
@@ -84,6 +140,8 @@ def _provider_quote(raw: object, *, from_asset: str,
             parsed = json.loads(plain)
         except ValueError:
             raise ValueError("Cross-chain quote malformed") from None
+    if isinstance(parsed, dict) and isinstance(parsed.get("data"), dict):
+        parsed = parsed["data"]
     if isinstance(parsed, dict) and isinstance(parsed.get("quote"), dict):
         parsed = parsed["quote"]
     if not isinstance(parsed, dict):
@@ -183,23 +241,21 @@ async def quote_native_btc(did: str, *, side: str, stable: str, amount: str) -> 
               else "ETH."+stable+"-"+STABLES[stable].upper())
     body={
         "jsonrpc":"2.0","id":1,"method":"tools/call",
-        "params":{"name":"get_swap_quote","arguments":{
+        "params":{"name":"quote_swap","arguments":{
             "from_asset":from_asset,
             "to_asset":to_asset,
-            "amount":units,
+            "amount":int(units),
             # NO destination. Prevent creation of a usable deposit address.
         }},
     }
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(9.0),follow_redirects=False) as client:
-            response=await client.post(BTC_QUOTE_URL,json=body,
-                headers={"Content-Type":"application/json",
-                         "Accept":"application/json"})
+            response=await client.post(
+                BTC_QUOTE_URL,json=body,headers=MCP_HEADERS)
             response.raise_for_status()
-            if len(response.content)>256_000:
-                raise ValueError("Oversized cross-chain quote")
-            parsed=_provider_quote(response.json(),from_asset=from_asset,
+            parsed=_provider_quote(
+                _decode_mcp_quote_response(response),from_asset=from_asset,
                                    to_asset=to_asset,input_units=units)
     except (httpx.HTTPError,ValueError,TypeError,OverflowError):
         raise HTTPException(502,"Verified native BTC quote unavailable") from None

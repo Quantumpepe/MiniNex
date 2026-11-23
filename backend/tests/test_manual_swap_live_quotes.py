@@ -25,10 +25,13 @@ DID = "did:privy:native-real-quote"
 def provider(out="12345678", slip=25, **other):
     return {"jsonrpc": "2.0", "id": 1, "result": {
         "structuredContent": {
-            "expected_amount_out": out,
-            "slippage_bps": slip,
-            "recommended_min_amount_in": "1000",
-            **other,
+            "data": {
+                "expected_amount_out": out,
+                "slippage_bps": slip,
+                "recommended_min_amount_in": "1000",
+                **other,
+            },
+            "_metadata": {"source_used": "thornode", "canonical": True},
         },
     }}
 
@@ -80,15 +83,18 @@ def test_single_real_provider_call_no_wallet_funding_memo_or_action(monkeypatch)
             assert str(request.url) == mq.BTC_QUOTE_URL
             body=json.loads(request.content)
             assert body["method"]=="tools/call"
-            assert body["params"]["name"]=="get_swap_quote"
+            assert body["params"]["name"]=="quote_swap"
+            assert request.headers["accept"]=="application/json, text/event-stream"
+            assert request.headers["mcp-protocol-version"]=="2025-06-18"
             args=body["params"]["arguments"]
             assert set(args)=={"from_asset","to_asset","amount"}
             assert args=={"from_asset":"SOL.SOL","to_asset":"XRP.XRP",
-                          "amount":"150000000"}
+                          "amount":150000000}
             assert "destination" not in args
             assert "memo" not in str(body).lower()
             seen.append(body)
-            return httpx.Response(200,json=provider())
+            return httpx.Response(200,headers={"Content-Type":"text/event-stream"},
+                text='event: message\ndata: '+json.dumps(provider())+'\n\n')
         return original(*args,transport=httpx.MockTransport(callback),**kwargs)
     monkeypatch.setattr(mq.httpx,"AsyncClient",mock_client)
     out=asyncio.run(mq.get_native_swap_quote("SOL","XRP","1.5"))

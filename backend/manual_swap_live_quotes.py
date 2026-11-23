@@ -15,7 +15,8 @@ import httpx
 from fastapi import HTTPException
 
 from .live_btc_quotes import (
-    BTC_QUOTE_URL, _amount_to_mcp_units, _provider_quote,
+    BTC_QUOTE_URL, MCP_HEADERS, _amount_to_mcp_units, _provider_quote,
+    _decode_mcp_quote_response,
 )
 from .live_eth_quotes import STABLES
 from .manual_swap_routes import ALL_SWAP_ASSETS, _asset_network, build_manual_swap_route
@@ -66,11 +67,11 @@ async def get_native_swap_quote(source: str, target: str, amount: str) -> dict:
     payload = {
         "jsonrpc": "2.0", "id": 1, "method": "tools/call",
         "params": {
-            "name": "get_swap_quote",
+            "name": "quote_swap",
             "arguments": {
                 "from_asset": from_asset,
                 "to_asset": to_asset,
-                "amount": units,
+                "amount": int(units),
             },
         },
     }
@@ -82,15 +83,11 @@ async def get_native_swap_quote(source: str, target: str, amount: str) -> dict:
             timeout=httpx.Timeout(9.0), follow_redirects=False,
         ) as client:
             response = await client.post(
-                BTC_QUOTE_URL, json=payload,
-                headers={"Content-Type": "application/json",
-                         "Accept": "application/json"},
+                BTC_QUOTE_URL, json=payload, headers=MCP_HEADERS,
             )
             response.raise_for_status()
-            if len(response.content) > 256_000:
-                raise ValueError("Oversized route response")
             quote = _provider_quote(
-                response.json(), from_asset=from_asset,
+                _decode_mcp_quote_response(response), from_asset=from_asset,
                 to_asset=to_asset, input_units=units,
             )
     except (httpx.HTTPError, ValueError, TypeError, OverflowError,

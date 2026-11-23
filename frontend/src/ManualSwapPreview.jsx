@@ -114,14 +114,23 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         },
         body:JSON.stringify(request.body),
       });
-      if(!response.ok)throw Error('Provider quote unavailable');
+      if(!response.ok){
+        if(response.status===503 && request.coin==='MULTICHAIN')
+          throw Error(lang==='de'
+            ?'Für dieses Coin-Paar ist derzeit kein Kurs beim Liquiditätsanbieter verfügbar. Es wurde kein Swap gesendet.'
+            :'No live liquidity quote is available for this coin pair. No swap was sent.');
+        throw Error('Provider quote unavailable');
+      }
       const data=await response.json();
       if(!validManualSwapQuote(data,request))throw Error('Invalid quote response');
       const expiresAtMs=manualSwapQuoteExpiryMs(data,request);
       if(expiresAtMs===null)throw Error('Stale or unverified quote');
       if(id===requestId.current)setQuote({data,request,expiresAtMs});
-    }catch {
-      if(id===requestId.current)setError(t.walletSwapFailed);
+    }catch(error) {
+      if(id===requestId.current)setError(
+        error?.message?.includes('No live liquidity quote')||
+        error?.message?.includes('kein Kurs beim Liquiditätsanbieter')
+          ?error.message:t.walletSwapFailed);
     }finally {
       clearTimeout(timeout);
       if(inFlight.current===controller)inFlight.current=null;
