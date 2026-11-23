@@ -21,6 +21,7 @@ import {summarizeHomePaperPortfolio,HOME_PAPER_PORTFOLIO_COINS,
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
+import ChainTransactions from './ChainTransactions.jsx';
 import PrivyWalletPanel from './PrivyWalletPanel.jsx';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
@@ -524,6 +525,7 @@ export default function App() {
         {page==='activity'&&<>
           <section className="page-heading"><h1>{t.activity}</h1></section>
           <BlockchainPreview t={t}/>
+          <ChainTransactions t={t} lang={language}/>
           <ActivityReport t={t}/>
         </>}
 

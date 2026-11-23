@@ -24,6 +24,7 @@ from .unified_strategy_profile import get_strategy_profile, save_strategy_profil
 from .tax_reports import list_verified_activity, make_csv, make_pdf, validate_year
 from .blockchain_preview import fetch_preview, check_address
 from .blockchain_history import fetch_history, validate_request
+from .chain_transaction_history import read_chain_transactions
 from .verified_sync import synchronize_one_page
 from .wallet_balances import get_wallet_balances
 from .multicoin_evm_balances import get_multicoin_evm_balances
@@ -2387,6 +2388,18 @@ async def blockchain_preview(
     return JSONResponse(
         await fetch_preview(asset, address),
         headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@app.get("/api/blockchain/chain-transactions/{chain}")
+async def blockchain_chain_transactions(
+    chain: str, authorization: str | None = Header(default=None),
+):
+    """Per-chain read-only explorer view, wallet resolved from authenticated Privy."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    output = await read_chain_transactions(did, chain.upper())
+    return JSONResponse(
+        output, headers={"Cache-Control": "private, no-store"},
     )
 
 

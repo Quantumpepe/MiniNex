@@ -164,7 +164,11 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
   const estimated=quote?.data?.expected_output_amount||
     quote?.data?.estimated_output_amount;
   const minimum=quote?.data?.minimum_output_amount;
-  const expiry=quote?.expiresAtMs;
+  const inputNumber=Number(quote?.request?.body?.amount);
+  const outputNumber=Number(estimated);
+  const unitRate=Number.isFinite(inputNumber)&&inputNumber>0&&
+    Number.isFinite(outputNumber)&&outputNumber>0
+    ?outputNumber/inputNumber:null;
   const quoteCurrent=quote&&Date.now()<quote.expiresAtMs&&
     (quote.request===request || (request&&quote.request.from===request.from&&
       quote.request.to===request.to&&quote.request.body.amount===request.body.amount));
@@ -177,7 +181,6 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       <span>{t.walletSwapTitle}</span>
     </button>
     {open&&<div id="mininex-manual-swap" className="mininex-swap-content">
-      <p className="privy-wallet-description">{t.walletSwapManualOnly}</p>
       <form onSubmit={checkQuote} className="mininex-swap-form">
         <label><span>{t.walletSwapFrom}</span>
           <select value={from} onChange={event=>changeFrom(event.target.value)}>
@@ -211,27 +214,24 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
       {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
       {quoteCurrent&&<div className="mininex-swap-quote" role="status">
-        <strong>{t.walletSwapIndicative}</strong>
-        <div className="privy-wallet-description">
-          {quote.request.coin==='MULTICHAIN'
-            ? t.walletSwapNativeProvider+' · '+
-              quote.data.source_network+' → '+quote.data.destination_network
-            : quote.request.coin==='ETH'?t.walletSwapRouteEth:t.walletSwapRouteBtc}
-        </div>
-        {quote.request.coin==='ETH'
-          ? <div>{t.walletSwapSlippage}: <b>{quote.data.slippage_tolerance_pct}%</b></div>
-          : <div>{t.walletSwapPriceImpact}: <b>{(quote.data.quoted_price_impact_bps/100).toFixed(2)}%</b></div>}
         <div className="mininex-swap-summary">
           <span>{t.walletSwapFrom}: <b>{quote.request.body.amount} {quote.request.from}</b></span>
           <span>{t.walletSwapTo}: <b>{estimated} {quote.request.to}</b></span>
         </div>
-        {minimum&&<div>{t.walletSwapMinimum}: <b>{minimum} {to}</b></div>}
-        {expiry&&<p className="privy-wallet-description">
-          {t.walletSwapExpires}: {new Date(expiry).toLocaleTimeString(lang==='de'?'de-CH':'en-US')}
-        </p>}
-        <p className="privy-wallet-description">{t.walletSwapFeesUnknown}</p>
-        {quote.request.coin==='MULTICHAIN'&&
-          <p className="privy-wallet-description">{t.walletSwapNativeLiquidityNotice}</p>}
+        {unitRate!=null&&<div>{t.walletSwapRate}: <b>
+          1 {quote.request.from} ≈ {new Intl.NumberFormat(
+            lang==='de'?'de-CH':'en-US',{maximumFractionDigits:8}
+          ).format(unitRate)} {quote.request.to}
+        </b></div>}
+        {quote.request.coin==='ETH'
+          ? <div>{t.walletSwapSlippage}: <b>{quote.data.slippage_tolerance_pct}%</b></div>
+          : <div>{t.walletSwapPriceImpact}: <b>{(quote.data.quoted_price_impact_bps/100).toFixed(2)}%</b></div>}
+        {minimum&&<div>{t.walletSwapMinimum}: <b>{minimum} {quote.request.to}</b></div>}
+        {quote.request.coin==='MULTICHAIN'&&<>
+          <button type="button" className="privy-wallet-action"
+            disabled aria-disabled="true">{t.walletSwapAction}</button>
+          <small className="privy-wallet-description">{t.walletSwapPendingShort}</small>
+        </>}
       </div>}
       {ethManualReady&&<EthLiveSwap
         key={[userId,request.body.side,request.body.stable,request.body.amount].join(':')}
@@ -245,9 +245,6 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         lang={lang} getAccessToken={getAccessToken} t={t}/>}
       {ownerEvmAsset&&!liveOwnerEvmPair&&
         <p className="privy-wallet-description" role="status">{t.walletSwapNotEnabled}</p>}
-      {!ethManualPair&&!['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(from)&&!['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(to)&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
-        {t.walletSwapNotEnabled}
-      </p>}
     </div>}
   </section>;
 }
