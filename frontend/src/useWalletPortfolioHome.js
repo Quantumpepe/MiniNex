@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
+import {onConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {summarizeVerifiedWalletPortfolio} from './walletPortfolio.js';
 import {validateWalletBalanceResponse} from './walletBalanceValidation.js';
 import {validateMulticoinBalanceResponse} from './multicoinBalanceValidation.js';
@@ -18,7 +19,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   const [state,setState]=useState({did:null,sources:null,status:'idle'});
   const [samples,setSamples]=useState({did:null,points:[]});
   useEffect(()=>{
-    let active=true,inFlight=false;
+    let active=true,inFlight=false,refreshQueued=false;
     const controllers=new Set();
     setState({did,sources:null,status:'loading'});
     setSamples({did,points:[]});
@@ -49,11 +50,20 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       }catch{
         if(active&&!controller.signal.aborted)
           setState({did,sources:null,status:'error'});
-      }finally{inFlight=false;controllers.delete(controller);}
+      }finally{
+        inFlight=false;controllers.delete(controller);
+        if(active&&refreshQueued){refreshQueued=false;void sync();}
+      }
     };
     sync();
+    // An outgoing transfer may finish while the overview is open. Update
+    // the total portfolio immediately rather than waiting for the next poll.
+    const unsubscribe=onConfirmedWalletTransfer(did,()=>{
+      if(inFlight)refreshQueued=true;
+      else void sync();
+    });
     const interval=window.setInterval(sync,20000);
-    return ()=>{active=false;window.clearInterval(interval);for(const c of controllers)c.abort();};
+    return ()=>{active=false;unsubscribe();window.clearInterval(interval);for(const c of controllers)c.abort();};
   },[visible,ready,authenticated,did,getAccessToken,refreshNonce]);
   const matched=state.did===did&&ready&&authenticated;
   const summary=useMemo(()=>matched? summarizeVerifiedWalletPortfolio(
