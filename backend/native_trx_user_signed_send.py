@@ -155,13 +155,14 @@ def _check_unsigned_transaction(tx:object,source:str,destination:str,sun:int)->t
     value=entry["parameter"]["value"]
     owner=tron_address_hex(source)
     to=tron_address_hex(destination)
-    if (value.get("owner_address")!=owner or value.get("to_address")!=to
+    if (str(value.get("owner_address","")).upper()!=owner
+            or str(value.get("to_address","")).upper()!=to
             or value.get("amount")!=sun):
         raise HTTPException(503,"TRON transaction terms differ from your request")
     now_ms=int(time.time()*1000)
     if (type(raw.get("timestamp")) is not int or type(raw.get("expiration")) is not int
-            or not now_ms-30000<=raw["timestamp"]<=now_ms+30000
-            or not now_ms+15000<=raw["expiration"]<=now_ms+3600000):
+            or not now_ms-180000<=raw["timestamp"]<=now_ms+30000
+            or not now_ms+5000<=raw["expiration"]<=now_ms+3600000):
         raise HTTPException(503,"TRON transaction timestamp or expiry unavailable")
     # Persist the exact RPC transaction object that produced this digest.
     unsigned={k:v for k,v in tx.items() if k in ("txID","raw_data","raw_data_hex","visible")}
@@ -246,6 +247,9 @@ async def submit_owner_signed_trx(
             result=await _tron_rpc(client,"/wallet/broadcasttransaction",signed)
         if result.get("result") is not True:
             raise HTTPException(409,"TRON network did not accept this transaction")
+        returned=result.get("txid")
+        if returned is not None and (type(returned) is not str or returned.upper()!=txid):
+            raise HTTPException(502,"TRON broadcast transaction ID mismatch")
         _SUBMITTED[txid]=time.monotonic()
         return {"status":"submitted_pending_validation","validated":False,
                 "txid":txid,"amount":str(Decimal(sun)/Decimal(1000000))}
@@ -274,7 +278,8 @@ async def confirmed_owner_trx(did:str,txid:str)->dict:
         owner=entry["parameter"]["value"]["owner_address"]
     except (KeyError,TypeError,IndexError):
         return {"confirmed":False}
-    if (entry.get("type")!="TransferContract" or owner!=tron_address_hex(source)
+    if (entry.get("type")!="TransferContract"
+            or str(owner).upper()!=tron_address_hex(source)
             or type(info.get("blockNumber")) is not int or info["blockNumber"]<=0):
         return {"confirmed":False}
     return {"confirmed":info.get("receipt",{}).get("result")=="SUCCESS"}
