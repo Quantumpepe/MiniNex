@@ -26,6 +26,7 @@ export default function EvmLiveSwap({
   const [error,setError]=useState('');
   const [pending,setPending]=useState(null);
   const [unwrapAmount,setUnwrapAmount]=useState(null);
+  const [realHistory,setRealHistory]=useState([]);
   const serial=useRef(0);
   const attempt=useRef(false);
   const reportedReceipt=useRef('');
@@ -70,6 +71,20 @@ export default function EvmLiveSwap({
     if(!response.ok)throw Error('Verified on-chain swap quote unavailable');
     return response.json();
   }
+  async function refreshRealHistory(){
+    if(!enabled||!userId)return;
+    try{
+      const response=await backend('/api/live/evm/manual-legs/'+asset);
+      if(response?.mode==='FINALIZED_EVM_MANUAL_LEGS_ONLY'&&
+         response.asset===asset&&Array.isArray(response.legs))
+        setRealHistory(response.legs.slice(0,8));
+    }catch{/* History failure never triggers a new swap. */}
+  }
+  useEffect(()=>{
+    setRealHistory([]);
+    if(enabled&&userId)void refreshRealHistory();
+  },[enabled,userId,asset]);
+
   async function provider(){
     if(!wallet||!chain||!enabled||typeof wallet.getEthereumProvider!=='function')
       throw Error('Privy EVM wallet unavailable');
@@ -256,6 +271,22 @@ export default function EvmLiveSwap({
               ||saved?.swap_erc20_leg_verified!==true){
             timeout=setTimeout(check,16000);return;
           }
+          // The backend must independently reverify canonical finality and
+          // persist THIS user's manual ERC20 swap before we call it complete.
+          // A failed history write never causes a second blockchain send.
+          const recorded=await backend(
+            '/api/live/evm/record-manual-leg/'+asset,'POST',
+            {tx_hash:pending.hash,side,stable});
+          if(!active)return;
+          if(recorded?.recorded!==true||
+             recorded.asset!==asset||recorded.side!==side||
+             recorded.stable!==stable||
+             recorded.tx_hash!==pending.hash.toLowerCase()||
+             recorded.onchain_finalized!==true||
+             recorded.native_coin_cycle_complete!==false){
+            throw Error('Verified manual swap history has not been saved');
+          }
+          void refreshRealHistory();
           if(native&&side==='BUY'){
             // A native-coin buy yields wrapped BNB/POL/AVAX first. The
             // owner must explicitly unwrap the exact finalized amount.
@@ -323,5 +354,17 @@ export default function EvmLiveSwap({
     {phase==='failed'&&!attempt.current&&<button type="button"
       className="privy-wallet-action" onClick={retry}>{words.retry}</button>}
     {phase==='uncertain'&&<p role="alert" className="privy-wallet-description">{words.uncertain}</p>}
+    {realHistory.length>0&&<div className="mininex-live-real-history">
+      <strong>{lang==='de'?'Echte bestätigte Swaps':'Confirmed real swaps'} · {asset}</strong>
+      {realHistory.map(entry=><div key={entry.chain_id+':'+entry.tx_hash}>
+        <b>{entry.side==='BUY'?'BUY':'SELL'} · {asset}</b>
+        {' · '}{entry.source_amount} → {entry.destination_amount}
+        {' · '}{entry.stable}
+        <code>{entry.tx_hash.slice(0,12)}…</code>
+        {native&&<small>{lang==='de'
+          ?'Blockchain-Swap bestätigt; native Coin-Konvertierung separat'
+          :'On-chain swap verified; native coin conversion is separate'}</small>}
+      </div>)}
+    </div>}
   </div>;
 }

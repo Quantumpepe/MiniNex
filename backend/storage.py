@@ -213,6 +213,31 @@ SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_eth_verified_legs_by_owner
        ON mininex_live_eth_verified_legs(privy_did,created_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_live_evm_manual_verified_legs (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK (asset IN
+            ('BNB','POL','AVAX','LINK','QNT','UNI','ARB')),
+        chain_id INTEGER NOT NULL CHECK (chain_id IN (1,56,137,43114,42161)),
+        tx_hash TEXT NOT NULL CHECK (tx_hash ~ '^0x[0-9a-f]{64}$'),
+        wallet_address TEXT NOT NULL CHECK (
+            wallet_address ~ '^0x[0-9a-f]{40}$'),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        source_amount NUMERIC(48,18) NOT NULL CHECK (source_amount > 0),
+        destination_amount NUMERIC(48,18) NOT NULL CHECK (destination_amount > 0),
+        network_fee_native NUMERIC(48,18) NOT NULL CHECK (network_fee_native >= 0),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (chain_id,tx_hash),
+        CHECK ((asset='BNB' AND chain_id=56 AND stable='USDT')
+            OR (asset='POL' AND chain_id=137 AND stable='USDC')
+            OR (asset='AVAX' AND chain_id=43114 AND stable='USDC')
+            OR (asset IN ('LINK','QNT','UNI') AND chain_id=1)
+            OR (asset='ARB' AND chain_id=42161
+                AND stable IN ('USDC','USDT')))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_manual_evm_verified_owner
+       ON mininex_live_evm_manual_verified_legs
+          (privy_did,asset,created_at DESC)""",
     """CREATE TABLE IF NOT EXISTS mininex_live_evm_policy_publications (
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
         asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','LINK','UNI','ARB')),

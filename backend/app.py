@@ -68,6 +68,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 from .shared_evm_swap_receipts import check_user_evm_swap
+from .manual_evm_verified_legs import record_manual_evm_leg,get_manual_evm_legs
 from .shared_evm_fill_history import get_owner_evm_fill_history
 from .shared_evm_order_status import get_owner_live_evm_order_status
 from .shared_evm_permission_status import read_owner_evm_permission_status
@@ -1430,6 +1431,37 @@ async def finalized_owner_evm_swap(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+class ManualEvmVerifiedLegRequest(BaseModel):
+    tx_hash: str
+    side: Literal["BUY","SELL"]
+    stable: Literal["USDC","USDT"]
+
+
+@app.post("/api/live/evm/record-manual-leg/{asset}")
+async def record_owner_manual_evm_leg(
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    request: ManualEvmVerifiedLegRequest,
+    authorization: str | None = Header(default=None),
+):
+    """Store independently finalized owner-signed ERC20 swap leg, not full native cycle."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=await record_manual_evm_leg(
+        did,asset=asset,tx_hash=request.tx_hash,
+        side=request.side,stable=request.stable)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/live/evm/manual-legs/{asset}")
+def read_owner_manual_evm_legs(
+    asset: Literal["BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Durable user/asset-isolated real manual swap legs; no PAPER or profit claims."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    result=get_manual_evm_legs(did,asset=asset)
+    return JSONResponse(result,headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/live/evm/native-user-transaction/{asset}")

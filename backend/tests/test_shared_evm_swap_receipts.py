@@ -175,3 +175,69 @@ def test_api_checks_privy_user_and_never_signs():
     assert "verify_privy_bearer" in body
     assert "check_user_evm_swap(" in body
     assert "broadcast_privy" not in body
+
+
+def test_owner_manual_evm_leg_only_records_finalized_canonical_token_transfers():
+    from backend.manual_evm_verified_legs import validated_manual_evm_leg
+    pair, tx, receipt = witness("QNT", "BUY", "USDC")
+    proof = inspect_finalized_evm_swap(
+        HASH, asset="QNT", stable="USDC", side="BUY", wallet=WALLET,
+        chain_id=hex(pair["chain_id"]), transaction=tx, receipt=receipt,
+        latest="0x70", finalized={"number": "0x68"},
+        canonical={"number": "0x64", "hash": BLOCK},
+    )
+    leg = validated_manual_evm_leg(
+        asset="QNT", tx_hash=HASH, side="BUY", stable="USDC", receipt=proof
+    )
+    assert leg["tx_hash"] == HASH
+    assert leg["wallet_address"] == WALLET.lower()
+    assert leg["source_amount"] == "1"
+    assert leg["destination_amount"] == "2"
+    assert Decimal(leg["network_fee_native"]) > 0
+    for change in (
+        {"state": "INCLUDED_SUCCESS"},
+        {"transaction_finalized": False},
+        {"wallet_address": "0x" + "bb"*20},
+        {"side": "SELL"},
+        {"network": "polygon-pos-mainnet"},
+        {"destination_received_amount": "NaN"},
+        {"performance_fee_assessed": True},
+    ):
+        with pytest.raises(ValueError):
+            validated_manual_evm_leg(
+                asset="QNT", tx_hash=HASH, side="BUY", stable="USDC",
+                receipt={**proof, **change},
+            )
+
+
+def test_manual_evm_record_requires_backend_privy_owner_receipt_not_client_proof(monkeypatch):
+    from backend import manual_evm_verified_legs as manual
+    pair, tx, receipt = witness("BNB", "SELL", "USDT")
+    proof = inspect_finalized_evm_swap(
+        HASH, asset="BNB", stable="USDT", side="SELL", wallet=WALLET,
+        chain_id=hex(pair["chain_id"]), transaction=tx, receipt=receipt,
+        latest="0x70", finalized={"number": "0x68"},
+        canonical={"number": "0x64", "hash": BLOCK},
+    )
+    observed = []
+    async def trusted(did, tx_hash, *, asset, side, stable):
+        observed.append((did, tx_hash, asset, side, stable))
+        return proof
+    def persist(did, leg):
+        observed.append(("saved", did, leg["asset"], leg["tx_hash"]))
+        return {"recorded": True, **leg}
+    monkeypatch.setattr(manual, "check_user_evm_swap", trusted)
+    monkeypatch.setattr(manual, "save_manual_evm_leg", persist)
+    result = asyncio.run(manual.record_manual_evm_leg(
+        "did:privy:verified", asset="BNB", tx_hash=HASH, side="SELL", stable="USDT"
+    ))
+    assert result["recorded"]
+    assert observed == [
+        ("did:privy:verified", HASH, "BNB", "SELL", "USDT"),
+        ("saved", "did:privy:verified", "BNB", HASH),
+    ]
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(manual.record_manual_evm_leg(
+            "did:privy:verified", asset="BNB", tx_hash=HASH, side="SELL", stable="USDC"
+        ))
+    assert exc.value.status_code == 422

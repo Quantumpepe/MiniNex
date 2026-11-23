@@ -82,3 +82,12 @@ test('only actual same-chain EVM stable routes mount the real swap signer',()=>{
   assert.ok(manualSwapQuoteRequest('USDT','BNB','0.000000000000000001'));
   assert.match(component,/liveOwnerEvmPair&&request&&<EvmLiveSwap/);
 });
+
+test('manual EVM swap saves a canonical owner receipt before marking the leg complete',()=>{
+  assert.match(signer,/record-manual-leg/);
+  assert.match(signer,/manual-legs/);
+  assert.match(signer,/recorded\?\.recorded!==true/);
+  assert.match(signer,/recorded\.tx_hash!==pending\.hash\.toLowerCase\(\)/);
+  assert.match(signer,/native_coin_cycle_complete!==false/);
+  assert.match(signer,/realHistory\.map\(/);
+});
