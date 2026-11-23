@@ -10,9 +10,9 @@ import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
 // Manual transfers use the CURRENT user's own Privy EVM wallet. Never keep a
 // server key, delegate signing or initiate a transaction without a user tap.
 // Native BTC/SOL/XRP/TRX/DOGE sending is not claimed supported here.
-export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoin=false}) {
+export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoin=false,initialOpen=false}) {
   const {wallets}=useWallets();
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(initialOpen);
   const [coin,setCoin]=useState(initialCoin);
   const [destination,setDestination]=useState('');
   const [amount,setAmount]=useState('');
