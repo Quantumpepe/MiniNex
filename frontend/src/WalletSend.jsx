@@ -235,15 +235,16 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
     finally{if(currentUser.current===receiptUser)setBusy(false);}
   }
 
-  // Up to three short, automatic receipt checks per submitted transfer.
-  // No ongoing market polling and no extra "check" buttons for the user.
+  // Keep genuine chain receipt checks alive through slower EVM mining.
+  // Bounded backoff, not a perpetual timer or extra user confirmation.
   useEffect(()=>{
     if(!open||!enabled||phase!=='submitted'||!txHash||busy||
-       !review||receiptAttempts.current>=3)return;
+       !review||receiptAttempts.current>=25)return;
+    const delay=receiptAttempts.current<5?12000:20000;
     const timeout=setTimeout(()=>{
       receiptAttempts.current+=1;
       verifyReceipt();
-    },12000);
+    },delay);
     return()=>clearTimeout(timeout);
   },[open,enabled,phase,txHash,busy,review,userId]);
 
