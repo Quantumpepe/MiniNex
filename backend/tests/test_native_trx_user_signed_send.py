@@ -11,7 +11,7 @@ from backend.native_trx_user_signed_send import (
     _sealed_intent,
     _tron_address_from_public_key,
     _verify_intent,
-    recover_tron_signature,
+    recover_tron_signature, solid_tron_receipt_confirmed,
 )
 from backend.native_trx_manual_send import tron_address_hex
 
@@ -86,3 +86,20 @@ def test_tron_authorization_bound_to_authenticated_user(monkeypatch):
         _verify_intent(auth[:-3]+"abc",payload["did"])
     with pytest.raises(HTTPException):
         _verify_intent(_sealed_intent({**payload,"created":created-200}),payload["did"])
+
+
+def test_solidified_trx_confirmation_requires_owner_and_success():
+    tx=_transaction()
+    tx["ret"]=[{"contractRet":"SUCCESS"}]
+    assert solid_tron_receipt_confirmed(tx["txID"],OWNER,tx)
+    assert not solid_tron_receipt_confirmed(tx["txID"],RECIPIENT,tx)
+    assert not solid_tron_receipt_confirmed("fa"*32,OWNER,tx)
+    tx["ret"]=[{"contractRet":"FAILED"}]
+    assert not solid_tron_receipt_confirmed(tx["txID"],OWNER,tx)
+    tx["ret"]=[]
+    assert solid_tron_receipt_confirmed(
+        tx["txID"],OWNER,tx,{"id":tx["txID"],"blockNumber":123,
+                            "receipt":{"result":"SUCCESS"}})
+    assert not solid_tron_receipt_confirmed(
+        tx["txID"],OWNER,tx,{"id":tx["txID"],"blockNumber":123,
+                            "receipt":{"result":"FAILED"}})
