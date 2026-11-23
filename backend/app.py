@@ -857,7 +857,7 @@ async def eth_owner_live_auto_allowance(
 
 @app.post("/api/live/evm/owner-swap-preparation/{asset}")
 async def owner_evm_swap_preparation(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     request: EthLiveQuoteRequest,
     authorization: str | None = Header(default=None),
 ):
@@ -877,7 +877,7 @@ async def owner_evm_swap_preparation(
 
 @app.get("/api/live/evm/fifo-preview/{asset}")
 def owner_evm_fifo_preview(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only verified FIFO gross cost basis; never net USD or a fee charge."""
@@ -1398,7 +1398,7 @@ def owner_finalized_evm_fills(
 
 @app.get("/api/live/evm/source-allowance/{asset}")
 async def read_owner_evm_source_allowance(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     side: Literal["BUY","SELL"],
     stable: Literal["USDC","USDT"],
     amount: str,
@@ -1416,7 +1416,7 @@ async def read_owner_evm_source_allowance(
 
 @app.get("/api/live/evm/finalized-swap/{asset}/{tx_hash}")
 async def finalized_owner_evm_swap(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     tx_hash: str,
     side: Literal["BUY","SELL"],
     stable: Literal["USDC","USDT"],
@@ -1460,7 +1460,7 @@ async def owner_native_evm_router02_user_transaction(
 
 @app.post("/api/live/evm/erc20-user-transaction/{asset}")
 async def owner_link_uni_router02_user_transaction(
-    asset: Literal["LINK","UNI","ARB"],
+    asset: Literal["LINK","QNT","UNI","ARB"],
     request: EthLiveQuoteRequest,
     authorization: str | None = Header(default=None),
 ):
@@ -1567,7 +1567,7 @@ async def eth_live_chain_receipt(tx_hash: str,
 
 @app.get("/api/live/evm/completed-cycle/{asset}/{swap_tx_hash}")
 async def owner_verified_evm_trade_cycle(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","UNI","ARB","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
     swap_tx_hash: str,
     side: Literal["BUY","SELL"],
     stable: Literal["USDC","USDT"],
