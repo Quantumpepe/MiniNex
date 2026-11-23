@@ -191,7 +191,16 @@ async def quote_native_evm_trade(
                 raise HTTPException(409,"Insufficient native coin for network gas")
             source=route.stable_contract if side=="BUY" else route.wrapped
             balance=await _token_balance(client,rpc_url,source,wallet,8)
-            if balance<int(atomic):
+            source_funded=balance>=int(atomic)
+            # A manual native-coin SELL can begin with unwrapped BNB/POL/AVAX.
+            # Return the actual V3 pool quote so the owner's separate signed
+            # wrap step can be offered. The shared preparation still withholds
+            # swap calldata until wrapped funds and allowance are verified.
+            native_wrap_preparation=(
+                include_user_transaction and side=="SELL"
+                and asset in ("BNB","POL","AVAX")
+            )
+            if not source_funded and not native_wrap_preparation:
                 raise HTTPException(
                     409,"Insufficient verified ERC20 source balance; native wrap may be needed")
             token_in=source
@@ -250,7 +259,8 @@ async def quote_native_evm_trade(
         "native_wrap_unwrap_not_yet_settled":asset!="ARB",
         "source_token_allowance_not_checked":True,
         "wallet_identity_verified":True,
-        "wallet_funds_verified":True,
+        "wallet_funds_verified":source_funded,
+        "native_wrap_required":bool(native_wrap_preparation and not source_funded),
         "onchain_quote_verified":True,
         "execution_enabled":False,"can_submit":False,
         "wallet_signed":False,"funds_transferred":False,

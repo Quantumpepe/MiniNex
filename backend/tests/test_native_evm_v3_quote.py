@@ -119,6 +119,35 @@ def test_native_evm_actual_chain_quote_and_wallet_unsigned_transaction(
     assert ("eth_call",6) in evm_chain
 
 
+@pytest.mark.parametrize("asset,stable",[
+    ("BNB","USDT"),("POL","USDC"),("AVAX","USDC"),
+])
+def test_native_sell_quote_can_offer_owner_wrap_before_wrapped_balance(
+    monkeypatch,evm_chain,asset,stable
+):
+    # Real native coins are not yet WBNB/WMATIC/WAVAX. A quote must be
+    # available for the separate wallet-signed wrap, never a ready swap.
+    async def empty_wrapped_balance(client,url,token,wallet,rid):
+        return 0
+    monkeypatch.setattr(evm,"_token_balance",empty_wrapped_balance)
+    result=asyncio.run(evm.quote_native_evm_trade(
+        DID,asset=asset,side="SELL",stable=stable,
+        amount="1",include_user_transaction=True,
+    ))
+    assert result["wallet_funds_verified"] is False
+    assert result["native_wrap_required"] is True
+    assert result["onchain_quote_verified"] is True
+    assert result["execution_enabled"] is False
+    assert result["transaction"]["data"].startswith("0x04e45aaf")
+    # A BUY cannot borrow the native wrap exception.
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(evm.quote_native_evm_trade(
+            DID,asset=asset,side="BUY",stable=stable,
+            amount="1",include_user_transaction=True,
+        ))
+    assert exc.value.status_code==409
+
+
 def test_bad_evm_chain_id_prevents_quote(monkeypatch,evm_chain):
     original=evm._rpc
     async def wrong(client,url,method,params,rid):
