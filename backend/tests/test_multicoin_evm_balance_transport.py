@@ -59,7 +59,12 @@ def test_exact_networks_contracts_decimals_and_read_only_calls(rpc):
         assert row['balance'] == '1.000000000000000123'
         assert row['decimals'] == 18
         assert row['status'] == 'verified'
-    assert len(seen) == 12
+    # Four extra read-only ERC-20 calls protect wrapped holdings after
+    # native POL/BNB/AVAX/ETH deposits; they are not extra user-facing coins.
+    assert len(seen) == 16
+    for asset in m.WRAPPED_ORDER:
+        assert result['wrapped_assets'][asset]['status'] == 'verified'
+        assert result['wrapped_assets'][asset]['balance'] == '1.000000000000000123'
     assert m._ARB_TOKENS == {'ARB':'0x912CE59144191C1204E64559FE8253a0e49E6548'}
     assert {body['method'] for _, body in seen} == {'eth_chainId','eth_getBalance','eth_call'}
     for _, body in seen:
