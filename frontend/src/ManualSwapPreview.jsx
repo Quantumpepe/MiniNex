@@ -2,10 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
 import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
-import {getChainConfig,getStables} from './evmSwapRules.js';
-import {buildBnbSwapTransaction} from './bnbSwapBuilder.js';
 import EthLiveSwap from './EthLiveSwap.jsx';
-import BnbLiveSwap from './BnbLiveSwap.jsx';
 import EvmLiveSwap from './EvmLiveSwap.jsx';
 import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs} from './manualSwapRules.js';
 
@@ -30,9 +27,18 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     current?.abort();
   };
   const request=manualSwapQuoteRequest(from,to,amount);
-  const supportedPair=MANUAL_SWAP_ASSETS.includes(from)&&
+  const manualEvmCoin=['BNB','POL','AVAX','ARB','LINK','QNT','UNI'];
+  const stableCoins=['USDC','USDT'];
+  const ownerEvmAsset=manualEvmCoin.includes(from)&&stableCoins.includes(to)?from:
+    manualEvmCoin.includes(to)&&stableCoins.includes(from)?to:null;
+  const ownerEvmSide=ownerEvmAsset
+    ?(stableCoins.includes(from)?'BUY':'SELL'):null;
+  const ownerEvmStable=ownerEvmAsset
+    ?(stableCoins.includes(from)?from:to):null;
+  const supportedPair=!!ownerEvmAsset||(
+    MANUAL_SWAP_ASSETS.includes(from)&&
     MANUAL_SWAP_ASSETS.includes(to)&&
-    from!==to&&!!manualSwapQuoteRequest(from,to,'1');
+    from!==to&&!!manualSwapQuoteRequest(from,to,'1'));
   // Both directions on Ethereum mainnet only. BTC and all other networks
   // must never inherit a signer from an unrelated coin/chain quote.
   const ethManualPair=(
@@ -204,12 +210,11 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         enabled={enabled} userId={userId} getAccessToken={getAccessToken}
         side={request.body.side} stable={request.body.stable}
         amount={request.body.amount} t={t}/>}
-      {['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(from)&&<EvmLiveSwap
-        enabled={enabled} userId={userId} chain={['LINK','QNT','UNI'].includes(from)?'ETH':from}
-        side='BUY' stable={to} token={['LINK','QNT','UNI'].includes(from)?from:undefined} amount={amount} t={t}/>}
-      {['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(to)&&from!==to&&<EvmLiveSwap
-        enabled={enabled} userId={userId} chain={to}
-        side='SELL' stable={from} amount={amount} t={t}/>}
+      {ownerEvmAsset&&<EvmLiveSwap
+        key={[userId,ownerEvmAsset,ownerEvmSide,ownerEvmStable,amount].join(':')}
+        enabled={enabled} userId={userId} asset={ownerEvmAsset}
+        side={ownerEvmSide} stable={ownerEvmStable} amount={amount}
+        lang={lang} getAccessToken={getAccessToken} t={t}/>}
       {!ethManualPair&&!['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(from)&&!['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(to)&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
       </p>}
