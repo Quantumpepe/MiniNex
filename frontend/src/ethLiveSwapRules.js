@@ -19,7 +19,7 @@ export function validateOwnerRouter02Call(quote,{wallet,side,stable,amount}){
      !quote||quote.wallet_identity_verified!==true||
      quote.unsigned_swap_validated!==true||!Number.isSafeInteger(quote.transaction_expires_at)||
      quote.transaction_expires_at<=Math.floor(Date.now()/1000)||
-     quote.transaction_expires_at>Math.floor(Date.now()/1000)+20)throw Error('expired quote');
+     quote.transaction_expires_at>Math.floor(Date.now()/1000)+50)throw Error('expired quote');
   const tx=quote.transaction;
   if(!tx||tx.chainId!==1||tx.from?.toLowerCase()!==wallet.toLowerCase()||
      tx.to?.toLowerCase()!==ROUTER02||tx.value!=='0x0'||

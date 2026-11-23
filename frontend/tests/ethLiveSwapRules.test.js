@@ -23,6 +23,17 @@ for(const side of ['BUY','SELL'])for(const stable of ['USDC','USDT']){
 }
 test('cannot use another wallet',()=>assert.throws(()=>validateOwnerRouter02Call(
  call(),{wallet:'0x'+'b'.repeat(40),side:'BUY',stable:'USDC',amount:'10'})));
+test('accepts forty-second user-signed quote without extending it indefinitely',()=>{
+  const q=call();
+  q.transaction_expires_at=Math.floor(Date.now()/1000)+40;
+  assert.equal(validateOwnerRouter02Call(q,{
+    wallet,side:'BUY',stable:'USDC',amount:'10'
+  }).amountAtomic,10000000n);
+  q.transaction_expires_at=Math.floor(Date.now()/1000)+80;
+  assert.throws(()=>validateOwnerRouter02Call(q,{
+    wallet,side:'BUY',stable:'USDC',amount:'10'
+  }));
+});
 test('cannot use expired quote',()=>{
  const q=call();q.transaction_expires_at=0;
  assert.throws(()=>validateOwnerRouter02Call(q,{wallet,side:'BUY',stable:'USDC',amount:'10'}));
