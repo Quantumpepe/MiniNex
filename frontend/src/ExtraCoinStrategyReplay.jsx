@@ -31,6 +31,9 @@ export default function ExtraCoinStrategyReplay({
 
   const run=async(event)=>{
     event.preventDefault();
+    // LIVE start requires the separate owner's Privy signer and current
+    // audited wallet policy. Never POST from a paper replay form.
+    if(liveMode)return;
     if(!enabled||busy||!EXTRA_REPLAY_COINS.includes(asset)||
        !budgetOk||!MODES.includes(options?.mode)||
        !HORIZONS.includes(options?.horizon))return;
@@ -41,18 +44,13 @@ export default function ExtraCoinStrategyReplay({
     const timeout=setTimeout(()=>controller.abort(),15000);
     setBusy(true);setFailed(false);setResult(null);
     try {
-      const endpoint=liveMode
-        ? API_BASE+'/api/live/evm/auto-session/'+asset+'/start'
-        : API_BASE+'/api/strategy/replay/'+asset+'?'+new URLSearchParams({
-            mode:options.mode,horizon:options.horizon,initial_usd:options.budget,
-          });
+      const endpoint=API_BASE+'/api/strategy/replay/'+asset+'?'+
+        new URLSearchParams({
+          mode:options.mode,horizon:options.horizon,initial_usd:options.budget,
+        });
       const response=await fetch(endpoint,{
-        method:liveMode?'POST':'GET',cache:'no-store',signal:controller.signal,
-        headers:{Accept:'application/json',...(liveMode?{'Content-Type':'application/json'}:{})},
-        ...(liveMode?{body:JSON.stringify({
-          budget_usd:Number(options.budget),
-          mode:options.mode,horizon:options.horizon,stable:options.stable,
-        })}:{}),
+        method:'GET',cache:'no-store',signal:controller.signal,
+        headers:{Accept:'application/json'},
       });
       if(!response.ok)throw Error('Replay unavailable');
       const data=await response.json();
@@ -97,10 +95,10 @@ export default function ExtraCoinStrategyReplay({
           <option value="USDT">USDT</option>
         </select>
       </label>
-      <button type="submit" className="privy-wallet-action"
+      {!liveMode&&<button type="submit" className="privy-wallet-action"
         disabled={!enabled||busy||!budgetOk}>
-        {busy?t.extraReplayRunning:(liveMode?t.extraReplayRunLive:t.extraReplayRun)}
-      </button>
+        {busy?t.extraReplayRunning:t.extraReplayRun}
+      </button>}
     </form>
     <ExtraCoinPaperControl asset={asset} t={t} enabled={enabled} liveMode={liveMode}
       getAccessToken={getAccessToken} options={options} onChange={onChange}/>

@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
-import {validExtraPaperState,extraPaperCanStart} from './extraPaperRules.js';
+import {validExtraPaperState,extraPaperCanStart,liveOwnerSessionPath,
+  validLiveOwnerSession,liveOwnerCounters} from './extraPaperRules.js';
 
 // One opt-in server-side PAPER session per coin and account. Its simulation
 // persists when Android closes; no wallet, live orders, approvals or deposits.
@@ -18,13 +19,17 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     const token=await getAccessToken();
     if(!token)throw Error('Login required');
     const paperPath=['BTC','ETH'].includes(asset)?'/api/user-paper/':'/api/extra-paper/';
-    const response=await fetch(API_BASE+(liveMode?'/api/live/evm/auto-session/':paperPath)+asset,{
+    const livePath=liveMode?liveOwnerSessionPath(asset):null;
+    if(liveMode&&!livePath)throw Error('Unsupported LIVE coin');
+    const response=await fetch(API_BASE+(liveMode?livePath:paperPath+asset),{
       method:'GET',
       headers:{Authorization:'Bearer '+token,Accept:'application/json'},
       cache:'no-store',signal,
     });
     if(!response.ok)throw Error(liveMode?'Live session unavailable':'Personal paper state unavailable');
     const result=await response.json();
+    if(liveMode&&!validLiveOwnerSession(result,asset))
+      throw Error('Unverified LIVE session status');
     // BTC/ETH user-paper has different format; normalize for display
     if(['BTC','ETH'].includes(asset)&&result.position){
       // Server returns persisted virtual start capital as a decimal string.
@@ -36,7 +41,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       result.horizon=result.horizon||'15m';
     }
     return result;
-  },[asset,getAccessToken]);
+  },[asset,getAccessToken,liveMode]);
 
   useEffect(()=>{
     const request=++activeRef.current;
@@ -81,6 +86,9 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   },[asset,enabled,data?.status,data?.pause_exit_pending,fetchOne]);
 
   const command=async action=>{
+    // LIVE is controlled by the original Privy-signed per-coin session.
+    // The paper start/resume API can never authorize a real transaction.
+    if(liveMode&&action!=='pause')return;
     if(busyRef.current||!enabled||!getAccessToken||!data||
        (action==='start' && (data.status!=='NOT_STARTED'||!extraPaperCanStart(options)))||
        (action==='pause' && data.status!=='ACTIVE')||
@@ -96,8 +104,8 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         budget_usd:Number(options.budget),
         mode:options.mode,horizon:options.horizon,stable:options.stable,
       }:null;
-      const endpoint=liveMode&&action==='start'
-        ? API_BASE+'/api/live/evm/auto-session/'+asset+'/start'
+      const endpoint=liveMode
+        ? API_BASE+liveOwnerSessionPath(asset)+'/pause'
         : API_BASE+'/api/extra-paper/'+asset+'/'+action;
       const response=await fetch(endpoint,{
         method:'POST',cache:'no-store',
@@ -105,10 +113,21 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
                  ...(starting?{'Content-Type':'application/json'}:{})},
         ...(starting?{body:JSON.stringify(payload)}:{}),
       });
-      if(!response.ok)throw Error('Paper command failed');
+      if(!response.ok)throw Error(liveMode?'LIVE pause unavailable':'Paper command failed');
       const result=await response.json();
-      if(!liveMode && !['BTC','ETH'].includes(asset) && !validExtraPaperState(result,asset))throw Error('Invalid response');
-      if(request===activeRef.current)setData(result);
+      if(liveMode){
+        // A pause response does not establish the current owner session.
+        // Re-read the authoritative chain-specific status after the command.
+        if(result?.asset!==asset||result?.status!=='PAUSED')
+          throw Error('LIVE pause response does not match coin');
+        const latest=await fetchOne();
+        if(latest.status!=='PAUSED')throw Error('LIVE session not confirmed paused');
+        if(request===activeRef.current)setData(latest);
+      }else{
+        if(!['BTC','ETH'].includes(asset) && !validExtraPaperState(result,asset))
+          throw Error('Invalid paper response');
+        if(request===activeRef.current)setData(result);
+      }
     }catch{
       if(request===activeRef.current)setFailed(true);
     }finally{
@@ -118,6 +137,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   };
 
   const state=data?.status;
+  const liveCounters=liveMode?liveOwnerCounters(data,asset):null;
   const position=data?.position||{};
   const valuation=position.valuation||{};
   const cash=Number(position.stable_cash??0);
@@ -137,9 +157,20 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         state==='PAUSED'?t.extraPaperPaused:
         state==='NOT_STARTED'?t.extraPaperIdle:(liveMode?t.extraPaperLoadingLive:t.extraPaperLoading)}</small>
     </div>
-    {liveMode&&data&&<>
-      <p className="privy-wallet-description">Status: {data.status||'—'} · Worker: {data.worker_attached?'aktiv':'inaktiv'}</p>
-      <p className="privy-wallet-description">Swaps gesendet: {data.original_blockchain_swaps_sent||0} · Finalisiert: {data.original_blockchain_swaps_finalized||0}</p>
+    {liveMode&&data&&liveCounters&&<>
+      <p className="privy-wallet-description">
+        {t.extraPaperTitleLive}: {state==='ACTIVE'?t.extraPaperActive:
+          state==='PAUSED'?t.extraPaperPaused:t.extraPaperIdle}
+        {' · '}{data.worker_attached?'Worker: ACTIVE':'Worker: INACTIVE'}
+      </p>
+      <p className="privy-wallet-description" role="status">
+        {t.extraPaperHistory}: {liveCounters.sent} / {liveCounters.finalized}
+        {' '}(sent / finalized)
+      </p>
+      {state==='ACTIVE'&&<button type="button" className="privy-wallet-action"
+        disabled={busy} onClick={()=>command('pause')}>
+        {t.extraPaperPause} · {asset}
+      </button>}
     </>}
     {!liveMode&&loading&&<p className="privy-wallet-description">{t.extraPaperLoading}</p>}
     {failed&&<p className="privy-wallet-description" role="alert">
@@ -149,7 +180,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         onClick={()=>command('start')}>
         {t.extraPaperStart} · {asset}
       </button>}
-    {['ACTIVE','PAUSED'].includes(state)&&<>
+    {!liveMode&&['ACTIVE','PAUSED'].includes(state)&&<>
       <div className="mininex-extra-paper-balances">
         <div><span>{t.extraPaperBudget}</span><strong>{fmt(data.budget_usd)} $</strong></div>
         <div><span>{t.extraPaperCash}</span>

@@ -61,3 +61,35 @@ export function extraPaperCanStart(options){
     MODES.has(options?.mode)&&HORIZONS.has(options?.horizon)&&
     STABLES.has(options?.stable);
 }
+
+const LIVE_NATIVE_COINS=new Set(['BTC','SOL','XRP','TRX']);
+const LIVE_EVM_COINS=new Set(['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB']);
+
+// A native Privy wallet must never be treated as an EVM LIVE auto-session.
+export function liveOwnerSessionPath(asset){
+  if(LIVE_NATIVE_COINS.has(asset))
+    return '/api/live/native/auto-session/'+asset;
+  if(LIVE_EVM_COINS.has(asset))
+    return '/api/live/evm/auto-session/'+asset;
+  return null;
+}
+export function validLiveOwnerSession(data,asset){
+  const native=LIVE_NATIVE_COINS.has(asset);
+  const evm=LIVE_EVM_COINS.has(asset);
+  if(!(native||evm)||!data||data.asset!==asset||
+     data.mode!==(native?'OWNER_NATIVE_LIVE_SESSION_CONTROL':'OWNER_EVM_LIVE_SESSION_CONTROL')||
+     !['NOT_STARTED','ACTIVE','PAUSED'].includes(data.status)||
+     typeof data.worker_attached!=='boolean')return false;
+  const sent=native?data.original_blockchain_sources_sent:data.original_blockchain_swaps_sent;
+  const finalized=native?data.original_native_payouts_finalized:data.original_blockchain_swaps_finalized;
+  return Number.isSafeInteger(sent)&&sent>=0&&
+    Number.isSafeInteger(finalized)&&finalized>=0&&finalized<=sent;
+}
+export function liveOwnerCounters(data,asset){
+  if(!validLiveOwnerSession(data,asset))return null;
+  const native=LIVE_NATIVE_COINS.has(asset);
+  return {
+    sent:native?data.original_blockchain_sources_sent:data.original_blockchain_swaps_sent,
+    finalized:native?data.original_native_payouts_finalized:data.original_blockchain_swaps_finalized,
+  };
+}

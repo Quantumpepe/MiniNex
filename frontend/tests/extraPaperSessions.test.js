@@ -10,6 +10,31 @@ test('BTC and ETH started paper budgets display as numbers, not unformatted stri
   assert.match(control,/fmt\(data\.budget_usd\)/);
 });
 
-test('placeholder',()=>{
-  assert.ok(true);
+import {liveOwnerSessionPath,validLiveOwnerSession,liveOwnerCounters}
+  from '../src/extraPaperRules.js';
+
+test('XRP BTC SOL TRX use native LIVE status; EVM coins stay on EVM API',()=>{
+  for(const coin of ['BTC','SOL','XRP','TRX'])
+    assert.equal(liveOwnerSessionPath(coin),
+      '/api/live/native/auto-session/'+coin);
+  for(const coin of ['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB'])
+    assert.equal(liveOwnerSessionPath(coin),
+      '/api/live/evm/auto-session/'+coin);
+  assert.equal(liveOwnerSessionPath('DOGE'),null);
+  const native={mode:'OWNER_NATIVE_LIVE_SESSION_CONTROL',
+    asset:'XRP',status:'ACTIVE',worker_attached:true,
+    original_blockchain_sources_sent:2,original_native_payouts_finalized:1};
+  assert.equal(validLiveOwnerSession(native,'XRP'),true);
+  assert.deepEqual(liveOwnerCounters(native,'XRP'),{sent:2,finalized:1});
+  assert.equal(validLiveOwnerSession(native,'ETH'),false);
+  assert.equal(validLiveOwnerSession({...native,asset:'ETH'},'ETH'),false);
+  assert.match(control,/API_BASE\+\(liveMode\?livePath:paperPath\+asset\)/);
+  assert.match(control,/!liveMode&&\['ACTIVE','PAUSED'\]/);
+  assert.match(control,/fetchOne\(\)/);
+});
+
+test('real LIVE controls never start paper sessions or treat PAPER as receipts',()=>{
+  assert.doesNotMatch(control,/liveMode&&action==='start'/);
+  assert.match(control,/if\(liveMode&&action!=='pause'\)return/);
+  assert.match(control,/liveOwnerSessionPath\(asset\)\+'\/pause'/);
 });
