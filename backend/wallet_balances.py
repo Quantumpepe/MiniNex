@@ -235,24 +235,24 @@ async def get_wallet_balances(did: str) -> dict:
                         # A malformed explorer response only invalidates that
                         # source; zero must never be invented on exceptions.
                         continue
-                if eth and (balances["ETH"]["status"]=="unavailable"
-                            or balances["USDC"]["status"]=="unavailable"
-                            or balances["USDT"]["status"]=="unavailable"):
-                    # Unused Ethereum addresses often have coin_balance:null.
-                    # Ask a known mainnet JSON-RPC for actual zero / token
-                    # balances instead of marking the whole wallet missing.
+                if eth:
+                    # Explorer token-balance indexes can lag finalized incoming
+                    # USDC/USDT transfers. Always read canonical balanceOf()
+                    # from Ethereum mainnet, preferring its successful result
+                    # to a possibly stale explorer value. Explorer remains a
+                    # read-only fallback if the RPC is unavailable.
+                    # ETH coin balance still uses RPC only when needed.
                     try:
-                        fallback=await _ethereum_fallback(
+                        latest=await _ethereum_fallback(
                             client,eth,
                             balances["ETH"]["status"]=="unavailable",
-                            balances["USDC"]["status"]=="unavailable"
-                            or balances["USDT"]["status"]=="unavailable",
+                            True,
                         )
-                        for asset,quantity in fallback.items():
+                        for asset,quantity in latest.items():
                             balances[asset]["balance"]=quantity
                             balances[asset]["status"]="verified"
                     except (ValueError,httpx.HTTPError):
-                        pass  # Keep "unavailable" if the fallback also fails.
+                        pass  # Keep independently verified explorer readings.
         except (httpx.HTTPError,ValueError,TypeError,OverflowError):
             pass  # Never label unknown explorer balances as verified zero.
 
