@@ -22,6 +22,19 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   // finalized. No manual app restart, local subtraction or synthetic balance.
   useEffect(()=>onConfirmedWalletTransfer(userId,()=>setRequest(n=>n+1)),[userId]);
 
+  // Returning from background or another wallet app should update real
+  // on-chain balances immediately, without closing/reopening MiniNex.
+  useEffect(()=>{
+    if(!userId)return;
+    const refreshVisible=()=>{if(!document.hidden)setRequest(n=>n+1);};
+    window.addEventListener('focus',refreshVisible);
+    document.addEventListener('visibilitychange',refreshVisible);
+    return()=>{
+      window.removeEventListener('focus',refreshVisible);
+      document.removeEventListener('visibilitychange',refreshVisible);
+    };
+  },[userId]);
+
   useEffect(()=>{
     if(!userId){setBalances(null);setStatus('idle');return;}
     let current=true;
