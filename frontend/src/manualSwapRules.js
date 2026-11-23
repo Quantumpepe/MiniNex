@@ -1,5 +1,3 @@
-import {coinBySymbol} from './coins.js';
-
 // Input gate for manual swap quote PREVIEWS only. No wallet operations.
 export const MANUAL_SWAP_ASSETS = Object.freeze([
   'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','DOGE','UNI','ARB','USDC','USDT',
