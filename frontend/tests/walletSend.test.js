@@ -134,8 +134,8 @@ test('send UI uses current Privy-owned wallet, explicit send tap and no automati
   assert.match(sender,/method:'eth_getTransactionReceipt'/);
   assert.match(sender,/method:'eth_getTransactionByHash'/);
   assert.match(sender,/verifiedSendTransaction\(review,onChain,txHash\)/);
-  assert.match(sender,/receiptAttempts\.current>=3/);
-  assert.match(sender,/\},12000\)/);
+  assert.match(sender,/receiptAttempts\.current>=25/);
+  assert.match(sender,/receiptAttempts\.current<5\?12000:20000/);
   assert.match(sender,/walletSendAutoReceipt/);
   assert.doesNotMatch(sender,/onClick=\{verifyReceipt\}/);
   assert.match(sender,/let broadcastAttempted=false/);
