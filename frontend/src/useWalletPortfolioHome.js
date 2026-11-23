@@ -62,8 +62,16 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       if(inFlight)refreshQueued=true;
       else void sync();
     });
+    const refreshWhenVisible=()=>{if(!document.hidden)void sync();};
+    window.addEventListener('focus',refreshWhenVisible);
+    document.addEventListener('visibilitychange',refreshWhenVisible);
     const interval=window.setInterval(sync,20000);
-    return ()=>{active=false;unsubscribe();window.clearInterval(interval);for(const c of controllers)c.abort();};
+    return ()=>{
+      active=false;unsubscribe();window.clearInterval(interval);
+      window.removeEventListener('focus',refreshWhenVisible);
+      document.removeEventListener('visibilitychange',refreshWhenVisible);
+      for(const c of controllers)c.abort();
+    };
   },[visible,ready,authenticated,did,getAccessToken,refreshNonce]);
   const matched=state.did===did&&ready&&authenticated;
   const summary=useMemo(()=>matched? summarizeVerifiedWalletPortfolio(
