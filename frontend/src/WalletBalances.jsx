@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from 'react';
-import {RefreshCcw} from 'lucide-react';
+import {RefreshCcw,Send} from 'lucide-react';
+import WalletSend from './WalletSend.jsx';
 import {API_BASE} from './data.js';
 import {ASSETS,validateWalletBalanceResponse} from './walletBalanceValidation.js';
 import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
@@ -8,6 +9,7 @@ import {NATIVE_COINS,validNativeBalanceResponse} from './nativeBalanceValidation
 
 export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   const [request,setRequest]=useState(0);
+  const [sendStable,setSendStable]=useState(null);
   const [status,setStatus]=useState('loading');
   const [balances,setBalances]=useState(null);
   const [evmBalances,setEvmBalances]=useState(null);
@@ -141,8 +143,19 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
           <strong>{asset}</strong>
           <span className="mininex-stablecoin-value" role="status">{stableBalance(asset)}</span>
         </span>
+        <button type="button" className="mininex-stablecoin-send"
+          aria-label={(t.walletSendTitle||'Senden')+' '+asset}
+          aria-expanded={sendStable===asset}
+          onClick={()=>setSendStable(current=>current===asset?null:asset)}>
+          <Send size={16} aria-hidden="true"/> {t.walletSendTitle||'Senden'}
+        </button>
       </div>)}
     </div>
+    {sendStable&&<div className="mininex-stablecoin-send-panel" key={userId+':'+sendStable}>
+      <strong>{sendStable} · Ethereum Mainnet</strong>
+      <WalletSend t={t} enabled={true} userId={userId}
+        initialCoin={sendStable} lockedCoin/>
+    </div>}
     <button type="button" className="mininex-stablecoin-refresh"
       onClick={()=>setRequest(n=>n+1)} disabled={loading}
       title={t.privyBalancesRefresh} aria-label={t.privyBalancesRefresh}>
