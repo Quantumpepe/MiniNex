@@ -2554,15 +2554,53 @@ async def submit_signed_xrp_transfer(
 
 
 @app.post("/api/wallet/send/trx")
-async def send_trx(
+async def send_trx_legacy_requires_user_signature(
+    authorization: str | None = Header(default=None),
+):
+    """Do not attempt unauthorised server-side signing of user-owned TRX."""
+    verify_privy_bearer(authorization)
+    raise HTTPException(409, "Update MiniNex to approve TRX sending in your Privy wallet")
+
+
+@app.post("/api/wallet/send/trx/prepare")
+async def prepare_trx_transfer(
     body: dict,
     authorization: str | None = Header(default=None),
 ):
-    """Manual TRX transfer from the verified Privy account's own wallet."""
-    from .native_trx_manual_send import send_manual_trx
-    user = verify_privy_bearer(authorization)
-    result = await send_manual_trx(
-        user["user_id"], source=body.get("from"),
-        destination=body.get("to"), amount=body.get("amount"),
+    """Build an exact TRON payment for the authenticated user's signature."""
+    from .native_trx_user_signed_send import prepare_owner_trx
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        await prepare_owner_trx(did,source=body.get("from"),
+                                destination=body.get("to"),amount=body.get("amount")),
+        headers={"Cache-Control":"private, no-store"},
     )
-    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/api/wallet/send/trx/submit")
+async def submit_signed_trx_transfer(
+    body: dict,
+    authorization: str | None = Header(default=None),
+):
+    """Verify the owner-created signature, then broadcast the bound transfer."""
+    from .native_trx_user_signed_send import submit_owner_signed_trx
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        await submit_owner_signed_trx(did,authorization=body.get("authorization"),
+                                      signature=body.get("signature")),
+        headers={"Cache-Control":"private, no-store"},
+    )
+
+
+@app.get("/api/wallet/send/trx/receipt/{txid}")
+async def read_verified_trx_manual_receipt(
+    txid: str,
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated sender-scoped final TRON transaction receipt."""
+    from .native_trx_user_signed_send import confirmed_owner_trx
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(
+        await confirmed_owner_trx(did,txid),
+        headers={"Cache-Control":"private, no-store"},
+    )
