@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {useWallets} from '@privy-io/react-auth';
 import {Send} from 'lucide-react';
 import {COINS} from './coins.js';
+import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,buildEvmSendTransaction,readRpcQuantity,rpcHex,
   maxSendUnits,reviewEvmSend,verifiedSendReceipt,providerOwnsAddress,
@@ -226,7 +227,10 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
         setError(t.walletSendReceiptFailed);
         return;
       }
-      setPhase(receipt.status==='0x1'?'confirmed':'reverted');
+      if(receipt.status==='0x1'){
+        setPhase('confirmed');
+        notifyConfirmedWalletTransfer(receiptUser,coin,txHash);
+      }else setPhase('reverted');
     }catch{if(currentUser.current===receiptUser)setError(t.walletSendReceiptFailed);}
     finally{if(currentUser.current===receiptUser)setBusy(false);}
   }
