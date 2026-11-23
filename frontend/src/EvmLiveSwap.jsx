@@ -69,7 +69,24 @@ export default function EvmLiveSwap({
         ...(method==='POST'?{'Content-Type':'application/json'}:{})},
       ...(body?{body:JSON.stringify(body)}:{}),
     });
-    if(!response.ok)throw Error('Verified on-chain swap quote unavailable');
+    if(!response.ok){
+      // Preserve the backend's narrow failure stage without exposing RPC
+      // credentials, wallet details, tokens or accidental fallback quotes.
+      const detail=await response.json().then(d=>d?.detail).catch(()=>null);
+      const messages={
+        'Actual mainnet EVM V3 quote unavailable':lang==='de'
+          ?'Kein bestätigter DEX-Kurs verfügbar (Polygon-Pool/RPC). Kein Swap gesendet.'
+          :'No verified DEX price available (Polygon pool/RPC). No swap sent.',
+        'Verified EVM source allowance unavailable':lang==='de'
+          ?'Wallet-Guthaben oder Token-Freigabe nicht abrufbar. Kein Swap gesendet.'
+          :'Wallet funds or token approval could not be checked. No swap sent.',
+        'EVM swap quote and wallet proofs do not match':lang==='de'
+          ?'DEX-Kurs und Wallet-Nachweis passen nicht zusammen. Kein Swap gesendet.'
+          :'DEX quote and wallet proof differ. No swap sent.',
+      };
+      throw Error(typeof detail==='string'&&messages[detail]
+        ?messages[detail]:'Verified on-chain swap quote unavailable');
+    }
     return response.json();
   }
   async function refreshRealHistory(){

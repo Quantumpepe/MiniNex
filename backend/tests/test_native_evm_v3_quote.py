@@ -171,3 +171,31 @@ def test_native_evm_endpoint_is_authenticated_and_does_not_broadcast():
     assert "verify_privy_bearer" in text
     assert "quote_native_evm_trade" in text
     assert "broadcast_privy" not in text
+
+
+def test_polygon_quote_uses_independent_read_only_rpc_if_first_endpoint_fails(
+    monkeypatch, evm_chain,
+):
+    preferred=evm._RPC["POL"][2]
+    alternate=evm._POLYGON_QUOTE_FALLBACK
+    assert evm._read_rpc_candidates("POL",preferred)==(preferred,alternate)
+    assert evm._read_rpc_candidates("BNB",preferred)==(preferred,)
+    assert evm._read_rpc_candidates("POL",alternate)==(alternate,)
+    original=evm._rpc
+    observed=[]
+    async def fail_preferred_then_read_other(client,url,method,params,rid):
+        observed.append((url,method))
+        if url==preferred:
+            raise ValueError("Rate-limited primary public RPC")
+        assert url==alternate
+        # Fixture models valid chain-specific mainnet results on the
+        # alternate RPC. No signatures or mock liquidity is returned to LIVE.
+        return await original(client,preferred,method,params,rid)
+    monkeypatch.setattr(evm,"_rpc",fail_preferred_then_read_other)
+    result=asyncio.run(evm.quote_native_evm_trade(
+        DID,asset="POL",side="SELL",stable="USDC",amount="25",
+        include_user_transaction=True))
+    assert result["onchain_quote_verified"] is True
+    assert result["chain_id"]==137
+    assert any(url==preferred for url,_ in observed)
+    assert any(url==alternate for url,_ in observed)

@@ -16,7 +16,7 @@ from fastapi import HTTPException
 
 from .live_eth_quotes import _quantity
 from .multicoin_evm_balances import _RPC
-from .native_evm_v3_quote import _rpc, _decode_quantity
+from .native_evm_v3_quote import _rpc, _decode_quantity, _read_rpc_candidates
 from .privy_wallet_verification import fetch_privy_user
 from .wallet_balances import verified_addresses
 from .shared_evm_swap_receipts import _pair
@@ -81,38 +81,43 @@ async def check_evm_source_allowance(
 
     owner_word=_word(wallet)
     spender_word=_word(router)
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(9),follow_redirects=False,
-        ) as client:
-            chain_hex=await _rpc(client,url,"eth_chainId",[],1)
-            if _decode_quantity(chain_hex)!=chain:
-                raise ValueError("Wrong actual EVM network")
-            source_balance_call=_rpc(client,url,"eth_call",[
-                {"to":source,
-                 "data":_BALANCE_SELECTOR+owner_word},"latest"],2)
-            allowance_call=_rpc(client,url,"eth_call",[
-                {"to":source,
-                 "data":_ALLOWANCE_SELECTOR+owner_word+spender_word},"latest"],3)
-            gas_call=_rpc(client,url,"eth_getBalance",[wallet,"latest"],4)
-            # A BUY's output-token holdings are already owned capital.
-            # Fetch them in the SAME RPC batch, avoiding another full
-            # owner/chain round trip before the live budget reservation.
-            if side=="BUY":
-                balances=await asyncio.gather(
-                    source_balance_call,allowance_call,gas_call,
-                    _rpc(client,url,"eth_call",[
-                        {"to":destination,
-                         "data":_BALANCE_SELECTOR+owner_word},"latest"],5))
-            else:
-                balances=await asyncio.gather(
-                    source_balance_call,allowance_call,gas_call)
-        balance=_decode_quantity(balances[0],word=True)
-        allowance=_decode_quantity(balances[1],word=True)
-        native=_decode_quantity(balances[2])
-        destination_balance=(
-            _decode_quantity(balances[3],word=True) if side=="BUY" else None)
-    except (httpx.HTTPError,ValueError,TypeError,OverflowError):
+    for url in _read_rpc_candidates(asset,url):
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(9),follow_redirects=False,
+            ) as client:
+                chain_hex=await _rpc(client,url,"eth_chainId",[],1)
+                if _decode_quantity(chain_hex)!=chain:
+                    raise ValueError("Wrong actual EVM network")
+                source_balance_call=_rpc(client,url,"eth_call",[
+                    {"to":source,
+                     "data":_BALANCE_SELECTOR+owner_word},"latest"],2)
+                allowance_call=_rpc(client,url,"eth_call",[
+                    {"to":source,
+                     "data":_ALLOWANCE_SELECTOR+owner_word+spender_word},"latest"],3)
+                gas_call=_rpc(client,url,"eth_getBalance",[wallet,"latest"],4)
+                # A BUY's output-token holdings are already owned capital.
+                # Fetch them in the SAME RPC batch, avoiding another full
+                # owner/chain round trip before the live budget reservation.
+                if side=="BUY":
+                    balances=await asyncio.gather(
+                        source_balance_call,allowance_call,gas_call,
+                        _rpc(client,url,"eth_call",[
+                            {"to":destination,
+                             "data":_BALANCE_SELECTOR+owner_word},"latest"],5))
+                else:
+                    balances=await asyncio.gather(
+                        source_balance_call,allowance_call,gas_call)
+            balance=_decode_quantity(balances[0],word=True)
+            allowance=_decode_quantity(balances[1],word=True)
+            native=_decode_quantity(balances[2])
+            destination_balance=(
+                _decode_quantity(balances[3],word=True) if side=="BUY" else None)
+        except (httpx.HTTPError,ValueError,TypeError,OverflowError):
+            continue
+        else:
+            break
+    else:
         raise HTTPException(502,"Verified EVM source allowance unavailable") from None
 
     needed=int(amount_atomic)

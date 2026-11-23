@@ -170,3 +170,46 @@ def test_api_is_authenticated_and_never_signs():
     assert "verify_privy_bearer" in text
     assert "prepare_owner_evm_swap" in text
     assert "broadcast_privy" not in text
+
+
+def test_polygon_source_and_allowance_uses_second_verified_rpc_only_on_read_failure(
+    monkeypatch,
+):
+    from backend import shared_evm_allowance as source
+    from backend import native_evm_v3_quote as evm
+    preferred=evm._RPC["POL"][2]
+    alternate=evm._POLYGON_QUOTE_FALLBACK
+    seen=[]
+    async def owned(did):
+        return {"id":did}
+    async def json_rpc(client,url,method,params,rid):
+        seen.append((url,method))
+        if url==preferred:
+            raise ValueError("Primary provider gave malformed RPC data")
+        assert url==alternate
+        if method=="eth_chainId":
+            return "0x89"
+        if method=="eth_getBalance":
+            return hex(10**18)
+        if method=="eth_call":
+            return "0x"+format(0, "064x")
+        raise AssertionError(method)
+    class NoNetwork:
+        def __init__(self,**kwargs):
+            assert kwargs["follow_redirects"] is False
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+    monkeypatch.setattr(source,"fetch_privy_user",owned)
+    monkeypatch.setattr(source,"verified_addresses",
+                        lambda user,did:{"ETH":WALLET})
+    monkeypatch.setattr(source,"_rpc",json_rpc)
+    monkeypatch.setattr(source.httpx,"AsyncClient",NoNetwork)
+    status=asyncio.run(source.check_evm_source_allowance(
+        "did:privy:sample",asset="POL",side="SELL",
+        stable="USDC",amount="25"))
+    assert status["asset"]=="POL"
+    assert status["chain_id"]==137
+    assert status["source_funds_sufficient"] is False
+    assert status["native_gas_available"] is True
+    assert any(url==preferred for url,_ in seen)
+    assert any(url==alternate for url,_ in seen)

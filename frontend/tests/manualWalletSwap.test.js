@@ -105,3 +105,10 @@ test('Android OTA reload resumes original EVM receipt without broadcasting a rep
   assert.match(signer,/recorded\.side!==pairSide/);
   assert.match(signer,/recorded\.stable!==pairStable/);
 });
+
+test('manual EVM price failures show distinct quoted RPC and allowance stages',()=>{
+  assert.match(signer,/Actual mainnet EVM V3 quote unavailable/);
+  assert.match(signer,/Verified EVM source allowance unavailable/);
+  assert.match(signer,/EVM swap quote and wallet proofs do not match/);
+  assert.match(signer,/Kein Swap gesendet/);
+});

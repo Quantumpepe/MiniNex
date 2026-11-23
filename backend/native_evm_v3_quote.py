@@ -108,6 +108,17 @@ def build_native_v3_transaction(*,asset:str,stable:str,side:str,
     )
 
 
+# Fallback is read-only; the second Polygon RPC verifies the same chain and
+# deployed contracts. No signer, authorization or broadcast is retried here.
+_POLYGON_QUOTE_FALLBACK = "https://polygon.drpc.org"
+
+
+def _read_rpc_candidates(asset: str, preferred: str) -> tuple[str, ...]:
+    if asset != "POL" or preferred == _POLYGON_QUOTE_FALLBACK:
+        return (preferred,)
+    return (preferred, _POLYGON_QUOTE_FALLBACK)
+
+
 async def _rpc(client:httpx.AsyncClient,url:str,method:str,
                params:list,rid:int)->str:
     response=await client.post(
@@ -163,73 +174,81 @@ async def quote_native_evm_trade(
     if not rpc_url.startswith("https://") or any(ch in rpc_url for ch in " \n\t#@"):
         raise HTTPException(503,"Secure EVM network RPC required")
 
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(9),follow_redirects=False,
-        ) as client:
-            observed=_decode_quantity(
-                await _rpc(client,rpc_url,"eth_chainId",[],1))
-            if observed!=route.chain_id:
-                raise ValueError("EVM RPC answered with wrong chain")
-            # Both contracts must be deployed, not user-provided addresses.
-            for rid,contract in enumerate(
-                (route.router,route.quoter,route.stable_contract,route.wrapped),
-                start=2,
-            ):
-                code=await _rpc(client,rpc_url,"eth_getCode",[contract,"latest"],rid)
-                if (type(code) is not str or not re.fullmatch(
-                        r"0x(?:[0-9a-fA-F]{2})+",code) or code=="0x"):
-                    raise ValueError("EVM verified route contract not deployed")
-            precision=await _rpc(client,rpc_url,"eth_call",[
-                {"to":route.stable_contract,"data":"0x313ce567"},"latest"
-            ],6)
-            if _decode_quantity(precision,word=True)!=route.stable_decimals:
-                raise ValueError("Wrong settlement token decimals on this chain")
-            native=_decode_quantity(
-                await _rpc(client,rpc_url,"eth_getBalance",[wallet,"latest"],7))
-            if native<=0:
-                raise HTTPException(409,"Insufficient native coin for network gas")
-            source=route.stable_contract if side=="BUY" else route.wrapped
-            balance=await _token_balance(client,rpc_url,source,wallet,8)
-            source_funded=balance>=int(atomic)
-            # A manual native-coin SELL can begin with unwrapped BNB/POL/AVAX.
-            # Return the actual V3 pool quote so the owner's separate signed
-            # wrap step can be offered. The shared preparation still withholds
-            # swap calldata until wrapped funds and allowance are verified.
-            native_wrap_preparation=(
-                include_user_transaction and side=="SELL"
-                and asset in ("BNB","POL","AVAX")
+    for rpc_url in _read_rpc_candidates(asset,rpc_url):
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(9),follow_redirects=False,
+            ) as client:
+                observed=_decode_quantity(
+                    await _rpc(client,rpc_url,"eth_chainId",[],1))
+                if observed!=route.chain_id:
+                    raise ValueError("EVM RPC answered with wrong chain")
+                # Both contracts must be deployed, not user-provided addresses.
+                for rid,contract in enumerate(
+                    (route.router,route.quoter,route.stable_contract,route.wrapped),
+                    start=2,
+                ):
+                    code=await _rpc(client,rpc_url,"eth_getCode",[contract,"latest"],rid)
+                    if (type(code) is not str or not re.fullmatch(
+                            r"0x(?:[0-9a-fA-F]{2})+",code) or code=="0x"):
+                        raise ValueError("EVM verified route contract not deployed")
+                precision=await _rpc(client,rpc_url,"eth_call",[
+                    {"to":route.stable_contract,"data":"0x313ce567"},"latest"
+                ],6)
+                if _decode_quantity(precision,word=True)!=route.stable_decimals:
+                    raise ValueError("Wrong settlement token decimals on this chain")
+                native=_decode_quantity(
+                    await _rpc(client,rpc_url,"eth_getBalance",[wallet,"latest"],7))
+                if native<=0:
+                    raise HTTPException(409,"Insufficient native coin for network gas")
+                source=route.stable_contract if side=="BUY" else route.wrapped
+                balance=await _token_balance(client,rpc_url,source,wallet,8)
+                source_funded=balance>=int(atomic)
+                # A manual native-coin SELL can begin with unwrapped BNB/POL/AVAX.
+                # Return the actual V3 pool quote so the owner's separate signed
+                # wrap step can be offered. The shared preparation still withholds
+                # swap calldata until wrapped funds and allowance are verified.
+                native_wrap_preparation=(
+                    include_user_transaction and side=="SELL"
+                    and asset in ("BNB","POL","AVAX")
+                )
+                if not source_funded and not native_wrap_preparation:
+                    raise HTTPException(
+                        409,"Insufficient verified ERC20 source balance; native wrap may be needed")
+                token_in=source
+                token_out=route.wrapped if side=="BUY" else route.stable_contract
+                results=await asyncio.gather(*(
+                    _rpc(client,rpc_url,"eth_call",[
+                        {"to":route.quoter,"data":_quote_calldata(
+                            token_in=token_in,token_out=token_out,
+                            amount=int(atomic),fee=fee,
+                        )},"latest"
+                    ],fee) for fee in _FEES
+                ),return_exceptions=True)
+            candidates=[]
+            for fee,raw in zip(_FEES,results):
+                if isinstance(raw,str):
+                    try:
+                        output,gas=_decode_quote(raw)
+                        candidates.append((fee,output,gas))
+                    except (TypeError,ValueError):
+                        continue
+            if not candidates:
+                raise ValueError("No verified Uniswap V3 pool quote")
+            fee,expected,gas=max(candidates,key=lambda t:(t[1],-t[2],-t[0]))
+            minimum=max(1,expected*(10_000-_SLIPPAGE_BPS)//10_000)
+            tx=build_native_v3_transaction(
+                asset=asset,stable=stable,side=side,wallet=wallet,
+                amount_in=int(atomic),min_out=minimum,fee=fee,
             )
-            if not source_funded and not native_wrap_preparation:
-                raise HTTPException(
-                    409,"Insufficient verified ERC20 source balance; native wrap may be needed")
-            token_in=source
-            token_out=route.wrapped if side=="BUY" else route.stable_contract
-            results=await asyncio.gather(*(
-                _rpc(client,rpc_url,"eth_call",[
-                    {"to":route.quoter,"data":_quote_calldata(
-                        token_in=token_in,token_out=token_out,
-                        amount=int(atomic),fee=fee,
-                    )},"latest"
-                ],fee) for fee in _FEES
-            ),return_exceptions=True)
-        candidates=[]
-        for fee,raw in zip(_FEES,results):
-            if isinstance(raw,str):
-                try:
-                    output,gas=_decode_quote(raw)
-                    candidates.append((fee,output,gas))
-                except (TypeError,ValueError):
-                    continue
-        if not candidates:
-            raise ValueError("No verified Uniswap V3 pool quote")
-        fee,expected,gas=max(candidates,key=lambda t:(t[1],-t[2],-t[0]))
-        minimum=max(1,expected*(10_000-_SLIPPAGE_BPS)//10_000)
-        tx=build_native_v3_transaction(
-            asset=asset,stable=stable,side=side,wallet=wallet,
-            amount_in=int(atomic),min_out=minimum,fee=fee,
-        )
-    except (httpx.HTTPError,TypeError,ValueError,OverflowError):
+        except (httpx.HTTPError,TypeError,ValueError,OverflowError):
+            # Retry only an unsigned, read-only quote if the preferred RPC
+            # cannot establish a valid pool price. A missing real pool stays
+            # unavailable; no simulated rate or signed transaction is used.
+            continue
+        else:
+            break
+    else:
         raise HTTPException(502,"Actual mainnet EVM V3 quote unavailable") from None
 
     return {
