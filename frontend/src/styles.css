@@ -342,6 +342,12 @@
   .compact-wallet-values strong{font-size:clamp(19px,5.4vw,29px);font-weight:850;letter-spacing:-.7px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .compact-wallet-values>span{font-size:12px;font-weight:800;white-space:nowrap}
   .compact-wallet-values small{color:#9ab7b3;font-size:10px;line-height:1.3}
+  /* Keep all coin holdings readable without growing the main phone page. */
+  .compact-wallet-values .compact-wallet-holdings{
+    display:block;max-height:42px;overflow-y:auto;overscroll-behavior:contain;
+    overflow-wrap:anywhere;scrollbar-width:none;
+  }
+  .compact-wallet-values .compact-wallet-holdings::-webkit-scrollbar{display:none}
   .compact-wallet-curve{display:grid;align-items:center;height:54px;min-width:0}
   .compact-wallet-curve svg{width:100%;height:54px;display:block}
   .compact-wallet-no-curve{font-size:10px;text-align:center;color:#709d94}

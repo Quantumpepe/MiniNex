@@ -47,7 +47,7 @@ test('read-only wallet data, PAPER settings and HWM stay separate',()=>{
   assert.match(wallet,/capabilities\.real_trading_enabled===false/);
   assert.match(wallet,/capabilities\.automated_signing_enabled===false/);
   assert.match(balances,/validateWalletBalanceResponse\(data\)/);
-  assert.match(balances,/record\.balance\+' '\+asset/);
+  assert.match(balances,/formatAssetQuantity\(record\.balance,asset\)/);
   assert.match(balances,/<section className="mininex-stablecoin-holdings"/);
   assert.match(balances,/className="mininex-stablecoin-tiles"/);
   assert.doesNotMatch(wallet+setup+balances,/sendTransaction\(|sendBitcoin\(|signMessage\(|delegateWallet\(|privateKey/);

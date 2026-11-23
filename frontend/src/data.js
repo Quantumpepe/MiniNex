@@ -34,6 +34,19 @@ export function formatMoney(value, lang = 'en', digits = 2) {
   return `${formatNumber(v, lang, digits)} $`;
 }
 
+// Display precision only. Never feed a formatted/rounded value into trade,
+// wallet, fee, source-balance, quote or blockchain transaction calculations.
+// Polygon's POL (including its wrapped display WPOL) uses 3 places everywhere.
+export function formatAssetMoney(value, asset, lang = 'en') {
+  return formatMoney(value, lang, asset==='POL'||asset==='WPOL'?3:2);
+}
+
+export function formatAssetQuantity(value, asset, lang = 'en') {
+  if (asset==='POL'||asset==='WPOL') return formatNumber(value, lang, 3);
+  if (value===undefined||value===null||value==='') return '—';
+  return String(value);
+}
+
 export function formatCoin(value, lang = 'en') {
   const v = cleanNumber(value);
   if (v === null) return '—';

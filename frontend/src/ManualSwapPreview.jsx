@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ArrowLeftRight} from 'lucide-react';
-import {API_BASE} from './data.js';
+import {API_BASE,formatAssetQuantity,formatNumber} from './data.js';
 import {COINS} from './coins.js';
 import EthLiveSwap from './EthLiveSwap.jsx';
 import EvmLiveSwap from './EvmLiveSwap.jsx';
@@ -215,18 +215,19 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
       {expired&&<p className="privy-wallet-description" role="status">{t.walletSwapExpired}</p>}
       {quoteCurrent&&<div className="mininex-swap-quote" role="status">
         <div className="mininex-swap-summary">
-          <span>{t.walletSwapFrom}: <b>{quote.request.body.amount} {quote.request.from}</b></span>
-          <span>{t.walletSwapTo}: <b>{estimated} {quote.request.to}</b></span>
+          <span>{t.walletSwapFrom}: <b>{formatAssetQuantity(quote.request.body.amount,quote.request.from,lang)} {quote.request.from}</b></span>
+          <span>{t.walletSwapTo}: <b>{formatAssetQuantity(estimated,quote.request.to,lang)} {quote.request.to}</b></span>
         </div>
         {unitRate!=null&&<div>{t.walletSwapRate}: <b>
-          1 {quote.request.from} ≈ {new Intl.NumberFormat(
-            lang==='de'?'de-CH':'en-US',{maximumFractionDigits:8}
-          ).format(unitRate)} {quote.request.to}
+          1 {quote.request.from} ≈ {(quote.request.from==='POL'||quote.request.to==='POL')
+            ?formatNumber(unitRate,lang,3)
+            :new Intl.NumberFormat(lang==='de'?'de-CH':'en-US',{
+              maximumFractionDigits:8}).format(unitRate)} {quote.request.to}
         </b></div>}
         {quote.request.coin==='ETH'
           ? <div>{t.walletSwapSlippage}: <b>{quote.data.slippage_tolerance_pct}%</b></div>
           : <div>{t.walletSwapPriceImpact}: <b>{(quote.data.quoted_price_impact_bps/100).toFixed(2)}%</b></div>}
-        {minimum&&<div>{t.walletSwapMinimum}: <b>{minimum} {quote.request.to}</b></div>}
+        {minimum&&<div>{t.walletSwapMinimum}: <b>{formatAssetQuantity(minimum,quote.request.to,lang)} {quote.request.to}</b></div>}
         {quote.request.coin==='MULTICHAIN'&&<>
           <button type="button" className="privy-wallet-action"
             disabled aria-disabled="true">{t.walletSwapAction}</button>

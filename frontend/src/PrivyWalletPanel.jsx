@@ -3,7 +3,7 @@ import {usePrivy, useWallets} from '@privy-io/react-auth';
 import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
 import {Copy, LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
-import {API_BASE} from './data.js';
+import {API_BASE,formatAssetQuantity} from './data.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
@@ -451,7 +451,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     const record=verifiedCoinHoldings?.[asset];
     return <span className="mininex-coin-header-balance" role="status"
       aria-label={t.privyBalancesTitle+' '+asset}>
-      {record?.status==='verified' ? record.balance+' '+asset :
+      {record?.status==='verified' ? formatAssetQuantity(record.balance,asset,lang)+' '+asset :
        record?.status==='wallet_missing' ? t.privyBalancesMissing :
        t.privyBalancesUnavailable}
     </span>;

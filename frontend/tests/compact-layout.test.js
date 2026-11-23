@@ -69,3 +69,13 @@ test('portfolio remains while redundant AUTO/PAPER/LIVE controls disappear',()=>
   assert.match(compact,/paperSparkline\(samples\)/);
   assert.doesNotMatch(compact,/LIVE.*\d{3,}/);
 });
+
+test('Portfolio card keeps only the title, actual coins and the LIVE label',()=>{
+  assert.match(compact,/const label='Portfolio'/);
+  assert.match(compact,/<span>\{label\}<\/span>/);
+  assert.match(compact,/summary\.holdings\.map\(h=>h\.asset\+' '\+formatAssetQuantity\(h\.balance,h\.asset,lang\)\)/);
+  assert.match(compact,/paperMode\?'PAPER':'LIVE'/);
+  assert.doesNotMatch(compact,/Verifizierte Wallet-Bestände|Verified wallet holdings|USD-Schätzung aus aktuellen Kursen/);
+  assert.doesNotMatch(compact,/Portfolio \(Gesamtwert\)|Portfolio \(total value\)|Beobachteter Wallet-Verlauf'<\/span>/);
+  assert.match(css,/\.compact-wallet-holdings/);
+});

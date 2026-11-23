@@ -20,7 +20,7 @@ test('all eight coin buttons have native symbols, verified-only prices and no ch
   assert.match(grid,/onClick=\{\(\)=>onSelect\(coin\.symbol\)\}/);
   assert.match(grid,/coinMarketSnapshot\(coin\.symbol,markets,syncedAt\)/);
   assert.match(grid,/t\.privyPriceUnavailable/);
-  assert.match(grid,/live\?formatMoney\(q\.price_usdt,lang\)/);
+  assert.match(grid,/live\?formatAssetMoney\(q\.price_usdt,coin\.symbol,lang\)/);
   assert.doesNotMatch(grid,/Chevron|chevron|ArrowDown|ArrowUp|RotateCcw/);
   assert.match(app,/marketSnapshot=\{market\?\.markets\} syncedAt=\{syncedAt\}/);
   assert.match(wallet,/marketSnapshot=\{marketSnapshot\} syncedAt=\{syncedAt\} lang=\{lang\}/);

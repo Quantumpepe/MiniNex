@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
-import {API_BASE,formatTimestamp} from './data.js';
+import {API_BASE,formatTimestamp,formatAssetQuantity} from './data.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
 
 function VerifiedActivity({t}) {
@@ -83,7 +83,7 @@ function VerifiedActivity({t}) {
           {activity.rows.slice(-20).reverse().map(row=><div className="tax-activity-row"
             key={row.source+'-'+row.record_id}>
             <div><strong>{row.type} · {row.asset}</strong><small>{formatTimestamp(row.date_utc,undefined,{year:'numeric',month:'2-digit',day:'2-digit'})}</small></div>
-            <div><strong>{row.quantity} {row.asset}</strong><small>{row.source==='BLOCKCHAIN'?t.taxBlockchain:t.taxMiniNexTrade}</small></div>
+            <div><strong>{formatAssetQuantity(row.quantity,row.asset)} {row.asset}</strong><small>{row.source==='BLOCKCHAIN'?t.taxBlockchain:t.taxMiniNexTrade}</small></div>
           </div>)}
         </div>}
       </>}

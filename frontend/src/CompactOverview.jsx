@@ -3,7 +3,7 @@ import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import {ArrowDownLeft, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
 import {paperSparkline} from './paperPortfolio.js';
-import {formatMoney,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
+import {formatMoney,formatAssetMoney,formatAssetQuantity,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
 import {coinBySymbol} from './coins.js';
 
@@ -45,18 +45,13 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
   // short-window sample. LIVE wallet holdings have no verified cost basis,
   // so display their price movements neutrally rather than as profit/loss.
   const color=paperMode?(positive?'#5bf2b6':'#ff9388'):'#9ebfc0';
-  const label=lang==='de'?'Portfolio (Gesamtwert)':'Portfolio (total value)';
+  const label='Portfolio';
   const chartLabel=paperMode
     ?(lang==='de'?'Beobachteter Gesamtportfolio-Verlauf':'Observed total portfolio equity')
     :(lang==='de'?'Beobachteter Wallet-Verlauf':'Observed wallet value history');
-  const prompt=!authenticated?t.homeTradesSignIn:
-    status==='loading'?t.homePortfolioLoading:
-    status==='error'?t.homePortfolioUnavailable:
-    summary&&!summary.valuationAvailable?t.homePortfolioNoPrice:
-    paperMode?t.homePortfolioNoSession:(lang==='de'?'Noch keine verifizierten Wallet-Bestände':'No verified wallet balances yet');
   return <section className="compact-wallet-portfolio" aria-label={label}>
     <div className="compact-wallet-top">
-      <span>{label} · {scope==='ALL'?t.homeAllCoins:scope}</span>
+      <span>{label}</span>
       <button type="button" className="compact-wallet-open" onClick={()=>goTo('wallet')} aria-label={t.wallet} title={t.wallet}><Wallet size={16}/></button>
     </div>
     <div className="compact-wallet-body">
@@ -66,11 +61,9 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
           ? <span className={positive?'text-positive':'text-negative'}>
               {formatSigned(summary.pnl,lang)} ({summary.pnlPct>=0?'+':''}{formatNumber(summary.pnlPct,lang,2)}%)
             </span>
-          : !summary?.valuationAvailable?<small>{prompt}</small>:null}
-        {!paperMode&&summary?.valuationAvailable&&<small>{lang==='de'?'Verifizierte Wallet-Bestände':'Verified wallet holdings'}{summary.incomplete?' · '+(lang==='de'?'Teilwert, Daten fehlen':'Partial value, data unavailable'):''}</small>}
-        {!paperMode&&summary?.holdings?.length>0&&<small>{summary.holdings.map(h=>h.asset+' '+h.balance).join(' · ')}</small>}
-        {paperMode&&summary&&<small className="home-portfolio-capital">
-          {t.homePortfolioCapital}: {formatMoney(summary.startingCapital,lang)}
+          : null}
+        {!paperMode&&summary?.holdings?.length>0&&<small className="compact-wallet-holdings">
+          {summary.holdings.map(h=>h.asset+' '+formatAssetQuantity(h.balance,h.asset,lang)).join(' · ')}
         </small>}
       </div>
       <div className="compact-wallet-curve">
@@ -84,12 +77,11 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
               <path d={chart.line} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="192" cy={chart.lastY} r="3.5" fill={color}/>
             </svg>
-          : <span className="compact-wallet-no-curve">{lang==='de'?'Verlauf wird gesammelt':'Collecting portfolio history'}</span>}
+          : null}
       </div>
     </div>
     <div className="compact-wallet-foot">
-      <span>{paperMode?'PAPER · '+(lang==='de'?'kein Echtgeld':'no real funds'):'LIVE · '+(lang==='de'?'Wallet-Bestände':'Wallet balances')}</span>
-      <span>{paperMode?(chart?chartLabel:(lang==='de'?'Werte nach geschätzten Verkaufskosten':'After estimated exit costs')):(lang==='de'?'USD-Schätzung aus aktuellen Kursen':'USD estimate at current prices')}</span>
+      <span>{paperMode?'PAPER':'LIVE'}</span>
     </div>
   </section>;
 }
@@ -138,10 +130,10 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
           <button type="button" className={period==='h1'?'on':''} aria-pressed={period==='h1'} onClick={()=>setPeriod('h1')}>1h</button>
         </div>
       </div>
-      <div className="compact-chart-price"><strong>{formatMoney(selected?.price_usdt,lang)}</strong><span className={change!=null?(Number(change)>=0?'text-positive':'text-negative'):''}>{formatChange(change)} <small>24h</small></span></div>
+      <div className="compact-chart-price"><strong>{formatAssetMoney(selected?.price_usdt,asset,lang)}</strong><span className={change!=null?(Number(change)>=0?'text-positive':'text-negative'):''}>{formatChange(change)} <small>24h</small></span></div>
       <MarketChart history={history} period={period} valid={valid} t={t} asset={asset}/>
       <div className="compact-chart-footer">
-        <span>{t.reference}</span><b>{formatMoney(valid?selected?.reference_price_usd:null,lang)}</b>
+        <span>{t.reference}</span><b>{formatAssetMoney(valid?selected?.reference_price_usd:null,asset,lang)}</b>
         <span>{t.spreadCheck}</span><b>{valid&&selected?.price_divergence_pct!=null?formatNumber(selected.price_divergence_pct,lang,3)+'%':'—'}</b>
       </div>
     </section>
@@ -169,7 +161,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
           const pnl=!buy&&trade.realized_net_profit!=null?Number(trade.realized_net_profit):null;
           return <div className="compact-trade-row" key={trade.id}>
             <span className={'compact-trade-icon '+(buy?'is-buy':'is-sell')}>{buy?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span>
-            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{t.homeTradePrice}: {formatMoney(trade.price_reference,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
+            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{t.homeTradePrice}: {formatAssetMoney(trade.price_reference,trade.asset,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
             <div className="compact-trade-value"><strong>{formatMoney(amount,lang)}</strong>{pnl!=null&&<small className={pnl>=0?'text-positive':'text-negative'}>{formatSigned(pnl,lang)}</small>}</div>
           </div>;
         })}

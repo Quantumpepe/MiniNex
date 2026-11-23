@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {useWallets} from '@privy-io/react-auth';
 import {Send} from 'lucide-react';
 import {COINS} from './coins.js';
+import {formatAssetQuantity} from './data.js';
 import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {SEND_ASSETS,sendAssetSpec,validSendAddress,exactSendUnits,
   formatSendUnits,buildEvmSendTransaction,readRpcQuantity,rpcHex,
@@ -307,7 +308,7 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
       {review&&phase==='ready'&&<div className="mininex-swap-quote" role="status">
         <strong>{t.walletSendSummary}</strong>
         <div>{t.walletSendNetwork}: {networkLabel}</div>
-        <div>{review.amount} {coin}</div>
+        <div>{formatAssetQuantity(review.amount,coin)} {coin}</div>
         <div>{t.walletSendRecipient}: {review.to}</div>
         <div>{t.walletSendFeeMax}: {formatSendUnits(review.gasCost,18)} {spec.feeSymbol}</div>
         <p className="privy-wallet-description">{t.walletSendFinalNote}</p>

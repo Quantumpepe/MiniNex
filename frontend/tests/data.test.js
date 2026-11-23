@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cleanNumber,ensurePaperOnly,validMarket,portfolioValue,limitHistory,formatNumber,formatSigned} from '../src/data.js';
+import {cleanNumber,ensurePaperOnly,validMarket,portfolioValue,limitHistory,formatNumber,formatSigned,formatAssetMoney,formatAssetQuantity,formatMoney} from '../src/data.js';
 
 test('reject real trading and wallet-enabled responses from paper UI',()=>{
   const base={mode:'PAPER_AUTO_DEMO',real_trading_enabled:false,wallet_connected:false};
@@ -37,4 +37,16 @@ test('charts cap point count without dropping latest tick',()=>{
   const out=limitHistory(arr,6000,14000);
   assert(out.length<=251);
   assert.equal(out.at(-1).timestamp,13999);
+});
+
+test('POL displays exactly three decimals, while original values remain untouched',()=>{
+  assert.equal(formatAssetMoney('0.07745','POL','de'),'0.077 $');
+  assert.equal(formatAssetMoney('0.07752','POL','de'),'0.078 $');
+  assert.equal(formatAssetQuantity('25.123456789','POL','de'),'25.123');
+  assert.equal(formatAssetQuantity('25','POL','de'),'25.000');
+  assert.equal(formatAssetQuantity('25.123456789','WPOL','de'),'25.123');
+  assert.equal(formatAssetQuantity('25.123456789','BNB','de'),'25.123456789');
+  assert.equal(formatAssetMoney('0.07745','ETH','de'),'0.08 $');
+  assert.equal(formatMoney('39747.27','de'),'39'747.27 $');
+  assert.equal(formatAssetQuantity(null,'POL'),'—');
 });

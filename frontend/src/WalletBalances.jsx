@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {RefreshCcw,Send} from 'lucide-react';
 import WalletSend from './WalletSend.jsx';
-import {API_BASE} from './data.js';
+import {API_BASE,formatAssetQuantity} from './data.js';
 import {onConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {ASSETS,validateWalletBalanceResponse} from './walletBalanceValidation.js';
 import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
@@ -163,7 +163,7 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   const loading=status==='loading'||evmStatus==='loading'||nativeStatus==='loading';
   const stableBalance = asset => {
     const record=balances?.[asset];
-    if(record?.status==='verified')return record.balance+' '+asset;
+    if(record?.status==='verified')return formatAssetQuantity(record.balance,asset)+' '+asset;
     if(record?.status==='wallet_missing')return t.privyBalancesMissing;
     if(status==='privy-setup')return t.privyBalancesPrivySetup;
     if(status==='privy-failed')return t.privyBalancesPrivyFailed;

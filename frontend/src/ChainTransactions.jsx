@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
-import {API_BASE,formatTimestamp} from './data.js';
+import {API_BASE,formatTimestamp,formatAssetQuantity} from './data.js';
 import {COINS} from './coins.js';
 import {COIN_CHAIN,TOKEN_FILTERS,historyRowsForCoin} from './chainHistoryCoinRules.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
@@ -28,8 +28,8 @@ export function verifiedExplorerUrl(chain,url,kind='tx'){
   }catch{return null;}
 }
 
-const amountLabel=tx=>tx?.quantity&&tx?.asset
-  ? tx.quantity+' '+tx.asset:null;
+const amountLabel=(tx,lang)=>tx?.quantity&&tx?.asset
+  ? formatAssetQuantity(tx.quantity,tx.asset,lang)+' '+tx.asset:null;
 
 function NetworkActivity({t,lang}){
   const {ready,authenticated,user,getAccessToken,login}=usePrivy();
@@ -131,11 +131,11 @@ function NetworkActivity({t,lang}){
                 {tx.tokens?.length>0&&<small style={{overflowWrap:'anywhere'}}>
                   {tx.tokens.slice(0,6).map(token=>
                     (token.direction==='IN'?'+':'−')+
-                    token.quantity+' '+token.asset).join(' · ')}
+                    formatAssetQuantity(token.quantity,token.asset,lang)+' '+token.asset).join(' · ')}
                 </small>}
               </div>
               <div style={{flexShrink:0,textAlign:'right'}}>
-                {amountLabel(tx)&&<strong>{amountLabel(tx)}</strong>}
+                {amountLabel(tx,lang)&&<strong>{amountLabel(tx,lang)}</strong>}
                 <small>{t.chainNetworkOpen} ↗</small>
               </div>
             </a>)}

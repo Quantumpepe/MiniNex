@@ -4,7 +4,7 @@ import {
   authorizeCentralEvmWalletCoin,validCentralWalletStatus,
   centralWalletHasCoin,
 } from './centralEvmWalletFlow.js';
-import {API_BASE} from './data.js';
+import {API_BASE,formatAssetQuantity} from './data.js';
 import {
   LIVE_EVM_ASSETS,validEvmTradeChallenge,validEvmTradeSignerOffer,
   validEvmTradePermission,validEvmAutoSession,validEvmOrderHistory,
@@ -356,8 +356,8 @@ export default function EvmLiveOwnerControls({
         </span>
         {fills?.fills?.find(fill=>fill.intent_key===order.intent_key&&
           fill.tx_hash===order.tx_hash)&&((fill)=>
-          <span>{t.spent}: {fill.spent_amount} {fill.spent_asset}
-            {' · '}{t.received}: {fill.received_amount} {fill.received_asset}
+          <span>{t.spent}: {formatAssetQuantity(fill.spent_amount,fill.spent_asset,lang)} {fill.spent_asset}
+            {' · '}{t.received}: {formatAssetQuantity(fill.received_amount,fill.received_asset,lang)} {fill.received_asset}
           </span>)(fills.fills.find(fill=>fill.intent_key===order.intent_key&&
           fill.tx_hash===order.tx_hash))}
         <span>{t.recorded}: {new Date(order.created_at).toLocaleString(

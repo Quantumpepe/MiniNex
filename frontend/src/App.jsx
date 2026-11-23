@@ -28,7 +28,7 @@ import {coinBySymbol} from './coins.js';
 import UserPaperSessions from './UserPaperSessions.jsx';
 import UpdateStatus from './UpdateStatus.jsx';
 import {
-  API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatNumber,
+  API_BASE, ensurePaperOnly, formatCoin, formatMoney, formatAssetMoney, formatNumber,
   formatRelative, formatSigned, formatTimestamp, limitHistory,
   portfolioValue, validMarket,
 } from './data.js';
@@ -135,7 +135,7 @@ function PriceChart({history,asset,period,market,trades,t,lang}) {
           <circle cx={selected.coords[0]} cy={selected.coords[1]} r="5" fill="#d9fdf0" stroke="#0b2430" strokeWidth="3"/>
         </>:<circle cx={last[0]} cy={last[1]} r="5" fill={model.positive?'#55edb6':'#ffad7a'} stroke="#082018" strokeWidth="3"/>}
       </svg>
-      {selected&&<div className="chart-tooltip"><b>{formatMoney(selected.point.price_usdt,lang)}</b><span>{formatTimestamp(selected.point.timestamp,lang,{day:'2-digit',month:'short'})}</span></div>}
+      {selected&&<div className="chart-tooltip"><b>{formatAssetMoney(selected.point.price_usdt,asset,lang)}</b><span>{formatTimestamp(selected.point.timestamp,lang,{day:'2-digit',month:'short'})}</span></div>}
     </div>}
   </div>;
 }
@@ -328,7 +328,7 @@ function ActivityList({trades,t,lang,compact=false,status='ready'}) {
     return <div key={trade.id} className="trade-row">
       <span className={`trade-icon ${buy?'trade-icon--buy':'trade-icon--sell'}`}>{buy?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>}</span>
       <div className="trade-main"><b>{buy?t.paperBuy:t.paperSell} · {trade.asset}</b>
-        <span>{t.homeTradePrice}: {formatMoney(trade.price_reference,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</span>
+        <span>{t.homeTradePrice}: {formatAssetMoney(trade.price_reference,trade.asset,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</span>
       </div>
       <div className="trade-amount"><b>{formatMoney(trade.amount_usd,lang)}</b><span className={pnl!=null?(Number(pnl)>=0?'text-positive':'text-negative'):''}>{pnl!=null?formatSigned(pnl,lang):t.paperTrade}</span></div>
     </div>;
@@ -490,12 +490,12 @@ export default function App() {
             <div className="overview-main">
               <section className="panel market-panel">
                 <div className="panel-top"><div><span className="section-eyebrow">{t.market}</span><h2>{name} <span className="symbol-label">{asset}/USDT</span></h2></div><Pill tone={valid?'teal':'orange'} icon={valid?Check:CircleAlert}>{valid?t.dataVerified:t.dataUnverified}</Pill></div>
-                <div className="price-top"><div><div className="main-price">{formatMoney(price,language)}</div><span className={`market-change ${Number(change)>=0?'text-positive':'text-negative'}`}>{change!=null?`${Number(change)>0?'+':''}${formatNumber(change,language)}%`: '—'} <span>24h</span></span></div>
+                <div className="price-top"><div><div className="main-price">{formatAssetMoney(price,asset,language)}</div><span className={`market-change ${Number(change)>=0?'text-positive':'text-negative'}`}>{change!=null?`${Number(change)>0?'+':''}${formatNumber(change,language)}%`: '—'} <span>24h</span></span></div>
                   <div className="time-switch" role="group" aria-label="Chart period"><button type="button" className={period==='m15'?'active':''} onClick={()=>setPeriod('m15')}>{t.quarterHour}</button><button type="button" className={period==='h1'?'active':''} onClick={()=>setPeriod('h1')}>{t.hourly}</button><button type="button" disabled title={t.historyLimit}>{t.day}</button></div>
                 </div>
                 <PriceChart history={history} asset={asset} period={period} market={mk} trades={[]} t={t} lang={language}/>
               {!paperVisible&&!coinBySymbol(asset)?.paperSettingsReady&&<p className="compact-market-readonly">{language==='de'?'Nur Kursanzeige · Handel in Vorbereitung':'Market data only · Trading coming later'}</p>}
-                <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatMoney(mk?.reference_price_usd,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
+                <div className="market-bottom"><div><span>{t.reference}</span><b>{valid?formatAssetMoney(mk?.reference_price_usd,asset,language):'—'}</b></div><div><span>{t.spreadCheck}</span><b>{valid?`${formatNumber(mk?.price_divergence_pct,language,3)} %`:'—'}</b></div><div><span>{t.lastUpdate}</span><b>{sourceTime?formatRelative(sourceTime,language):'—'}</b></div></div>
               </section>
               
           {paperVisible&&<section className="panel recent-panel" aria-label={t.recentTrades}>

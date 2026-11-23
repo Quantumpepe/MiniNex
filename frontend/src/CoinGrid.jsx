@@ -1,6 +1,6 @@
 import React from 'react';
 import {COINS,coinMarketSnapshot} from './coins.js';
-import {formatMoney} from './data.js';
+import {formatAssetMoney} from './data.js';
 
 // Read-only coin selector. Trading inputs remain in a separate panel beneath
 // this scroll viewport, so scrolling never closes or modifies a form.
@@ -26,7 +26,7 @@ export default function CoinGrid({t,lang='de',selected,onSelect,markets,syncedAt
             <strong>{coin.symbol}</strong>
             {coin.inProgress
               ? <small className="mininex-coin-in-progress">{t.coinInProgress}</small>
-              : <small>{live?formatMoney(q.price_usdt,lang):t.privyPriceUnavailable}</small>}
+              : <small>{live?formatAssetMoney(q.price_usdt,coin.symbol,lang):t.privyPriceUnavailable}</small>}
           </span>
         </button>;
       })}

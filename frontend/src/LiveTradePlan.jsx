@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {API_BASE} from './data.js';
+import {API_BASE,formatAssetQuantity} from './data.js';
 import EthPolicyRouteReadiness from './EthPolicyRouteReadiness.jsx';
 import LiveReceiptCheck from './LiveReceiptCheck.jsx';
 import NativeReceiptCheck from './NativeReceiptCheck.jsx';
@@ -138,12 +138,12 @@ export default function LiveTradePlan({
       {t.livePlanExpired}</p>}
     {quote&&result&&<div className="mininex-swap-quote" role="status">
       <div className="mininex-swap-summary">
-        <span>{t.walletSwapFrom}: <b>{quote.request.amount} {source}</b></span>
-        <span>{t.walletSwapTo}: <b>{result.estimated_output_amount} {output}</b></span>
+        <span>{t.walletSwapFrom}: <b>{formatAssetQuantity(quote.request.amount,source)} {source}</b></span>
+        <span>{t.walletSwapTo}: <b>{formatAssetQuantity(result.estimated_output_amount,output)} {output}</b></span>
       </div>
       {result.minimum_output_amount&&
         <p className="privy-wallet-description">
-          {t.walletSwapMinimum}: {result.minimum_output_amount} {output}</p>}
+          {t.walletSwapMinimum}: {formatAssetQuantity(result.minimum_output_amount,output)} {output}</p>}
       <p className="privy-wallet-description">
         {result.wallet_funds_verified?t.livePlanWalletChecked:t.livePlanVenueOnly}
       </p>

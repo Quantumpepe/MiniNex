@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {useWallets} from '@privy-io/react-auth';
-import {API_BASE} from './data.js';
+import {API_BASE,formatAssetQuantity} from './data.js';
 import {EVM_CHAINS} from './evmSwapRules.js';
 import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {validateOwnerSwapPreparation,exactNativeOwnerUnits,
@@ -432,7 +432,7 @@ export default function EvmLiveSwap({
       <strong>{lang==='de'?'Echte bestätigte Swaps':'Confirmed real swaps'} · {asset}</strong>
       {realHistory.map(entry=><div key={entry.chain_id+':'+entry.tx_hash}>
         <b>{entry.side==='BUY'?'BUY':'SELL'} · {asset}</b>
-        {' · '}{entry.source_amount} → {entry.destination_amount}
+        {' · '}{formatAssetQuantity(entry.source_amount,entry.side==='SELL'?asset:entry.stable,lang)} → {formatAssetQuantity(entry.destination_amount,entry.side==='BUY'?asset:entry.stable,lang)}
         {' · '}{entry.stable}
         <code>{entry.tx_hash.slice(0,12)}…</code>
         {native&&<small>{lang==='de'
