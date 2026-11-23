@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {useWallets} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
+import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {ROUTER02,WETH9,abiAllowance,abiBalance,abiApprove,decodeUint,
   exactEthUnits,wethWithdrawCalldata,
   ownerAccounts,validHash,validateOwnerRouter02Call} from './ethLiveSwapRules.js';
@@ -181,6 +182,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
         });
         if(!saved.ok)throw Error('ETH wrap confirmed; history sync pending');
         await refreshRealHistory();
+        notifyConfirmedWalletTransfer(userId,'ETH',hash);
       }
       if(stage==='approval-submitted'||stage==='wrap-submitted'){
         attempted.current=false;onTradePendingChange?.(false);
@@ -215,6 +217,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
              body.confirmed_native_conversion!==true){
             setError('Native ETH conversion is not finalized');return;
           }
+          notifyConfirmedWalletTransfer(userId,'ETH',hash);
           onTradePendingChange?.(false);
           setStage('native-complete');setReview(null);return;
         }
@@ -222,6 +225,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
            body.swap_erc20_leg_verified!==true){
           setError('Swap still waiting for finalized on-chain settlement');return;
         }
+        notifyConfirmedWalletTransfer(userId,'ETH',hash);
         if(side==='BUY'){
           const received=exactEthUnits(body.destination_received_amount);
           setReview({from:wallet.address,to:WETH9,
