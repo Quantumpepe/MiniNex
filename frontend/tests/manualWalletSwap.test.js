@@ -91,3 +91,17 @@ test('manual EVM swap saves a canonical owner receipt before marking the leg com
   assert.match(signer,/native_coin_cycle_complete!==false/);
   assert.match(signer,/realHistory\.map\(/);
 });
+
+
+test('Android OTA reload resumes original EVM receipt without broadcasting a replay',()=>{
+  assert.match(signer,/readPendingOwnerSwap\(window\.localStorage/);
+  assert.match(signer,/savePendingOwnerSwap\(window\.localStorage,submitted\)/);
+  assert.match(signer,/clearSubmitted\(pending\.hash\)/);
+  assert.match(signer,/const pairSide=pending\.side/);
+  assert.match(signer,/const pairStable=pending\.stable/);
+  assert.match(signer,/setPlan\(restored\.plan\)/);
+  assert.match(signer,/setPhase\('submitted'\)/);
+  assert.match(signer,/Bestehende Transaktion prüfen/);
+  assert.match(signer,/recorded\.side!==pairSide/);
+  assert.match(signer,/recorded\.stable!==pairStable/);
+});

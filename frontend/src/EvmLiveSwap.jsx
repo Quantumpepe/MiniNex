@@ -5,7 +5,8 @@ import {EVM_CHAINS} from './evmSwapRules.js';
 import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {validateOwnerSwapPreparation,exactNativeOwnerUnits,
   NATIVE_OWNER_SWAP_ASSETS,OWNER_SWAP_CHAINS,
-  verifyOwnerEvmMinedTx} from './evmOwnerSwapPreparation.js';
+  verifyOwnerEvmMinedTx,savePendingOwnerSwap,readPendingOwnerSwap,
+  clearPendingOwnerSwap} from './evmOwnerSwapPreparation.js';
 
 // Owner-signed live V3 swaps for one EVM coin and its selected stablecoin.
 // MiniNex's authenticated backend produces a fresh on-chain quote and exact
@@ -85,6 +86,28 @@ export default function EvmLiveSwap({
     if(enabled&&userId)void refreshRealHistory();
   },[enabled,userId,asset]);
 
+  // Read-only recovery of a previously submitted owner transaction after
+  // Android OTA, page refresh or closing the swap window. Never broadcast.
+  useEffect(()=>{
+    if(!enabled||!userId||!wallet?.address||!chain||
+       typeof window==='undefined'||attempt.current)return;
+    const restored=readPendingOwnerSwap(window.localStorage,{
+      userId,asset,wallet:wallet.address,
+    });
+    if(!restored)return;
+    attempt.current=true;
+    setPlan(restored.plan);
+    setPending(restored);
+    setPhase('submitted');
+    setError('');
+  },[enabled,userId,asset,wallet?.address,chain]);
+
+  const clearSubmitted=hash=>{
+    if(typeof window==='undefined'||!wallet?.address)return;
+    clearPendingOwnerSwap(window.localStorage,
+      {userId,asset,wallet:wallet.address},hash);
+  };
+
   async function provider(){
     if(!wallet||!chain||!enabled||typeof wallet.getEthereumProvider!=='function')
       throw Error('Privy EVM wallet unavailable');
@@ -105,6 +128,17 @@ export default function EvmLiveSwap({
   }
   async function prepare(){
     if(!enabled||!wallet||busy||attempt.current||!chain)return;
+    // An earlier wallet request can finish after the user closes the form.
+    // Reuse its known hash for receipt verification instead of making a
+    // second quote that might accidentally duplicate the original trade.
+    if(typeof window!=='undefined'){
+      const previous=readPendingOwnerSwap(window.localStorage,
+        {userId,asset,wallet:wallet.address});
+      if(previous){
+        attempt.current=true;setPlan(previous.plan);setPending(previous);
+        setPhase('submitted');return;
+      }
+    }
     const id=++serial.current;
     setBusy(true);setError('');setPlan(null);setPhase('preparing');
     try{
@@ -201,7 +235,12 @@ export default function EvmLiveSwap({
       const hash=await p.request({method:'eth_sendTransaction',params:[tx]});
       if(typeof hash!=='string'||!/^0x[0-9a-fA-F]{64}$/.test(hash))
         throw Error('Transaction hash unavailable');
-      setPending({hash,kind,tx,plan,asset,side,stable,userId});
+      const operationSide=kind==='unwrap'&&pending?pending.side:side;
+      const operationStable=kind==='unwrap'&&pending?pending.stable:stable;
+      const submitted={hash,kind,tx,plan,asset,
+        side:operationSide,stable:operationStable,userId};
+      if(typeof window!=='undefined')savePendingOwnerSwap(window.localStorage,submitted);
+      setPending(submitted);
       setPhase('submitted');
     }catch(e){
       if(broadcastAttempted&&e?.code!==4001&&e?.code!=='ACTION_REJECTED'){
@@ -227,6 +266,8 @@ export default function EvmLiveSwap({
       if(!active||abort)return;
       try{
         const p=await provider();
+        const pairSide=pending.side;
+        const pairStable=pending.stable;
         const receipt=await p.request({method:'eth_getTransactionReceipt',
           params:[pending.hash]});
         if(!active)return;
@@ -252,6 +293,7 @@ export default function EvmLiveSwap({
           // execute. Chargeable gas may have changed the native balance;
           // offer a NEW owner-approved quote, never replay the old bytes.
           refreshIncludedBalance(pending.hash);
+          clearSubmitted(pending.hash);
           attempt.current=false;
           setPending(null);setPlan(null);
           setError(lang==='de'
@@ -265,7 +307,7 @@ export default function EvmLiveSwap({
         if(pending.kind==='swap'){
           refreshIncludedBalance(pending.hash);
           const saved=await backend('/api/live/evm/finalized-swap/'+asset+'/'+
-            encodeURIComponent(pending.hash)+'?side='+side+'&stable='+stable);
+            encodeURIComponent(pending.hash)+'?side='+pairSide+'&stable='+pairStable);
           if(!active)return;
           if(saved?.state!=='FINALIZED_ERC20_SWAP_LEG'
               ||saved?.swap_erc20_leg_verified!==true){
@@ -276,18 +318,18 @@ export default function EvmLiveSwap({
           // A failed history write never causes a second blockchain send.
           const recorded=await backend(
             '/api/live/evm/record-manual-leg/'+asset,'POST',
-            {tx_hash:pending.hash,side,stable});
+            {tx_hash:pending.hash,side:pairSide,stable:pairStable});
           if(!active)return;
           if(recorded?.recorded!==true||
-             recorded.asset!==asset||recorded.side!==side||
-             recorded.stable!==stable||
+             recorded.asset!==asset||recorded.side!==pairSide||
+             recorded.stable!==pairStable||
              recorded.tx_hash!==pending.hash.toLowerCase()||
              recorded.onchain_finalized!==true||
              recorded.native_coin_cycle_complete!==false){
             throw Error('Verified manual swap history has not been saved');
           }
           void refreshRealHistory();
-          if(native&&side==='BUY'){
+          if(native&&pairSide==='BUY'){
             // A native-coin buy yields wrapped BNB/POL/AVAX first. The
             // owner must explicitly unwrap the exact finalized amount.
             exactNativeOwnerUnits(saved.destination_received_amount);
@@ -296,11 +338,13 @@ export default function EvmLiveSwap({
             attempt.current=false;
             return;
           }
+          clearSubmitted(pending.hash);
           setPhase('complete');return;
         }
         // Approvals and wrap/unwrap also spend network gas; refresh their
         // verified on-chain balances once, without implying a settled trade.
         refreshIncludedBalance(pending.hash);
+        clearSubmitted(pending.hash);
         if(pending.kind==='approval'){
           setPhase('approval-complete');
         }else if(pending.kind==='wrap'){
@@ -314,7 +358,7 @@ export default function EvmLiveSwap({
     };
     timeout=setTimeout(check,12000);
     return()=>{active=false;abort=true;clearTimeout(timeout);};
-  },[phase,pending,enabled,userId,asset,side,stable]);
+  },[phase,pending,enabled,userId,asset,wallet?.address]);
   // An already broadcast transaction is never auto-retried. The user may
   // prepare a fresh quote only after an explicit approval/wrap receipt.
   const retry=()=>{
@@ -341,8 +385,15 @@ export default function EvmLiveSwap({
         disabled={busy} onClick={()=>send('unwrap')}>{words.unwrap}</button>
     </>}
     {(phase==='submitted'||busy&&phase!=='preparing')&&
-      <p role="status" className="privy-wallet-description">{words.pending}</p>}
-    {phase==='complete'&&<p role="status" className="privy-wallet-description">{done}</p>}
+      <p role="status" className="privy-wallet-description">
+        {words.pending}
+        {pending&&' · '+pending.side+' '+pending.stable+' / '+pending.asset}
+      </p>}
+    {phase==='complete'&&<>
+      <p role="status" className="privy-wallet-description">{done}</p>
+      <button type="button" className="privy-wallet-action"
+        onClick={retry}>{words.retry}</button>
+    </>}
     {['approval-complete','wrap-complete'].includes(phase)&&<>
       <p role="status" className="privy-wallet-description">
         {phase==='approval-complete'?words.approvalDone:words.wrapDone}
@@ -353,7 +404,13 @@ export default function EvmLiveSwap({
     {phase==='failed'&&error&&<p role="alert" className="privy-wallet-description">{error}</p>}
     {phase==='failed'&&!attempt.current&&<button type="button"
       className="privy-wallet-action" onClick={retry}>{words.retry}</button>}
-    {phase==='uncertain'&&<p role="alert" className="privy-wallet-description">{words.uncertain}</p>}
+    {phase==='uncertain'&&<>
+      <p role="alert" className="privy-wallet-description">{words.uncertain}</p>
+      {pending&&<button type="button" className="privy-wallet-action"
+        onClick={()=>setPhase('submitted')}>
+        {lang==='de'?'Bestehende Transaktion prüfen':'Check existing transaction'}
+      </button>}
+    </>}
     {realHistory.length>0&&<div className="mininex-live-real-history">
       <strong>{lang==='de'?'Echte bestätigte Swaps':'Confirmed real swaps'} · {asset}</strong>
       {realHistory.map(entry=><div key={entry.chain_id+':'+entry.tx_hash}>

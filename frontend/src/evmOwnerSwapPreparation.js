@@ -124,3 +124,79 @@ export function verifyOwnerEvmMinedTx(onchain,expected,hash,chainId){
   }
   return true;
 }
+
+
+// Android OTA/reload can destroy React state while a user-signed transaction
+// remains on-chain. Persist only public, exact owner-bound transaction metadata.
+// Loading this record NEVER signs, sends, approves or retries a transaction.
+const PENDING_HASH=/^0x[0-9a-fA-F]{64}$/;
+const PENDING_DATA=/^0x(?:[0-9a-fA-F]{2})*$/;
+const PENDING_KINDS=new Set(['swap','approval','wrap','unwrap']);
+const NATIVE_ALLOWED_STABLE=Object.freeze({BNB:'USDT',POL:'USDC',AVAX:'USDC'});
+const pendingStorageKey=({userId,asset,wallet}={})=>
+  typeof userId==='string'&&userId.startsWith('did:privy:')&&
+  OWNER_SWAP_CHAINS[asset]&&ADDRESS.test(wallet||'')
+    ?'mininex:evm:pending:v1:'+userId+':'+asset+':'+wallet.toLowerCase()
+    :null;
+
+function normalizedPendingOwnerSwap(value,context){
+  if(!value||typeof value!=='object'||!context)return null;
+  const key=pendingStorageKey(context);
+  if(!key||value.userId!==context.userId||value.asset!==context.asset||
+    value.side!=='BUY'&&value.side!=='SELL'||
+    !['USDC','USDT'].includes(value.stable)||
+    (NATIVE_ALLOWED_STABLE[value.asset]&&
+       NATIVE_ALLOWED_STABLE[value.asset]!==value.stable)||
+    !PENDING_KINDS.has(value.kind)||!PENDING_HASH.test(value.hash||'')||
+    !value.plan||value.plan.chainId!==OWNER_SWAP_CHAINS[value.asset]||
+    !ADDRESS.test(value.plan.output||'')||
+    !value.tx||!ADDRESS.test(value.tx.from||'')||
+    !ADDRESS.test(value.tx.to||'')||
+    value.tx.from.toLowerCase()!==context.wallet.toLowerCase()||
+    typeof value.tx.data!=='string'||value.tx.data.length>520||
+    !PENDING_DATA.test(value.tx.data)||
+    typeof value.tx.value!=='string'||!/^0x[0-9a-fA-F]+$/.test(value.tx.value)||
+    ((!NATIVE_OWNER_SWAP_ASSETS.has(value.asset))&&
+       ['wrap','unwrap'].includes(value.kind))||
+    (value.kind==='unwrap'&&value.side!=='BUY')||
+    (value.kind==='wrap'&&value.side!=='SELL'))return null;
+  return {
+    userId:value.userId,asset:value.asset,
+    hash:value.hash.toLowerCase(),kind:value.kind,
+    side:value.side,stable:value.stable,
+    tx:{from:value.tx.from.toLowerCase(),to:value.tx.to.toLowerCase(),
+      data:value.tx.data,value:value.tx.value},
+    plan:{chainId:value.plan.chainId,output:value.plan.output.toLowerCase()},
+  };
+}
+
+export function savePendingOwnerSwap(storage,pending){
+  const context={userId:pending?.userId,asset:pending?.asset,
+    wallet:pending?.tx?.from};
+  const key=pendingStorageKey(context);
+  const normalized=normalizedPendingOwnerSwap(pending,context);
+  if(!key||!normalized||!storage)return false;
+  try{storage.setItem(key,JSON.stringify(normalized));return true;}
+  catch{return false;}
+}
+
+export function readPendingOwnerSwap(storage,context){
+  const key=pendingStorageKey(context);
+  if(!key||!storage)return null;
+  try{
+    const raw=storage.getItem(key);
+    return raw&&raw.length<2000
+      ?normalizedPendingOwnerSwap(JSON.parse(raw),context):null;
+  }catch{return null;}
+}
+
+export function clearPendingOwnerSwap(storage,context,hash){
+  const key=pendingStorageKey(context);
+  if(!key||!PENDING_HASH.test(hash||'')||!storage)return false;
+  try{
+    const record=readPendingOwnerSwap(storage,context);
+    if(!record||record.hash!==hash.toLowerCase())return false;
+    storage.removeItem(key);
+    return true;
+  }catch{return false;}
+}

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateOwnerSwapPreparation,exactNativeOwnerUnits,OWNER_SWAP_CHAINS,
+  savePendingOwnerSwap,readPendingOwnerSwap,clearPendingOwnerSwap,
 } from '../src/evmOwnerSwapPreparation.js';
 
 const WALLET='0x'+'ab'.repeat(20);
@@ -84,4 +85,70 @@ test('native coin units preserve precision and reject invalid quantities',()=>{
   for(const v of ['0','-1','1e10','0.0000000000000000001','NaN','','.1']){
     assert.throws(()=>exactNativeOwnerUnits(v));
   }
+});
+
+
+test('OTA restart resumes the same wallet transaction hash without a second send',()=>{
+  const did='did:privy:owner_test';
+  const context={userId:did,asset:'QNT',wallet:WALLET};
+  const map=new Map();
+  const storage={
+    getItem:k=>map.get(k)||null,
+    setItem:(k,v)=>map.set(k,v),
+    removeItem:k=>map.delete(k),
+  };
+  const pending={
+    userId:did,asset:'QNT',hash:'0x'+'12'.repeat(32),
+    kind:'swap',side:'BUY',stable:'USDC',
+    tx:{from:WALLET,to:ROUTER,data:quote().unsigned_transaction.data,value:'0x0'},
+    plan:{chainId:1,output:TOKEN,quantity:10n**6n,minimum:1n},
+    private_key:'MUST_NOT_SAVE',owner_signing_authorization:'MUST_NOT_SAVE',
+  };
+  assert.equal(savePendingOwnerSwap(storage,pending),true);
+  assert.equal(map.size,1);
+  const raw=[...map.values()][0];
+  assert.doesNotMatch(raw,/MUST_NOT_SAVE|private_key|owner_signing_authorization/);
+  const restored=readPendingOwnerSwap(storage,context);
+  assert.equal(restored.hash,pending.hash);
+  assert.equal(restored.plan.chainId,1);
+  assert.equal(restored.plan.quantity,undefined);
+  assert.equal(restored.tx.data,pending.tx.data);
+  assert.equal(readPendingOwnerSwap(storage,{...context,wallet:'0x'+'fe'.repeat(20)}),null);
+  assert.equal(readPendingOwnerSwap(storage,{...context,userId:'did:privy:friend'}),null);
+  assert.equal(readPendingOwnerSwap(storage,{...context,asset:'UNI'}),null);
+  assert.equal(clearPendingOwnerSwap(storage,context,'0x'+'23'.repeat(32)),false);
+  assert.equal(readPendingOwnerSwap(storage,context).hash,pending.hash);
+  assert.equal(clearPendingOwnerSwap(storage,context,pending.hash),true);
+  assert.equal(readPendingOwnerSwap(storage,context),null);
+});
+
+test('corrupt or unrelated pending records can never restore a signed operation',()=>{
+  const did='did:privy:test';
+  const context={userId:did,asset:'BNB',wallet:WALLET};
+  const map=new Map();
+  const storage={
+    getItem:k=>map.get(k)||null,
+    setItem:(k,v)=>map.set(k,v),
+    removeItem:k=>map.delete(k),
+  };
+  const record={
+    userId:did,asset:'BNB',hash:'0x'+'ff'.repeat(32),
+    kind:'swap',side:'BUY',stable:'USDT',
+    tx:{from:WALLET,to:ROUTER,data:'0x04e45aaf'+word(1n).repeat(7),value:'0x0'},
+    plan:{chainId:56,output:TOKEN},
+  };
+  assert.equal(savePendingOwnerSwap(storage,record),true);
+  const key=[...map.keys()][0];
+  for(const delta of [
+    {asset:'QNT'},{side:'SIDEWAYS'},{stable:'USDC'},{hash:'0x999'},
+    {kind:'authorize-all'},{plan:{chainId:1,output:TOKEN}},
+    {tx:{...record.tx,to:'bad'}},
+    {tx:{...record.tx,from:'0x'+'ff'.repeat(20)}},
+  ]){
+    map.set(key,JSON.stringify({...record,...delta}));
+    assert.equal(readPendingOwnerSwap(storage,context),null);
+  }
+  map.set(key,'{corrupt');
+  assert.equal(readPendingOwnerSwap(storage,context),null);
+  assert.equal(clearPendingOwnerSwap(storage,context,record.hash),false);
 });
