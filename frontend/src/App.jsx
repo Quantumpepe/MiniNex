@@ -15,7 +15,9 @@ import CompactOverview from './CompactOverview.jsx';
 import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
 import useLiveHomeTrades from './useLiveHomeTrades.js';
 import useWalletPortfolioHome from './useWalletPortfolioHome.js';
-import {summarizeHomePaperPortfolio,HOME_PAPER_PORTFOLIO_COINS} from './paperPortfolio.js';
+import {summarizeHomePaperPortfolio,HOME_PAPER_PORTFOLIO_COINS,
+  readObservedPaperEquity,appendObservedPaperEquity,
+  saveObservedPaperEquity} from './paperPortfolio.js';
 import HelpCenter from './HelpCenter.jsx';
 import ActivityReport from './ActivityReport.jsx';
 import BlockchainPreview from './BlockchainPreview.jsx';
@@ -219,14 +221,16 @@ function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
   useEffect(()=>{
     let active=true,inFlight=false;
     const controllers=new Set();
-    setState({summary:null,samples:[],status:'idle',scope,did});
+    const cached=paperVisible&&homeVisible&&ready&&authenticated&&did
+      ?readObservedPaperEquity(did,scope):[];
+    setState({summary:null,samples:cached,status:'idle',scope,did});
     if(!paperVisible||!homeVisible||!ready||!authenticated||!did)
       return()=>{active=false;};
     if(scope!=='ALL'&&!HOME_PAPER_PORTFOLIO_COINS.includes(scope)){
       setState({summary:null,samples:[],status:'ready',scope,did});
       return()=>{active=false;};
     }
-    setState({summary:null,samples:[],status:'loading',scope,did});
+    setState({summary:null,samples:cached,status:'loading',scope,did});
     const sync=async()=>{
       if(!active||inFlight||document.hidden)return;
       inFlight=true;
@@ -259,17 +263,17 @@ function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
         // silently converted into a fictional wallet balance.
         setState(previous=>{
           if(!active)return previous;
-          let samples=previous.scope===scope&&previous.did===did?
-            previous.samples:[];
-          if(summary?.valuationAvailable&&summary.equity!==null){
-            const at=Date.now();
-            if(!samples.length||at-samples[samples.length-1].at>=12000)
-              samples=[...samples,{at,value:summary.equity}].slice(-90);
-          }
+          const samples=appendObservedPaperEquity(
+            previous.scope===scope&&previous.did===did?
+              previous.samples:cached,summary);
           return {summary,samples,status:'ready',scope,did};
         });
       }catch{
-        if(active)setState({summary:null,samples:[],status:'error',scope,did});
+        if(active)setState(previous=>({
+          summary:null,
+          samples:previous.scope===scope&&previous.did===did?previous.samples:cached,
+          status:'error',scope,did,
+        }));
       }finally{controllers.delete(controller);inFlight=false;}
     };
     sync();
@@ -281,6 +285,15 @@ function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
       controllers.clear();
     };
   },[paperVisible,homeVisible,ready,authenticated,did,getAccessToken,refreshNonce,scope]);
+  // Persist only actual, account-scoped virtual portfolio observations.
+  // A new OTA/app view restores history without assuming a green starting point.
+  useEffect(()=>{
+    if(paperVisible&&homeVisible&&ready&&authenticated&&did&&
+       state.status==='ready'&&state.scope===scope&&state.did===did&&
+       state.samples.length)
+      saveObservedPaperEquity(did,scope,state.samples);
+  },[paperVisible,homeVisible,ready,authenticated,did,scope,
+    state.status,state.scope,state.did,state.samples]);
   // Never flash a previous account's or previous coin's capital during switch.
   const current=state.scope===scope&&state.did===did?
     state:{summary:null,samples:[],status:'loading'};

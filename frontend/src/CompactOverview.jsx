@@ -41,9 +41,14 @@ function MarketChart({history,period,valid,t,asset}) {
 function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
   const chart=useMemo(()=>paperSparkline(samples),[samples]);
   const positive=summary?.pnl!=null&&summary.pnl>=0;
-  const color=!paperMode||positive?'#5bf2b6':'#ff9388';
+  // PAPER color is based on TOTAL cumulative PnL, not the first/last
+  // short-window sample. LIVE wallet holdings have no verified cost basis,
+  // so display their price movements neutrally rather than as profit/loss.
+  const color=paperMode?(positive?'#5bf2b6':'#ff9388'):'#9ebfc0';
   const label=lang==='de'?'Portfolio (Gesamtwert)':'Portfolio (total value)';
-  const chartLabel=lang==='de'?'Beobachteter Verlauf seit App-Start':'Observed since opening the app';
+  const chartLabel=paperMode
+    ?(lang==='de'?'Beobachteter Gesamtportfolio-Verlauf':'Observed total portfolio equity')
+    :(lang==='de'?'Beobachteter Wallet-Verlauf':'Observed wallet value history');
   const prompt=!authenticated?t.homeTradesSignIn:
     status==='loading'?t.homePortfolioLoading:
     status==='error'?t.homePortfolioUnavailable:
@@ -76,8 +81,8 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
                 <stop offset="100%" stopColor={color} stopOpacity="0"/>
               </linearGradient></defs>
               <path d={chart.area} fill="url(#paper-equity-fill)"/>
-              <path d={chart.line} fill="none" stroke={chart.positive?'#5bf2b6':'#ff9388'} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="192" cy={chart.lastY} r="3.5" fill={chart.positive?'#5bf2b6':'#ff9388'}/>
+              <path d={chart.line} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="192" cy={chart.lastY} r="3.5" fill={color}/>
             </svg>
           : <span className="compact-wallet-no-curve">{lang==='de'?'Verlauf wird gesammelt':'Collecting portfolio history'}</span>}
       </div>

@@ -149,3 +149,81 @@ export function summarizeHomePaperPortfolio(core,extraReport,scope){
     mode:'PAPER',
   };
 }
+
+/**
+ * Bounded, user-scoped observed PAPER equity history for the home chart.
+ * This is NOT a market-price curve or an invented portfolio backtest.
+ * Save only virtual ALL-coin totals; never cache LIVE wallet holdings.
+ * Local app data can be lost when storage is cleared or app is reinstalled.
+ */
+const PAPER_HISTORY_PREFIX='mininex:paper-equity:v1:';
+const PAPER_HISTORY_MAX_AGE_MS=24*60*60*1000;
+const PAPER_HISTORY_BUCKET_MS=2*60*1000;
+const PAPER_HISTORY_MAX_POINTS=720;
+const paperHistoryKey=(did,scope)=>
+  typeof did==='string'&&did.startsWith('did:privy:')&&did.length<=200&&
+  (scope==='ALL'||HOME_PAPER_PORTFOLIO_COINS.includes(scope))
+    ? PAPER_HISTORY_PREFIX+encodeURIComponent(did)+':'+scope:null;
+
+export function readObservedPaperEquity(did,scope,storage,now=Date.now()){
+  try{
+    const key=paperHistoryKey(did,scope);
+    if(!key||!Number.isSafeInteger(now))return [];
+    const store=storage??(typeof window!=='undefined'?window.localStorage:null);
+    const raw=store?.getItem(key);
+    if(typeof raw!=='string'||raw.length>100000)return [];
+    const record=JSON.parse(raw);
+    if(record?.version!==1||record.scope!==scope||!Array.isArray(record.points))
+      return [];
+    const filtered=[];
+    let previousAt=-Infinity;
+    for(const point of record.points.slice(-PAPER_HISTORY_MAX_POINTS)){
+      if(!point||typeof point!=='object'||
+         !Number.isSafeInteger(point.at)||point.at<=previousAt||
+         point.at<now-PAPER_HISTORY_MAX_AGE_MS||point.at>now||
+         typeof point.value!=='number'||!Number.isFinite(point.value)||point.value<0||
+         typeof point.capital!=='number'||!Number.isFinite(point.capital)||
+         point.capital<=0)continue;
+      filtered.push({at:point.at,value:point.value,capital:point.capital});
+      previousAt=point.at;
+    }
+    return filtered;
+  }catch{return [];}
+}
+
+export function appendObservedPaperEquity(previous,summary,now=Date.now()){
+  if(!summary||summary.mode!=='PAPER'||
+     summary.valuationAvailable!==true||!Number.isSafeInteger(now)||
+     typeof summary.equity!=='number'||!Number.isFinite(summary.equity)||
+     summary.equity<0||typeof summary.startingCapital!=='number'||
+     !Number.isFinite(summary.startingCapital)||summary.startingCapital<=0)
+    return Array.isArray(previous)?previous:[];
+  const capital=summary.startingCapital;
+  const points=(Array.isArray(previous)?previous:[]).filter(p=>
+    p&&Number.isSafeInteger(p.at)&&p.at<=now&&
+    p.at>=now-PAPER_HISTORY_MAX_AGE_MS&&
+    typeof p.value==='number'&&Number.isFinite(p.value)&&p.value>=0&&
+    p.capital===capital);
+  const sample={at:now,value:summary.equity,capital};
+  const last=points.at(-1);
+  if(last&&Math.floor(last.at/PAPER_HISTORY_BUCKET_MS)===
+      Math.floor(now/PAPER_HISTORY_BUCKET_MS)){
+    // Keep the latest REAL reading in each two-minute bucket, avoiding
+    // hundreds of tiny points that change the visual trend every refresh.
+    return [...points.slice(0,-1),sample].slice(-PAPER_HISTORY_MAX_POINTS);
+  }
+  if(last&&last.at>=now)return points;
+  return [...points,sample].slice(-PAPER_HISTORY_MAX_POINTS);
+}
+
+export function saveObservedPaperEquity(did,scope,points,storage){
+  try{
+    const key=paperHistoryKey(did,scope);
+    if(!key||!Array.isArray(points)||!points.length)return false;
+    const store=storage??(typeof window!=='undefined'?window.localStorage:null);
+    if(!store)return false;
+    store.setItem(key,JSON.stringify({version:1,scope,
+      points:points.slice(-PAPER_HISTORY_MAX_POINTS)}));
+    return true;
+  }catch{return false;}
+}
