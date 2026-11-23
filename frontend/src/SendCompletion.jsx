@@ -68,7 +68,12 @@ export default function SendCompletion({asset,txid,t,userId,getAccessToken}){
           return;
         }
       }catch{/* A provider delay is not proof of failure or success. */}
-      if(active&&attempts<25)timer=setTimeout(check,5000);
+      // Blockchains finalize on different timescales (BTC can take many
+      // minutes). Check frequently first, then back off. Stop after a bounded
+      // window, and never infer success from a submission receipt alone.
+      const limit=asset==='BTC'?60:36;
+      const delay=attempts<=10?5000:attempts<=30?15000:30000;
+      if(active&&attempts<limit)timer=setTimeout(check,delay);
     };
     void check();
     return()=>{active=false;abort?.abort();clearTimeout(timer);};
