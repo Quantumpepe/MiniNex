@@ -256,10 +256,13 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
   return <section className="mininex-wallet-send">
     <button type="button" className="privy-wallet-action mininex-swap-open"
       aria-expanded={open} aria-controls="mininex-send-form"
-      onClick={()=>{if(sending.current)return;clearReview();setOpen(v=>!v);}}>
+      onClick={()=>{if(sending.current&&phase!=='confirmed')return;
+        if(phase==='confirmed')sending.current=false;
+        clearReview();setOpen(v=>!v);}}>
       <Send size={18} aria-hidden="true"/><span>{t.walletSendTitle}</span>
     </button>
     {open&&<div className="mininex-swap-content" id="mininex-send-form">
+      {phase==='confirmed'?<p role="status" className="privy-wallet-description">{t.walletSendDone}</p>:<>
       <p className="privy-wallet-description">{t.walletSendManualOnly}</p>
       <form className="mininex-send-form" onSubmit={event=>prepare(false,event)}>
         <label><span>{t.walletSendAsset}</span>
@@ -310,11 +313,7 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
       {['submitting','submitted','confirmed','reverted','uncertain'].includes(phase)&&
         <div className="mininex-swap-quote" role="status">
           <strong>{t['walletSendState'+phase]||t.walletSendUncertain}</strong>
-          {txHash&&<div className="privy-wallet-description">
-            {t.walletSendHash}: <code>{txHash}</code>
-          </div>}
-          {txHash&&explorer&&<a href={explorer+txHash}
-            target="_blank" rel="noopener noreferrer">{t.walletSendExplorer}</a>}
+          {phase==='submitted'&&<div className="privy-wallet-description">{t.walletSendPending}</div>}
           {phase==='submitted'&&<p className="privy-wallet-description">
             {t.walletSendAutoReceipt}
           </p>}
@@ -325,6 +324,7 @@ export default function WalletSend({t,enabled,userId,initialCoin='ETH',lockedCoi
               {t.walletSendNew}
             </button>}
         </div>}
+      </>}
     </div>}
   </section>;
 }
