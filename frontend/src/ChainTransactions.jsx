@@ -1,11 +1,10 @@
 import React,{useEffect,useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
 import {API_BASE,formatTimestamp} from './data.js';
+import {COINS} from './coins.js';
+import {COIN_CHAIN,TOKEN_FILTERS,historyRowsForCoin} from './chainHistoryCoinRules.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
 
-// One public mainnet at a time, including EVM token activity (e.g. WPOL).
-// The server reads wallet addresses independently from authenticated Privy.
-const NETWORKS=['BTC','ETH','BNB','POL','AVAX','ARB','SOL','XRP','TRX'];
 const HOSTS={
   BTC:'mempool.space',ETH:'etherscan.io',BNB:'bscscan.com',
   POL:'polygonscan.com',AVAX:'snowtrace.io',ARB:'arbiscan.io',
@@ -34,10 +33,12 @@ const amountLabel=tx=>tx?.quantity&&tx?.asset
 
 function NetworkActivity({t,lang}){
   const {ready,authenticated,user,getAccessToken,login}=usePrivy();
-  const [chain,setChain]=useState('POL');
+  const [coin,setCoin]=useState('POL');
+  const chain=COIN_CHAIN[coin];
   const [refresh,setRefresh]=useState(0);
   const [data,setData]=useState(null);
   const [state,setState]=useState('idle');
+  const visibleItems=historyRowsForCoin(data?.items,coin);
   useEffect(()=>{
     const controller=new AbortController();
     let active=true;
@@ -81,12 +82,16 @@ function NetworkActivity({t,lang}){
   return <section className="panel activity-report" aria-label={t.chainNetworkTitle}>
     <div className="activity-report-heading">
       <h2>{t.chainNetworkTitle}</h2>
-      <select aria-label={t.chainNetworkSelect} value={chain}
-        onChange={e=>setChain(e.target.value)}>
-        {NETWORKS.map(c=><option key={c} value={c}>{c}</option>)}
+      <select aria-label={t.chainNetworkSelect} value={coin}
+        onChange={e=>setCoin(e.target.value)}>
+        {COINS.map(c=><option key={c.symbol} value={c.symbol}>
+          {c.symbol}{TOKEN_FILTERS.has(c.symbol)?' · Ethereum':''}
+        </option>)}
       </select>
     </div>
     <p>{t.chainNetworkNote}</p>
+    {TOKEN_FILTERS.has(coin)&&
+      <small>{coin} · Ethereum (ERC-20)</small>}
     {!ready?<p>{t.privyLoading}</p>:
       !authenticated?<button type="button" className="privy-wallet-action"
         onClick={login}>{t.privyLogin}</button>:<>
@@ -103,10 +108,10 @@ function NetworkActivity({t,lang}){
         {state==='ready'&&data?.source_status==='partial'&&
           <p role="status">{t.chainNetworkPartial}</p>}
         {state==='ready'&&data?.source_status==='ready'&&
-          !data.items.length&&<p>{t.chainNetworkEmpty}</p>}
-        {state==='ready'&&data?.items.length>0&&
+          !visibleItems.length&&<p>{t.chainNetworkEmpty}</p>}
+        {state==='ready'&&visibleItems.length>0&&
           <div className="tax-activity-list">
-            {data.items.map(tx=><a key={chain+':'+tx.hash}
+            {visibleItems.map(tx=><a key={chain+':'+tx.hash}
               className="tax-activity-row chain-history-transaction"
               style={{display:'flex',gap:14,textDecoration:'none',
                 color:'inherit',minWidth:0,alignItems:'center'}}
