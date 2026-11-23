@@ -47,6 +47,6 @@ test('POL displays exactly three decimals, while original values remain untouche
   assert.equal(formatAssetQuantity('25.123456789','WPOL','de'),'25.123');
   assert.equal(formatAssetQuantity('25.123456789','BNB','de'),'25.123456789');
   assert.equal(formatAssetMoney('0.07745','ETH','de'),'0.08 $');
-  assert.equal(formatMoney('39747.27','de'),'39'747.27 $');
+  assert.equal(formatMoney('39747.27','de'),"39'747.27 $");
   assert.equal(formatAssetQuantity(null,'POL'),'—');
 });
