@@ -2,6 +2,7 @@ import React,{useState} from 'react';
 import {useSignRawHash} from '@privy-io/react-auth/extended-chains';
 import {Send} from 'lucide-react';
 import {API_BASE} from './data.js';
+import SendCompletion from './SendCompletion.jsx';
 
 // Only the signed-in Privy user may approve manual XRP payments.
 // The backend prepares immutable short-lived payment terms and verifies
@@ -75,6 +76,7 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
       <Send size={18} aria-hidden="true"/>{t.walletSendTitle} XRP
     </button>
     {open&&<div className="mininex-swap-content">
+      {receipt?<SendCompletion asset="XRP" txid={receipt.txid} userId={userId} getAccessToken={getAccessToken} t={t}/>:<>
       <p className="privy-wallet-description">XRP Ledger · manual transfer · wallet approval required</p>
       <form className="mininex-send-form" onSubmit={e=>{e.preventDefault();send();}}>
         <label><span>{t.walletSendRecipient}</span>
@@ -92,9 +94,7 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
         </button>
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
-      {receipt&&<p role="status" className="privy-wallet-description">
-        {('XRP transaction submitted; awaiting ledger confirmation. Hash: ')+receipt.txid.slice(0,16)+'…'}
-      </p>}
+      </>}
     </div>}
   </section>;
 }
