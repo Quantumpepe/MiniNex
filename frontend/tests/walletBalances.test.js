@@ -89,7 +89,7 @@ test('verified zero is rendered as zero; only failed source as unavailable',()=>
   const wallet=readFileSync(new URL('../src/WalletBalances.jsx',import.meta.url),'utf8');
   const i18n=readFileSync(new URL('../src/i18n.js',import.meta.url),'utf8');
   assert.match(wallet,/record\?\.status==='verified'/);
-  assert.match(wallet,/record\.balance\+' '\+asset/);
+  assert.match(wallet,/formatAssetQuantity\(record\.balance,asset\)/);
   assert.match(wallet,/t\.privyBalancesUnavailable/);
   assert.match(wallet,/t\.privyBalancesPrivySetup/);
   assert.match(wallet,/t\.privyBalancesPrivyFailed/);
