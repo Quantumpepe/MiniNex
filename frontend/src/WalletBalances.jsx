@@ -154,7 +154,7 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
     {sendStable&&<div className="mininex-stablecoin-send-panel" key={userId+':'+sendStable}>
       <strong>{sendStable} · Ethereum Mainnet</strong>
       <WalletSend t={t} enabled={true} userId={userId}
-        initialCoin={sendStable} lockedCoin/>
+        initialCoin={sendStable} lockedCoin initialOpen/>
     </div>}
     <button type="button" className="mininex-stablecoin-refresh"
       onClick={()=>setRequest(n=>n+1)} disabled={loading}
