@@ -197,7 +197,7 @@ def test_owner_manual_evm_leg_only_records_finalized_canonical_token_transfers()
     for change in (
         {"state": "INCLUDED_SUCCESS"},
         {"transaction_finalized": False},
-        {"wallet_address": "0x" + "bb"*20},
+        {"wallet_address": "0x123"},
         {"side": "SELL"},
         {"network": "polygon-pos-mainnet"},
         {"destination_received_amount": "NaN"},
