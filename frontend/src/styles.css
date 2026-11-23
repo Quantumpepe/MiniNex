@@ -962,7 +962,24 @@
 
 /* Always-visible USDC / USDT holdings; no collapsible Wallet-Guthaben button. */
 .mininex-stablecoin-holdings{
-  display:flex;align-items:stretch;gap:8px;min-width:0;
+  display:grid;grid-template-columns:minmax(0,1fr) 36px;align-items:stretch;
+  gap:8px;min-width:0;
+}
+.mininex-stablecoin-tiles{grid-column:1;grid-row:1}
+.mininex-stablecoin-refresh{grid-column:2;grid-row:1}
+.mininex-stablecoin-send-panel{
+  grid-column:1/-1;min-width:0;border:1px solid #32645e;
+  border-radius:12px;padding:10px;background:rgba(12,46,48,.8);
+}
+.mininex-stablecoin-send-panel>strong{display:block;margin-bottom:8px}
+.mininex-stablecoin-send-panel .mininex-wallet-send{min-width:0}
+.mininex-stablecoin-send{margin-left:auto;flex:0 0 auto;padding:5px 7px;
+  display:flex;align-items:center;gap:3px;border:1px solid #3e8673;
+  border-radius:8px;background:#1c594b;color:#e4fff4;font-size:11px;cursor:pointer}
+.mininex-stablecoin-send:focus-visible{outline:2px solid #65e9b9;outline-offset:2px}
+@media(max-width:420px){
+  .mininex-stablecoin-tile{flex-wrap:wrap}
+  .mininex-stablecoin-send{margin-left:0;flex-basis:100%;justify-content:center}
 }
 .mininex-stablecoin-tiles{
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
