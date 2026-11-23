@@ -113,6 +113,29 @@ def test_single_real_provider_call_no_wallet_funding_memo_or_action(monkeypatch)
     assert "memo" not in out and "inbound_address" not in out
 
 
+def test_native_quote_accepts_market_terms_but_discards_provider_funding_instructions(monkeypatch):
+    original=httpx.AsyncClient
+    def mock_client(*args,**kwargs):
+        def callback(request):
+            return httpx.Response(200,json=provider(
+                inbound_address="rNeverCopyVaultInstructions",
+                memo="=:ETH.USDT:rNeverAuthorized",
+                expected_amount_out="987650000",
+            ))
+        return original(*args,transport=httpx.MockTransport(callback),**kwargs)
+    monkeypatch.setattr(mq.httpx,"AsyncClient",mock_client)
+    result=asyncio.run(mq.get_native_swap_quote("XRP","USDT","3"))
+    assert result["estimated_output_amount"]=="9.8765"
+    assert result["quote_provider"]=="THORCHAIN_PUBLIC_MCP"
+    assert result["transaction_built"] is False
+    assert result["execution_enabled"] is False
+    assert result["can_submit"] is False
+    assert result["deposit_address_provided"] is False
+    assert "rNeverCopyVaultInstructions" not in str(result)
+    assert "rNeverAuthorized" not in str(result)
+    assert "memo" not in result and "inbound_address" not in result
+
+
 def test_native_quote_exposes_provider_ttl_without_funding_instructions(monkeypatch):
     original=httpx.AsyncClient
     expiry=int(time.time())+20
@@ -128,8 +151,6 @@ def test_native_quote_exposes_provider_ttl_without_funding_instructions(monkeypa
 
 
 @pytest.mark.parametrize("evil", [
-    {"memo":"=:BTC.BTC:address"},
-    {"inbound_address":"bc1qsuspect"},
     {"slippage_bps":1000},
     {"expected_amount_out":"0"},
     {"expected_amount_out":"NaN"},

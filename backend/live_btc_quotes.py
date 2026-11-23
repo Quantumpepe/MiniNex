@@ -146,10 +146,16 @@ def _provider_quote(raw: object, *, from_asset: str,
         parsed = parsed["quote"]
     if not isinstance(parsed, dict):
         raise ValueError("Cross-chain quote malformed")
-    # A quote with an inbound address/memo can become a real funding
-    # instruction. Never expose either to clients in this read-only service.
-    if "inbound_address" in parsed or "memo" in parsed:
-        raise ValueError("Unexpected executable cross-chain swap instructions")
+    # Core THORChain may include an inbound address and swap memo even when
+    # MiniNex supplied no destination. These are provider-generated funding
+    # instructions, NOT a reason to discard otherwise verifiable market
+    # data. Strictly project onto pricing-only fields before validation;
+    # never return, log, store or use those execution instructions.
+    pricing_fields = (
+        "from_asset", "to_asset", "amount", "expected_amount_out",
+        "slippage_bps", "fees", "recommended_min_amount_in", "expiry",
+    )
+    parsed = {key: parsed[key] for key in pricing_fields if key in parsed}
     for key, expected in (("from_asset", from_asset), ("to_asset", to_asset)):
         if key in parsed and parsed[key] != expected:
             raise ValueError("Cross-chain quote asset mismatch")

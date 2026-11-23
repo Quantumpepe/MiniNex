@@ -89,7 +89,7 @@ def test_exact_btc_satoshis_and_stablecoin_precision():
         assert err.value.status_code==422
 
 
-def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms():
+def test_provider_quote_rejects_bad_terms_and_never_exposes_funding_instructions():
     from_asset="BTC.BTC"
     to_asset="ETH.USDC-0XABC"
     good=q._provider_quote(provider_quote(),from_asset=from_asset,
@@ -117,8 +117,6 @@ def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms()
         {"slippage_bps":600},
         {"slippage_bps":-1},
         {"recommended_min_amount_in":"200000000"},
-        {"inbound_address":"bc1qnotadestination"},
-        {"memo":"=:ETH.USDC:0x..."},
         {"to_asset":"ETH.ETH"},
         {"from_asset":"BTC.BTC2"},
         {"amount":"200000000"},
@@ -128,6 +126,21 @@ def test_provider_quote_strictly_rejects_memos_inbound_addresses_and_bad_terms()
         with pytest.raises(ValueError):
             q._provider_quote(altered,from_asset=from_asset,
                               to_asset=to_asset,input_units="100000000")
+    # THORChain Core can include instructions in an ordinary quote result.
+    # It is safe to show independently validated pricing, but NOT any vault
+    # address, swap memo, or signing authorization.
+    quote_with_instructions=provider_quote()
+    quote_with_instructions["result"]["structuredContent"]["data"].update({
+        "inbound_address":"bc1qneverforwardthis",
+        "memo":"=:ETH.USDC:0xnotanauthorizedrecipient",
+        "streaming_swap":{"interval":1,"quantity":2},
+    })
+    checked=q._provider_quote(quote_with_instructions,
+        from_asset=from_asset,to_asset=to_asset,input_units="100000000")
+    assert checked["estimated_output_units_1e8"]=="200000000"
+    assert checked["minimum_received_guaranteed"] is False
+    assert all(key not in checked for key in ("memo","inbound_address","streaming_swap"))
+    assert "bc1qneverforwardthis" not in str(checked)
     with pytest.raises(ValueError):
         q._provider_quote({"jsonrpc":"2.0","id":1,"error":{"code":-1}},
             from_asset=from_asset,to_asset=to_asset,input_units="100000000")
