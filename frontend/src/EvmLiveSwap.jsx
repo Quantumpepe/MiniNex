@@ -4,7 +4,8 @@ import {API_BASE} from './data.js';
 import {EVM_CHAINS} from './evmSwapRules.js';
 import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {validateOwnerSwapPreparation,exactNativeOwnerUnits,
-  NATIVE_OWNER_SWAP_ASSETS,OWNER_SWAP_CHAINS} from './evmOwnerSwapPreparation.js';
+  NATIVE_OWNER_SWAP_ASSETS,OWNER_SWAP_CHAINS,
+  verifyOwnerEvmMinedTx} from './evmOwnerSwapPreparation.js';
 
 // Owner-signed live V3 swaps for one EVM coin and its selected stablecoin.
 // MiniNex's authenticated backend produces a fresh on-chain quote and exact
@@ -222,6 +223,15 @@ export default function EvmLiveSwap({
           // reverted. Keep its one-shot lock until the owner reconciles it.
           setError(words.uncertain);setPhase('uncertain');return;
         }
+        const original=await p.request({method:'eth_getTransactionByHash',
+          params:[pending.hash]});
+        if(!active)return;
+        if(!original){timeout=setTimeout(check,13000);return;}
+        try {
+          verifyOwnerEvmMinedTx(original,pending.tx,pending.hash,pending.plan.chainId);
+        }catch{
+          setError(words.uncertain);setPhase('uncertain');return;
+        }
         if(receipt.status==='0x0'){
           // A matching mined REVERT proves this particular send did not
           // execute. Chargeable gas may have changed the native balance;
@@ -238,14 +248,6 @@ export default function EvmLiveSwap({
           setError(words.uncertain);setPhase('uncertain');return;
         }
         if(pending.kind==='swap'){
-          const original=await p.request({method:'eth_getTransactionByHash',
-            params:[pending.hash]});
-          if(!active)return;
-          if(!original||original.input?.toLowerCase()!==pending.tx.data.toLowerCase()
-              ||original.from?.toLowerCase()!==wallet.address.toLowerCase()
-              ||original.to?.toLowerCase()!==pending.tx.to.toLowerCase()){
-            setError('Swap calldata verification failed');setPhase('failed');return;
-          }
           refreshIncludedBalance(pending.hash);
           const saved=await backend('/api/live/evm/finalized-swap/'+asset+'/'+
             encodeURIComponent(pending.hash)+'?side='+side+'&stable='+stable);

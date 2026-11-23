@@ -3,6 +3,14 @@ export const MANUAL_SWAP_ASSETS = Object.freeze([
   'BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','DOGE','UNI','ARB','USDC','USDT',
 ]);
 const STABLES = new Set(['USDC','USDT']);
+// Actual same-chain executable V3 settlements, not cross-chain previews.
+const LIVE_EVM_SETTLEMENTS=Object.freeze({
+  BNB:['USDT'],POL:['USDC'],AVAX:['USDC'],
+  ARB:['USDC','USDT'],LINK:['USDC','USDT'],
+  QNT:['USDC','USDT'],UNI:['USDC','USDT'],
+});
+export const liveEvmStableSupported=(asset,stable)=>
+  LIVE_EVM_SETTLEMENTS[asset]?.includes(stable)===true;
 const RE_AMOUNT = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
 export function manualSwapQuoteRequest(from, to, amount) {
@@ -14,7 +22,8 @@ export function manualSwapQuoteRequest(from, to, amount) {
   // ERC-20 on Arbitrum One, not a 6-decimal native network coin.
   const decimals = legacy
     ? (from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6)
-    : (STABLES.has(from) || ['XRP','TRX'].includes(from) ? 6 :
+    : (STABLES.has(from) ? (from === 'USDT' && to === 'BNB' ? 18 : 6) :
+       ['XRP','TRX'].includes(from) ? 6 :
        from === 'SOL' ? 9 :
        ['BTC','DOGE'].includes(from) ? 8 : 18);
   if (typeof amount !== 'string' || amount.length > 48 ||

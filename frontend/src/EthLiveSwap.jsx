@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {useWallets} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
 import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
+import {verifyOwnerEvmMinedTx} from './evmOwnerSwapPreparation.js';
 import {ROUTER02,WETH9,abiAllowance,abiBalance,abiApprove,decodeUint,
   exactEthUnits,wethWithdrawCalldata,
   ownerAccounts,validHash,validateOwnerRouter02Call} from './ethLiveSwapRules.js';
@@ -19,13 +20,14 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
   const serial=useRef(0);
   const attempted=useRef(false);
   const reportedReceipt=useRef('');
+  const submittedTx=useRef(null);
   const provider=useRef(null);
   const wallet=wallets.find(w=>w?.walletClientType==='privy'&&
     /^0x[0-9a-fA-F]{40}$/.test(w?.address||''));
   useEffect(()=>{
     serial.current++;setReview(null);setStage('idle');
     setError('');setHash('');setBusy(false);
-    provider.current=null;attempted.current=false;
+    provider.current=null;attempted.current=false;submittedTx.current=null;
   },[enabled,userId,side,stable,amount]);
 
   async function refreshRealHistory(){
@@ -146,6 +148,7 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       const result=await p.request({method:'eth_sendTransaction',params:[tx]});
       if(!validHash(result))throw Error('Transaction hash uncertain; do not retry');
       if(id!==serial.current)return;
+      submittedTx.current={hash:result,tx};
       setHash(result);setStage(kind+'-submitted');
     }catch(e){
       if(id===serial.current){
@@ -172,11 +175,21 @@ export default function EthLiveSwap({enabled,userId,getAccessToken,side,stable,a
       if(found.transactionHash?.toLowerCase()!==hash.toLowerCase()||
          found.from?.toLowerCase()!==wallet.address.toLowerCase())
         throw Error('Untrusted receipt');
+      const sent=submittedTx.current;
+      if(!sent||sent.hash.toLowerCase()!==hash.toLowerCase())
+        throw Error('Original wallet transaction not available');
+      if(BigInt(await p.request({method:'eth_chainId'}))!==1n)
+        throw Error('Switch to Ethereum mainnet before checking the receipt');
+      const original=await p.request({method:'eth_getTransactionByHash',
+        params:[hash]});
+      if(!original)throw Error('Original on-chain transaction still unavailable');
+      verifyOwnerEvmMinedTx(original,sent.tx,hash,1);
       if(found.status==='0x0'){
         // Only a chain-confirmed REVERT may release a submitted transaction's
         // one-shot lock. New quote + new user signature remain mandatory.
         notifyConfirmedWalletTransfer(userId,'ETH',hash);
-        attempted.current=false;onTradePendingChange?.(false);
+        attempted.current=false;submittedTx.current=null;
+        onTradePendingChange?.(false);
         setReview(null);setStage('failed');
         setError('Transaction reverted on-chain. Prepare a new quote.');
         return;

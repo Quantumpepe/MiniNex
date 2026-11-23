@@ -4,7 +4,8 @@ import {API_BASE} from './data.js';
 import {COINS} from './coins.js';
 import EthLiveSwap from './EthLiveSwap.jsx';
 import EvmLiveSwap from './EvmLiveSwap.jsx';
-import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,manualSwapQuoteExpiryMs} from './manualSwapRules.js';
+import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,
+  manualSwapQuoteExpiryMs,liveEvmStableSupported} from './manualSwapRules.js';
 
 // Manual provider quote previews remain read-only for every chain. Only the
 // already implemented ETH/USDC/USDT route mounts its separately user-signed
@@ -35,6 +36,8 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
     ?(stableCoins.includes(from)?'BUY':'SELL'):null;
   const ownerEvmStable=ownerEvmAsset
     ?(stableCoins.includes(from)?from:to):null;
+  const liveOwnerEvmPair=!!ownerEvmAsset&&
+    liveEvmStableSupported(ownerEvmAsset,ownerEvmStable);
   const supportedPair=!!ownerEvmAsset||(
     MANUAL_SWAP_ASSETS.includes(from)&&
     MANUAL_SWAP_ASSETS.includes(to)&&
@@ -210,11 +213,13 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         enabled={enabled} userId={userId} getAccessToken={getAccessToken}
         side={request.body.side} stable={request.body.stable}
         amount={request.body.amount} t={t}/>}
-      {ownerEvmAsset&&<EvmLiveSwap
+      {liveOwnerEvmPair&&request&&<EvmLiveSwap
         key={[userId,ownerEvmAsset,ownerEvmSide,ownerEvmStable,amount].join(':')}
         enabled={enabled} userId={userId} asset={ownerEvmAsset}
         side={ownerEvmSide} stable={ownerEvmStable} amount={amount}
         lang={lang} getAccessToken={getAccessToken} t={t}/>}
+      {ownerEvmAsset&&!liveOwnerEvmPair&&
+        <p className="privy-wallet-description" role="status">{t.walletSwapNotEnabled}</p>}
       {!ethManualPair&&!['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(from)&&!['ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(to)&&<p className="privy-wallet-description mininex-swap-disabled-note" role="status">
         {t.walletSwapNotEnabled}
       </p>}

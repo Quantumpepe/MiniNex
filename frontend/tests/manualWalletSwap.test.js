@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {manualSwapQuoteRequest,validManualSwapWalletReadiness} from '../src/manualSwapRules.js';
+import {manualSwapQuoteRequest,validManualSwapWalletReadiness,
+  liveEvmStableSupported} from '../src/manualSwapRules.js';
+import {verifyOwnerEvmMinedTx} from '../src/evmOwnerSwapPreparation.js';
 
 const component=readFileSync(new URL('../src/ManualSwapPreview.jsx',import.meta.url),'utf8');
 const signer=readFileSync(new URL('../src/EvmLiveSwap.jsx',import.meta.url),'utf8');
@@ -52,4 +54,31 @@ test('only an identity-matched on-chain revert permits explicit re-prepare',()=>
   assert.match(signer,/receipt\.status!=='0x1'[\s\S]*?setPhase\('uncertain'\)/);
   assert.match(ethSigner,/found\.status==='0x0'[\s\S]*?attempted\.current=false/);
   assert.match(ethSigner,/found\.status!=='0x1'/);
+});
+
+test('real EVM wallet send verifies on-chain original calldata, value and chain',()=>{
+  const tx={from:'0x'+'a'.repeat(40),to:'0x'+'b'.repeat(40),
+    data:'0xd0e30db0',value:'0x1234'};
+  const onchain={hash:'0x'+'c'.repeat(64),from:tx.from,to:tx.to,
+    input:tx.data,value:'0x1234',chainId:'0x38'};
+  assert.equal(verifyOwnerEvmMinedTx(onchain,tx,onchain.hash,56),true);
+  for(const change of [
+    {input:'0x095ea7b3'},{value:'0x1235'},{chainId:'0x1'},
+    {to:'0x'+'d'.repeat(40)},{from:'0x'+'d'.repeat(40)},
+    {hash:'0x'+'d'.repeat(64)},
+  ])assert.throws(()=>verifyOwnerEvmMinedTx(
+    {...onchain,...change},tx,onchain.hash,56));
+  assert.match(signer,/verifyOwnerEvmMinedTx\(original,pending\.tx/);
+});
+
+test('only actual same-chain EVM stable routes mount the real swap signer',()=>{
+  for(const [asset,valid] of [
+    ['BNB','USDT'],['POL','USDC'],['AVAX','USDC'],['ARB','USDT'],
+    ['LINK','USDC'],['QNT','USDT'],['UNI','USDC'],
+  ])assert.equal(liveEvmStableSupported(asset,valid),true);
+  for(const [asset,invalid] of [
+    ['BNB','USDC'],['POL','USDT'],['AVAX','USDT'],
+  ])assert.equal(liveEvmStableSupported(asset,invalid),false);
+  assert.ok(manualSwapQuoteRequest('USDT','BNB','0.000000000000000001'));
+  assert.match(component,/liveOwnerEvmPair&&request&&<EvmLiveSwap/);
 });

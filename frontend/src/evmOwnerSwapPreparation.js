@@ -99,3 +99,28 @@ export function exactNativeOwnerUnits(value){
   if(atomic<=0n||atomic>=10n**45n)throw Error('Invalid native coin amount');
   return atomic;
 }
+
+const RECEIPT_HASH=/^0x[0-9a-fA-F]{64}$/;
+
+// On-chain inclusion is not confirmation that Privy broadcast the exact
+// approved action. Validate original bytes for swaps, allowance approvals,
+// native deposits and withdrawals BEFORE claiming the corresponding step.
+export function verifyOwnerEvmMinedTx(onchain,expected,hash,chainId){
+  if(!RECEIPT_HASH.test(hash)||!onchain||!expected||
+    typeof onchain.input!=='string'||
+    !/^0x(?:[0-9a-fA-F]{2})*$/.test(onchain.input)||
+    typeof expected.data!=='string'||
+    !eq(onchain.hash,hash)||
+    !eq(onchain.from,expected.from)||
+    !eq(onchain.to,expected.to)||
+    !eq(onchain.input,expected.data))
+    throw Error('Mined EVM transaction differs from owner-approved operation');
+  try {
+    if(BigInt(onchain.chainId)!==BigInt(chainId)||
+       BigInt(onchain.value)!==BigInt(expected.value))
+      throw Error('Mined EVM chain or native value mismatch');
+  }catch{
+    throw Error('Mined EVM chain or native value mismatch');
+  }
+  return true;
+}
