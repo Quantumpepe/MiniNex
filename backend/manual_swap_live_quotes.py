@@ -8,6 +8,7 @@ No provider-supplied deposit address/memo can reach the mobile app.
 from __future__ import annotations
 
 import asyncio
+import logging
 from decimal import Decimal
 import time
 
@@ -42,6 +43,7 @@ THOR_ASSETS = {
 assert set(THOR_ASSETS) == set(ALL_SWAP_ASSETS)
 # Never let an unresponsive public provider exhaust Render's worker slots.
 _QUOTE_SEMAPHORE = asyncio.Semaphore(4)
+_LOG=logging.getLogger("mininex.manual_crosschain_quote")
 
 
 def validate_live_quote_pair(source: object, target: object,
@@ -91,7 +93,13 @@ async def get_native_swap_quote(source: str, target: str, amount: str) -> dict:
                 to_asset=to_asset, input_units=units,
             )
     except (httpx.HTTPError, ValueError, TypeError, OverflowError,
-            asyncio.TimeoutError):
+            asyncio.TimeoutError) as exc:
+        # Public asset symbols and our own fixed parser error messages only.
+        # Never log wallet addresses, upstream payloads, inbound instructions
+        # or an HTTP exception's raw URL/body.
+        reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__
+        _LOG.warning("Cross-chain quote unavailable %s -> %s reason=%s",
+                     source,target,reason[:100])
         raise HTTPException(503, "Real swap venue quote unavailable") from None
     finally:
         if acquired:

@@ -249,3 +249,21 @@ def test_core_mcp_parser_accepts_one_sse_jsonrpc_event_and_rejects_ambiguity():
     with pytest.raises(ValueError):
         q._decode_mcp_quote_response(httpx.Response(
             200,headers={"content-type":"text/html"},text="<h1>308 redirect</h1>"))
+
+
+def test_canonical_core_quote_accepts_fee_nested_price_impact_and_rejects_conflict():
+    """Core MCP quote_swap returns fees.slippage_bps on active protocol."""
+    from_asset="XRP.XRP"
+    to_asset="ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7"
+    nested=provider_quote(out="123456789",slippage=25)
+    data=nested["result"]["structuredContent"]
+    data["data"].pop("slippage_bps")
+    data["data"]["fees"]={"slippage_bps":34,"outbound":"1200"}
+    verified=q._provider_quote(nested,from_asset=from_asset,
+        to_asset=to_asset,input_units="300000000")
+    assert verified["slippage_bps"]==34
+    assert verified["estimated_output_units_1e8"]=="123456789"
+    data["data"]["slippage_bps"]=35
+    with pytest.raises(ValueError,match="Conflicting THORChain price impact"):
+        q._provider_quote(nested,from_asset=from_asset,
+            to_asset=to_asset,input_units="300000000")

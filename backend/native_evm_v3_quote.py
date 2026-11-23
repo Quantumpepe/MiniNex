@@ -12,6 +12,7 @@ import asyncio
 from dataclasses import dataclass, replace
 from decimal import Decimal
 import hashlib
+import logging
 import os
 import re
 import time
@@ -31,6 +32,7 @@ _WORD=re.compile(r"^0x[0-9a-fA-F]{64}$")
 _SMALL_HEX=re.compile(r"^0x[0-9a-fA-F]{1,64}$")
 _FEES=(500,3000)
 _SLIPPAGE_BPS=50
+_LOG=logging.getLogger("mininex.evm_quote")
 
 @dataclass(frozen=True)
 class ChainRoute:
@@ -126,7 +128,12 @@ async def _rpc(client:httpx.AsyncClient,url:str,method:str,
         headers={"Accept":"application/json","Content-Type":"application/json"},
     )
     response.raise_for_status()
-    if len(response.content)>16_384:
+    # eth_getCode returns hex-encoded deployed bytecode. Official Uniswap
+    # Router02/QuoterV2 runtime bytecode can exceed 16 KB *as JSON*, even
+    # though the actual on-chain contract is within the EIP-170 24 KB limit.
+    # Keep other RPC calls bounded to the smaller limit.
+    cap=65_536 if method=="eth_getCode" else 16_384
+    if len(response.content)>cap:
         raise ValueError("Oversized EVM mainnet RPC answer")
     data=response.json()
     if (type(data) is not dict or data.get("jsonrpc")!="2.0"
@@ -175,6 +182,7 @@ async def quote_native_evm_trade(
         raise HTTPException(503,"Secure EVM network RPC required")
 
     for rpc_url in _read_rpc_candidates(asset,rpc_url):
+        stage="chain_id"
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(9),follow_redirects=False,
@@ -184,6 +192,7 @@ async def quote_native_evm_trade(
                 if observed!=route.chain_id:
                     raise ValueError("EVM RPC answered with wrong chain")
                 # Both contracts must be deployed, not user-provided addresses.
+                stage="contract_bytecode"
                 for rid,contract in enumerate(
                     (route.router,route.quoter,route.stable_contract,route.wrapped),
                     start=2,
@@ -192,15 +201,18 @@ async def quote_native_evm_trade(
                     if (type(code) is not str or not re.fullmatch(
                             r"0x(?:[0-9a-fA-F]{2})+",code) or code=="0x"):
                         raise ValueError("EVM verified route contract not deployed")
+                stage="stable_precision"
                 precision=await _rpc(client,rpc_url,"eth_call",[
                     {"to":route.stable_contract,"data":"0x313ce567"},"latest"
                 ],6)
                 if _decode_quantity(precision,word=True)!=route.stable_decimals:
                     raise ValueError("Wrong settlement token decimals on this chain")
+                stage="native_balance"
                 native=_decode_quantity(
                     await _rpc(client,rpc_url,"eth_getBalance",[wallet,"latest"],7))
                 if native<=0:
                     raise HTTPException(409,"Insufficient native coin for network gas")
+                stage="source_balance"
                 source=route.stable_contract if side=="BUY" else route.wrapped
                 balance=await _token_balance(client,rpc_url,source,wallet,8)
                 source_funded=balance>=int(atomic)
@@ -217,6 +229,7 @@ async def quote_native_evm_trade(
                         409,"Insufficient verified ERC20 source balance; native wrap may be needed")
                 token_in=source
                 token_out=route.wrapped if side=="BUY" else route.stable_contract
+                stage="dex_pool_quote"
                 results=await asyncio.gather(*(
                     _rpc(client,rpc_url,"eth_call",[
                         {"to":route.quoter,"data":_quote_calldata(
@@ -241,7 +254,11 @@ async def quote_native_evm_trade(
                 asset=asset,stable=stable,side=side,wallet=wallet,
                 amount_in=int(atomic),min_out=minimum,fee=fee,
             )
-        except (httpx.HTTPError,TypeError,ValueError,OverflowError):
+        except (httpx.HTTPError,TypeError,ValueError,OverflowError) as exc:
+            # Record only a bounded stage name / exception type: never public
+            # IP, private wallet address, RPC URL or provider response bytes.
+            _LOG.warning("EVM quote rejected asset=%s stage=%s reason=%s",
+                         asset,stage,type(exc).__name__)
             # Retry only an unsigned, read-only quote if the preferred RPC
             # cannot establish a valid pool price. A missing real pool stays
             # unavailable; no simulated rate or signed transaction is used.

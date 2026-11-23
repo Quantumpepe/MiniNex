@@ -158,7 +158,15 @@ def _provider_quote(raw: object, *, from_asset: str,
     output = parsed.get("expected_amount_out")
     if not isinstance(output, str) or not _UNITS.fullmatch(output):
         raise ValueError("Unverified cross-chain quote output")
-    slippage = parsed.get("slippage_bps")
+    fee_fields = parsed.get("fees")
+    nested_slippage = (fee_fields.get("slippage_bps")
+                       if type(fee_fields) is dict else None)
+    top_slippage = parsed.get("slippage_bps")
+    if (nested_slippage is not None and top_slippage is not None
+            and str(nested_slippage) != str(top_slippage)):
+        raise ValueError("Conflicting THORChain price impact fields")
+    slippage = (nested_slippage if nested_slippage is not None
+                else top_slippage)
     if isinstance(slippage, bool) or not isinstance(slippage, (int,str)):
         raise ValueError("Cross-chain slippage unavailable")
     if not str(slippage).isascii() or not str(slippage).isdecimal():

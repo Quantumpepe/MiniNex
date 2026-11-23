@@ -2,6 +2,7 @@
 import asyncio
 import inspect
 import time
+import httpx
 
 import pytest
 from fastapi import HTTPException
@@ -199,3 +200,23 @@ def test_polygon_quote_uses_independent_read_only_rpc_if_first_endpoint_fails(
     assert result["chain_id"]==137
     assert any(url==preferred for url,_ in observed)
     assert any(url==alternate for url,_ in observed)
+
+
+def test_deployed_v3_contract_bytecode_is_not_rejected_by_tiny_rpc_response_limit():
+    """EVM contract bytecode is hex: the 16KB limit once broke getCode."""
+    async def check(size,method):
+        code="0x"+"60"*size
+        def provider(request):
+            assert request.url.host=="polygon-bor-rpc.publicnode.com"
+            payload=__import__("json").loads(request.content)
+            return httpx.Response(200,json={"jsonrpc":"2.0", "id":2,
+                "result":code})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+            return await evm._rpc(client,"https://polygon-bor-rpc.publicnode.com",
+                method,["0x"+"ab"*20,"latest"],2)
+    assert len(asyncio.run(check(20_000,"eth_getCode")))==2+40_000
+    assert len(asyncio.run(check(24_576,"eth_getCode")))==2+49_152
+    with pytest.raises(ValueError,match="Oversized EVM mainnet RPC answer"):
+        asyncio.run(check(24_576,"eth_call"))
+    with pytest.raises(ValueError,match="Oversized EVM mainnet RPC answer"):
+        asyncio.run(check(40_000,"eth_getCode"))
