@@ -211,7 +211,7 @@ async def prepare_owner_trx(did:str,*,source:object,destination:object,amount:ob
         "status":"awaiting_wallet_signature","authorization":token,
         "hash":"0x"+txid.lower(),"source":source,
         "destination":destination,"amount":str(Decimal(sun)/Decimal(1000000)),
-        "expires_in_seconds":_INTENT_SECONDS,
+        "expires_in_seconds":max(0,min(_INTENT_SECONDS,int((unsigned["raw_data"]["expiration"]-int(time.time()*1000))/1000)-5)),
     }
 
 
@@ -258,6 +258,34 @@ async def submit_owner_signed_trx(
             _PENDING.discard(txid)
 
 
+def solid_tron_receipt_confirmed(
+    txid:str,source:str,transaction:object,info:object=None,
+)->bool:
+    """Prove sender + finalized success; never infer it from broadcast status."""
+    if (not _HEX64.fullmatch(txid) or not _valid_address("TRX",source)
+            or type(transaction) is not dict
+            or str(transaction.get("txID","")).lower()!=txid.lower()):
+        return False
+    try:
+        entry=transaction["raw_data"]["contract"][0]
+        if (entry["type"]!="TransferContract"
+                or str(entry["parameter"]["value"]["owner_address"]).upper()!=tron_address_hex(source)):
+            return False
+    except (KeyError,TypeError,IndexError):
+        return False
+    # walletsolidity/gettransactionbyid returns only solidified transactions.
+    # A successful TransferContract ret is sufficient without an info record.
+    returns=transaction.get("ret")
+    if (type(returns) is list and len(returns)==1
+            and type(returns[0]) is dict):
+        return returns[0].get("contractRet")=="SUCCESS"
+    if (type(info) is dict and str(info.get("id","")).lower()==txid.lower()
+            and type(info.get("blockNumber")) is int and info["blockNumber"]>0
+            and type(info.get("receipt")) is dict):
+        return info["receipt"].get("result")=="SUCCESS"
+    return False
+
+
 async def confirmed_owner_trx(did:str,txid:str)->dict:
     did=_safe_did(did)
     if type(txid) is not str or not _HEX64.fullmatch(txid):
@@ -268,18 +296,9 @@ async def confirmed_owner_trx(did:str,txid:str)->dict:
     if not source:
         raise HTTPException(403,"TRX wallet was not verified")
     async with httpx.AsyncClient(timeout=httpx.Timeout(12),follow_redirects=False) as client:
-        info=await _tron_rpc(client,"/walletsolidity/gettransactioninfobyid",{"value":txid})
+        # The solidified transaction plus contractRet is the primary proof.
         transaction=await _tron_rpc(client,"/walletsolidity/gettransactionbyid",{"value":txid})
-    if (info.get("id","").lower()!=txid.lower()
-            or transaction.get("txID","").lower()!=txid.lower()):
-        return {"confirmed":False}
-    try:
-        entry=transaction["raw_data"]["contract"][0]
-        owner=entry["parameter"]["value"]["owner_address"]
-    except (KeyError,TypeError,IndexError):
-        return {"confirmed":False}
-    if (entry.get("type")!="TransferContract"
-            or str(owner).upper()!=tron_address_hex(source)
-            or type(info.get("blockNumber")) is not int or info["blockNumber"]<=0):
-        return {"confirmed":False}
-    return {"confirmed":info.get("receipt",{}).get("result")=="SUCCESS"}
+        if solid_tron_receipt_confirmed(txid,source,transaction):
+            return {"confirmed":True}
+        info=await _tron_rpc(client,"/walletsolidity/gettransactioninfobyid",{"value":txid})
+    return {"confirmed":solid_tron_receipt_confirmed(txid,source,transaction,info)}
