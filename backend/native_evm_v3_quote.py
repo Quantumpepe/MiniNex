@@ -238,7 +238,7 @@ async def quote_native_evm_trade(
                 "from":wallet,"to":tx["to"],"chainId":route.chain_id,
                 "value":"0x0","data":tx["data"],
             },
-            "transaction_expires_at":int(time.time())+15,
+            "transaction_expires_at":int(time.time())+40,
             "requires_owner_wallet_signature":True,
         } if include_user_transaction else {}),
         "mode":("SHARED_EVM_ERC20_V3_QUOTE" if asset=="ARB"

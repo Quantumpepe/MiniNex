@@ -146,6 +146,17 @@ def test_real_abi_quote_both_directions_and_non_atomic_stages(
     assert {c[1] for c in calls}=={1,500,3000}
 
 
+def test_owner_signed_eth_quote_remains_usable_during_wallet_confirmation(provider):
+    result=asyncio.run(router.make_policy_compatible_eth_quote(
+        DID,side="BUY",stable="USDC",amount="100",
+        include_user_transaction=True))
+    remaining=result["transaction_expires_at"]-int(time.time())
+    assert 25<=remaining<=40
+    assert result["quote_ttl_seconds"]==40
+    assert result["execution_enabled"] is False
+    assert result["can_submit"] is False
+
+
 def test_router02_quote_does_not_assume_native_eth_equals_weth(provider):
     state,calls=provider
     result=asyncio.run(router.make_policy_compatible_eth_quote(

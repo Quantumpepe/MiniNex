@@ -1,6 +1,7 @@
 """LINK and UNI use a common owner-bound V3 Router02 path, never paper fills."""
 import asyncio
 import inspect
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -105,6 +106,8 @@ def test_owner_verified_link_uni_quote_can_build_unsigned_user_transaction(
     assert result["transaction"]["from"]==WALLET
     assert result["transaction"]["data"].startswith("0x04e45aaf")
     assert result["requires_separate_erc20_approval"] is True
+    assert 25<=result["transaction_expires_at"]-int(time.time())<=40
+    assert result["quote_ttl_seconds"]==40
     assert result["can_submit"] is False
     assert result["execution_enabled"] is False
     assert result["funds_transferred"] is False

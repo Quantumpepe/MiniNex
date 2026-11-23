@@ -1,6 +1,7 @@
 """Shared actual Uniswap V3 mainnet route tests for BNB/POL/AVAX."""
 import asyncio
 import inspect
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -110,6 +111,7 @@ def test_native_evm_actual_chain_quote_and_wallet_unsigned_transaction(
     assert result["transaction"]["chainId"]==evm.CHAINS[asset].chain_id
     assert result["transaction"]["from"]==WALLET
     assert result["transaction"]["data"].startswith("0x04e45aaf")
+    assert 25<=result["transaction_expires_at"]-int(time.time())<=40
     assert result["native_wrap_unwrap_not_yet_settled"] is True
     assert result["source_token_allowance_not_checked"] is True
     assert result["execution_enabled"] is False
