@@ -66,7 +66,7 @@ export default function TrxSend({t,enabled,userId,address,getAccessToken}){
         </button>
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
-      </>
+      </>}
     </div>}
   </section>;
 }
