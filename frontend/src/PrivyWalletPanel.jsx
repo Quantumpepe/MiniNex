@@ -449,11 +449,20 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   // EVM sends use the verified wallet signer. Swap is still preview-only.
   const renderCoinBalance = asset => {
     const record=verifiedCoinHoldings?.[asset];
+    const token=({ETH:'WETH',BNB:'WBNB',POL:'WPOL',AVAX:'WAVAX'})[asset];
+    const wrapped=token&&verifiedCoinHoldings?.[token];
+    const prepared=wrapped?.status==='verified'&&
+      typeof wrapped.balance==='string'&&Number(wrapped.balance)>0;
     return <span className="mininex-coin-header-balance" role="status"
       aria-label={t.privyBalancesTitle+' '+asset}>
       {record?.status==='verified' ? formatAssetQuantity(record.balance,asset,lang)+' '+asset :
        record?.status==='wallet_missing' ? t.privyBalancesMissing :
        t.privyBalancesUnavailable}
+      {prepared&&<small style={{display:'block'}}>
+        {formatAssetQuantity(wrapped.balance,asset,lang)} {asset}
+        {' · '}{lang==='de'?'für Handel vorbereitet, nicht verkauft':
+          'prepared for trading, not sold'}
+      </small>}
     </span>;
   };
 

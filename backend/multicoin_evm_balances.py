@@ -35,6 +35,17 @@ _ETH_TOKENS = {
 }
 _ARB_TOKENS = {"ARB": "0x912CE59144191C1204E64559FE8253a0e49E6548"}
 _TOKEN_GROUPS = {"ETH_TOKENS": _ETH_TOKENS, "ARB_TOKENS": _ARB_TOKENS}
+# Fixed, authentic wrapped-native contracts. These are *not* additional
+# user-facing coins: they represent a user's actual existing assets during
+# wrap -> router swap / swap -> unwrap, and must count towards their native
+# asset's total wallet valuation. Read only, never sign or move assets.
+_WRAPPED_GROUPS = {
+    "BNB": ("WBNB", "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", "BNB"),
+    "POL": ("WPOL", "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", "POL"),
+    "AVAX": ("WAVAX", "0xB31f66AA3C1e785363f0875a1b74e27b85FD66c7", "AVAX"),
+    "ETH_TOKENS": ("WETH", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "ETH"),
+}
+WRAPPED_ORDER = ("WBNB", "WPOL", "WAVAX", "WETH")
 ORDER = ("BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
 # Native EVM units and the allowlisted ERC-20 contracts use 18 decimals.
 DECIMALS = {asset: 18 for asset in ORDER}
@@ -66,6 +77,32 @@ def _entry(asset: str, status: str, balance: str | None = None) -> dict:
     }
 
 
+def _wrapped_entry(name: str, status: str, balance: str | None = None) -> dict:
+    wrapped, contract, underlying = _WRAPPED_GROUPS[name]
+    chain_id, network, _, _ = _RPC[name]
+    return {
+        "asset": wrapped, "underlying": underlying, "network": network,
+        "chain_id": chain_id, "contract": contract.lower(),
+        "decimals": 18, "native": False,
+        "status": status, "balance": balance,
+        "wallet_funds_used_for_paper": False,
+    }
+
+
+async def _read_wrapped(client: httpx.AsyncClient, name: str,
+                        url: str, wallet: str) -> dict:
+    wrapped, contract, _ = _WRAPPED_GROUPS[name]
+    selector = "0x70a08231" + ("0" * 24) + wallet[2:].lower()
+    try:
+        atomic = await _rpc(
+            client, url, "eth_call", [{"to": contract, "data": selector},
+                                     "latest"], 21)
+        return {wrapped: _wrapped_entry(name, "verified", _units(atomic, WEI))}
+    except (httpx.HTTPError, ValueError, TypeError, OverflowError):
+        # An unreadable token balance is NEVER silently reported as zero.
+        return {wrapped: _wrapped_entry(name, "unavailable")}
+
+
 async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict:
     chain_id, _, fallback, env_name = _RPC[name]
     # The wallet reader and the real transaction encoder MUST agree on
@@ -83,7 +120,8 @@ async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict
         raise ValueError("Unexpected RPC chain ID")
     if name not in _TOKEN_GROUPS:
         wei = await _rpc(client, url, "eth_getBalance", [wallet, "latest"], 2)
-        return {name: _entry(name, "verified", _units(wei, WEI))}
+        wrapped = await _read_wrapped(client, name, url, wallet)
+        return {name: _entry(name, "verified", _units(wei, WEI)), **wrapped}
 
     selector = "0x70a08231" + ("0" * 24) + wallet[2:].lower()
     results = {}
@@ -96,6 +134,8 @@ async def _read_chain(client: httpx.AsyncClient, name: str, wallet: str) -> dict
             results[asset] = _entry(asset, "verified", _units(atomic, WEI))
         except (httpx.HTTPError, ValueError, TypeError, OverflowError):
             results[asset] = _entry(asset, "unavailable")
+    if name in _WRAPPED_GROUPS:
+        results.update(await _read_wrapped(client, name, url, wallet))
     return results
 
 
@@ -121,6 +161,10 @@ async def get_multicoin_evm_balances(did: str) -> dict:
             return_exceptions=True,
         )
     assets = {coin: _entry(coin, "unavailable") for coin in ORDER}
+    wrapped_assets = {
+        info[0]: _wrapped_entry(chain, "unavailable")
+        for chain, info in _WRAPPED_GROUPS.items()
+    }
     for chain, response in zip(_RPC, replies):
         if isinstance(response, BaseException):
             continue
@@ -128,12 +172,15 @@ async def get_multicoin_evm_balances(did: str) -> dict:
             for asset, entry in response.items():
                 if asset in assets and entry.get("status") == "verified":
                     assets[asset] = entry
+                if asset in wrapped_assets and entry.get("status") == "verified":
+                    wrapped_assets[asset] = entry
 
     return {
         "mode": "REAL_MAINNET_BALANCES_READ_ONLY",
         "wallet_ownership_verified": True,
         "asset_order": list(ORDER),
         "assets": assets,
+        "wrapped_assets": wrapped_assets,
         "wallet_funds_used_for_paper": False,
         "real_trading_enabled": False,
         "execution_available": False,

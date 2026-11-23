@@ -21,9 +21,22 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   useEffect(()=>{
     let active=true,inFlight=false,refreshQueued=false;
     const controllers=new Set();
-    setState({did,sources:null,status:'loading'});
-    setSamples({did,points:[]});
-    if(!visible||!ready||!authenticated||!did)
+    // Keep the LAST independently verified wallet data when navigation hides
+    // the overview or a refresh begins. A page change is not a logout.
+    // A different Privy DID, however, must never inherit old wallet values.
+    const owned=ready&&authenticated&&typeof did==='string'&&
+      did.startsWith('did:privy:');
+    setState(previous=>{
+      if(!owned)return previous.did===null&&!previous.sources?previous:
+        {did:null,sources:null,status:'idle'};
+      if(previous.did!==did)return {did,sources:null,
+        status:visible?'loading':'idle'};
+      if(!visible)return previous;
+      return {...previous,status:previous.sources?'refreshing':'loading'};
+    });
+    setSamples(previous=>
+      owned&&previous.did===did?previous:{did:owned?did:null,points:[]});
+    if(!visible||!owned)
       return ()=>{active=false;};
     const sync=async()=>{
       if(!active||inFlight||document.hidden)return;
@@ -45,11 +58,21 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
           }catch{return [key,null];}
         }));
         if(!active||controller.signal.aborted)return;
-        const sources=Object.fromEntries(values);
-        setState({did,sources,status:Object.values(sources).some(Boolean)?'ready':'error'});
+        const verified=Object.fromEntries(values.filter(([,data])=>data));
+        setState(previous=>{
+          if(previous.did!==did)return previous;
+          if(!Object.keys(verified).length){
+            // A transient RPC/network failure does not turn an already
+            // verified balance into zero or erase the observed chart.
+            return {...previous,status:previous.sources?'stale':'error'};
+          }
+          return {did,sources:{...previous.sources,...verified},
+            status:Object.keys(verified).length===SOURCES.length?'ready':'partial'};
+        });
       }catch{
         if(active&&!controller.signal.aborted)
-          setState({did,sources:null,status:'error'});
+          setState(previous=>previous.did===did
+            ?{...previous,status:previous.sources?'stale':'error'}:previous);
       }finally{
         inFlight=false;controllers.delete(controller);
         if(active&&refreshQueued){refreshQueued=false;void sync();}
@@ -78,14 +101,15 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
     state.sources,markets,syncedAt):null,
     [matched,state.sources,markets,syncedAt]);
   useEffect(()=>{
-    if(!matched||!summary?.valuationAvailable||summary.equity===null)return;
+    if(!visible||!matched||state.status!=='ready'||
+       !summary?.valuationAvailable||summary.equity===null)return;
     setSamples(prev=>{
       const points=prev.did===did?prev.points:[];
       const now=Date.now();
       if(points.length&&now-points[points.length-1].at<12000)return prev;
       return {did,points:[...points,{at:now,value:summary.equity}].slice(-90)};
     });
-  },[matched,did,summary?.equity,summary?.valuationAvailable]);
+  },[visible,matched,did,state.status,summary?.equity,summary?.valuationAvailable]);
   return {
     summary,samples:samples.did===did?samples.points:[],
     status:matched?state.status:'loading',

@@ -89,8 +89,19 @@ def test_five_real_onchain_balances_and_token_addresses(monkeypatch, rpc_client)
     chain_checks = [req for req in rpc_client if req["json"]["method"] == "eth_chainId"]
     assert len(chain_checks) == 5
     token_calls = [req for req in rpc_client if req["json"]["method"] == "eth_call"]
-    assert len(token_calls) == 4
-    assert {call["json"]["params"][0]["to"] for call in token_calls} == set(evm._ETH_TOKENS.values()) | set(evm._ARB_TOKENS.values())
+    assert len(token_calls) == 8
+    expected_tokens = set(evm._ETH_TOKENS.values()) | set(evm._ARB_TOKENS.values())
+    expected_wrapped = {item[1] for item in evm._WRAPPED_GROUPS.values()}
+    assert {call["json"]["params"][0]["to"].lower() for call in token_calls} == {
+        token.lower() for token in expected_tokens | expected_wrapped
+    }
+    assert result["wrapped_assets"]["WPOL"]["balance"] == "9"
+    assert result["wrapped_assets"]["WPOL"]["underlying"] == "POL"
+    assert result["wrapped_assets"]["WETH"]["contract"].lower() == (
+        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+    )
+    assert all(result["wrapped_assets"][asset]["status"] == "verified"
+               for asset in evm.WRAPPED_ORDER)
     assert all(call["json"]["params"][0]["data"].startswith("0x70a08231") for call in token_calls)
     assert all(ADDR.lower()[2:] in call["json"]["params"][0]["data"] for call in token_calls)
 
@@ -170,3 +181,21 @@ def test_endpoint_requires_user_login_and_is_readonly(monkeypatch, authorization
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.json()["real_trading_enabled"] is False
     assert seen == [DID]
+
+def test_polygon_wrapped_balance_rpc_failure_is_unavailable_not_zero(
+    monkeypatch, rpc_client,
+):
+    async def fetch(did):
+        return owner()
+    monkeypatch.setattr(evm, "fetch_privy_user", fetch)
+    original = evm._rpc
+    async def block_wrapped(client, url, method, params, rid):
+        if method == "eth_call" and rid == 21 and "polygon" in url:
+            raise ValueError("WPOL mainnet reader unavailable")
+        return await original(client, url, method, params, rid)
+    monkeypatch.setattr(evm, "_rpc", block_wrapped)
+    result = asyncio.run(evm.get_multicoin_evm_balances(DID))
+    assert result["assets"]["POL"]["status"] == "verified"
+    assert result["wrapped_assets"]["WPOL"]["status"] == "unavailable"
+    assert result["wrapped_assets"]["WPOL"]["balance"] is None
+    assert result["wrapped_assets"]["WBNB"]["status"] == "verified"

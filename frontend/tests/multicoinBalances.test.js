@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {EVM_BALANCE_ASSETS,EVM_BALANCE_NETWORKS,EVM_BALANCE_CHAIN_IDS,validateMulticoinBalanceResponse} from '../src/multicoinBalanceValidation.js';
+import {EVM_BALANCE_ASSETS,EVM_BALANCE_NETWORKS,EVM_BALANCE_CHAIN_IDS,
+  WRAPPED_EVM_ASSETS,validateMulticoinBalanceResponse} from '../src/multicoinBalanceValidation.js';
 
 function sample(){
   return {mode:'REAL_MAINNET_BALANCES_READ_ONLY',wallet_ownership_verified:true,
@@ -33,4 +34,32 @@ test('incorrect networks, units and fabricated availability are rejected',()=>{
     const data=sample();change(data);
     assert.equal(validateMulticoinBalanceResponse(data),false);
   }
+});
+
+test('exact on-chain wrapped holdings are verified per immutable chain and contract',()=>{
+  const data=sample();
+  data.wrapped_assets=Object.fromEntries(
+    Object.entries(WRAPPED_EVM_ASSETS).map(([asset,info])=>[asset,{
+      asset,underlying:info.underlying,network:info.network,
+      chain_id:info.chainId,contract:info.contract,decimals:18,
+      native:false,status:'verified',balance:'25.000000000000000000',
+      wallet_funds_used_for_paper:false,
+    }]));
+  assert.equal(validateMulticoinBalanceResponse(data),true);
+  const invalid=[x=>{x.wrapped_assets.WPOL.chain_id=56;},
+    x=>{x.wrapped_assets.WPOL.contract=x.wrapped_assets.WBNB.contract;},
+    x=>{x.wrapped_assets.WPOL.decimals=6;},
+    x=>{x.wrapped_assets.WPOL.native=true;},
+    x=>{x.wrapped_assets.WPOL.status='unavailable';},
+    x=>{x.wrapped_assets.WPOL.balance='25e18';}];
+  for(const change of invalid){
+    const copy=structuredClone(data);
+    change(copy);
+    assert.equal(validateMulticoinBalanceResponse(copy),false);
+  }
+  data.wrapped_assets.WPOL.status='unavailable';
+  data.wrapped_assets.WPOL.balance=null;
+  assert.equal(validateMulticoinBalanceResponse(data),true);
+  delete data.wrapped_assets.WPOL;
+  assert.equal(validateMulticoinBalanceResponse(data),false);
 });

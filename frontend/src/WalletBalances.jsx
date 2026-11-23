@@ -14,6 +14,7 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   const [status,setStatus]=useState('loading');
   const [balances,setBalances]=useState(null);
   const [evmBalances,setEvmBalances]=useState(null);
+  const [wrappedBalances,setWrappedBalances]=useState(null);
   const [evmStatus,setEvmStatus]=useState('loading');
   const [nativeBalances,setNativeBalances]=useState(null);
   const [nativeStatus,setNativeStatus]=useState('loading');
@@ -25,7 +26,8 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   useEffect(()=>{
     if(displayedUser.current===userId)return;
     displayedUser.current=userId;
-    setBalances(null);setEvmBalances(null);setNativeBalances(null);
+    setBalances(null);setEvmBalances(null);setWrappedBalances(null);
+    setNativeBalances(null);
     setStatus('loading');setEvmStatus('loading');setNativeStatus('loading');
   },[userId]);
 
@@ -98,7 +100,8 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
 
   // A failure on any additional EVM network never hides BTC/ETH balances.
   useEffect(()=>{
-    if(!userId){setEvmBalances(null);setEvmStatus('idle');return;}
+    if(!userId){setEvmBalances(null);setWrappedBalances(null);
+      setEvmStatus('idle');return;}
     let current=true;
     (async()=>{
       try{
@@ -113,9 +116,14 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
         const data=await response.json();
         if(!validateMulticoinBalanceResponse(data))
           throw new Error('Unverified additional network balances');
-        if(current){setEvmBalances(data.assets);setEvmStatus('ready');}
+        if(current){
+          setEvmBalances(data.assets);
+          setWrappedBalances(data.wrapped_assets||null);
+          setEvmStatus('ready');
+        }
       }catch{
-        if(current){setEvmBalances(null);setEvmStatus('failed');}
+        if(current){setEvmBalances(null);setWrappedBalances(null);
+          setEvmStatus('failed');}
       }
     })();
     return()=>{current=false;};
@@ -155,10 +163,14 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
       AVAX:evmBalances?.AVAX||null,LINK:evmBalances?.LINK||null,
       UNI:evmBalances?.UNI||null,QNT:evmBalances?.QNT||null,
       ARB:evmBalances?.ARB||null,
+      WBNB:wrappedBalances?.WBNB||null,
+      WPOL:wrappedBalances?.WPOL||null,
+      WAVAX:wrappedBalances?.WAVAX||null,
+      WETH:wrappedBalances?.WETH||null,
       SOL:nativeBalances?.SOL||null,XRP:nativeBalances?.XRP||null,
       TRX:nativeBalances?.TRX||null,DOGE:nativeBalances?.DOGE||null,
     });
-  },[onSnapshot,balances,evmBalances,nativeBalances]);
+  },[onSnapshot,balances,evmBalances,wrappedBalances,nativeBalances]);
 
   const loading=status==='loading'||evmStatus==='loading'||nativeStatus==='loading';
   const stableBalance = asset => {
