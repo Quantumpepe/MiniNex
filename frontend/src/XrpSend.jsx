@@ -37,7 +37,7 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
         from:address,to:destination.trim(),amount:amount.trim(),
       },token);
       if(prepared.source!==address||prepared.destination!==destination.trim()
-        ||prepared.amount!==amount.trim().replace(/^0+(?=\d)/,'')
+        ||!Number.isFinite(Number(amount))||Number(prepared.amount)!==Number(amount)
         ||typeof prepared.hash!=='string'
         ||!/^0x[0-9a-fA-F]{64}$/.test(prepared.hash)
         ||typeof prepared.authorization!=='string')
@@ -48,9 +48,11 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
       });
       if(!signed?.signature||!/^0x[0-9a-fA-F]{128}$/.test(signed.signature))
         throw new Error('No valid XRP wallet signature was received');
+      const freshToken=await getAccessToken?.();
+      if(!freshToken)throw new Error('Authentication expired; no XRP sent');
       const submitted=await request('/api/wallet/send/xrp/submit',{
         authorization:prepared.authorization,signature:signed.signature,
-      },token);
+      },freshToken);
       if(!submitted?.txid||submitted.status!=='submitted_pending_validation')
         throw new Error('XRP submission status unknown; check wallet before retrying');
       setReceipt({txid:submitted.txid,status:submitted.status});
