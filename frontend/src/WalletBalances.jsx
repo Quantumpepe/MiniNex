@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {RefreshCcw,Send} from 'lucide-react';
 import WalletSend from './WalletSend.jsx';
 import {API_BASE} from './data.js';
+import {onConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 import {ASSETS,validateWalletBalanceResponse} from './walletBalanceValidation.js';
 import {EVM_BALANCE_ASSETS,validateMulticoinBalanceResponse}
   from './multicoinBalanceValidation.js';
@@ -16,6 +17,10 @@ export default function WalletBalances({t,getAccessToken,userId,onSnapshot}) {
   const [evmStatus,setEvmStatus]=useState('loading');
   const [nativeBalances,setNativeBalances]=useState(null);
   const [nativeStatus,setNativeStatus]=useState('loading');
+
+  // Re-fetch authenticated, on-chain holdings whenever ANY coin transfer is
+  // finalized. No manual app restart, local subtraction or synthetic balance.
+  useEffect(()=>onConfirmedWalletTransfer(userId,()=>setRequest(n=>n+1)),[userId]);
 
   useEffect(()=>{
     if(!userId){setBalances(null);setStatus('idle');return;}
