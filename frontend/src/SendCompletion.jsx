@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import {API_BASE} from './data.js';
+import {notifyConfirmedWalletTransfer} from './walletBalanceRefresh.js';
 
 // Shared minimal user-facing confirmation for manual coin transfers.
 // A network submission/signature is not a completed transfer.
@@ -62,7 +63,11 @@ export default function SendCompletion({asset,txid,t,userId,getAccessToken}){
         const token=asset==='XRP'||asset==='SOL'?await getAccessToken?.():null;
         const ok=await confirmedTransfer(asset,txid,token,abort.signal);
         if(!active)return;
-        if(ok){setConfirmed(true);return;}
+        if(ok){
+          setConfirmed(true);
+          notifyConfirmedWalletTransfer(userId,asset,txid);
+          return;
+        }
       }catch{/* A provider delay is not proof of failure or success. */}
       if(active&&attempts<25)timer=setTimeout(check,5000);
     };
