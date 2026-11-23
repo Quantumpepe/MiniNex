@@ -20,7 +20,7 @@ export default function XrpSend({t,enabled,userId,address,getAccessToken}){
       const response=await fetch(API_BASE+'/api/wallet/send/xrp',{
         method:'POST',
         headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-        body:JSON.stringify({from:address,to:destination,amount:Number(amount)})
+        body:JSON.stringify({from:address,to:destination,amount:amount.trim()})
       });
       if(!response.ok){
         const err=await response.json().catch(()=>({}));
