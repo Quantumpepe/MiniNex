@@ -3,6 +3,7 @@ import {useSignAndSendTransaction,useWallets} from '@privy-io/react-auth/solana'
 import {Send} from 'lucide-react';
 import {address,createSolanaRpc,pipe,createTransactionMessage,setTransactionMessageFeePayer,setTransactionMessageLifetimeUsingBlockhash,appendTransactionMessageInstructions,compileTransaction,createNoopSigner,getTransactionEncoder} from '@solana/kit';
 import {getTransferSolInstruction} from '@solana-program/system';
+import SendCompletion,{solanaSignatureBase58} from './SendCompletion.jsx';
 
 export function exactSolLamports(raw) {
   if(typeof raw!=='string'||!/^\d+(?:\.\d{1,9})?$/.test(raw)||raw.length>32)return null;
@@ -17,7 +18,7 @@ export function ownedSolanaWallet(wallets,expectedAddress) {
   return matches.length===1?matches[0]:null;
 }
 
-export default function SolanaSend({t,enabled,userId,expectedAddress}) {
+export default function SolanaSend({t,enabled,userId,expectedAddress,getAccessToken}) {
   const {wallets}=useWallets();
   const {signAndSendTransaction}=useSignAndSendTransaction();
   const [open,setOpen]=useState(false);
@@ -53,8 +54,7 @@ export default function SolanaSend({t,enabled,userId,expectedAddress}) {
       );
       const result=await signAndSendTransaction({transaction,wallet});
       const signature=result?.signature;
-      const sig=typeof signature==='string'?signature:
-        signature instanceof Uint8Array?Array.from(signature,x=>x.toString(16).padStart(2,'0')).join(''):null;
+      const sig=solanaSignatureBase58(signature);
       if(!sig)throw new Error('SOL submission outcome not confirmed; check wallet history before retrying');
       setTxSig(sig);
     }catch(err){
@@ -68,6 +68,7 @@ export default function SolanaSend({t,enabled,userId,expectedAddress}) {
       <Send size={16}/> {t.walletSendTitle||'Senden'} SOL
     </button>
     {open&&<div className="mininex-swap-content">
+      {txSig?<SendCompletion asset="SOL" txid={txSig} userId={userId} getAccessToken={getAccessToken} t={t}/>:<>
       <p className="privy-wallet-description">Solana Mainnet · manual transfers from your SOL wallet</p>
       <form className="mininex-send-form" onSubmit={e=>{e.preventDefault();send();}}>
         <label><span>{t.walletSendRecipient}</span>
@@ -85,7 +86,7 @@ export default function SolanaSend({t,enabled,userId,expectedAddress}) {
         </button>
       </form>
       {error&&<p className="privy-wallet-description" role="alert">{error}</p>}
-      {txSig&&<p className="privy-wallet-description">{t.walletSendSubmitted||'Gesendet'}: {txSig.slice(0,16)}…</p>}
+      </>}
     </div>}
   </section>;
 }
