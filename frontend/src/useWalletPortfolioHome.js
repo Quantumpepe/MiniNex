@@ -18,6 +18,12 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   const did=user?.id||null;
   const [state,setState]=useState({did:null,sources:null,status:'idle'});
   const [samples,setSamples]=useState({did:null,points:[]});
+  const [lastValued,setLastValued]=useState({did:null,summary:null});
+  useEffect(()=>{
+    if(!ready||!authenticated||!did)
+      setLastValued(previous=>previous.did===null?previous:
+        {did:null,summary:null});
+  },[ready,authenticated,did]);
   useEffect(()=>{
     let active=true,inFlight=false,refreshQueued=false;
     const controllers=new Set();
@@ -100,6 +106,18 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   const summary=useMemo(()=>matched? summarizeVerifiedWalletPortfolio(
     state.sources,markets,syncedAt):null,
     [matched,state.sources,markets,syncedAt]);
+  // Exchange prices can briefly age out when the user returns from the
+  // wallet screen. Keep the last fully observable wallet valuation for the
+  // SAME Privy account rather than flashing an empty card. New prices and
+  // holdings supersede it only after independent verification.
+  useEffect(()=>{
+    if(matched&&state.status==='ready'&&summary?.valuationAvailable&&
+       summary.equity!==null)
+      setLastValued({did,summary});
+  },[matched,did,state.status,summary]);
+  const displayedSummary=summary?.valuationAvailable?summary:
+    matched&&lastValued.did===did&&lastValued.summary
+      ?{...lastValued.summary,incomplete:true}:summary;
   useEffect(()=>{
     if(!visible||!matched||state.status!=='ready'||
        !summary?.valuationAvailable||summary.equity===null)return;
@@ -111,7 +129,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
     });
   },[visible,matched,did,state.status,summary?.equity,summary?.valuationAvailable]);
   return {
-    summary,samples:samples.did===did?samples.points:[],
+    summary:displayedSummary,samples:samples.did===did?samples.points:[],
     status:matched?state.status:'loading',
     authenticated:ready&&authenticated,
   };
