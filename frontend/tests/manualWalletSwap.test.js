@@ -73,13 +73,14 @@ test('real EVM wallet send verifies on-chain original calldata, value and chain'
 
 test('only actual same-chain EVM stable routes mount the real swap signer',()=>{
   for(const [asset,valid] of [
-    ['BNB','USDT'],['POL','USDC'],['AVAX','USDC'],['ARB','USDT'],
     ['LINK','USDC'],['QNT','USDT'],['UNI','USDC'],
   ])assert.equal(liveEvmStableSupported(asset,valid),true);
   for(const [asset,invalid] of [
-    ['BNB','USDC'],['POL','USDT'],['AVAX','USDT'],
+    ['BNB','USDC'],['BNB','USDT'],['POL','USDT'],['POL','USDC'],
+    ['AVAX','USDT'],['AVAX','USDC'],['ARB','USDT'],['ARB','USDC'],
   ])assert.equal(liveEvmStableSupported(asset,invalid),false);
-  assert.ok(manualSwapQuoteRequest('USDT','BNB','0.000000000000000001'));
+  assert.equal(manualSwapQuoteRequest('USDT','BNB','0.000000000000000001'),null);
+  assert.ok(manualSwapQuoteRequest('USDT','BNB','0.000001'));
   assert.match(component,/liveOwnerEvmPair&&request&&<EvmLiveSwap/);
 });
 

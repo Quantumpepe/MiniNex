@@ -156,6 +156,9 @@ from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
+from .ethereum_settlement_quote import (
+    is_ethereum_cross_evm_pair, get_ethereum_cross_evm_quote,
+)
 from .live_trade_router import get_unified_trade_plan
 from .manual_swap_wallet_readiness import get_manual_swap_wallet_readiness
 
@@ -488,10 +491,14 @@ class NativeManualSwapQuoteRequest(BaseModel):
 async def manual_wallet_swap_live_market_quote(
         request: NativeManualSwapQuoteRequest,
         authorization: str | None = Header(default=None)):
-    """Live THORChain quote from verified public provider, no signing."""
-    verify_privy_bearer(authorization)
-    quote = await get_native_swap_quote(request.source, request.target,
-                                        request.amount)
+    """Live quote; all stablecoin endpoints settle on Ethereum, no signing."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    if is_ethereum_cross_evm_pair(request.source, request.target):
+        quote = await get_ethereum_cross_evm_quote(
+            did, request.source, request.target, request.amount)
+    else:
+        quote = await get_native_swap_quote(request.source, request.target,
+                                            request.amount)
     return JSONResponse(quote, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",

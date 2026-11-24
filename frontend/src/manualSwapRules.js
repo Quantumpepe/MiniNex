@@ -5,8 +5,7 @@ export const MANUAL_SWAP_ASSETS = Object.freeze([
 const STABLES = new Set(['USDC','USDT']);
 // Actual same-chain executable V3 settlements, not cross-chain previews.
 const LIVE_EVM_SETTLEMENTS=Object.freeze({
-  BNB:['USDT'],POL:['USDC'],AVAX:['USDC'],
-  ARB:['USDC','USDT'],LINK:['USDC','USDT'],
+  LINK:['USDC','USDT'],
   QNT:['USDC','USDT'],UNI:['USDC','USDT'],
 });
 export const liveEvmStableSupported=(asset,stable)=>
@@ -22,7 +21,7 @@ export function manualSwapQuoteRequest(from, to, amount) {
   // ERC-20 on Arbitrum One, not a 6-decimal native network coin.
   const decimals = legacy
     ? (from === 'BTC' ? 8 : from === 'ETH' ? 18 : 6)
-    : (STABLES.has(from) ? (from === 'USDT' && to === 'BNB' ? 18 : 6) :
+    : (STABLES.has(from) ? 6 :
        ['XRP','TRX'].includes(from) ? 6 :
        from === 'SOL' ? 9 :
        ['BTC','DOGE'].includes(from) ? 8 : 18);
@@ -53,6 +52,26 @@ export function validManualSwapQuote(data, request) {
   if(request?.coin==='MULTICHAIN') {
     const network=asset=>STABLES.has(asset)
       ? 'ethereum-mainnet':coinBySymbol(asset)?.network;
+    if(data?.mode==='ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE'){
+      const chains={BNB:56,POL:137,AVAX:43114,ARB:42161,USDC:1,USDT:1};
+      const src=chains[request.from],dst=chains[request.to];
+      return !!src&&!!dst&&src!==dst&&(src===1||dst===1)&&
+        data.source_chain_id===src&&data.destination_chain_id===dst&&
+        data.source_asset===request.from&&data.destination_asset===request.to&&
+        data.source_network===network(request.from)&&data.destination_network===network(request.to)&&
+        data.input_amount===request.body.amount&&data.quote_provider==='LIFI'&&
+        data.pool_route_quoted===true&&
+        validPositiveQuoteAmount(data.estimated_output_amount)&&
+        validPositiveQuoteAmount(data.minimum_output_amount)&&
+        Number(data.minimum_output_amount)<=Number(data.estimated_output_amount)&&
+        data.execution_enabled===false&&data.can_submit===false&&
+        data.transaction_built===false&&data.signing_authorized===false&&
+        data.deposit_address_provided===false&&data.fee_breakdown_verified===false&&
+        data.minimum_received_guaranteed===false&&
+        Number.isSafeInteger(data.quote_checked_at)&&
+        data.quote_expires_at===data.quote_checked_at+30&&
+        !('transactionRequest' in data)&&!('memo' in data)&&!('inbound_address' in data);
+    }
     return !!data &&
       data.mode==='NATIVE_MULTICHAIN_REAL_MARKET_QUOTE_ONLY' &&
       data.source_asset===request.from &&
