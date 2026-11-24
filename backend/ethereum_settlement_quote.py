@@ -1,6 +1,7 @@
 """Exact Ethereum-settled EVM cross-chain quote, not a transaction authorizer."""
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 import os
 import time
@@ -8,6 +9,7 @@ import time
 import httpx
 from fastapi import HTTPException
 
+from .ethereum_settlement_journal import store_quote
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
 from .manual_swap_routes import _asset_network
@@ -124,7 +126,17 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):
         raise HTTPException(503, "Ethereum settlement route unavailable") from None
     now = int(time.time())
+    _, minimum_atomic = _quantity(minimum, dest_decimals)
+    quote_id = await asyncio.to_thread(store_quote, did, {
+        "wallet_address": wallet.lower(), "asset": asset,
+        "side": "BUY" if buy else "SELL", "stable": stable,
+        "source_chain_id": source_chain, "destination_chain_id": dest_chain,
+        "source_token": token_in.lower(), "destination_token": token_out.lower(),
+        "input_atomic": units, "minimum_output_atomic": minimum_atomic,
+        "issued_at": now, "expires_at": now + 30,
+    })
     return {
+        "quote_id": quote_id,
         "mode": "ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE",
         "source_asset": source, "destination_asset": target,
         "source_network": _asset_network(source)["network"],

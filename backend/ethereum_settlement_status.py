@@ -15,6 +15,7 @@ import httpx
 from fastapi import HTTPException
 
 from .ethereum_settlement_quote import CROSS_EVM, _token_matches
+from .ethereum_settlement_journal import load_quote
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .live_eth_receipts import _num
 from .multicoin_evm_balances import _RPC, _WRAPPED_GROUPS
@@ -134,7 +135,7 @@ def _status_terms(payload, *, wallet, tx_hash, source_chain, dest_chain,
             "source_token": sending["token"]["address"]}
 
 
-async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash):
+async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash, quote_id):
     if (asset not in CROSS_EVM or side not in ("BUY", "SELL")
             or stable not in STABLES or not isinstance(tx_hash, str)
             or not _HASH.fullmatch(tx_hash)):
@@ -148,8 +149,16 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
     if not buy and asset in _WRAPPED_GROUPS:
         source_tokens.append(_WRAPPED_GROUPS[asset][1])
     dest_token = coin_token if buy else STABLES[stable]
+    quote = await asyncio.to_thread(load_quote, did, quote_id)
+    if (quote["asset"] != asset or quote["side"] != side or quote["stable"] != stable
+            or quote["source_chain_id"] != src or quote["destination_chain_id"] != dst
+            or quote["input_atomic"] != units
+            or not any(_eq(quote["source_token"], token) for token in source_tokens)
+            or not _eq(quote["destination_token"], dest_token)):
+        raise HTTPException(409, "Settlement differs from original quote")
+    source_tokens = [quote["source_token"]]
     base = {"mode": "ETHEREUM_CROSS_CHAIN_SETTLEMENT", "asset": asset,
-            "side": side, "stable": stable, "source_chain_id": src,
+            "quote_id": quote_id, "side": side, "stable": stable, "source_chain_id": src,
             "destination_chain_id": dst, "source_tx_hash": tx_hash.lower(),
             "destination_tx_hash": None, "received_amount": None,
             "source_fee_native": None, "state": "PENDING",
@@ -157,7 +166,8 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
     try:
         user = await fetch_privy_user(did)
         wallet = verified_addresses(user, did)["ETH"]
-        if not isinstance(wallet, str) or not _ADDR.fullmatch(wallet):
+        if (not isinstance(wallet, str) or not _ADDR.fullmatch(wallet)
+                or not _eq(wallet, quote["wallet_address"])):
             raise ValueError("Owned wallet unavailable")
         headers = {"Accept": "application/json"}
         key = os.getenv("MININEX_LIFI_API_KEY", "").strip()
@@ -211,7 +221,13 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             received = _net_token_credit(dest_receipt["logs"], dest_token, wallet)
             if received <= 0 or received != terms["amount"]:
                 raise ValueError("Destination token credit not independently proven")
-            return {**base, "state": "FINALIZED", "settlement_verified": True,
+            if received < int(quote["minimum_output_atomic"]):
+                return {**base, "state": "BELOW_QUOTED_MINIMUM",
+                        "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
+            # These receipts establish observed credits, but no trusted signer
+            # journal yet binds this source hash to this quote. Never book PnL,
+            # release a reserved budget or authorize another trade here.
+            return {**base, "state": "CREDIT_OBSERVED",
                     "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):
         raise HTTPException(502, "Cross-chain settlement not independently verified") from None

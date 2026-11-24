@@ -510,11 +510,12 @@ async def manual_wallet_swap_live_market_quote(
 async def ethereum_cross_chain_settlement_status(
         asset: Literal["BNB", "POL", "AVAX", "ARB"], tx_hash: str,
         side: Literal["BUY", "SELL"], stable: Literal["USDC", "USDT"],
-        amount: str, authorization: str | None = Header(default=None)):
-    """Track the original owner transaction without signing or resending."""
+        amount: str, quote_id: str, authorization: str | None = Header(default=None)):
+    """Track original owner transaction against its durable quote; no signing."""
     did = verify_privy_bearer(authorization)["user_id"]
     result = await check_ethereum_settlement(
-        did, asset=asset, side=side, stable=stable, amount=amount, tx_hash=tx_hash)
+        did, asset=asset, side=side, stable=stable, amount=amount, tx_hash=tx_hash,
+        quote_id=quote_id)
     return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 

@@ -1352,6 +1352,33 @@ SCHEMA += WALLET_POLICY_SCHEMA
 # Expands EXISTING journals in place without altering user grants/holds.
 SCHEMA += CENTRAL_EVM_SCHEMA
 
+# Immutable reference quotes for the Ethereum settlement layer. A quote is
+# not consent and cannot authorize an allowance, transaction or accounting entry.
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_quotes (
+        quote_id UUID PRIMARY KEY,
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        wallet_address TEXT NOT NULL CHECK (wallet_address ~ '^0x[0-9a-f]{40}$'),
+        asset TEXT NOT NULL CHECK (asset IN ('BNB','POL','AVAX','ARB')),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        source_chain_id BIGINT NOT NULL,
+        destination_chain_id BIGINT NOT NULL,
+        source_token TEXT NOT NULL CHECK (source_token ~ '^0x[0-9a-f]{40}$'),
+        destination_token TEXT NOT NULL CHECK (destination_token ~ '^0x[0-9a-f]{40}$'),
+        input_atomic NUMERIC(78,0) NOT NULL CHECK (input_atomic > 0),
+        minimum_output_atomic NUMERIC(78,0) NOT NULL CHECK (minimum_output_atomic > 0),
+        issued_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        CHECK (expires_at > issued_at),
+        CHECK (source_chain_id <> destination_chain_id),
+        CHECK ((side='BUY' AND source_chain_id=1) OR
+               (side='SELL' AND destination_chain_id=1))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_quotes_owner
+       ON mininex_ethereum_settlement_quotes(privy_did,issued_at DESC)""",
+)
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
