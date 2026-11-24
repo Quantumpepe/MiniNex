@@ -209,3 +209,13 @@ def test_bridge_allowance_finality_uses_source_chain_and_exact_spender(asset,sid
         _verify_approval_finality({**row,"router_address":"0x"+"de"*20},**kw)
     with pytest.raises(ValueError):
         _verify_approval_finality(row,**{**kw,"tx":{**tx,"input":"0x095ea7b3"+"f"*128}})
+
+
+def test_approval_cost_uses_actual_gas_and_canonical_block_time():
+    from backend.shared_evm_router_approval_finality import _canonical_approval_cost
+    receipt={"gasUsed":hex(45000),"effectiveGasPrice":hex(2000000000)}
+    block={"number":"0x64","hash":BLOCK,"timestamp":hex(1795500000)}
+    assert _canonical_approval_cost(receipt,block)==(90000000000000,100,BLOCK,1795500000)
+    assert _canonical_approval_cost({"gasUsed":"0x1"},block) is None
+    assert _canonical_approval_cost({**receipt,"gasUsed":"0x0"},block) is None
+    assert _canonical_approval_cost(receipt,{**block,"hash":"bad"}) is None

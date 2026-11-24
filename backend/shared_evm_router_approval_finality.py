@@ -150,7 +150,23 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
     return "FINALIZED_SUCCESS" if state else "FINALIZED_REVERTED"
 
 
-def _persist_finality(row:dict,status:str)->bool:
+def _canonical_approval_cost(receipt,canonical):
+    """Actual EVM execution gas after canonical approval verification."""
+    try:
+        used=_num(receipt["gasUsed"])
+        price=_num(receipt["effectiveGasPrice"])
+        block=_num(canonical["number"])
+        timestamp=_num(canonical["timestamp"])
+        block_hash=canonical["hash"].lower()
+        if (not 0<used<2**64 or not 0<=price<2**128 or not 0<block<2**63
+                or not 0<timestamp<2**63 or not _HASH.fullmatch(block_hash)):
+            return None
+        return (used*price,block,block_hash,timestamp)
+    except (ValueError,KeyError,TypeError,AttributeError,OverflowError):
+        return None
+
+
+def _persist_finality(row:dict,status:str,cost=None)->bool:
     if status not in ("FINALIZED_SUCCESS","FINALIZED_REVERTED"):
         raise ValueError("Unsupported original approval settlement")
     db=_db_url();_ensure_schema(db)
@@ -158,12 +174,14 @@ def _persist_finality(row:dict,status:str)->bool:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """UPDATE mininex_live_evm_router_approval_sends
-                   SET status=%s,updated_at=now()
+                   SET status=%s,updated_at=now(),
+                       confirmed_gas_atomic=%s,gas_block_number=%s,
+                       gas_block_hash=%s,gas_block_unix=%s
                    WHERE privy_did=%s AND asset=%s
                      AND idempotency_key=%s AND tx_hash=%s
                      AND status='SUBMITTED' RETURNING status""",
-                (status,row["privy_did"],row["asset"],
-                 row["idempotency_key"],row["tx_hash"]))
+                (status,*(cost if cost is not None else (None,None,None,None)),
+                 row["privy_did"],row["asset"],row["idempotency_key"],row["tx_hash"]))
             return cur.fetchone() is not None
 
 
@@ -211,8 +229,10 @@ async def reconcile_original_router_approvals_once(
             result["checked"]+=1
             if state is None:
                 result["pending"]+=1
-            elif await asyncio.to_thread(_persist_finality,row,state):
-                result["finalized"]+=1
+            else:
+                cost=_canonical_approval_cost(receipt,canonical)
+                if await asyncio.to_thread(_persist_finality,row,state,cost):
+                    result["finalized"]+=1
         except asyncio.CancelledError:
             raise
         except Exception:
