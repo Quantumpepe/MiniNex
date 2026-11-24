@@ -11,9 +11,12 @@ from .storage import _safe_did
 _ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 
 async def audit_native_owner_grant(did:str,*,asset:str,stable:str,amount:str,
-        budget_revision:int,signal_event_id:str)->dict:
+        budget_revision:int,signal_event_id:str,side:str="BUY",
+        source_wallet:str|None=None,destination_wallet:str|None=None,
+        original_manifest_sha256:str|None=None,original_quote_sha256:str|None=None,
+        intent_key:str|None=None)->dict:
     _safe_did(did)
-    if asset not in _ASSETS or stable not in ("USDC","USDT"):
+    if asset not in _ASSETS or stable not in ("USDC","USDT") or side not in ("BUY","SELL"):
         raise HTTPException(422,"Unsupported native settlement pair")
     if type(budget_revision) is not int or budget_revision<=0:
         raise HTTPException(409,"Original owner budget revision missing")

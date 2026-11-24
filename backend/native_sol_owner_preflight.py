@@ -81,14 +81,17 @@ def _read_finalized_source(owner: str, balance: object,
 
 async def prepare_original_sol_unsigned_owner_transfer(
     did: str, *, stable: str, amount: str,
+    _private_quote: dict | None = None, _internal_bundle: bool = False,
 ) -> dict:
     """Current genuine original RPC state with an UNSIGNED Solana message."""
     did = _safe_did(did)
     if stable not in ("USDC", "USDT"):
         raise HTTPException(422, "Unsupported SOL owner settlement asset")
-    quote = await get_private_native_thornode_terms(
-        did, asset="SOL", side="SELL", stable=stable, amount=amount,
-    )
+    if _private_quote is not None and not _internal_bundle:
+        raise ValueError("Private quote belongs only to internal execution")
+    quote = (_private_quote if _private_quote is not None else
+             await get_private_native_thornode_terms(
+                 did, asset="SOL", side="SELL", stable=stable, amount=amount))
     owner = quote.get("source_wallet")
     if not _valid_address("SOL", owner):
         raise HTTPException(409, "Original Privy SOL source owner unavailable")
@@ -164,4 +167,5 @@ async def prepare_original_sol_unsigned_owner_transfer(
         "wallet_signed": False,
         "source_transaction_sent": False,
         "execution_enabled": False, "can_submit": False,
+        **({"_private_quote":quote} if _internal_bundle else {}),
     }

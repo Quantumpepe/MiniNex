@@ -129,8 +129,20 @@ async def execute_owner_native_live_tick(
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
     if decision.get("action")=="SELL":
-        return await prepare_native_sell_candidate(row["privy_did"],
-            asset=row["asset"],stable=row["stable"],client=client)
+        supported=row["asset"] in ("BTC","SOL")
+        candidate=await prepare_native_sell_candidate(row["privy_did"],
+            asset=row["asset"],stable=row["stable"],client=client,
+            **({"_include_private_quote":True} if supported else {}))
+        quote=candidate.pop("_private_quote",None)
+        if not supported or candidate.get("state")!="NATIVE_SELL_QUOTE_PREPARED" or quote is None:
+            return candidate
+        from .native_sell_strategy_execution import coordinate_original_native_sell_once
+        run="owner_"+row["started_by_owner_at"].astimezone(
+            timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+        return await coordinate_original_native_sell_once(row["privy_did"],
+            asset=row["asset"],stable=row["stable"],amount=candidate["input_amount"],
+            quote=quote,strategy_run_id=run,signal_event_id="market_"+str(int(current//60)),
+            budget_revision=row["budget_revision"],grant_auditor=grant_auditor,client=client)
     if decision.get("action")!="BUY":
         raise ValueError("Invalid actual live market signal")
     amount=await verified_owner_native_buy_amount(

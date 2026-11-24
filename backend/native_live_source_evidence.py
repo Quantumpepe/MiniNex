@@ -267,7 +267,7 @@ def exact_native_sell_amount(*,asset,position_atomic,wallet_balance):
         return format(Decimal(available)/scale,"f") if available else None
 
 
-async def prepare_native_sell_candidate(did,*,asset,stable,client):
+async def prepare_native_sell_candidate(did,*,asset,stable,client,_include_private_quote=False):
     """Read-only SELL preparation; fee reserve and actual signer remain required."""
     did=_safe_did(did)
     if asset not in ("BTC","SOL","XRP"):
@@ -309,4 +309,5 @@ async def prepare_native_sell_candidate(did,*,asset,stable,client):
             "venue_fee_units_1e8":quote["venue_fee_units_1e8"],
             "needs_extended_btc_memo":quote["needs_extended_btc_memo"],
             "can_submit":False,"real_trade_sent":False,
-            "reason":"NATIVE_SELL_FEE_AND_SIGNER_REQUIRED"}
+            "reason":"NATIVE_SELL_FEE_AND_SIGNER_REQUIRED",
+            **({"_private_quote":quote} if _include_private_quote else {})}
