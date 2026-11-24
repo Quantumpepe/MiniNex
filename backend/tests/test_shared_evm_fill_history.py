@@ -53,7 +53,9 @@ class FakeDB:
     def execute(self,query,params):
         self.calls.append((query,params))
     def fetchall(self):
-        _,(did,asset,limit)=self.calls[-1]
+        sql,(did,asset,limit)=self.calls[-1]
+        if "mininex_ethereum_settlement_finality" in sql:
+            return self.items.get((did,asset,"cross"),[])[:limit]
         return self.items.get((did,asset),[])[:limit]
 
 
@@ -71,7 +73,7 @@ def test_history_is_owner_and_asset_scoped_with_truncation(monkeypatch):
     assert own["performance_fee_settled"] is False
     assert h.get_owner_evm_fill_history(OTHER,asset="UNI")["fills"]
     assert not h.get_owner_evm_fill_history(OTHER,asset="AVAX")["fills"]
-    assert all("WHERE privy_did=%s AND asset=%s" in q for q,p in fake.calls)
+    assert all("WHERE privy_did=%s AND asset=%s" in q or "WHERE f.privy_did=%s AND q.asset=%s" in q for q,p in fake.calls)
     assert all(p[0] in (DID,OTHER) for q,p in fake.calls)
 
 
@@ -113,3 +115,19 @@ def test_tiny_confirmed_quantities_are_exact_plain_decimals():
     assert fill["network_fee_native"]=="0.000000000000000005"
     assert "E" not in fill["spent_amount"]
     assert "E" not in fill["received_amount"]
+
+
+def test_cross_chain_fill_is_real_destination_amount_not_estimate():
+    row=dict(asset="AVAX",side="SELL",stable="USDT",outcome="FINALIZED",
+        source_chain_id=43114,destination_chain_id=1,input_atomic=Decimal(10**18),
+        received_atomic=Decimal(20_123_456),source_gas_atomic=Decimal(1),
+        quote_id="original",source_tx_hash=TX,destination_tx_hash="0x"+"ef"*32,
+        verified_at=datetime(2026,11,24,tzinfo=timezone.utc))
+    result=h._cross_fill_row(row,"AVAX")
+    assert result["spent_amount"]=="1.000000000000000000"
+    assert result["received_amount"]=="20.123456"
+    assert result["received_asset"]=="USDT"
+    assert result["ethereum_settlement_verified"] is True
+    assert result["realized_net_usd"] is None
+    with pytest.raises(ValueError):
+        h._cross_fill_row({**row,"outcome":"SOURCE_REVERTED"},"AVAX")

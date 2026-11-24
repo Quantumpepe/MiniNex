@@ -423,7 +423,7 @@ export default function App() {
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
   const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
-  const homeLiveTrades=useLiveHomeTrades(!paperVisible,page==='overview',refreshNonce,asset);
+  const homeLiveTrades=useLiveHomeTrades(!paperVisible,page==='overview',refreshNonce,asset,showAllPaperHistory);
   // The capital card is ALWAYS the total across started PAPER coins.
   // Only the trade HISTORY follows the selected coin / optional ALL toggle.
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce,'ALL',page==='overview');
