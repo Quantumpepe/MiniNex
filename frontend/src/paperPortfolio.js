@@ -55,7 +55,7 @@ export function paperSparkline(samples) {
   const points = samples.filter(p => p && Number.isFinite(p.at) && Number.isFinite(p.value) && p.value >= 0);
   if (points.length < 2) return null;
   const values = points.map(p=>p.value), lo=Math.min(...values), hi=Math.max(...values);
-  const spread=Math.max(hi-lo,Math.max(1,Math.abs(hi)) * 0.0002);
+  const spread=Math.max(hi-lo,Math.max(0.000001,Math.abs(hi)*0.0002));
   const first=points[0].at, last=points[points.length-1].at;
   const x=(p,i)=>8 + (last > first ? (p.at-first)/(last-first) : i/(points.length-1))*184;
   const y=p=>36 - ((p.value-lo+(spread-(hi-lo))/2)/spread)*24;
@@ -158,8 +158,8 @@ export function summarizeHomePaperPortfolio(core,extraReport,scope){
  */
 const PAPER_HISTORY_PREFIX='mininex:paper-equity:v1:';
 const PAPER_HISTORY_MAX_AGE_MS=24*60*60*1000;
-const PAPER_HISTORY_BUCKET_MS=2*60*1000;
-const PAPER_HISTORY_MAX_POINTS=720;
+const PAPER_HISTORY_BUCKET_MS=30*1000;
+const PAPER_HISTORY_MAX_POINTS=2880;
 const paperHistoryKey=(did,scope)=>
   typeof did==='string'&&did.startsWith('did:privy:')&&did.length<=200&&
   (scope==='ALL'||HOME_PAPER_PORTFOLIO_COINS.includes(scope))
@@ -171,7 +171,7 @@ export function readObservedPaperEquity(did,scope,storage,now=Date.now()){
     if(!key||!Number.isSafeInteger(now))return [];
     const store=storage??(typeof window!=='undefined'?window.localStorage:null);
     const raw=store?.getItem(key);
-    if(typeof raw!=='string'||raw.length>100000)return [];
+    if(typeof raw!=='string'||raw.length>350000)return [];
     const record=JSON.parse(raw);
     if(record?.version!==1||record.scope!==scope||!Array.isArray(record.points))
       return [];
@@ -208,7 +208,7 @@ export function appendObservedPaperEquity(previous,summary,now=Date.now()){
   const last=points.at(-1);
   if(last&&Math.floor(last.at/PAPER_HISTORY_BUCKET_MS)===
       Math.floor(now/PAPER_HISTORY_BUCKET_MS)){
-    // Keep the latest REAL reading in each two-minute bucket, avoiding
+    // Keep the latest REAL reading in each 30-second bucket, avoiding
     // hundreds of tiny points that change the visual trend every refresh.
     return [...points.slice(0,-1),sample].slice(-PAPER_HISTORY_MAX_POINTS);
   }

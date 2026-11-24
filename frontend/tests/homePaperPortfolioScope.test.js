@@ -21,7 +21,7 @@ const summary=(equity,startingCapital=46600)=>({
   mode:'PAPER',valuationAvailable:true,scope:'ALL',
   equity,startingCapital,pnl:equity-startingCapital,
 });
-const t0=Math.floor(Date.now()/120000)*120000+1000;
+const t0=Math.floor(Date.now()/30000)*30000+1000;
 
 test('ALL summary combines BTC ETH and other started paper coins, not a BTC price line',()=>{
   const coreRow=(asset,equity)=>({

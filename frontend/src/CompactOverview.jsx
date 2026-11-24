@@ -40,7 +40,7 @@ function MarketChart({history,period,valid,t,asset}) {
 
 
 function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
-  const chart=useMemo(()=>paperSparkline(samples),[samples]);
+  const chart=useMemo(()=>samples?.length>=3?paperSparkline(samples):null,[samples]);
   const positive=summary?.pnl!=null&&summary.pnl>=0;
   // PAPER color is based on TOTAL cumulative PnL, not the first/last
   // short-window sample. LIVE wallet holdings have no verified cost basis,
@@ -50,6 +50,7 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
   const chartLabel=paperMode
     ?(lang==='de'?'Beobachteter Gesamtportfolio-Verlauf':'Observed total portfolio equity')
     :(lang==='de'?'Beobachteter Wallet-Verlauf':'Observed wallet value history');
+  const collecting=lang==='de'?'Verlauf wird erfasst':'Collecting history';
   return <section className="compact-wallet-portfolio" aria-label={label}>
     <div className="compact-wallet-top">
       <span>{label}</span>
@@ -78,7 +79,7 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
               <path d={chart.line} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="192" cy={chart.lastY} r="3.5" fill={color}/>
             </svg>
-          : null}
+          : summary?.valuationAvailable?<small className="compact-wallet-chart-empty">{collecting}</small>:null}
       </div>
     </div>
     <div className="compact-wallet-foot">
