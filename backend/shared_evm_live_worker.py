@@ -274,6 +274,12 @@ async def execute_owner_evm_live_tick(
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
+    # Ethereum-only settlement is mandatory for remote EVM assets. Do not
+    # fall through to legacy local stablecoin swaps or router approvals.
+    # The bridge executor must be integrated before these sessions can send.
+    if asset in ("BNB","POL","AVAX","ARB"):
+        return {"asset":asset,"state":"WAIT",
+                "reason":"ETHEREUM_SETTLEMENT_EXECUTOR_REQUIRED"}
     if asset in _NATIVE and not _settlement_enabled():
         # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
         # a prior DEPOSIT. Both require the original receipt reconciler.
