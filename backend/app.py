@@ -630,7 +630,7 @@ def pause_owner_native_auto_session(
 
 @app.post("/api/live/native/auto-session/{asset}/exit")
 def owner_native_exit_session(
-    asset: Literal["BTC","SOL"],
+    asset: Literal["BTC","SOL","XRP","TRX"],
     authorization: str | None = Header(default=None),
 ):
     did=verify_privy_bearer(authorization)["user_id"]
