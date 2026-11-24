@@ -228,12 +228,21 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
         raise HTTPException(409,"Transaction differs from original submitted order")
     bound=bool(submission and submission["state"]=="SUBMITTED"
                and _eq(submission["source_tx_hash"],tx_hash))
+    # Manual hash is a candidate supplied by the owner, not trusted signer
+    # evidence. It becomes valid only after the independent on-chain proof.
+    from .ethereum_settlement_manual import load_manual_attempt
+    manual=await asyncio.to_thread(load_manual_attempt,did,quote_id)
+    manual_bound=bool(manual and manual["state"]=="SUBMITTED"
+        and manual["source_chain_id"]==src and _eq(manual["source_tx_hash"],tx_hash))
+    if manual and manual["source_tx_hash"] and not manual_bound:
+        raise HTTPException(409,"Manual source transaction differs")
     base = {"mode": "ETHEREUM_CROSS_CHAIN_SETTLEMENT", "asset": asset,
             "quote_id": quote_id, "side": side, "stable": stable, "source_chain_id": src,
             "destination_chain_id": dst, "source_tx_hash": tx_hash.lower(),
             "destination_tx_hash": None, "received_amount": None,
             "source_fee_native": None, "state": "PENDING",
             "original_submission_bound": bound,
+            "manual_submission_candidate":manual_bound,
             "bridge_message_verified":False,
             "settlement_verified": False, "execution_enabled": False}
     try:
@@ -317,7 +326,7 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             # Only the original trusted submission plus matched bridge events
             # and verified wallet credit establish settlement. Accounting is
             # intentionally separate; this read-only endpoint never books PnL.
-            verified=bool(bound and proof)
+            verified=bool((bound or manual_bound) and proof)
             with localcontext() as context:
                 context.prec=80
                 actual=format(Decimal(received).scaleb(-dest_decimals),"f")

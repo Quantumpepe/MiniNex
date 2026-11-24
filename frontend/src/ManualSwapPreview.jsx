@@ -4,6 +4,7 @@ import {API_BASE,formatAssetQuantity,formatNumber} from './data.js';
 import {COINS} from './coins.js';
 import EthLiveSwap from './EthLiveSwap.jsx';
 import EvmLiveSwap from './EvmLiveSwap.jsx';
+import CrossChainOwnerSwap from './CrossChainOwnerSwap.jsx';
 import {MANUAL_SWAP_ASSETS,manualSwapQuoteRequest,validManualSwapQuote,
   manualSwapQuoteExpiryMs,liveEvmStableSupported} from './manualSwapRules.js';
 
@@ -230,7 +231,7 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
             ? <div>{t.walletSwapPriceImpact}: <b>{(quote.data.quoted_price_impact_bps/100).toFixed(2)}%</b></div>
             : null}
         {minimum&&<div>{t.walletSwapMinimum}: <b>{formatAssetQuantity(minimum,quote.request.to,lang)} {quote.request.to}</b></div>}
-        {quote.request.coin==='MULTICHAIN'&&<>
+        {quote.request.coin==='MULTICHAIN'&&quote.data.mode!=='ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE'&&<>
           <button type="button" className="privy-wallet-action"
             disabled aria-disabled="true">{t.walletSwapAction}</button>
           <small className="privy-wallet-description">{t.walletSwapPendingShort}</small>
@@ -246,11 +247,10 @@ export default function ManualSwapPreview({t,lang='de',getAccessToken,enabled,us
         enabled={enabled} userId={userId} asset={ownerEvmAsset}
         side={ownerEvmSide} stable={ownerEvmStable} amount={amount}
         lang={lang} getAccessToken={getAccessToken} t={t}/>}
-      {ownerEvmAsset&&!liveOwnerEvmPair&&quoteCurrent&&
-        <p className="privy-wallet-description" role="status">
-          {lang==='de'?'USDC/USDT auf Ethereum · Ausführung noch nicht verfügbar':
-            'USDC/USDT on Ethereum · Execution not available yet'}
-        </p>}
+      {ownerEvmAsset&&!liveOwnerEvmPair&&<CrossChainOwnerSwap
+        key={[userId,ownerEvmAsset].join(':')} asset={ownerEvmAsset}
+        quote={quoteCurrent?quote:null} enabled={enabled} userId={userId}
+        getAccessToken={getAccessToken} lang={lang} onRequote={reset}/>} 
     </div>}
   </section>;
 }

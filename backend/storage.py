@@ -1382,6 +1382,17 @@ SCHEMA += (
        ADD COLUMN IF NOT EXISTS unsigned_transaction JSONB""",
     """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_quotes_owner
        ON mininex_ethereum_settlement_quotes(privy_did,issued_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_manual_attempts (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        source_chain_id BIGINT NOT NULL,
+        source_tx_hash TEXT CHECK (source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        state TEXT NOT NULL CHECK (state IN ('AWAITING_SIGNATURE','SUBMITTED','CANCELLED','UNCERTAIN')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(source_chain_id,source_tx_hash),
+        CHECK ((state='SUBMITTED') = (source_tx_hash IS NOT NULL))
+    )""",
     """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_submissions (
         quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),

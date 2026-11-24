@@ -158,6 +158,7 @@ from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
 from .ethereum_settlement_status import check_ethereum_settlement
+from .ethereum_settlement_manual import prepare_manual_bridge, record_manual_attempt
 from .ethereum_settlement_quote import (
     is_ethereum_cross_evm_pair, get_ethereum_cross_evm_quote,
 )
@@ -505,6 +506,28 @@ async def manual_wallet_swap_live_market_quote(
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
+
+
+class ManualBridgeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    state: Literal["SUBMITTED", "CANCELLED", "UNCERTAIN"]
+    tx_hash: str | None = None
+
+
+@app.post("/api/wallet/swap/ethereum-settlement/manual/{quote_id}/prepare")
+async def prepare_owner_manual_ethereum_swap(quote_id: str,
+        authorization: str | None = Header(default=None)):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(await prepare_manual_bridge(did,quote_id),
+                        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/wallet/swap/ethereum-settlement/manual/{quote_id}/result")
+def record_owner_manual_ethereum_swap(quote_id: str,request: ManualBridgeResult,
+        authorization: str | None = Header(default=None)):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(record_manual_attempt(did,quote_id,request.state,request.tx_hash),
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/wallet/swap/ethereum-settlement/{asset}/{tx_hash}")
