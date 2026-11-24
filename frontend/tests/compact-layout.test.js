@@ -65,8 +65,10 @@ test('mobile Home shows private paper portfolio before compact eight-coin picker
 test('portfolio remains while redundant AUTO/PAPER/LIVE controls disappear',()=>{
   // portfolio card is always shown
   assert.doesNotMatch(compact,/className="compact-market-modes"/);
-  assert.match(compact,/summary\?\.valuationAvailable&&chart/);
-  assert.match(compact,/paperSparkline\(samples\)/);
+  assert.match(compact,/authenticated&&chart/);
+  assert.match(compact,/paperSparkline\(samples,\{recentMs:15\*60\*1000,allowSingle:true\}\)/);
+  assert.match(compact,/chart\.area&&<path/);
+  assert.match(compact,/circle cx="192" cy=\{chart\.lastY\}/);
   assert.doesNotMatch(compact,/LIVE.*\d{3,}/);
 });
 
