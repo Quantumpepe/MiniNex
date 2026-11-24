@@ -10,7 +10,8 @@ from backend.native_trx_owner_preflight import _bytes,_number,verify_tron_swap_w
 def test_tron_sell_wire_matches_memo_and_owner_transfer():
     owner=_tron_address_from_public_key(keys.PrivateKey(bytes([1])*32).public_key.to_bytes())
     vault=_tron_address_from_public_key(keys.PrivateKey(bytes([2])*32).public_key.to_bytes())
-    memo="=:ETH.USDT:0x"+"a"*40+"/"+owner
+    from backend.manual_swap_live_quotes import THOR_ASSETS
+    memo="=:"+THOR_ASSETS["USDT"][0]+":0x"+"a"*40+"/"+owner
     timestamp=int(time.time()*1000)
     expiry=timestamp+60000
     src=tron_address_hex(owner)
