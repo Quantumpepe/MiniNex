@@ -20,6 +20,7 @@ from .shared_evm_wallet_policy_prepare import _locked_selected_budget
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy,verified_wallet_policy_digest,
+    valid_scope_fields,DIRECT_SETTLEMENT_POLICY,
 )
 from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
@@ -84,7 +85,7 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
         raise HTTPException(409,"Original one-signer Privy wallet not authorized")
     selected=grant["scopes_json"][asset]
     ver=grant["revisions_json"][asset]
-    if (type(selected) is not dict or set(selected)!=_SCOPE_FIELDS
+    if (not valid_scope_fields(selected)
             or selected.get("asset")!=asset
             or selected.get("stable") not in ("USDC","USDT")
             or (stable is not None and selected["stable"]!=stable)
@@ -93,15 +94,18 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
             or type(selected.get("expires_at")) is not int
             or selected["expires_at"]<=now):
         raise HTTPException(409,"Selected original wallet coin scope changed")
-    pair=_pair(asset,selected["stable"],"BUY")
+    if selected.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
+        from .ethereum_settlement_plan import settlement_route
+        pair={"chain_id":settlement_route(asset,"BUY",selected["stable"])["destination_chain_id"]}
+    else:
+        pair=_pair(asset,selected["stable"],"BUY")
     # The bank of all sibling scopes is preserved by this one wallet policy;
     # the current asset is never allowed to mutate or spend sibling budgets.
     ordered=[]
     for coin in sorted(grant["scopes_json"]):
         scope=grant["scopes_json"][coin]
         v=grant["revisions_json"][coin]
-        if (coin not in _ASSETS or type(scope) is not dict
-                or set(scope)!=_SCOPE_FIELDS
+        if (coin not in _ASSETS or not valid_scope_fields(scope)
                 or scope.get("asset")!=coin
                 or scope.get("stable") not in ("USDC","USDT")
                 or type(v) is not int or v<=0

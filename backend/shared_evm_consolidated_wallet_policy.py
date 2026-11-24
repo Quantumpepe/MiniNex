@@ -28,6 +28,21 @@ _REQUIRED_SCOPE_FIELDS = frozenset((
 ))
 
 
+DIRECT_SETTLEMENT_POLICY="ETHEREUM_ACROSS_DIRECT_V1"
+DIRECT_SETTLEMENT_ASSETS=frozenset(("BNB","POL","ARB"))
+
+
+def valid_scope_fields(scope):
+    if type(scope) is not dict:
+        return False
+    if set(scope)==_REQUIRED_SCOPE_FIELDS:
+        return True
+    return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
+            and scope.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+            and scope.get("asset") in DIRECT_SETTLEMENT_ASSETS
+            and scope.get("native_wrap_atomic_cap") is None)
+
+
 def compose_scoped_evm_wallet_policy(
     *, wallet: str, owner_id: str, executor_id: str,
     scopes: list[dict], now: int,
@@ -43,7 +58,7 @@ def compose_scoped_evm_wallet_policy(
         raise ValueError("One or more explicit, verified EVM coin scopes required")
     selected = {}
     for scope in scopes:
-        if type(scope) is not dict or set(scope) != _REQUIRED_SCOPE_FIELDS:
+        if not valid_scope_fields(scope):
             raise ValueError("Only exact verified coin policy fields are accepted")
         asset = scope["asset"]
         if type(asset) is not str or asset not in _EVM_ASSETS or asset in selected:
@@ -55,10 +70,24 @@ def compose_scoped_evm_wallet_policy(
         if asset not in selected:
             continue
         args = selected[asset]
-        per_coin = build_single_grant_evm_policy(
-            wallet=wallet, owner_id=owner_id, executor_id=executor_id,
-            now=now, **args,
-        )
+        if args.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
+            from .ethereum_settlement_policy_migration import build_recurring_direct_policy
+            draft=build_recurring_direct_policy(asset=asset,stable=args["stable"],
+                wallet=wallet,owner_id=owner_id,executor_id=executor_id,
+                buy_cap_micro=args["buy_source_atomic_cap"],
+                sell_cap_atomic=args["sell_source_atomic_cap"],
+                expires_at=args["expires_at"],now=now)
+            per_coin=draft["policy"]
+            # This version authorizes only existing ERC20/wrapped inventory,
+            # never unrelated native gas holdings, arbitrary nested calls
+            # or any fee collection. Old scopes retain their original digest.
+            per_coin["rules"]=[r for r in per_coin["rules"]
+                               if not r["name"].endswith(" native")]
+        else:
+            per_coin = build_single_grant_evm_policy(
+                wallet=wallet, owner_id=owner_id, executor_id=executor_id,
+                now=now, **args,
+            )
         if (per_coin.get("version") != "1.0"
                 or per_coin.get("chain_type") != "ethereum"
                 or per_coin.get("owner_id") != owner_id

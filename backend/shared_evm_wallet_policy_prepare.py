@@ -28,10 +28,12 @@ from .privy_live_signer import (
 )
 from .shared_evm_policy_reference_rates import (
     fetch_evm_policy_reference_rates, derive_user_budget_evm_atomic_caps,
+    derive_ethereum_settlement_atomic_caps,
 )
 from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy, verified_wallet_policy_digest,
+    DIRECT_SETTLEMENT_ASSETS,DIRECT_SETTLEMENT_POLICY,
 )
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
@@ -105,6 +107,37 @@ def _locked_selected_budget(cur,*,did:str,asset:str,stable:str,
     return row["budget_usd"],row["revision"]
 
 
+def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
+    """Persist the route version inside owner-consented scope JSON."""
+    if asset in DIRECT_SETTLEMENT_ASSETS:
+        caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
+            budget_usd=amount,snapshot=snapshot,now=now)
+        return {"asset":asset,"stable":stable,
+            "treasury":owner_fee_treasury(asset="ETH",stable=stable),
+            "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
+            "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
+            "native_wrap_atomic_cap":None,
+            "owner_max_fee_atomic":"0",
+            "expires_at":now+86400,
+            "settlement_policy":DIRECT_SETTLEMENT_POLICY}
+    caps=derive_user_budget_evm_atomic_caps(
+        asset=asset,stable=stable,budget_usd=amount,
+        snapshot=snapshot,now=now,
+    )
+    scope={
+        "asset":asset,"stable":stable,
+        "treasury":owner_fee_treasury(asset=asset,stable=stable),
+        "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
+        "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
+        "native_wrap_atomic_cap":caps["native_wrap_atomic_cap"],
+        # This is NOT an actual fee debt. Chain-confirmed 5% HWM debt
+        # must be verified again before any eventual fee transfer.
+        "owner_max_fee_atomic":caps["buy_source_atomic_cap"],
+        "expires_at":now+24*3600,
+    }
+    return scope
+
+
 def _stage_one_original_wallet_locked(
     cur,*,did:str,asset:str,stable:str,expected_revision:int,
     snapshot:dict,owned:dict,owner_id:str,signer_id:str,now:int,
@@ -134,21 +167,8 @@ def _stage_one_original_wallet_locked(
     )
     if cur.fetchone():
         raise HTTPException(409,"Legacy ETH signer grants require reconciliation")
-    caps=derive_user_budget_evm_atomic_caps(
-        asset=asset,stable=stable,budget_usd=amount,
-        snapshot=snapshot,now=now,
-    )
-    scope={
-        "asset":asset,"stable":stable,
-        "treasury":owner_fee_treasury(asset=asset,stable=stable),
-        "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
-        "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
-        "native_wrap_atomic_cap":caps["native_wrap_atomic_cap"],
-        # This is NOT an actual fee debt. Chain-confirmed 5% HWM debt
-        # must be verified again before any eventual fee transfer.
-        "owner_max_fee_atomic":caps["buy_source_atomic_cap"],
-        "expires_at":now+24*3600,
-    }
+    scope=build_selected_wallet_scope(asset=asset,stable=stable,amount=amount,
+        snapshot=snapshot,now=now)
     kwargs=dict(
         wallet=owned["address"],owner_id=owner_id,executor_id=signer_id,
         scopes=[scope],now=now,

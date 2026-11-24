@@ -33,7 +33,7 @@ from .shared_evm_policy_reference_rates import (
 from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_wallet_policy_status import _read_saved_and_current_preferences
 from .shared_evm_wallet_policy_remote_review import review_original_one_signer_wallet
-from .shared_evm_wallet_policy_prepare import _ASSETS, _locked_selected_budget
+from .shared_evm_wallet_policy_prepare import _ASSETS, _locked_selected_budget, build_selected_wallet_scope
 from .shared_evm_wallet_scope_transition import plan_wallet_policy_transition
 from .shared_evm_wallet_policy_intent_ledger import (
     begin_locked_user_policy_update_intent, confirm_locked_user_policy_update_intent,
@@ -146,19 +146,8 @@ def _stage_wallet_coin_extension_locked(
         )
         if cur.fetchone() is not None:
             raise HTTPException(409,"Legacy ETH signer requires reconciliation")
-    caps=derive_user_budget_evm_atomic_caps(
-        asset=asset,stable=stable,budget_usd=selected_budget,
-        snapshot=snapshot,now=now,
-    )
-    proposed={
-        "asset":asset,"stable":stable,
-        "treasury":owner_fee_treasury(asset=asset,stable=stable),
-        "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
-        "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
-        "native_wrap_atomic_cap":caps["native_wrap_atomic_cap"],
-        "owner_max_fee_atomic":caps["buy_source_atomic_cap"],
-        "expires_at":now+86400,
-    }
+    proposed=build_selected_wallet_scope(asset=asset,stable=stable,amount=selected_budget,
+        snapshot=snapshot,now=now)
     target=[*original,proposed]
     old_candidate=compose_scoped_evm_wallet_policy(
         wallet=current["wallet_address"],owner_id=current["owner_id"],

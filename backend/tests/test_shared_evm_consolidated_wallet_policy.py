@@ -82,3 +82,20 @@ def test_missing_or_invalid_explicit_budget_cannot_broaden_privy_permissions():
         bad["buy_source_atomic_cap"] = candidate
         with pytest.raises((ValueError, TypeError)):
             compose_scoped_evm_wallet_policy(**kwargs([bad]))
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","ARB"])
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+def test_versioned_direct_bridge_scope_coexists_with_unchanged_ethereum_scope(asset,stable):
+    from backend.shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
+    old=scope("LINK")
+    cross=dict(scope(asset,stable),settlement_policy=DIRECT_SETTLEMENT_POLICY,
+               owner_max_fee_atomic="0")
+    candidate=compose_scoped_evm_wallet_policy(**kwargs([old,cross]))
+    legacy=compose_scoped_evm_wallet_policy(**kwargs([old]))
+    assert [r for r in candidate["rules"] if r["name"].startswith("MiniNex LINK ")]==legacy["rules"]
+    bridge=[r for r in candidate["rules"] if r["name"].startswith("MiniNex "+asset+" ")]
+    assert len(bridge)==4
+    assert not any(r["name"].endswith(" native") for r in bridge)
+    assert not any("fee" in r["name"] for r in bridge)
+    assert verified_wallet_policy_digest(candidate,**kwargs([old,cross]))

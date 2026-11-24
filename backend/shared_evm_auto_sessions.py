@@ -65,7 +65,11 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
                FROM mininex_extra_coin_preferences
                WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
         settings=cur.fetchone()
-    pair=_pair(asset,record["stable"],"BUY")
+    if central and record.get("scope",{}).get("settlement_policy")=="ETHEREUM_ACROSS_DIRECT_V1":
+        from .ethereum_settlement_plan import settlement_route
+        pair={"chain_id":settlement_route(asset,"BUY",record["stable"])["destination_chain_id"]}
+    else:
+        pair=_pair(asset,record["stable"],"BUY")
     if (type(settings) is not dict
             or settings.get("revision")!=record.get("budget_revision")
             or settings.get("stable")!=record["stable"]
