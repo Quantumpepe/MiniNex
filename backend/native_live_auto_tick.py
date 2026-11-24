@@ -59,7 +59,8 @@ def _original_owner_native_session(row:object)->dict:
     stable=row.get("stable")
     started=row.get("started_by_owner_at")
     if (asset not in _NATIVE or stable not in _STABLES[asset]
-            or row.get("status")!="ACTIVE"
+            or not (row.get("status")=="ACTIVE" or
+                (row.get("status")=="EXIT_PENDING" and asset in ("BTC","SOL")))
             or type(started) is not datetime or started.tzinfo is None
             or type(row.get("budget_revision")) is not int
             or row["budget_revision"]<=0
@@ -123,8 +124,10 @@ async def execute_owner_native_live_tick(
             or not callable(grant_auditor)):
         raise ValueError("Internal native execution context not configured")
     current=time.time() if now is None else now
-    decision=verified_live_native_momentum(
-        market,asset=row["asset"],horizon=row["horizon"],now=current)
+    exiting=row["status"]=="EXIT_PENDING"
+    decision=({"action":"SELL","reason":"OWNER_EXIT_REQUESTED"} if exiting else
+              verified_live_native_momentum(
+                  market,asset=row["asset"],horizon=row["horizon"],now=current))
     if decision.get("action")=="WAIT":
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
@@ -134,6 +137,14 @@ async def execute_owner_native_live_tick(
             asset=row["asset"],stable=row["stable"],client=client,
             **({"_include_private_quote":True} if supported else {}))
         quote=candidate.pop("_private_quote",None)
+        exit_wallet=candidate.pop("_exit_wallet",None)
+        exit_eth_wallet=candidate.pop("_exit_eth_wallet",None)
+        if exiting and candidate.get("reason")=="NO_FINALIZED_NATIVE_POSITION" and exit_wallet and exit_eth_wallet:
+            from .native_live_auto_sessions import complete_native_exit_if_flat
+            stopped=await asyncio.to_thread(complete_native_exit_if_flat,row["privy_did"],
+                row["asset"],row["started_by_owner_at"],exit_wallet,exit_eth_wallet)
+            return {"asset":row["asset"],"state":"STOPPED" if stopped else "WAIT",
+                    "reason":"VERIFIED_POSITION_FLAT" if stopped else "EXIT_SETTLEMENT_PENDING"}
         if not supported or candidate.get("state")!="NATIVE_SELL_QUOTE_PREPARED" or quote is None:
             return candidate
         from .native_sell_strategy_execution import coordinate_original_native_sell_once

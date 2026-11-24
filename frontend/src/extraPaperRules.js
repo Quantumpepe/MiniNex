@@ -78,7 +78,7 @@ export function validLiveOwnerSession(data,asset){
   const evm=LIVE_EVM_COINS.has(asset);
   if(!(native||evm)||!data||data.asset!==asset||
      data.mode!==(native?'OWNER_NATIVE_LIVE_SESSION_CONTROL':'OWNER_EVM_LIVE_SESSION_CONTROL')||
-     !['NOT_STARTED','ACTIVE','PAUSED'].includes(data.status)||
+     !['NOT_STARTED','ACTIVE','PAUSED','EXIT_PENDING','STOPPED'].includes(data.status)||
      typeof data.worker_attached!=='boolean')return false;
   const sent=native?data.original_blockchain_sources_sent:data.original_blockchain_swaps_sent;
   const finalized=native?data.original_native_payouts_finalized:data.original_blockchain_swaps_finalized;

@@ -1373,6 +1373,23 @@ SCHEMA += (
     )""",
 )
 
+# Native exit is a user-requested SELL-only state; existing sessions unchanged.
+SCHEMA += (
+    """DO $native_exit$
+       BEGIN
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+              WHERE conrelid='mininex_live_native_auto_sessions'::regclass
+                AND conname='mininex_native_session_exit_v1') THEN
+           ALTER TABLE mininex_live_native_auto_sessions
+             DROP CONSTRAINT IF EXISTS mininex_live_native_auto_sessions_status_check,
+             ADD CONSTRAINT mininex_native_session_exit_v1 CHECK(
+               status IN ('ACTIVE','PAUSED','STOPPED')
+               OR (status='EXIT_PENDING' AND asset IN ('BTC','SOL')
+                   AND started_by_owner_at IS NOT NULL));
+         END IF;
+       END $native_exit$""",
+)
+
 # New one-signer wallet grant tables do not change legacy grants or enable LIVE.
 from .shared_evm_wallet_policy_schema import WALLET_POLICY_SCHEMA
 from .shared_evm_central_runtime_schema import CENTRAL_EVM_SCHEMA

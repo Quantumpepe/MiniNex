@@ -230,28 +230,42 @@ def finalized_native_position_atomic(rows,*,asset):
         return position
 
 
+def native_position_locked(cur,did,asset,wallet,*,exclude_key=None,require_single_wallet=False):
+    cur.execute("""SELECT 1 FROM mininex_live_native_order_intents
+        WHERE privy_did=%s AND asset=%s
+          AND (%s::text IS NULL OR intent_key<>%s)
+          AND ((status='PREPARED' AND quote_expires_at>now()) OR
+            status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED','SOURCE_FINALIZED'))
+        LIMIT 1""",(did,asset,exclude_key,exclude_key))
+    if cur.fetchone() is not None:
+        return None
+    if require_single_wallet:
+        cur.execute("""SELECT 1 FROM mininex_live_native_order_intents
+            WHERE privy_did=%s AND asset=%s AND status='DESTINATION_FINALIZED'
+              AND (source_proof_sha256 IS NULL OR destination_proof_sha256 IS NULL
+                OR (side='BUY' AND destination_wallet<>%s)
+                OR (side='SELL' AND source_wallet<>%s)) LIMIT 1""",
+            (did,asset,wallet,wallet))
+        if cur.fetchone() is not None:
+            return None
+    cur.execute("""SELECT side,input_amount,destination_received_atomic
+        FROM mininex_live_native_order_intents
+        WHERE privy_did=%s AND asset=%s AND status='DESTINATION_FINALIZED'
+          AND source_proof_sha256 IS NOT NULL
+          AND destination_proof_sha256 IS NOT NULL
+          AND ((side='BUY' AND destination_wallet=%s)
+               OR (side='SELL' AND source_wallet=%s))
+        ORDER BY destination_finalized_at,intent_key""",(did,asset,wallet,wallet))
+    return finalized_native_position_atomic(cur.fetchall(),asset=asset)
+
+
 def read_native_position_atomic(did,*,asset,wallet):
     """Read only original owner-specific, fully finalized strategy orders."""
     did=_safe_did(did)
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("""SELECT 1 FROM mininex_live_native_order_intents
-                WHERE privy_did=%s AND asset=%s
-                  AND ((status='PREPARED' AND quote_expires_at>now()) OR
-                    status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED','SOURCE_FINALIZED'))
-                LIMIT 1""",(did,asset))
-            if cur.fetchone() is not None:
-                return None
-            cur.execute("""SELECT side,input_amount,destination_received_atomic
-                FROM mininex_live_native_order_intents
-                WHERE privy_did=%s AND asset=%s AND status='DESTINATION_FINALIZED'
-                  AND source_proof_sha256 IS NOT NULL
-                  AND destination_proof_sha256 IS NOT NULL
-                  AND ((side='BUY' AND destination_wallet=%s)
-                       OR (side='SELL' AND source_wallet=%s))
-                ORDER BY destination_finalized_at,intent_key""",(did,asset,wallet,wallet))
-            return finalized_native_position_atomic(cur.fetchall(),asset=asset)
+            return native_position_locked(cur,did,asset,wallet)
 
 
 def exact_native_sell_amount(*,asset,position_atomic,wallet_balance):
@@ -278,7 +292,8 @@ async def prepare_native_sell_candidate(did,*,asset,stable,client,_include_priva
     if position is None:
         return {"asset":asset,"state":"WAIT","reason":"PREVIOUS_NATIVE_ORDER_UNRESOLVED"}
     if position==0:
-        return {"asset":asset,"state":"WAIT","reason":"NO_FINALIZED_NATIVE_POSITION"}
+        return {"asset":asset,"state":"WAIT","reason":"NO_FINALIZED_NATIVE_POSITION",
+                **({"_exit_wallet":wallet,"_exit_eth_wallet":eth} if _include_private_quote else {})}
     if asset=="BTC":
         evidence=await get_wallet_balances(did)
         balance=evidence.get("balances",{}).get("BTC",{})

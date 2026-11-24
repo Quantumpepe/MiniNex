@@ -183,3 +183,23 @@ def test_native_sell_signal_uses_native_source_candidate(monkeypatch):
             return await m.execute_owner_native_live_tick(row,market=object(),
                 client=client,grant_auditor=forbidden,now=1800000000)
     assert asyncio.run(run())=={"state":"NATIVE_SELL_QUOTE_PREPARED","can_submit":False}
+
+
+def test_native_exit_overrides_market_but_does_not_claim_completion_without_ledger(monkeypatch):
+    from backend import native_live_auto_sessions as sessions
+    row={**session("SOL"),"status":"EXIT_PENDING"}
+    def forbidden(*a,**kw):
+        pytest.fail("Exit must not request a BUY or market decision")
+    async def prepare(*a,**kw):
+        assert kw["_include_private_quote"] is True
+        return {"asset":"SOL","state":"WAIT","reason":"NO_FINALIZED_NATIVE_POSITION",
+                "_exit_wallet":"native","_exit_eth_wallet":"0x"+"a"*40}
+    monkeypatch.setattr(m,"verified_live_native_momentum",forbidden)
+    monkeypatch.setattr(m,"verified_owner_native_buy_amount",forbidden)
+    monkeypatch.setattr(m,"prepare_native_sell_candidate",prepare)
+    monkeypatch.setattr(sessions,"complete_native_exit_if_flat",lambda *a:False)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await m.execute_owner_native_live_tick(row,market=object(),client=client,
+                grant_auditor=forbidden,now=1800000000)
+    assert asyncio.run(run())["reason"]=="EXIT_SETTLEMENT_PENDING"

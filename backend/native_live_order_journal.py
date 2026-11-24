@@ -276,7 +276,7 @@ def _assert_native_owner_budget_current_locked(
         raise HTTPException(409,"Original owner coin settings changed")
 
 
-def _assert_native_session_active_locked(cur,*,did:str,asset:str,revision:int,stable:str)->None:
+def _assert_native_session_active_locked(cur,*,did:str,asset:str,revision:int,stable:str,side="BUY"):
     """Serialize the final claim with the owner's Pause action.
 
     An already committed SENDING transaction still reconciles normally.
@@ -288,8 +288,10 @@ def _assert_native_session_active_locked(cur,*,did:str,asset:str,revision:int,st
           AND started_by_owner_at IS NOT NULL FOR UPDATE""",
         (did,asset,revision,stable))
     session=cur.fetchone()
-    if type(session) is not dict or session.get("status")!="ACTIVE":
+    allowed=("ACTIVE","EXIT_PENDING") if side=="SELL" and asset in ("BTC","SOL") else ("ACTIVE",)
+    if type(session) is not dict or session.get("status") not in allowed:
         raise HTTPException(409,"Original native trade session is not active")
+    return session["status"]
 
 
 def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
@@ -314,7 +316,7 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
     if cur.fetchone()!={"privy_did":did}:
         raise HTTPException(409,"Native owner not durably verified")
     cur.execute(
-        """SELECT chain,side,stable,source_wallet,quote_expires_at,status,payload_sha256,
+        """SELECT chain,side,stable,source_wallet,quote_expires_at,status,payload_sha256,input_amount,
                   owner_consent_sha256,privy_grant_sha256,budget_revision
            FROM mininex_live_native_order_intents
            WHERE privy_did=%s AND asset=%s AND intent_key=%s
@@ -336,8 +338,19 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
     _assert_native_owner_budget_current_locked(
         cur,did=did,asset=asset,
         revision=original["budget_revision"],stable=original["stable"])
-    _assert_native_session_active_locked(
-        cur,did=did,asset=asset,revision=original["budget_revision"],stable=original["stable"])
+    session_status=_assert_native_session_active_locked(
+        cur,did=did,asset=asset,revision=original["budget_revision"],stable=original["stable"],
+        side=original["side"])
+    if session_status=="EXIT_PENDING":
+        from .native_live_source_evidence import native_position_locked
+        from decimal import localcontext
+        held=native_position_locked(cur,did,asset,original["source_wallet"],
+            exclude_key=key,require_single_wallet=True)
+        with localcontext() as ctx:
+            ctx.prec=100
+            atomic=Decimal(original["input_amount"])*10**(8 if asset=="BTC" else 9)
+            if held is None or atomic!=atomic.to_integral_value() or not 0<atomic<=held:
+                raise HTTPException(409,"Exit exceeds verified native strategy position")
     # Source-chain finalization means the original transaction is mined
     # and its source nonce/UTXO can no longer be reused. The cross-chain
     # destination may still take a long time, but should not freeze

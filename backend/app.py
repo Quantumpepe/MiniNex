@@ -39,7 +39,7 @@ from .native_live_buy_destination import get_private_original_native_buy_destina
 from .native_live_sell_refund import get_private_original_native_sell_refund
 from .native_live_order_status import get_owner_native_live_order_status
 from .native_live_auto_sessions import (
-    get_owner_native_auto,pause_owner_native_auto,
+    get_owner_native_auto,pause_owner_native_auto,request_owner_native_exit,
 )
 from .native_live_eth_buy_source import get_original_eth_buy_source
 from .native_thor_transaction_status import get_private_original_protocol_status
@@ -626,6 +626,16 @@ def pause_owner_native_auto_session(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+@app.post("/api/live/native/auto-session/{asset}/exit")
+def owner_native_exit_session(
+    asset: Literal["BTC","SOL"],
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(request_owner_native_exit(did,asset),
+        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/native/order-status/{asset}")
