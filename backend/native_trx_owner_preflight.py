@@ -14,7 +14,10 @@ from datetime import datetime
 from fastapi import HTTPException
 import httpx
 
-from .native_trx_user_signed_send import _tron_rpc, _check_unsigned_transaction
+from .native_trx_user_signed_send import (
+    _tron_rpc, _check_unsigned_transaction, recover_tron_signature,
+    solid_tron_receipt_confirmed,
+)
 from .native_trx_manual_send import tron_address_hex, trx_to_sun
 from .native_thor_swap_quote import get_private_native_thornode_terms, _exact_owner_wallets
 from .privy_wallet_verification import fetch_privy_user
@@ -48,9 +51,9 @@ def _hex(value,size):
     return bytes.fromhex(value)
 
 
-def verify_tron_swap_wire(tx,*,source,destination,sun,memo):
+def verify_tron_swap_wire(tx,*,source,destination,sun,memo,reference_ms=None):
     """Check both node JSON and the exact bytes that will be signed."""
-    txid,unsigned=_check_unsigned_transaction(tx,source,destination,sun)
+    txid,unsigned=_check_unsigned_transaction(tx,source,destination,sun,reference_ms=reference_ms)
     raw=unsigned["raw_data"]
     if set(raw)!={"contract","ref_block_bytes","ref_block_hash","expiration","timestamp","data"}:
         raise ValueError("Unexpected original TRON raw fields")
@@ -181,3 +184,89 @@ async def prepare_original_trx_unsigned_owner_transfer(did,*,stable,amount,
             "unsigned_transaction":unsigned,**fee_snapshot,
             "wallet_signed":False,"source_transaction_sent":False,"execution_enabled":False,"can_submit":False,
             **({"_private_quote":quote} if _internal_bundle else {})}
+
+
+def verify_signed_tron_swap(manifest,quote,signature,*,reference_ms=None):
+    """Cryptographically bind a returned signature to the original quote and bytes.
+
+    This does not obtain a Privy grant or broadcast a transaction. No raw-hash
+    delegation is requested here.
+    """
+    if (type(manifest) is not dict or type(quote) is not dict
+            or manifest.get("mode")!="ORIGINAL_TRX_SOURCE_UNSIGNED_PREFLIGHT"
+            or manifest.get("asset")!="TRX" or manifest.get("side")!="SELL"
+            or quote.get("mode")!="THORCHAIN_DESTINATION_BOUND_READ_ONLY"
+            or quote.get("source_asset")!="TRX" or quote.get("from_network")!="tron-mainnet"
+            or quote.get("destination_asset")!="USDT" or quote.get("to_network")!="ethereum-mainnet"
+            or manifest.get("stable")!="USDT"
+            or manifest.get("source_wallet")!=quote.get("source_wallet")
+            or manifest.get("destination_wallet")!=quote.get("destination_wallet")
+            or manifest.get("inbound_vault")!=quote.get("inbound_vault")
+            or manifest.get("fee_reserve_verified") is not True):
+        raise ValueError("Original TRON signed scope changed")
+    sun=trx_to_sun(quote["amount"])
+    if manifest.get("source_amount_sun")!=str(sun):
+        raise ValueError("Original TRON source amount changed")
+    txid,unsigned=verify_tron_swap_wire(manifest["unsigned_transaction"],
+        source=quote["source_wallet"],destination=quote["inbound_vault"],
+        sun=sun,memo=quote["memo"],reference_ms=reference_ms)
+    if txid.lower()!=manifest.get("original_transaction_sha256"):
+        raise ValueError("Original TRON digest changed")
+    signature_hex=recover_tron_signature(txid,signature,quote["source_wallet"])
+    return {**unsigned,"signature":[signature_hex]}
+
+
+def verified_tron_swap_source_receipt(manifest,quote,transaction,info):
+    """Verify actual solidified source transfer and fee; not a destination fill.
+
+    Both transaction and info must be independently read from walletsolidity.
+    A broadcast acknowledgement or estimated fee is never a receipt.
+    """
+    if type(transaction) is not dict or type(info) is not dict:
+        raise ValueError("Final TRON source receipt unavailable")
+    txid=manifest.get("original_transaction_sha256")
+    if (type(txid) is not str or not re.fullmatch(r"[0-9a-f]{64}",txid)
+            or str(transaction.get("txID","")).lower()!=txid
+            or str(info.get("id","")).lower()!=txid
+            or type(info.get("blockNumber")) is not int or info["blockNumber"]<=0
+            or type(info.get("blockTimeStamp")) is not int
+            or not solid_tron_receipt_confirmed(txid,quote["source_wallet"],transaction,info)):
+        raise ValueError("TRON source is not solidified successfully")
+    raw=manifest["unsigned_transaction"]["raw_data"]
+    signed_at=raw["timestamp"]
+    if not signed_at<=info["blockTimeStamp"]<=raw["expiration"]:
+        raise ValueError("Final TRON source timestamp outside signed terms")
+    signatures=transaction.get("signature")
+    if (type(signatures) is not list or len(signatures)!=1
+            or type(signatures[0]) is not str
+            or not re.fullmatch(r"[0-9a-fA-F]{130}",signatures[0])):
+        raise ValueError("Final TRON source signature unavailable")
+    expected=verify_signed_tron_swap(manifest,quote,
+        "0x"+signatures[0][:128],reference_ms=signed_at)
+    if (expected["signature"][0].lower()!=signatures[0].lower()
+            or expected["raw_data"]!=transaction.get("raw_data")
+            or expected["raw_data_hex"].lower()!=str(transaction.get("raw_data_hex","")).lower()):
+        raise ValueError("Final TRON source differs from original signed transfer")
+    if info.get("result") not in (None,"SUCCESS"):
+        raise ValueError("Final TRON source failed")
+    # The native transaction-info fee is total burned sun, including memo
+    # and bandwidth. Protobuf JSON omits its zero default; do not sum
+    # nested fee fields again. A complete receipt is still required.
+    if type(info.get("receipt")) is not dict:
+        raise ValueError("Final TRON fee receipt unavailable")
+    fee=_nonnegative_int(info.get("fee",0))
+    return {"asset":"TRX","side":"SELL","source_tx_hash":txid,
+            "source_amount_sun":manifest["source_amount_sun"],
+            "source_finalized":True,"source_block_number":info["blockNumber"],
+            "source_block_timestamp_ms":info["blockTimeStamp"],
+            "actual_source_fee_sun":str(fee),"destination_settled":False}
+
+
+async def read_verified_tron_swap_source_receipt(client,manifest,quote):
+    """Read source finality without any send or retry."""
+    txid=manifest["original_transaction_sha256"]
+    transaction,info=await asyncio.gather(
+        _tron_rpc(client,"/walletsolidity/gettransactionbyid",{"value":txid}),
+        _tron_rpc(client,"/walletsolidity/gettransactioninfobyid",{"value":txid}),
+    )
+    return verified_tron_swap_source_receipt(manifest,quote,transaction,info)

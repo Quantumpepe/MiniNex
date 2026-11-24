@@ -26,6 +26,31 @@ def test_tron_sell_wire_matches_memo_and_owner_transfer():
         "timestamp":timestamp,"data":memo.encode().hex()}}
     args=dict(source=owner,destination=vault,sun=amount,memo=memo)
     assert verify_tron_swap_wire(tx,**args)[0]==tx["txID"].upper()
+    from backend.native_trx_owner_preflight import verify_signed_tron_swap,verified_tron_swap_source_receipt
+    quote={"mode":"THORCHAIN_DESTINATION_BOUND_READ_ONLY","source_asset":"TRX",
+           "destination_asset":"USDT","from_network":"tron-mainnet","to_network":"ethereum-mainnet",
+           "source_wallet":owner,"destination_wallet":"0x"+"a"*40,"inbound_vault":vault,
+           "amount":"1","memo":memo}
+    manifest={"mode":"ORIGINAL_TRX_SOURCE_UNSIGNED_PREFLIGHT","asset":"TRX","side":"SELL",
+              "stable":"USDT","source_wallet":owner,"destination_wallet":quote["destination_wallet"],
+              "inbound_vault":vault,"source_amount_sun":str(amount),
+              "original_transaction_sha256":tx["txID"],"unsigned_transaction":tx,
+              "fee_reserve_verified":True}
+    signature=keys.PrivateKey(bytes([1])*32).sign_msg_hash(bytes.fromhex(tx["txID"])).to_bytes()
+    signed=verify_signed_tron_swap(manifest,quote,"0x"+signature[:64].hex())
+    assert signed["signature"]==[signature.hex().upper()]
+    confirmed={**signed,"ret":[{"contractRet":"SUCCESS"}]}
+    receipt={"id":tx["txID"],"blockNumber":123,"blockTimeStamp":timestamp+1000,
+             "fee":1000000,"receipt":{"net_usage":314}}
+    proof=verified_tron_swap_source_receipt(manifest,quote,confirmed,receipt)
+    assert proof["actual_source_fee_sun"]=="1000000"
+    assert proof["source_finalized"] is True and proof["destination_settled"] is False
+    with pytest.raises(ValueError):
+        verified_tron_swap_source_receipt(manifest,quote,confirmed,{**receipt,"id":"b"*64})
+    with pytest.raises(ValueError):
+        verified_tron_swap_source_receipt(manifest,quote,{**confirmed,"ret":[{"contractRet":"REVERT"}]},receipt)
+    with pytest.raises(ValueError):
+        verified_tron_swap_source_receipt(manifest,quote,confirmed,{**receipt,"blockTimeStamp":expiry+1})
     changed=deepcopy(tx)
     changed_wire=wire.replace(memo.encode(),b"X"*len(memo))
     changed["raw_data_hex"]=changed_wire.hex()
