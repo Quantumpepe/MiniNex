@@ -42,8 +42,10 @@ export function validateBridgePlan(plan,quote,asset,address){
       tx.data.slice(10,74).toLowerCase()!==DIAMOND.slice(2).padStart(64,'0')||
       ![0n,amount].includes(BigInt('0x'+tx.data.slice(74))))throw Error('Approval differs');
   }else if(plan.kind==='SWAP'){
-    if(!equal(tx.to,DIAMOND)||tx.chainId!==chain||
-      (buy||asset==='ARB'?value!==0n:![0n,amount].includes(value)))
+    const fee=BigInt(plan.native_bridge_fee_atomic??'0');
+    if(fee<0n||fee!==BigInt(data.native_bridge_fee_atomic??'0')||
+      (asset!=='AVAX'&&fee!==0n)||!equal(tx.to,DIAMOND)||tx.chainId!==chain||
+      (buy||asset==='ARB'?value!==fee:![fee,amount+fee].includes(value)))
       throw Error('Bridge transaction differs');
   }else throw Error('Unsupported plan');
   return {from:address,to:tx.to,data:tx.data,value:'0x'+value.toString(16)};

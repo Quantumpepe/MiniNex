@@ -103,6 +103,7 @@ async def prepare_manual_bridge(did,quote_id):
             "minimum_output_atomic":q["minimum_output_atomic"],
             "expires_at":q["expires_at"],"transaction":tx,
             "estimated_gas_atomic":plan["estimated_gas_atomic"],
+            "native_bridge_fee_atomic":plan.get("native_bridge_fee_atomic","0"),
             "server_signing_authorized":False,"automatic_trading_authorized":False}
     except HTTPException:
         raise

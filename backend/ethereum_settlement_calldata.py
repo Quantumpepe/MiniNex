@@ -212,3 +212,12 @@ def inspect_across_v4(tx, *, terms, now):
             "destination_swap":destination_swap,
             "minimum_output_atomic":minimum,
             "calldata_verified":True,"execution_authorized":False}
+
+
+def inspect_settlement_route(tx,*,terms,now):
+    """Dispatch by reviewed selector/chain, never by provider marketing name."""
+    if terms["asset"]=="AVAX":
+        from .ethereum_settlement_stargate import inspect_stargate
+        return inspect_stargate(tx,terms=terms,now=now)
+    result=inspect_across_v4(tx,terms=terms,now=now)
+    return {**result,"provider":"ACROSS_V4","facet":ACROSS_FACET,"native_bridge_fee_atomic":0}

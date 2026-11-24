@@ -91,11 +91,12 @@ def migration_review(quote,record,*,now):
     if quote["asset"]!=record["asset"] or quote["stable"]!=record["stable"] or (
             quote["wallet_address"].lower()!=record["wallet_address"].lower()):
         raise ValueError("Original grant and quote differ")
-    inspected=inspect_across_v4(quote["unsigned_transaction"],terms=quote,now=now)
+    from .ethereum_settlement_calldata import inspect_settlement_route
+    inspected=inspect_settlement_route(quote["unsigned_transaction"],terms=quote,now=now)
     if inspected["route_sha256"]!=quote["route_sha256"]:
         raise ValueError("Original quote changed")
     rules=None
-    if not inspected["source_swap"] and not inspected.get("destination_swap"):
+    if inspected["provider"]=="ACROSS_V4" and not inspected["source_swap"] and not inspected.get("destination_swap"):
         rules=exact_direct_bridge_rules(quote,now=now)
     return {"asset":quote["asset"],"source_chain_id":quote["source_chain_id"],
         "destination_chain_id":quote["destination_chain_id"],

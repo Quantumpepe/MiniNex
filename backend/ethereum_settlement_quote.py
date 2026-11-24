@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from .ethereum_settlement_journal import store_quote
 from .ethereum_settlement_plan import settlement_route, check_evm_quote_route, CROSS_COIN_CONTRACTS
-from .ethereum_settlement_calldata import inspect_across_v4
+from .ethereum_settlement_calldata import inspect_settlement_route
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
 from .manual_swap_routes import _asset_network
@@ -95,7 +95,9 @@ async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,de
     indicative=None
     last_error=None
     alternatives=[params]
-    if source_chain!=43114 and dest_chain!=43114:
+    if asset=="AVAX":
+        alternatives.append({**params,"allowBridges":"stargateV2"})
+    else:
         alternatives.append({**params,"allowBridges":"across"})
     for choice in alternatives:
         try:
@@ -120,7 +122,7 @@ async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,de
                 "issued_at":now,"expires_at":now+30}
             check_evm_quote_route(terms)
             try:
-                inspected=inspect_across_v4(payload["transactionRequest"],terms=terms,now=now)
+                inspected=inspect_settlement_route(payload["transactionRequest"],terms=terms,now=now)
             except Exception:
                 inspected=None
             if inspected is not None:
@@ -201,6 +203,7 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
         "source_chain_id": source_chain, "destination_chain_id": dest_chain,
         "input_amount": amount, "estimated_output_amount": expected,
         "minimum_output_amount": minimum, "quote_provider": "LIFI",
+        "native_bridge_fee_atomic":str(inspected["native_bridge_fee_atomic"]) if inspected else None,
         "quote_checked_at": now, "quote_expires_at": now + 30,
         "pool_route_quoted": True, "execution_enabled": False,
         "can_submit": False, "transaction_built": False,

@@ -17,7 +17,7 @@ from fastapi import HTTPException
 from .ethereum_settlement_quote import CROSS_EVM, _token_matches
 from .ethereum_settlement_journal import load_quote, load_submission
 from .ethereum_settlement_plan import settlement_route, check_evm_quote_route
-from .ethereum_settlement_calldata import route_digest, inspect_across_v4
+from .ethereum_settlement_calldata import route_digest, inspect_settlement_route
 from .ethereum_settlement_bridge_proof import prove_across_pair
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .live_eth_receipts import _num
@@ -274,7 +274,7 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             if quote.get("route_sha256") is not None:
                 if route_digest({**tx,"chainId":src},src)!=quote["route_sha256"]:
                     raise ValueError("Mined calldata differs from original quote")
-            elif bound:
+            elif bound or manual_bound:
                 raise ValueError("Submitted route has no inspected calldata")
             gas = _num(receipt["gasUsed"]) * _num(receipt["effectiveGasPrice"])
             base["source_fee_native"] = format(Decimal(gas).scaleb(-18), "f")
@@ -306,8 +306,9 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
                 debit=await _native_credit(client,src,tx_hash,tx,wallet)
                 if debit is None:
                     return {**base,"state":"NATIVE_DEBIT_PROOF_REQUIRED"}
-                if -debit!=int(units):
-                    raise ValueError("Native source debit differs from original amount")
+                inspected=inspect_settlement_route(quote["unsigned_transaction"],terms=quote,now=quote["issued_at"])
+                if not int(units)<=-debit<=int(units)+inspected["native_bridge_fee_atomic"]:
+                    raise ValueError("Native source debit differs from original amount and bridge fee")
             elif -_net_token_credit(receipt["logs"], source_token, wallet) != int(units):
                 raise ValueError("Source token debit differs from original amount")
             base["destination_tx_hash"] = terms["hash"]
@@ -330,9 +331,14 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
                         "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
             proof=None
             if quote.get("unsigned_transaction") is not None:
-                inspected=inspect_across_v4(quote["unsigned_transaction"],
+                inspected=inspect_settlement_route(quote["unsigned_transaction"],
                     terms=quote,now=quote["issued_at"])
-                proof=prove_across_pair(receipt["logs"],dest_receipt["logs"],
+                if inspected["provider"]=="STARGATE_V2":
+                    from .ethereum_settlement_stargate import prove_stargate_pair
+                    prove=prove_stargate_pair
+                else:
+                    prove=prove_across_pair
+                proof=prove(receipt["logs"],dest_receipt["logs"],
                     src=src,dst=dst,wallet=wallet,route=inspected,received=received)
             # Only the original trusted submission plus matched bridge events
             # and verified wallet credit establish settlement. Accounting is

@@ -6,7 +6,7 @@ must separately prove current user consent, policy and budget reservation.
 from eth_abi import decode
 from eth_utils import keccak
 from fastapi import HTTPException
-from .ethereum_settlement_calldata import ACROSS_FACET, DIAMOND, inspect_across_v4
+from .ethereum_settlement_calldata import DIAMOND, inspect_settlement_route
 from .ethereum_settlement_bridge_proof import POOLS
 from .ethereum_settlement_status import _rpc_url
 from .shared_evm_swap_receipts import _receipt_rpc
@@ -18,7 +18,7 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
         raise HTTPException(409,"Original bridge quote or wallet unavailable")
     if not quote.get("unsigned_transaction"):
         raise HTTPException(409,"Route is indicative only")
-    inspected=inspect_across_v4(quote["unsigned_transaction"],terms=quote,now=now)
+    inspected=inspect_settlement_route(quote["unsigned_transaction"],terms=quote,now=now)
     if inspected["route_sha256"]!=quote["route_sha256"]:
         raise ValueError("Original bridge route digest changed")
     tx=inspected["transaction"]; chain=tx["chainId"]; url=_rpc_url(chain)
@@ -30,15 +30,28 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
     loupe="0x"+(keccak(text="facetAddress(bytes4)")[:4]+selector+bytes(28)).hex()
     facet=decode(["address"],bytes.fromhex((await rpc("eth_call",
         [{"to":DIAMOND,"data":loupe},"latest"],2))[2:]))[0].lower()
-    if facet!=ACROSS_FACET:
+    if facet!=inspected["facet"]:
         raise HTTPException(409,"Bridge facet differs from reviewed deployment")
     destination=inspected.get("destination_swap")
+    stargate=inspected["provider"]=="STARGATE_V2"
+    if stargate:
+        from .ethereum_settlement_stargate import CONFIG,ENDPOINT
+        config=CONFIG[chain]
+        raw=await rpc("eth_call",[{"to":facet,"data":"0x"+keccak(text="tokenMessaging()")[:4].hex()},"latest"],10)
+        if decode(["address"],bytes.fromhex(raw[2:]))[0].lower()!=config["messaging"]:
+            raise HTTPException(409,"Stargate token messaging differs")
+        data="0x"+keccak(text="stargateImpls(uint16)")[:4].hex()+format(inspected["asset_id"],"064x")
+        raw=await rpc("eth_call",[{"to":config["messaging"],"data":data},"latest"],11)
+        if decode(["address"],bytes.fromhex(raw[2:]))[0].lower()!=config["pools"][quote["stable"]]:
+            raise HTTPException(409,"Stargate pool differs")
     if destination:
         dst=quote["destination_chain_id"]; dst_url=_rpc_url(dst)
         if int(await _receipt_rpc(client,dst_url,"eth_chainId",[],20),16)!=dst:
             raise ValueError("Wrong destination RPC")
-        for method,expected,rid in (("SPOKEPOOL()",POOLS[dst],21),
-                ("EXECUTOR()",destination["executor"],22)):
+        checks=(("endpointV2()",ENDPOINT,21),("executor()",destination["executor"],22),
+                ("tokenMessaging()",CONFIG[dst]["messaging"],23)) if stargate else (
+                ("SPOKEPOOL()",POOLS[dst],21),("EXECUTOR()",destination["executor"],22))
+        for method,expected,rid in checks:
             raw=await _receipt_rpc(client,dst_url,"eth_call",[
                 {"to":destination["receiver"],"data":"0x"+keccak(text=method)[:4].hex()},"latest"],rid)
             if decode(["address"],bytes.fromhex(raw[2:]))[0].lower()!=expected:
@@ -78,5 +91,6 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
                     "params":{"transaction":{"to":tx["to"],"data":tx["data"],"value":tx["value"]}}},
             "quote_id":str(quote["quote_id"]),"route_sha256":inspected["route_sha256"],
             "estimated_gas_atomic":str(gas*price),
+            "native_bridge_fee_atomic":str(inspected["native_bridge_fee_atomic"]),
             "verified_source_balance_atomic":str(balance),
             "execution_authorized":False}
