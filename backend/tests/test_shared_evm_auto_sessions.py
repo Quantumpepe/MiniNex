@@ -170,7 +170,26 @@ def test_bridge_exit_endpoint_is_owner_authenticated_and_no_start_during_exit():
     assert "verify_privy_bearer" in inspect.getsource(route.endpoint)
     assert "WHERE mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in inspect.getsource(m._start_locked)
     with pytest.raises(HTTPException):
-        m.request_owner_bridge_exit(DID,"AVAX")
+        m.request_owner_bridge_exit(DID,"BTC")
+
+
+def test_avax_exit_requests_sell_without_marking_position_closed(monkeypatch):
+    cur=Cursor([{"privy_did":DID},{"chain_id":43114,"stable":"USDC","status":"EXIT_PENDING"}])
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):
+            class CM:
+                def __enter__(self):return cur
+                def __exit__(self,*a):return False
+            return CM()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:DB())
+    result=m.request_owner_bridge_exit(DID,"AVAX")
+    assert result["status"]=="EXIT_PENDING"
+    assert result["new_transactions_sent"]==0
+    assert any("SET status=\x27EXIT_PENDING\x27" in sql and args==(DID,"AVAX") for sql,args in cur.queries)
 
 
 def test_exit_completion_waits_for_original_unresolved_bridge(monkeypatch):
