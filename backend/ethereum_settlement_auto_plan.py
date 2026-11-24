@@ -17,6 +17,8 @@ from .privy_live_signer import _owned_eth_wallet
 from .wallet_balances import _eth_rpc_call
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
 from .storage import _safe_did
+from .ethereum_settlement_funding import read_pending_ethereum_funding
+from .shared_evm_policy_reference_rates import _price,fetch_evm_policy_reference_rates
 
 
 def exact_balance(entry,decimals):
@@ -90,3 +92,29 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
             "source_chain_id":route["source_chain_id"],
             "destination_chain_id":route["destination_chain_id"],
             "can_submit":False,"real_trade_sent":False}
+
+
+async def plan_cross_evm_buy(*,did,asset,stable,budget_usd,estimated_cost_usd,client,now):
+    """Single read-only candidate amount: real wallet, existing exposure,
+    outstanding cross-engine claims and user-selected budget.
+
+    The caller still needs a current owner-approved budget, atomic
+    reservation and new scoped Privy policy before actual execution.
+    """
+    evidence=await read_cross_evm_funding(did,asset,stable,client)
+    prices=await fetch_evm_policy_reference_rates(asset,stable)
+    coin_price=_price(prices,asset,now)
+    stable_price=_price(prices,stable,now)
+    pending=await asyncio.to_thread(read_pending_ethereum_funding,did,
+        asset=asset,stable=stable,stable_usd=stable_price)
+    with localcontext() as ctx:
+        ctx.prec=100
+        position=Decimal(evidence["coin_atomic"]).scaleb(-18)*coin_price
+        result=ethereum_buy_amount(budget_usd=budget_usd,position_usd=position,
+            pending_coin_usd=pending["pending_coin_usd"],
+            wallet_stable_atomic=evidence["stable_atomic"],
+            pending_wallet_stable_atomic=pending["pending_wallet_stable_atomic"],
+            stable_usd=stable_price,estimated_cost_usd=estimated_cost_usd)
+    return {**result,"asset":asset,"stable":stable,"settlement_chain_id":1,
+            "pending_entries":pending["pending_entries"],"atomic_claimed":False,
+            "execution_authorized":False}
