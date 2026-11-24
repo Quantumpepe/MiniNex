@@ -130,7 +130,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
-                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('ETH','BNB','POL','ARB','LINK','QNT','UNI')))
+                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI')))
                      AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND (
@@ -278,7 +278,7 @@ async def execute_owner_evm_live_tick(
     current=time.time() if now is None else now
     exiting=row.get("session_status")=="EXIT_PENDING"
     if exiting:
-        if asset not in ("ETH","BNB","POL","ARB","LINK","QNT","UNI"):
+        if asset not in ("ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI"):
             raise ValueError("No automatic exit route for this coin")
         decision={"action":"SELL","reason":"OWNER_REQUESTED_EXIT"}
     else:
