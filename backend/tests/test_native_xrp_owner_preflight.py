@@ -164,3 +164,25 @@ def test_native_xrp_preflight_does_not_submit_sign_or_broadcast():
         "sign_and_submit", "psycopg", "PrivyClient",
     ):
         assert forbidden not in src
+
+
+def test_internal_xrp_preflight_reuses_exact_private_quote(monkeypatch):
+    original_quote = quote()
+    answers = responses()
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Worker already fetched the exact original quote")
+    async def rpc(client, method, params):
+        return answers[method]
+    monkeypatch.setattr(m, "get_private_native_thornode_terms", unexpected)
+    monkeypatch.setattr(m, "_xrp_rpc", rpc)
+    monkeypatch.setattr(m.time, "time", lambda: NOW)
+    result = asyncio.run(m.prepare_original_xrp_unsigned_owner_payment(
+        "did:privy:xrp_original_owner", amount=AMOUNT,
+        _private_quote=original_quote, _internal_bundle=True))
+    assert result["_private_quote"] is original_quote
+    assert result["unsigned_payment"]["unsigned_payment"]["Memos"][0]["Memo"]["MemoData"] == original_quote["memo"].encode("utf-8").hex().upper()
+    assert result["can_submit"] is False
+    with pytest.raises(HTTPException):
+        asyncio.run(m.prepare_original_xrp_unsigned_owner_payment(
+            "did:privy:xrp_original_owner", amount=AMOUNT,
+            _private_quote=original_quote))

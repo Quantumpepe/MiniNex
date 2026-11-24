@@ -284,7 +284,7 @@ def exact_native_sell_amount(*,asset,position_atomic,wallet_balance):
 async def prepare_native_sell_candidate(did,*,asset,stable,client,_include_private_quote=False):
     """Read-only SELL preparation; fee reserve and actual signer remain required."""
     did=_safe_did(did)
-    if asset not in ("BTC","SOL","XRP") and not (asset=="TRX" and _include_private_quote):
+    if asset not in ("BTC","SOL","XRP","TRX"):
         return {"asset":asset,"state":"WAIT","reason":"NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"}
     user=await fetch_privy_user(did)
     wallet,eth=_exact_owner_wallets(user,did,asset)
@@ -294,10 +294,6 @@ async def prepare_native_sell_candidate(did,*,asset,stable,client,_include_priva
     if position==0:
         return {"asset":asset,"state":"WAIT","reason":"NO_FINALIZED_NATIVE_POSITION",
                 **({"_exit_wallet":wallet,"_exit_eth_wallet":eth} if _include_private_quote else {})}
-    if asset=="TRX":
-        # Stop new BUYs and keep the position open until a supported, verified
-        # TRON source route and its signer are connected. No fake settlement.
-        return {"asset":asset,"state":"WAIT","reason":"NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"}
     if asset=="BTC":
         evidence=await get_wallet_balances(did)
         balance=evidence.get("balances",{}).get("BTC",{})

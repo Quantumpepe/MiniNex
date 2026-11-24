@@ -1,4 +1,4 @@
-"""Private, destination-bound THORNode quote terms for BTC/SOL/XRP.
+"""Private, destination-bound THORNode quote terms for BTC/SOL/XRP/TRX.
 
 The older public MCP quote contains no usable vault/memo. A live on-chain
 swap needs those exact time-limited terms and current Asgard vault evidence.
@@ -30,7 +30,7 @@ _ASSET_CHAIN={"BTC":"BTC","SOL":"SOL","XRP":"XRP",
 _ASSET_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
                 "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
                 "DOGE":"dogecoin-mainnet"}
-_BUY_ONLY=frozenset(("TRX","DOGE"))
+_BUY_ONLY=frozenset(("DOGE",))
 _INTEGER=re.compile(r"^[0-9]{1,28}$")
 
 
@@ -93,7 +93,7 @@ def validate_thornode_route_terms(
     if (asset not in _ASSET_CHAIN or side not in ("BUY","SELL")
             or (asset in _BUY_ONLY and side!="BUY")):
         raise ValueError("Native source chain unsupported")
-    if (asset in _BUY_ONLY
+    if (asset in ("TRX","DOGE")
             and not _valid_address(asset,native_owner)):
         raise ValueError("Original TRX/DOGE receiving wallet not validated")
     if stable not in ("USDC","USDT") or (asset=="XRP" and stable!="USDC"):
@@ -130,6 +130,10 @@ def validate_thornode_route_terms(
     if len(candidates)!=1:
         raise ValueError("Quoted inbound vault differs from active THORNode vault")
     active=candidates[0]
+    if asset=="TRX" and side=="SELL":
+        if (not _valid_address("TRX",active["address"]) or active["address"]==native_owner
+                or active.get("router") not in (None,"")):
+            raise ValueError("Unsupported TRON inbound transfer route")
     for name in ("halted","global_trading_paused","chain_trading_paused"):
         if active.get(name) is not False:
             raise ValueError("THORChain source network not verifiably active")

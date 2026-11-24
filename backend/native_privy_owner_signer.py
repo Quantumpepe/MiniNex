@@ -1,4 +1,4 @@
-"""Server-only readback of BTC/SOL/XRP Privy wallet ownership and delegation.
+"""Server-only readback of BTC/SOL/XRP/TRX Privy wallet ownership and delegation.
 
 A connected native wallet, its 'delegated' flag, or an additional signer
 reference is not sufficient to permit an automatic trade. This intentionally
@@ -25,6 +25,7 @@ _CHAINS = {
     "BTC": "bitcoin-segwit",
     "SOL": "solana",
     "XRP": "xrpl",
+    "TRX": "tron",
 }
 
 
@@ -129,11 +130,12 @@ def inspect_original_native_signer_metadata(
             "BTC": "bitcoin-mainnet",
             "SOL": "solana-mainnet",
             "XRP": "xrpl-mainnet",
+            "TRX": "tron-mainnet",
         }[asset],
         "original_wallet_link_verified": True,
         "original_wallet_remote_owner_verified": True,
         "original_public_key_matches_wallet": public_key_bound,
-        "privy_native_wallet_api_supported": asset in ("BTC", "SOL"),
+        "privy_native_wallet_api_supported": asset in ("BTC", "SOL", "TRX"),
         "wallet_delegation_flag_reported": original["delegated"],
         "additional_signer_reference_present": bool(signer_ids),
         "signer_policy_reference_present": has_scoped_policy,
@@ -163,11 +165,12 @@ async def get_original_native_privy_signer_status(
             "BTC": "bitcoin-mainnet",
             "SOL": "solana-mainnet",
             "XRP": "xrpl-mainnet",
+            "TRX": "tron-mainnet",
         }[asset],
         "original_wallet_link_verified": False,
         "original_wallet_remote_owner_verified": False,
         "original_public_key_matches_wallet": False,
-        "privy_native_wallet_api_supported": asset in ("BTC", "SOL"),
+        "privy_native_wallet_api_supported": asset in ("BTC", "SOL", "TRX"),
         "wallet_delegation_flag_reported": False,
         "additional_signer_reference_present": False,
         "signer_policy_reference_present": False,

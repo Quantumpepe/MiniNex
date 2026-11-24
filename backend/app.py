@@ -655,7 +655,7 @@ async def read_owner_native_live_original_orders(
 
 @app.get("/api/live/native/authorization/{asset}")
 async def read_original_native_privy_owner_authorization(
-    asset: Literal["BTC","SOL","XRP"],
+    asset: Literal["BTC","SOL","XRP","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Owner-only native Privy signer readback, never trade permission."""

@@ -105,14 +105,18 @@ def test_native_sell_signal_requires_grant_instead_of_hard_block(monkeypatch):
         return grant(row, kwargs["amount"])
     monkeypatch.setattr(m,"verified_live_native_momentum",signal)
     monkeypatch.setattr(m,"verified_owner_native_buy_amount",money)
+    async def prepare(did,**kw):
+        assert kw["asset"]=="TRX" and kw["stable"]=="USDT"
+        return {"asset":"TRX","state":"NATIVE_SELL_QUOTE_PREPARED","can_submit":False}
+    monkeypatch.setattr(m,"prepare_native_sell_candidate",prepare)
     async def run():
         async with httpx.AsyncClient() as client:
             return await m.execute_owner_native_live_tick(
                 row,market=object(),client=client,
                 grant_auditor=auditor,now=1800000000)
     result = asyncio.run(run())
-    assert result["state"]=="WAIT"
-    assert result["reason"]=="NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"
+    assert result["state"]=="NATIVE_SELL_QUOTE_PREPARED"
+    assert result["can_submit"] is False
 
 
 def test_btc_uses_only_its_own_market_source():
