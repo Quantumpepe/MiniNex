@@ -118,7 +118,8 @@ def _post_buy_claim_locked(
            FROM mininex_live_evm_auto_sessions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
-    if (type(session) is not dict or session.get("status")!="ACTIVE"
+    if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
+            (session.get("status")=="EXIT_PENDING" and central and asset=="ETH"))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=stable
             or session.get("wallet_address")!=record["wallet_address"]

@@ -350,7 +350,7 @@ def _claim_authorized_evm_order_locked(
     if (type(session) is not dict
             or not (session.get("status")=="ACTIVE" or
                 (session.get("status")=="EXIT_PENDING" and identity["side"]=="SELL"
-                 and asset in ("LINK","QNT","UNI")))
+                 and (asset in ("LINK","QNT","UNI") or (asset=="ETH" and central))))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=identity["stable"]
             or session.get("wallet_address")!=identity["wallet_address"]
@@ -358,8 +358,11 @@ def _claim_authorized_evm_order_locked(
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Owner has not started this coin's LIVE session")
     if session["status"]=="EXIT_PENDING":
-        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
-        assert_token_exit_quantity_locked(cur,did,asset,identity["wallet_address"],identity.get("input_atomic"))
+        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked,assert_eth_exit_swap_locked
+        if asset=="ETH":
+            assert_eth_exit_swap_locked(cur,did,identity["wallet_address"],key,identity.get("input_atomic"))
+        else:
+            assert_token_exit_quantity_locked(cur,did,asset,identity["wallet_address"],identity.get("input_atomic"))
     # This helper also atomically guards all unresolved same-wallet network
     # transactions, including ETH native conversions for LINK and UNI.
     _claim_locked(

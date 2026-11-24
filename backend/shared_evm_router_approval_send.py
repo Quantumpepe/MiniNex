@@ -118,7 +118,8 @@ def _claim_once_locked(
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
     if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
-            (session.get("status")=="EXIT_PENDING" and side=="SELL" and asset in ("LINK","QNT","UNI")))
+            (session.get("status")=="EXIT_PENDING" and side=="SELL" and
+             (asset in ("LINK","QNT","UNI") or (asset=="ETH" and central))))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=stable
             or session.get("wallet_address")!=record["wallet_address"]
@@ -126,8 +127,11 @@ def _claim_once_locked(
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Coin trading is not owner-started and active")
     if session["status"]=="EXIT_PENDING":
-        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
-        assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
+        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked,assert_eth_exit_deposit_locked
+        if asset=="ETH":
+            assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_atomic)
+        else:
+            assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
     # Same-wallet, same-chain nonce conflicts. Every participating sender
     # must also check this approval journal before claiming a new nonce.
     for table in (

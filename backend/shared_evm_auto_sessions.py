@@ -168,8 +168,8 @@ def request_owner_bridge_exit(did:str,asset:str)->dict:
     """
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
     did=_safe_did(did)
-    from .shared_evm_exit_inventory import TOKEN_EXIT_ASSETS
-    if asset not in DIRECT_SETTLEMENT_ASSETS | TOKEN_EXIT_ASSETS:
+    from .shared_evm_exit_inventory import ETHEREUM_EXIT_ASSETS,assert_central_eth_exit_ready_locked
+    if asset not in DIRECT_SETTLEMENT_ASSETS | ETHEREUM_EXIT_ASSETS:
         raise HTTPException(409,"Automatic exit route not connected for this coin")
     try:
         db=_db_url();_ensure_schema(db)
@@ -178,6 +178,8 @@ def request_owner_bridge_exit(did:str,asset:str)->dict:
                 cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
                 if cur.fetchone() is None:
                     raise HTTPException(409,"Original owner unavailable")
+                if asset=="ETH":
+                    assert_central_eth_exit_ready_locked(cur,did)
                 cur.execute("""UPDATE mininex_live_evm_auto_sessions
                     SET status='EXIT_PENDING',updated_at=now()
                     WHERE privy_did=%s AND asset=%s AND started_by_owner_at IS NOT NULL
@@ -200,8 +202,8 @@ def complete_bridge_exit_if_flat(did,asset,started):
     from .ethereum_settlement_journal import pending_bridge_order
     from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
-    from .shared_evm_exit_inventory import TOKEN_EXIT_ASSETS,token_exit_position_locked
-    if asset not in DIRECT_SETTLEMENT_ASSETS | TOKEN_EXIT_ASSETS:
+    from .shared_evm_exit_inventory import ETHEREUM_EXIT_ASSETS,token_exit_position_locked,assert_central_eth_exit_ready_locked
+    if asset not in DIRECT_SETTLEMENT_ASSETS | ETHEREUM_EXIT_ASSETS:
         return False
     did=_safe_did(did)
     db=_db_url();_ensure_schema(db)
@@ -240,7 +242,16 @@ def complete_bridge_exit_if_flat(did,asset,started):
             legacy=cur.fetchone()
             if not legacy or Decimal(legacy["position"])>0:
                 return False
-            if asset in TOKEN_EXIT_ASSETS:
+            if asset=="ETH":
+                assert_central_eth_exit_ready_locked(cur,did)
+                cur.execute("""SELECT 1 FROM mininex_live_evm_native_sell_intents n
+                    LEFT JOIN mininex_live_evm_completed_native_cycles c
+                      ON c.privy_did=n.privy_did AND c.asset=n.asset AND c.intent_key=n.intent_key
+                    WHERE n.privy_did=%s AND n.asset='ETH' AND n.status='FINALIZED_SUCCESS'
+                      AND c.intent_key IS NULL LIMIT 1""",(did,))
+                if cur.fetchone() is not None:
+                    return False
+            if asset in ETHEREUM_EXIT_ASSETS:
                 if token_exit_position_locked(cur,did,asset,session["wallet_address"])!=0:
                     return False
             elif strategy_bridge_position_locked(cur,did,asset,session["wallet_address"])!=0:

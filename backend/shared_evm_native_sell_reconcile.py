@@ -163,7 +163,8 @@ def original_native_sells_ready_for_swap(limit:int=20)->list[dict]:
                     AND b.intent_key=n.intent_key
                    WHERE n.asset IN ('ETH','BNB','POL','AVAX')
                      AND n.status='FINALIZED_SUCCESS'
-                     AND s.status='ACTIVE'
+                     AND (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND n.asset='ETH'
+                          AND n.grant_source='PRIVY_CENTRAL_ONE_SIGNER'))
                      AND s.budget_revision=n.budget_revision
                      AND s.stable=n.stable AND s.chain_id=n.chain_id
                      AND s.wallet_address=n.wallet_address

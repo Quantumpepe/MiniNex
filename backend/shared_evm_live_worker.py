@@ -130,7 +130,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
-                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('BNB','POL','ARB','LINK','QNT','UNI')))
+                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('ETH','BNB','POL','ARB','LINK','QNT','UNI')))
                      AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND (
@@ -278,7 +278,7 @@ async def execute_owner_evm_live_tick(
     current=time.time() if now is None else now
     exiting=row.get("session_status")=="EXIT_PENDING"
     if exiting:
-        if asset not in ("BNB","POL","ARB","LINK","QNT","UNI"):
+        if asset not in ("ETH","BNB","POL","ARB","LINK","QNT","UNI"):
             raise ValueError("No automatic exit route for this coin")
         decision={"action":"SELL","reason":"OWNER_REQUESTED_EXIT"}
     else:
@@ -327,6 +327,21 @@ async def execute_owner_evm_live_tick(
         timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     event="market_"+str(int(current//60))
     if asset in _NATIVE and side=="SELL":
+        exit_wei=None
+        if exiting:
+            from .shared_evm_exit_inventory import read_token_exit_position
+            from .shared_evm_auto_sessions import complete_bridge_exit_if_flat
+            if row.get("central") is not True or evidence.get("wallet_identity_verified") is not True:
+                return {"asset":asset,"state":"WAIT","reason":"EXIT_WALLET_UNVERIFIED"}
+            held=await asyncio.to_thread(read_token_exit_position,did,asset,evidence["wallet_address"])
+            if held==0:
+                if await asyncio.to_thread(complete_bridge_exit_if_flat,did,asset,row["started_by_owner_at"]):
+                    return {"asset":asset,"state":"STOPPED","reason":"VERIFIED_POSITION_FLAT"}
+                return {"asset":asset,"state":"WAIT","reason":"EXIT_SETTLEMENT_PENDING"}
+            from decimal import localcontext
+            with localcontext() as ctx:
+                ctx.prec=100
+                exit_wei=int(held.scaleb(18))
         # Prefer an already-held wrapped coin, which needs no additional
         # conversion. If the actual wrapped inventory is zero, a real
         # onchain native DEPOSIT must finalize before its original swap.
@@ -345,6 +360,8 @@ async def execute_owner_evm_live_tick(
                 did=did,asset=asset,stable=stable,
                 source_evidence=evidence,client=client,
                 **({"central":True} if row.get("central") is True else {}))
+            if exit_wei is not None:
+                amount_wei=min(amount_wei,exit_wei)
             return await submit_internal_native_evm_sell_deposit(
                 did=did,asset=asset,strategy_run_id=run,
                 signal_event_id=event,
