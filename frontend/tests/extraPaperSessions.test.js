@@ -36,7 +36,7 @@ test('XRP BTC SOL TRX use native LIVE status; EVM coins stay on EVM API',()=>{
 test('real LIVE controls never start paper sessions or treat PAPER as receipts',()=>{
   assert.doesNotMatch(control,/liveMode&&action==='start'/);
   assert.match(control,/if\(liveMode&&!\['pause','exit'\]\.includes\(action\)\)return/);
-  assert.match(control,/if\(action==='exit'&&\(!liveMode\|\|!\['BTC','SOL'\]\.includes\(asset\)/);
+  assert.match(control,/if\(action==='exit'&&\(!liveMode\|\|!\['BTC','SOL','XRP','TRX'\]\.includes\(asset\)/);
   assert.match(control,/liveOwnerSessionPath\(asset\)\+'\/'\+action/);
   assert.match(control,/action==='exit'\?'EXIT_PENDING':'PAUSED'/);
   assert.match(control,/latest\.status!==expected&&\!\(action==='exit'&&latest\.status==='STOPPED'\)/);
