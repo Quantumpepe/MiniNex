@@ -163,13 +163,14 @@ def pause_owner_evm_auto(did:str,asset:str)->dict:
 def request_owner_bridge_exit(did:str,asset:str)->dict:
     """Explicit authenticated Stop/Exit: prohibit new BUYs immediately.
 
-    Direct bridge and Ethereum ERC20 execution families are eligible.
+    Cross-EVM bridge and Ethereum ERC20 sessions are eligible.
+    AVAX remains pending until the authorized Stargate SELL settles.
     Does not broadcast, revoke consent, or mark an open position closed.
     """
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
     did=_safe_did(did)
     from .shared_evm_exit_inventory import ETHEREUM_EXIT_ASSETS,assert_central_eth_exit_ready_locked
-    if asset not in DIRECT_SETTLEMENT_ASSETS | ETHEREUM_EXIT_ASSETS:
+    if asset not in DIRECT_SETTLEMENT_ASSETS | ETHEREUM_EXIT_ASSETS | {"AVAX"}:
         raise HTTPException(409,"Automatic exit route not connected for this coin")
     try:
         db=_db_url();_ensure_schema(db)
@@ -203,7 +204,7 @@ def complete_bridge_exit_if_flat(did,asset,started):
     from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
     from .shared_evm_exit_inventory import ETHEREUM_EXIT_ASSETS,token_exit_position_locked,assert_central_eth_exit_ready_locked
-    if asset not in DIRECT_SETTLEMENT_ASSETS | ETHEREUM_EXIT_ASSETS:
+    if asset not in DIRECT_SETTLEMENT_ASSETS | ETHEREUM_EXIT_ASSETS | {"AVAX"}:
         return False
     did=_safe_did(did)
     db=_db_url();_ensure_schema(db)
@@ -240,7 +241,7 @@ def complete_bridge_exit_if_flat(did,asset,started):
                 WHERE privy_did=%s AND asset=%s AND wallet_address=%s""",
                 (did,asset,session["wallet_address"]))
             legacy=cur.fetchone()
-            if not legacy or Decimal(legacy["position"])>0:
+            if not legacy or Decimal(legacy["position"])!=0:
                 return False
             if asset=="ETH":
                 assert_central_eth_exit_ready_locked(cur,did)
