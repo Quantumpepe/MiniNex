@@ -59,7 +59,8 @@ export function formatCoin(value, lang = 'en') {
 export function formatSigned(value, lang = 'en', suffix = '$') {
   const n = cleanNumber(value);
   if (n === null) return '—';
-  const value=suffix==='
+  const formatted = suffix === '$' ? formatMoney(Math.abs(n), lang) : formatNumber(Math.abs(n), lang, 2) + ' ' + suffix;
+  return formatted === '—' ? formatted : (n > 0 ? '+' : n < 0 ? '−' : '') + formatted;
 }
 
 export function formatTimestamp(value, lang = 'en', options = {}) {
