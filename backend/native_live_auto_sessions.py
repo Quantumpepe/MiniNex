@@ -171,7 +171,7 @@ def get_owner_native_auto(did:str,asset:str)->dict:
                               ) AS finalized
                        FROM mininex_live_native_order_intents
                        WHERE privy_did=%s AND asset=%s
-                         AND side='BUY' AND source_tx_hash IS NOT NULL""",
+                         AND side IN ('BUY','SELL') AND source_tx_hash IS NOT NULL""",
                     (did,asset))
                 sends=cur.fetchone()
                 cur.execute(

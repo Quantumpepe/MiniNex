@@ -64,7 +64,9 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
                 "wallets":{"ETH":"0x"+"a"*40},
                 "balances":{
                     stable:{"balance":"1000","status":"verified",
-                            "network":"ethereum-mainnet"}}}
+                            "network":"ethereum-mainnet"},
+                    "BTC":{"balance":"1","status":"verified","network":"bitcoin-mainnet"}},
+                **{"wallets":{"ETH":"0x"+"a"*40,"BTC":"native-address"}}}
     async def native(client,coin,address):
         calls.append("native")
         assert (coin,address)==(asset,"native-address")
@@ -79,6 +81,9 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
                  "status":"SUBMITTED","input_amount":Decimal(50)}]
     monkeypatch.setattr(m,"fetch_privy_user",user)
     monkeypatch.setattr(m,"verified_native_addresses",native_wallets)
+    monkeypatch.setattr(m,"_exact_owner_wallets",lambda *a:("native-address","0x"+"a"*40))
+    monkeypatch.setattr(m,"read_pending_ethereum_funding",lambda *a,**kw:
+        {"pending_wallet_stable_atomic":"0"})
     monkeypatch.setattr(m,"get_wallet_balances",wallet)
     monkeypatch.setattr(m,"_read_one",native)
     monkeypatch.setattr(m,"fresh_native_usd_prices",prices)
@@ -90,7 +95,8 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
                 budget_percent=50 if asset=="BTC" else None,
                 budget_usd=500 if asset!="BTC" else None,client=client)
     assert asyncio.run(run())==("425" if asset=="BTC" else "350")
-    assert sorted(calls)==sorted(("owner","eth","native","usd","pending"))
+    assert sorted(calls)==sorted(("owner","eth","usd","pending")+
+                                 (() if asset=="BTC" else ("native",)))
 
 
 def test_missing_native_wallet_prevents_any_network_trade(monkeypatch):

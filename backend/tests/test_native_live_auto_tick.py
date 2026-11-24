@@ -111,8 +111,8 @@ def test_native_sell_signal_requires_grant_instead_of_hard_block(monkeypatch):
                 row,market=object(),client=client,
                 grant_auditor=auditor,now=1800000000)
     result = asyncio.run(run())
-    assert result["state"]=="SELL_GRANT_VERIFIED"
-    assert result["reason"]=="NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE"
+    assert result["state"]=="WAIT"
+    assert result["reason"]=="NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"
 
 
 def test_btc_uses_only_its_own_market_source():
@@ -156,3 +156,12 @@ def test_grant_does_not_accept_frontend_true_or_policy_without_remote_audit():
         with pytest.raises(ValueError):
             m._independent_native_owner_permission(
                 {**grant(row,"100"),**false},row=row,amount="100")
+
+
+def test_production_auditor_never_manufactures_signed_grant_from_preferences():
+    from backend.native_grant_auditor import audit_native_owner_grant
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(audit_native_owner_grant(DID,asset="BTC",stable="USDC",
+            amount="100",budget_revision=5,signal_event_id="market_123456"))
+    assert exc.value.detail["code"]=="NATIVE_PRIVY_GRANT_NOT_VERIFIED"

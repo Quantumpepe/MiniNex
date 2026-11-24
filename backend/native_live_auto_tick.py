@@ -18,7 +18,6 @@ import httpx
 
 from .eth_live_strategy_tick import verified_live_native_momentum
 from .native_buy_strategy_execution import coordinate_original_native_buy_once
-from .native_privy_btc_signer import sign_and_dispatch_original_btc_sell_once
 from .native_live_source_evidence import verified_owner_native_buy_amount
 from .storage import _safe_did
 
@@ -129,54 +128,11 @@ async def execute_owner_native_live_tick(
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
     if decision.get("action")=="SELL":
-        # SELL is no longer hard-blocked. The same independent grant auditor
-        # is required. Actual signed native source settlement still depends
-        # on a prepared and signed source; if that is missing the call fails
-        # closed with a clear reason instead of a permanent block.
-        amount=await verified_owner_native_buy_amount(
-            row["privy_did"],asset=row["asset"],stable=row["stable"],
-            budget_usd=(row["budget_usd"] if row["asset"]!="BTC" else None),
-            budget_percent=(row["budget_percent"] if row["asset"]=="BTC" else None),
-            client=client)
-        if amount is None:
-            return {"asset":row["asset"],"state":"WAIT",
-                    "reason":"NO_VERIFIED_NATIVE_OWNER_AVAILABLE_CAPITAL"}
-        run="owner_"+row["started_by_owner_at"].astimezone(
-            timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-        event="market_"+str(int(current//60))
-        audit=await grant_auditor(
-            row["privy_did"],asset=row["asset"],stable=row["stable"],
-            amount=amount,budget_revision=row["budget_revision"],
-            signal_event_id=event)
-        evidence=_independent_native_owner_permission(
-            audit,row=row,amount=amount)
-        # Grant is verified. For BTC we require an explicit Privy signature
-        # before any broadcast. Other native assets stay fail-closed until
-        # their signed source path is fully connected.
-        if row["asset"]=="BTC":
-            # The actual PSBT/UTXO preparation lives in the existing
-            # sign-and-dispatch path. We only call it when the grant is good.
-            # If the prepared source is missing the call fails closed.
-            try:
-                result=await sign_and_dispatch_original_btc_sell_once(
-                    row["privy_did"],
-                    intent_key="native_"+event,  # placeholder; real key comes from journal
-                    quote={},  # real quote must be supplied by coordinator
-                    psbt={},
-                    original_utxos=[],
-                    fee_rate_sats_per_vbyte=1,
-                    permission_audit=evidence,
-                    client=client,
-                )
-                return {"asset":row["asset"],"state":result.get("journal_state","SUBMITTED"),
-                        "reason":"BTC_SELL_SIGNED_AND_DISPATCHED",
-                        "signed":True}
-            except Exception:
-                return {"asset":row["asset"],"state":"WAIT",
-                        "reason":"BTC_SELL_REQUIRES_PREPARED_SIGNED_SOURCE"}
-        return {"asset":row["asset"],"state":"SELL_GRANT_VERIFIED",
-                "reason":"NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE",
-                "audit_mode":evidence.get("audit_mode")}
+        # No synthetic BUY amount, fake PSBT or empty UTXO list can represent a
+        # native position exit. Connect the actual signed SELL coordinator
+        # before this branch is permitted to send a source transaction.
+        return {"asset":row["asset"],"state":"WAIT",
+                "reason":"NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"}
     if decision.get("action")!="BUY":
         raise ValueError("Invalid actual live market signal")
     amount=await verified_owner_native_buy_amount(

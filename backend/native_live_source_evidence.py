@@ -28,6 +28,8 @@ from .native_live_budget import (
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url,_ensure_schema,_safe_did
 from .wallet_balances import get_wallet_balances
+from .native_thor_swap_quote import _exact_owner_wallets
+from .ethereum_settlement_funding import read_pending_ethereum_funding
 
 LOG=logging.getLogger("mininex.native_live_source")
 _PRICE_TTL=180
@@ -67,7 +69,7 @@ async def fresh_native_usd_prices(asset:str)->dict[str,Decimal]:
     This is reference pricing for a capital calculation only; never a
     substitute for a fresh THORChain destination/fee/amount quote.
     """
-    if asset not in _NATIVE:
+    if asset not in _NATIVE or asset not in COIN_IDS:
         raise HTTPException(422,"Unknown original native live price asset")
     endpoint,headers,interval=coingecko_request_settings("/simple/price")
     global _REF_CACHE
@@ -89,7 +91,7 @@ async def fresh_native_usd_prices(asset:str)->dict[str,Decimal]:
                 response=await client.get(
                     endpoint,params={
                         "ids":",".join(dict.fromkeys(COIN_IDS[x] for x in
-                                                   (*_NATIVE.keys(),"USDC","USDT"))),
+                                                   (x for x in (*_NATIVE.keys(),"USDC","USDT") if x in COIN_IDS))),
                         "vs_currencies":"usd",
                         "include_last_updated_at":"true",
                     },headers={"Accept":"application/json",**headers})
@@ -165,17 +167,31 @@ async def verified_owner_native_buy_amount(
                 or budget_usd<=0))):
         raise HTTPException(409,"Invalid owner-selected native LIVE allocation")
     user=await fetch_privy_user(did)
-    native=verified_native_addresses(user,did)
-    address=native.get(asset)
+    try:
+        if asset=="BTC":
+            address,_=_exact_owner_wallets(user,did,asset)
+        else:
+            address=verified_native_addresses(user,did).get(asset)
+    except (ValueError,KeyError,TypeError):
+        address=None
     if not address:
         raise HTTPException(409,"Owner's unique native receiving wallet missing")
     try:
-        eth_result,native_balance,prices,pending=await asyncio.gather(
-            get_wallet_balances(did),
-            _read_one(client,asset,address),
-            fresh_native_usd_prices(asset),
-            asyncio.to_thread(_pending_owner_native_buys,did,asset),
-        )
+        if asset=="BTC":
+            eth_result,prices,pending=await asyncio.gather(
+                get_wallet_balances(did),fresh_native_usd_prices(asset),
+                asyncio.to_thread(_pending_owner_native_buys,did,asset))
+            btc=eth_result.get("balances",{}).get("BTC",{})
+            if (eth_result.get("wallets",{}).get("BTC")!=address
+                    or btc.get("status")!="verified" or btc.get("network")!="bitcoin-mainnet"):
+                raise ValueError("Original confirmed Bitcoin balance unavailable")
+            native_balance=btc["balance"]
+        else:
+            eth_result,native_balance,prices,pending=await asyncio.gather(
+                get_wallet_balances(did),_read_one(client,asset,address),
+                fresh_native_usd_prices(asset),
+                asyncio.to_thread(_pending_owner_native_buys,did,asset),
+            )
         source=eth_result.get("balances",{}).get(stable,{})
         if (eth_result.get("wallet_ownership_verified") is not True
                 or type(source) is not dict
@@ -192,6 +208,12 @@ async def verified_owner_native_buy_amount(
             stable_value=Decimal(source["balance"])*prices[stable]
             budget_usd=(native_value+stable_value+pending_usd)*(
                 Decimal(budget_percent)/Decimal(100))
+        if asset!="DOGE":
+            shared=await asyncio.to_thread(read_pending_ethereum_funding,did,
+                asset=asset,stable=stable,stable_usd=prices[stable])
+            cash=max(Decimal(0),Decimal(source["balance"])-
+                     Decimal(shared["pending_wallet_stable_atomic"]).scaleb(-6))
+            source={**source,"balance":format(cash,"f")}
         result=exact_owner_native_buy_amount(
             asset=asset,stable=stable,budget_usd=budget_usd,
             native_wallet_evidence={
