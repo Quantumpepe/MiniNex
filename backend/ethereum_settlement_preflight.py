@@ -34,6 +34,7 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
     source=quote["source_token"]; amount=int(quote["input_atomic"])
     owner=tx["from"][2:].rjust(64,"0")
     native=int(await rpc("eth_getBalance",[tx["from"],"latest"],3),16)
+    balance=native
     if source!=ETH_NATIVE:
         balance=int(await rpc("eth_call",[{"to":source,"data":"0x70a08231"+owner},"latest"],4),16)
         allowance=int(await rpc("eth_call",[{"to":source,"data":"0xdd62ed3e"+owner+DIAMOND[2:].rjust(64,"0")},"latest"],5),16)
@@ -65,4 +66,5 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
                     "params":{"transaction":{"to":tx["to"],"data":tx["data"],"value":tx["value"]}}},
             "quote_id":str(quote["quote_id"]),"route_sha256":inspected["route_sha256"],
             "estimated_gas_atomic":str(gas*price),
+            "verified_source_balance_atomic":str(balance),
             "execution_authorized":False}

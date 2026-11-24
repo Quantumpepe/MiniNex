@@ -17,6 +17,8 @@ from .ethereum_settlement_preflight import prepare_bridge_privy_request
 from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url, _ensure_schema, _safe_did
+from .ethereum_settlement_funding import assert_ethereum_funds_locked
+from .shared_evm_policy_reference_rates import _price, fetch_evm_policy_reference_rates
 
 _HASH=re.compile(r"^0x[0-9a-fA-F]{64}$")
 
@@ -32,7 +34,7 @@ def _manual_row(did,quote_id):
             return cur.fetchone()
 
 
-def claim_manual_attempt(did,quote_id,digest):
+def claim_manual_attempt(did,quote_id,digest,*,balance_atomic=None,stable_usd=None):
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -40,7 +42,7 @@ def claim_manual_attempt(did,quote_id,digest):
                 WHERE privy_did=%s FOR UPDATE""",(did,))
             if cur.fetchone() is None:
                 raise HTTPException(409,"Owner account unavailable")
-            cur.execute("""SELECT source_chain_id,route_sha256,expires_at,asset
+            cur.execute("""SELECT source_chain_id,route_sha256,expires_at,asset,side,stable,input_atomic
                 FROM mininex_ethereum_settlement_quotes
                 WHERE privy_did=%s AND quote_id=%s FOR UPDATE""",(did,uuid.UUID(quote_id)))
             q=cur.fetchone()
@@ -53,6 +55,9 @@ def claim_manual_attempt(did,quote_id,digest):
                 (did,q["asset"]))
             if cur.fetchone():
                 raise HTTPException(409,"Previous swap requires reconciliation")
+            if q["side"]=="BUY":
+                assert_ethereum_funds_locked(cur,did=did,asset=q["asset"],stable=q["stable"],
+                    input_atomic=int(q["input_atomic"]),balance_atomic=balance_atomic,stable_usd=stable_usd)
             cur.execute("""INSERT INTO mininex_ethereum_settlement_manual_attempts
                 (quote_id,privy_did,source_chain_id,state)
                 VALUES (%s,%s,%s,'AWAITING_SIGNATURE')
@@ -85,7 +90,12 @@ async def prepare_manual_bridge(did,quote_id):
             kind="APPROVAL"; tx=approval
         else:
             kind="SWAP"; tx=q["unsigned_transaction"]
-            await asyncio.to_thread(claim_manual_attempt,did,quote_id,q["route_sha256"])
+            stable_usd=None
+            if q["side"]=="BUY":
+                rates=await fetch_evm_policy_reference_rates(q["asset"],q["stable"])
+                stable_usd=_price(rates,q["stable"],int(time.time()))
+            await asyncio.to_thread(claim_manual_attempt,did,quote_id,q["route_sha256"],
+                balance_atomic=int(plan["verified_source_balance_atomic"]),stable_usd=stable_usd)
         return {"mode":"OWNER_MANUAL_ETHEREUM_SETTLEMENT",
             "quote_id":quote_id,"kind":kind,"asset":q["asset"],"side":q["side"],
             "stable":q["stable"],"source_chain_id":q["source_chain_id"],
