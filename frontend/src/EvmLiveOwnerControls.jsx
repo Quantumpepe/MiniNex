@@ -17,7 +17,7 @@ const WORDS={
     desc:'Coin und Kapital einstellen, dann Start Trade drücken. MiniNex erledigt die technischen Schritte im Hintergrund. Die Wallet-Freigabe ist an dein Coin-Budget gebunden.',
     status:'LIVE-Sitzung',setup:'Handel mit Privy verbinden',
     grant:'Privy-Handelsberechtigung freigeben',
-    start:'LIVE starten',pause:'Handel pausieren',
+    start:'LIVE starten',pause:'Handel pausieren',exit:'Stop & Exit',exiting:'Position wird geschlossen',stopped:'Beendet',
     warn:'Eine Privy-Freigabe umfasst den Handel für diesen Coin und das gewählte Kapital, die nötigen begrenzten Router-Freigaben sowie 5 % Gebühr auf realisierte Nettogewinne oberhalb des High-Water-Marks an die angezeigte MiniNex-Treasury. Keine Gewinngebühr bei Verlust. Netzwerkgebühren und Verluste sind möglich.',
     needBudget:'Zuerst Kapital und Stablecoin in den Handelseinstellungen speichern.',
     ready:'Freigabe verifiziert',unattached:'Wallet-Freigabe in Privy erforderlich',
@@ -46,7 +46,7 @@ const WORDS={
     desc:'Set your coin and capital, then tap Start Trade. MiniNex handles the technical setup. Wallet authority is scoped to the selected coin budget.',
     status:'LIVE session',setup:'Connect trading with Privy',
     grant:'Approve Privy trading signer',
-    start:'Start LIVE',pause:'Pause trading',
+    start:'Start LIVE',pause:'Pause trading',exit:'Stop & Exit',exiting:'Closing position',stopped:'Stopped',
     warn:'One Privy approval covers trading for this coin and chosen capital, finite router allowances and a 5% performance fee on realized net gains above the high-water mark paid to the disclosed MiniNex treasury. No profit fee on losses. Network fees and losses are possible.',
     needBudget:'Save your coin capital and stablecoin in trading settings first.',
     ready:'Grant verified',unattached:'Wallet grant required in Privy',
@@ -187,6 +187,7 @@ export default function EvmLiveOwnerControls({
        !validCentralWalletStatus(central))
       throw Error('Original wallet and trade session unavailable');
     if(freshSession.status==='ACTIVE')return;
+    if(freshSession.status==='EXIT_PENDING')throw Error(t.exiting);
     // A new owner's first grant and every subsequent new EVM coin share
     // the SAME existing Privy signer and ONE policy. Existing legacy
     // grant records are never silently migrated or overwritten.
@@ -299,6 +300,11 @@ export default function EvmLiveOwnerControls({
     if(!validEvmAutoSession(result,asset)||result.status!=='PAUSED')
       throw Error('Cannot confirm per-coin pause');
   });
+  const exitTrade=()=>command(async()=>{
+    const result=await request(path+'/auto-session/'+asset+'/exit','POST');
+    if(!validEvmAutoSession(result,asset)||result.status!=='EXIT_PENDING')
+      throw Error('Cannot confirm per-coin exit request');
+  });
   if(!allowed)return null;
   const current=permission?.status;
   const sessionStatus=session?.status;
@@ -315,6 +321,8 @@ export default function EvmLiveOwnerControls({
       {t.status}: {sessionStatus==='ACTIVE'?
         (session?.worker_attached===true?t.running:t.off):
         sessionStatus==='PAUSED'?t.paused:
+        sessionStatus==='EXIT_PENDING'?t.exiting:
+        sessionStatus==='STOPPED'?t.stopped:
         current==='CONSENT_VERIFIED'?t.unattached:
         current==='GRANT_VERIFIED'?t.ready:
         current==='DRAFT'?t.draft:
@@ -326,7 +334,7 @@ export default function EvmLiveOwnerControls({
         session.original_blockchain_swaps_finalized>0&&
         <span> · {session.original_blockchain_swaps_finalized} {lang==='de'?'erfolgreich finalisiert':'successfully finalized'}</span>}
     </p>
-    {sessionStatus==='ACTIVE'
+    {['ACTIVE','EXIT_PENDING'].includes(sessionStatus)
       ? <button type="button" className="privy-wallet-action"
           disabled={busy} onClick={pause}>{t.pause}</button>
       : current!=='REVOKED' &&
@@ -334,7 +342,11 @@ export default function EvmLiveOwnerControls({
           disabled={busy||permission===null||centralStatus===null} onClick={startTrade}>
           {t.open} · {asset}
         </button>}
-    {sessionStatus!=='ACTIVE'&&
+    {['ACTIVE','PAUSED'].includes(sessionStatus)&&['BNB','POL','ARB'].includes(asset)&&
+      centralWalletHasCoin(centralStatus,asset)&&
+      <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={busy} onClick={exitTrade}>{t.exit}</button>}
+    {!['ACTIVE','EXIT_PENDING'].includes(sessionStatus)&&
       <p className="privy-wallet-description">{t.needBudget}</p>}
     {sessionStatus!=='ACTIVE'&&current!=='GRANT_VERIFIED'&&
       <p className="privy-wallet-description">{t.warn}</p>}

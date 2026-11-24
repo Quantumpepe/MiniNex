@@ -94,7 +94,7 @@ from .shared_evm_privy_policy_publish import publish_user_evm_privy_policy
 from .shared_evm_privy_grant_confirm import confirm_owner_evm_privy_grant
 from .shared_evm_trade_grant_offer import get_owner_trade_grant_offer
 from .shared_evm_auto_sessions import (
-    start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
+    start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,request_owner_bridge_exit,
 )
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_fee_policy_publish import publish_owner_signed_fee_policy
@@ -1313,6 +1313,18 @@ def owner_pause_evm_auto_session(
     return JSONResponse(pause_owner_evm_auto(did,asset),headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/auto-session/{asset}/exit")
+def owner_exit_bridge_session(
+    asset: Literal["BNB","POL","ARB"],
+    authorization: str | None = Header(default=None),
+):
+    """Record a user's explicit exit request; only the worker can settle it."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(request_owner_bridge_exit(did,asset),headers={
+        "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
     })
 
 

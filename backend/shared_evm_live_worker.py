@@ -96,7 +96,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
     db=_db_url()
     _ensure_schema(db)
     sql="""SELECT s.privy_did,s.asset,s.stable,s.chain_id,
-                          s.budget_revision,s.started_by_owner_at,
+                          s.budget_revision,s.started_by_owner_at,s.status AS session_status,
                           COALESCE(p.budget_usd::numeric,l.planned_capital_usd)
                              AS budget_usd,
                            COALESCE(p.mode,t.mode) AS mode,
@@ -129,7 +129,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
-                   WHERE s.status='ACTIVE'
+                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('BNB','POL','ARB')))
                      AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND (
@@ -275,8 +275,14 @@ async def execute_owner_evm_live_tick(
     if type(client) is not httpx.AsyncClient:
         raise ValueError("Internal HTTP client required")
     current=time.time() if now is None else now
-    decision=verified_live_evm_momentum(
-        market,asset=asset,now=current,horizon=row["horizon"])
+    exiting=row.get("session_status")=="EXIT_PENDING"
+    if exiting:
+        if asset not in ("BNB","POL","ARB"):
+            raise ValueError("No automatic exit route for this coin")
+        decision={"action":"SELL","reason":"OWNER_REQUESTED_EXIT"}
+    else:
+        decision=verified_live_evm_momentum(
+            market,asset=asset,now=current,horizon=row["horizon"])
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
     side=decision["action"]
@@ -296,6 +302,10 @@ async def execute_owner_evm_live_tick(
         else:
             funding=await plan_cross_evm_sell(did=did,asset=asset,stable=row["stable"],client=client)
             if int(funding["input_atomic"])==0:
+                if exiting and funding["reason"]=="ETHEREUM_SETTLEMENT_SELL_POSITION_REQUIRED":
+                    from .shared_evm_auto_sessions import complete_bridge_exit_if_flat
+                    if await asyncio.to_thread(complete_bridge_exit_if_flat,did,asset,row["started_by_owner_at"]):
+                        return {"asset":asset,"state":"STOPPED","reason":"VERIFIED_POSITION_FLAT"}
                 return {"asset":asset,"state":"WAIT","reason":funding["reason"]}
         return await prepare_cross_evm_auto_candidate(
             did=did,asset=asset,side=side,stable=row["stable"],

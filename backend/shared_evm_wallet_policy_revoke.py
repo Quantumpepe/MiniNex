@@ -81,7 +81,7 @@ def _confirm_original_revocation_locked(cur,*,did:str,wallet:dict)->dict:
         cur.execute(
             """UPDATE mininex_live_evm_auto_sessions
                SET status='PAUSED',updated_at=now()
-               WHERE privy_did=%s AND status='ACTIVE'""",(did,),
+               WHERE privy_did=%s AND (status='ACTIVE' OR status='EXIT_PENDING')""",(did,),
         )
     return {
         "mode":"ORIGINAL_EVM_ONE_SIGNER_REVOCATION",

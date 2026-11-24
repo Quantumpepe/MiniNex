@@ -89,6 +89,7 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
              budget_revision=EXCLUDED.budget_revision,
              status='ACTIVE',started_by_owner_at=now(),
              updated_at=now()
+           WHERE mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'
            RETURNING status""",
         (did,asset,pair["chain_id"],record["stable"],
          record["wallet_address"],settings["revision"]))
@@ -108,12 +109,12 @@ def _stop_locked(cur,*,did:str,asset:str)->dict:
     cur.execute(
         """UPDATE mininex_live_evm_auto_sessions
            SET status='PAUSED',updated_at=now()
-           WHERE privy_did=%s AND asset=%s AND status='ACTIVE'
+           WHERE privy_did=%s AND asset=%s AND (status='ACTIVE' OR status='EXIT_PENDING')
            RETURNING status""",(did,asset))
     row=cur.fetchone()
     return {
         "mode":"OWNER_EVM_LIVE_SESSION_CONTROL",
-        "asset":asset,"status":"PAUSED",
+        "asset":asset,"status":"PAUSED","chain_id":None,
         "changed":type(row) is dict and row.get("status")=="PAUSED",
         "new_transactions_sent":0,
         "already_submitted_transactions_not_retried_or_cancelled":True,
@@ -157,6 +158,91 @@ def pause_owner_evm_auto(did:str,asset:str)->dict:
     except psycopg.Error:
         LOG.warning("Owner EVM live session pause unavailable")
         raise HTTPException(503,"Cannot durably pause EVM live session") from None
+
+
+def request_owner_bridge_exit(did:str,asset:str)->dict:
+    """Explicit authenticated Stop/Exit: prohibit new BUYs immediately.
+
+    Only the currently connected direct bridge execution family is eligible.
+    Does not broadcast, revoke consent, or mark an open position closed.
+    """
+    from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
+    did=_safe_did(did)
+    if asset not in DIRECT_SETTLEMENT_ASSETS:
+        raise HTTPException(409,"Automatic exit route not connected for this coin")
+    try:
+        db=_db_url();_ensure_schema(db)
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
+                if cur.fetchone() is None:
+                    raise HTTPException(409,"Original owner unavailable")
+                cur.execute("""UPDATE mininex_live_evm_auto_sessions
+                    SET status='EXIT_PENDING',updated_at=now()
+                    WHERE privy_did=%s AND asset=%s AND started_by_owner_at IS NOT NULL
+                      AND status IN ('ACTIVE','PAUSED','EXIT_PENDING')
+                    RETURNING chain_id,stable,status""",(did,asset))
+                row=cur.fetchone()
+                if not row:
+                    raise HTTPException(409,"No original trade session available to exit")
+                return {"mode":"OWNER_EVM_LIVE_SESSION_CONTROL","asset":asset,
+                        "status":row["status"],"chain_id":row["chain_id"],"stable":row["stable"],
+                        "new_transactions_sent":0}
+    except psycopg.Error:
+        raise HTTPException(503,"Cannot durably request exit") from None
+
+
+def complete_bridge_exit_if_flat(did,asset,started):
+    """Completion requires a locked, finalized strategy ledger with no pending
+    bridge/approval/legacy work. Unrelated wallet balances are never sold.
+    """
+    from .ethereum_settlement_journal import pending_bridge_order
+    from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
+    from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
+    if asset not in DIRECT_SETTLEMENT_ASSETS:
+        return False
+    did=_safe_did(did)
+    db=_db_url();_ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
+            if cur.fetchone() is None:
+                return False
+            cur.execute("""SELECT status,started_by_owner_at,wallet_address
+                FROM mininex_live_evm_auto_sessions WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+            session=cur.fetchone()
+            if (not session or session["status"]!="EXIT_PENDING"
+                    or session["started_by_owner_at"]!=started):
+                return False
+            if pending_bridge_order(cur,did,asset):
+                return False
+            for table in ("mininex_live_evm_router_approval_sends","mininex_live_evm_auto_broadcasts",
+                          "mininex_live_evm_native_sell_intents","mininex_live_evm_native_auto_steps"):
+                cur.execute(f"""SELECT 1 FROM {table} WHERE privy_did=%s AND asset=%s
+                    AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,asset))
+                if cur.fetchone() is not None:
+                    return False
+            cur.execute("""SELECT 1 FROM mininex_live_evm_budget_reservations
+                WHERE privy_did=%s AND asset=%s AND state IN
+                    ('RESERVED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,asset))
+            if cur.fetchone() is not None:
+                return False
+            # Legacy local-chain buys require separate verified migration.
+            # Do not call a bridge-only inventory of zero a completed exit
+            # when the original local route may still own a position.
+            cur.execute("""SELECT COALESCE(SUM(CASE WHEN side='BUY' THEN destination_amount
+                    ELSE -source_amount END),0) AS position
+                FROM mininex_live_evm_verified_fills
+                WHERE privy_did=%s AND asset=%s AND wallet_address=%s""",
+                (did,asset,session["wallet_address"]))
+            legacy=cur.fetchone()
+            if not legacy or Decimal(legacy["position"])>0:
+                return False
+            if strategy_bridge_position_locked(cur,did,asset,session["wallet_address"])!=0:
+                return False
+            cur.execute("""UPDATE mininex_live_evm_auto_sessions SET status='STOPPED',updated_at=now()
+                WHERE privy_did=%s AND asset=%s AND status='EXIT_PENDING' RETURNING status""",(did,asset))
+            return cur.fetchone() is not None
 
 
 def get_owner_evm_auto(did:str,asset:str)->dict:

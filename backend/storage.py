@@ -1374,6 +1374,21 @@ from .shared_evm_central_runtime_schema import CENTRAL_EVM_SCHEMA
 SCHEMA += WALLET_POLICY_SCHEMA
 # Expands EXISTING journals in place without altering user grants/holds.
 SCHEMA += CENTRAL_EVM_SCHEMA
+SCHEMA += (
+    """DO $bridge_exit$
+       BEGIN
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+             WHERE conrelid='mininex_live_evm_auto_sessions'::regclass
+               AND conname='mininex_evm_session_exit_status_v1') THEN
+           ALTER TABLE mininex_live_evm_auto_sessions
+             DROP CONSTRAINT IF EXISTS mininex_live_evm_auto_sessions_status_check;
+           ALTER TABLE mininex_live_evm_auto_sessions
+             ADD CONSTRAINT mininex_evm_session_exit_status_v1 CHECK(
+               status IN ('ACTIVE','PAUSED','STOPPED') OR
+               (status='EXIT_PENDING' AND asset IN ('BNB','POL','ARB') AND started_by_owner_at IS NOT NULL));
+         END IF;
+       END $bridge_exit$""",
+)
 
 # Immutable reference quotes for the Ethereum settlement layer. A quote is
 # not consent and cannot authorize an allowance, transaction or accounting entry.

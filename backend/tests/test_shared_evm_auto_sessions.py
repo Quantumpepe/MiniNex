@@ -91,7 +91,7 @@ def test_one_coin_pause_not_other_coin_and_no_unknown_send_retry():
     assert out["already_submitted_transactions_not_retried_or_cancelled"]
     assert len(cur.queries)==1
     sql,args=cur.queries[0]
-    assert "WHERE privy_did=%s AND asset=%s AND status='ACTIVE'" in sql
+    assert "WHERE privy_did=%s AND asset=%s AND (status='ACTIVE' OR status='EXIT_PENDING')" in sql
     assert args==(DID,"UNI")
 
 
@@ -161,3 +161,33 @@ def test_worker_heartbeat_comes_from_live_loop_not_owner_session_label():
     status_source=inspect.getsource(m.get_owner_evm_auto)
     assert "INTERVAL '90 seconds'" in status_source
     assert "last_poll_at" in status_source
+
+
+def test_bridge_exit_endpoint_is_owner_authenticated_and_no_start_during_exit():
+    from backend.app import app
+    route=next(x for x in app.routes if x.path=="/api/live/evm/auto-session/{asset}/exit")
+    assert route.methods=={"POST"}
+    assert "verify_privy_bearer" in inspect.getsource(route.endpoint)
+    assert "WHERE mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in inspect.getsource(m._start_locked)
+    with pytest.raises(HTTPException):
+        m.request_owner_bridge_exit(DID,"AVAX")
+
+
+def test_exit_completion_waits_for_original_unresolved_bridge(monkeypatch):
+    from backend import ethereum_settlement_journal as j
+    cur=Cursor([{"privy_did":DID},
+                {"status":"EXIT_PENDING","started_by_owner_at":NOW,"wallet_address":WALLET}])
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):
+            class CM:
+                def __enter__(self):return cur
+                def __exit__(self,*a):return False
+            return CM()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(j,"pending_bridge_order",lambda *a:True)
+    assert not m.complete_bridge_exit_if_flat(DID,"POL",NOW)
+    assert not any("SET status='STOPPED'" in sql for sql,args in cur.queries)

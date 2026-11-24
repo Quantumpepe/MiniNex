@@ -118,7 +118,8 @@ def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd
             cur.execute("""SELECT status,started_by_owner_at,stable,budget_revision,wallet_address
                 FROM mininex_live_evm_auto_sessions WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
             session=cur.fetchone()
-            if (not session or session["status"]!="ACTIVE" or session["started_by_owner_at"]!=started
+            allowed_status=("ACTIVE","EXIT_PENDING") if quote["side"]=="SELL" else ("ACTIVE",)
+            if (not session or session["status"] not in allowed_status or session["started_by_owner_at"]!=started
                     or session["stable"]!=stable or session["budget_revision"]!=record["budget_revision"]
                     or session["wallet_address"]!=record["wallet_address"]):
                 raise HTTPException(409,"Original user session paused or replaced")

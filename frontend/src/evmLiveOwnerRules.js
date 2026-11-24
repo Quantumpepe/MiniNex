@@ -51,7 +51,7 @@ export function validEvmTradePermission(data,asset) {
 export function validEvmAutoSession(data,asset) {
   return !!data&&data.mode==='OWNER_EVM_LIVE_SESSION_CONTROL'&&
     data.asset===asset&&
-    ['NOT_STARTED','ACTIVE','PAUSED'].includes(data.status)&&
+    ['NOT_STARTED','ACTIVE','PAUSED','EXIT_PENDING','STOPPED'].includes(data.status)&&
     (data.chain_id===null||data.chain_id===NETWORKS[asset])&&
     data.new_transactions_sent===0;
 }
