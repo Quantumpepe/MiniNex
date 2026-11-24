@@ -278,8 +278,21 @@ async def execute_owner_evm_live_tick(
     # fall through to legacy local stablecoin swaps or router approvals.
     # The bridge executor must be integrated before these sessions can send.
     if asset in ("BNB","POL","AVAX","ARB"):
+        from .ethereum_settlement_auto_plan import plan_cross_evm_buy, prepare_cross_evm_auto_candidate
+        if side=="BUY":
+            funding=await plan_cross_evm_buy(
+                did=did,asset=asset,stable=row["stable"],
+                budget_usd=row["budget_usd"],estimated_cost_usd=0,
+                client=client,now=int(current))
+            if int(funding["input_atomic"])==0:
+                return {"asset":asset,"state":"WAIT",
+                        "reason":"NO_VERIFIED_ETHEREUM_FUNDS_OR_BUDGET"}
+            return await prepare_cross_evm_auto_candidate(
+                did=did,asset=asset,side=side,stable=row["stable"],
+                budget_revision=row["budget_revision"],
+                amount=funding["input_amount"],client=client,now=int(current))
         return {"asset":asset,"state":"WAIT",
-                "reason":"ETHEREUM_SETTLEMENT_EXECUTOR_REQUIRED"}
+                "reason":"ETHEREUM_SETTLEMENT_SELL_POSITION_REQUIRED"}
     if asset in _NATIVE and not _settlement_enabled():
         # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
         # a prior DEPOSIT. Both require the original receipt reconciler.
