@@ -1,3 +1,4 @@
+import {formatMoney,formatSigned as formatDisplaySigned} from './data.js';
 import React,{useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import {validExtraPaperComparison} from './extraPaperComparisonRules.js';
@@ -58,7 +59,7 @@ export default function ExtraPaperComparison({t,enabled,getAccessToken,userId}){
   };
 
   const money=value=>value===null||value===undefined?'—':
-    (value>0?'+':'')+value.toFixed(2)+' $';
+    formatDisplaySigned(value,document.documentElement.lang);
   const percent=value=>value===null||value===undefined?'—':
     (value>0?'+':'')+value.toFixed(2)+'%';
   const tone=value=>value>0?'positive':value<0?'negative':'neutral';

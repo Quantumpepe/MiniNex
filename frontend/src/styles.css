@@ -1073,3 +1073,7 @@
   .compact-home-actions .lang-switch button{min-width:23px;padding:5px 3px}
   .home-account-button{padding-inline:4px}
 }
+
+.display-currency-options{display:grid;gap:7px;margin:12px 0}
+.display-currency-options button{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;padding:10px 12px;border:1px solid #32645e;border-radius:10px;background:#102e35;color:#b4d8d2;font-size:13px}
+.display-currency-options button.chosen{border-color:#65e5bf;background:#19483e;color:#65e5bf}

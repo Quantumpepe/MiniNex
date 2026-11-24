@@ -11,6 +11,7 @@ from typing import Literal
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from .display_currency import get_display_currency_rates
 from .market_data import MarketDataService
 from .extra_market_data import ExtraMarketData, EXTRA_ASSETS
 from .auto_engine import PaperAutoEngine
@@ -496,6 +497,12 @@ async def manual_wallet_swap_live_market_quote(
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
+
+
+@app.get("/api/display-currency")
+async def display_currency_rates():
+    return JSONResponse(await get_display_currency_rates(),
+                        headers={"Cache-Control": "public, max-age=300"})
 
 
 @app.get("/api/wallet/swap/route")
