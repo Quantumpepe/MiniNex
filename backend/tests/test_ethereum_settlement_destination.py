@@ -11,10 +11,10 @@ W="0x"+"12"*20
 TID=bytes.fromhex("ab"*32)
 def word(a):return bytes.fromhex(a[2:].rjust(64,"0"))
 
-def example(*,recipient=None,minout=5*10**18,deposit=False):
+def example(*,recipient=None,minout=5*10**18,deposit=False,local_override=None):
     receiver,executor=RECEIVERS[137]
     stable=ETHEREUM_STABLES["USDC"]
-    local=CHAINS["POL"].stable_contract.lower()
+    local=local_override or CHAINS["POL"].stable_contract.lower()
     coin=CROSS_COIN_CONTRACTS["POL"]
     router=CHAINS["POL"].router.lower()
     amount=9_000_000
@@ -41,3 +41,24 @@ def test_destination_swap_matches_owner_and_full_bridged_amount():
         tx,terms,_=example(**changes)
         with pytest.raises(ValueError):
             inspect_across_v4(tx,terms=terms,now=101)
+
+
+def test_polygon_usdt0_is_only_an_intermediate_route_token():
+    tx,terms,_=example(local_override="0xc2132d05d31c914a87c6611c10748aeb04b58e8f")
+    result=inspect_across_v4(tx,terms=terms,now=101)
+    assert result["destination_swap"]["minimum_final"]==5*10**18
+    assert terms["source_token"]==ETHEREUM_STABLES["USDC"]
+    tx,terms,_=example(local_override="0x"+"99"*20)
+    with pytest.raises(ValueError):
+        inspect_across_v4(tx,terms=terms,now=101)
+
+
+def test_automatic_sell_cannot_fall_back_to_unrelated_native_coin():
+    from backend.ethereum_settlement_quote import _source_token
+    from fastapi import HTTPException
+    from decimal import Decimal
+    balances={"POL":{"status":"verified","balance":"100"},
+              "WPOL":{"status":"verified","balance":"2"}}
+    assert _source_token("POL",Decimal("2"),balances,wrapped_only=True).lower()==CROSS_COIN_CONTRACTS["POL"]
+    with pytest.raises(HTTPException):
+        _source_token("POL",Decimal("3"),balances,wrapped_only=True)

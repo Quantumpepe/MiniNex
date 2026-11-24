@@ -9,7 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 from fastapi import HTTPException
 
-from .ethereum_settlement_plan import settlement_route, ethereum_buy_amount, ethereum_sell_amount
+from .ethereum_settlement_plan import settlement_route, ethereum_buy_amount, ethereum_sell_amount, CROSS_COIN_CONTRACTS
 from .ethereum_settlement_quote import get_ethereum_cross_evm_quote
 from .ethereum_settlement_journal import load_quote, pending_bridge_order
 from .ethereum_settlement_preflight import prepare_bridge_privy_request
@@ -76,14 +76,18 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
     if (audit["current_user_budget_revision"]!=budget_revision
         or record["budget_revision"]!=budget_revision or record["stable"]!=stable
         or record["policy_sha256"]!=audit["remote_verified_policy_sha256"]
-        or record["wallet_id"]!=audit["remote_verified_wallet_id"]):
+        or record["wallet_id"]!=audit["remote_verified_wallet_id"]
+        or record["signer_id"]!=audit["remote_verified_signer_id"]):
         raise HTTPException(409,"Owner-approved coin budget changed")
-    quote=await get_ethereum_cross_evm_quote(did,route["source_asset"],route["destination_asset"],amount)
+    quote=await get_ethereum_cross_evm_quote(did,route["source_asset"],route["destination_asset"],amount,
+        strategy_sell=side=="SELL")
     if not quote["restricted_calldata_verified"]:
         return {"asset":asset,"state":"ROUTE_INDICATIVE_ONLY","can_submit":False}
     persisted=await asyncio.to_thread(load_quote,did,quote["quote_id"])
     if persisted["wallet_address"]!=record["wallet_address"].lower():
         raise HTTPException(409,"Original wallet differs")
+    if side=="SELL" and persisted["source_token"]!=CROSS_COIN_CONTRACTS[asset]:
+        raise HTTPException(409,"Original strategy coin contract changed")
     import time
     review=migration_review(persisted,record,now=max(now,int(time.time())))
     plan=await prepare_bridge_privy_request(client,persisted,
@@ -107,6 +111,9 @@ async def plan_cross_evm_buy(*,did,asset,stable,budget_usd,estimated_cost_usd,cl
     The caller still needs a current owner-approved budget, atomic
     reservation and new scoped Privy policy before actual execution.
     """
+    if await asyncio.to_thread(has_pending_bridge_order,did,asset):
+        return {"input_atomic":"0","input_amount":"0","reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED",
+                "can_submit":False,"execution_authorized":False}
     evidence=await read_cross_evm_funding(did,asset,stable,client)
     prices=await fetch_evm_policy_reference_rates(asset,stable)
     coin_price=_price(prices,asset,now)
@@ -193,3 +200,15 @@ async def plan_cross_evm_sell(*,did,asset,stable,client):
         owned_position_atomic=owned,pending_sell_atomic=0)
     return {**result,"reason":"NO_VERIFIED_STRATEGY_COIN_BALANCE",
             "settlement_chain_id":1,"execution_authorized":False}
+
+
+
+def has_pending_bridge_order(did,asset):
+    did=_safe_did(did)
+    db=_db_url();_ensure_schema(db)
+    try:
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                return pending_bridge_order(cur,did,asset)
+    except psycopg.Error:
+        raise HTTPException(503,"Pending bridge order unavailable") from None

@@ -113,7 +113,14 @@ def _source_registry(chain):
     item=next((r for r in CHAINS.values() if r.chain_id==chain),None)
     if not item:
         raise ValueError("Unregistered source chain")
-    return item.router.lower(), {item.stable_contract.lower(),item.wrapped.lower()}
+    tokens={item.stable_contract.lower(),item.wrapped.lower()}
+    # Official USDT0 deployments: https://docs.usdt0.to/technical-documentation/deployments
+    # Intermediate assets only; the quote still binds final Ethereum USDC/USDT.
+    if chain==137:
+        tokens.add("0xc2132d05d31c914a87c6611c10748aeb04b58e8f")
+    elif chain==42161:
+        tokens.add("0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9")
+    return item.router.lower(), tokens
 
 
 def inspect_across_v4(tx, *, terms, now):

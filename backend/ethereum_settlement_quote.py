@@ -32,7 +32,7 @@ def is_ethereum_cross_evm_pair(source: str, target: str) -> bool:
             or (target in CROSS_EVM and source in STABLES))
 
 
-def _source_token(asset: str, amount: Decimal, balances: dict) -> str:
+def _source_token(asset: str, amount: Decimal, balances: dict, *, wrapped_only=False) -> str:
     """Prefer existing wrapped inventory; never wrap the same coins twice."""
     native = balances.get(asset, {})
     if asset in _WRAPPED_GROUPS:
@@ -41,6 +41,8 @@ def _source_token(asset: str, amount: Decimal, balances: dict) -> str:
         if (wrapped.get("status") == "verified"
                 and Decimal(wrapped["balance"]) >= amount):
             return contract
+        if wrapped_only:
+            raise HTTPException(409, "Verified strategy token balance insufficient")
     if (native.get("status") == "verified"
             and Decimal(native["balance"]) >= amount):
         return CROSS_EVM[asset][1]
@@ -137,7 +139,7 @@ async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,de
 
 
 async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
-                                      amount: str) -> dict:
+                                      amount: str, *, strategy_sell=False) -> dict:
     if not is_ethereum_cross_evm_pair(source, target):
         raise HTTPException(422, "Unsupported Ethereum settlement pair")
     buy = source in STABLES
@@ -176,7 +178,7 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
                 # Read the existing source-chain balances, not all networks.
                 balances = await _read_chain(
                     client, "ARB_TOKENS" if asset == "ARB" else asset, wallet)
-                coin_token = _source_token(asset, exact_amount, balances)
+                coin_token = _source_token(asset, exact_amount, balances, wrapped_only=strategy_sell)
             source_chain,dest_chain=route["source_chain_id"],route["destination_chain_id"]
             token_in, token_out = ((STABLES[stable], coin_token) if buy
                                    else (coin_token, STABLES[stable]))
