@@ -1,6 +1,6 @@
 import React, {useCallback,useEffect,useState} from 'react';
 import {usePrivy} from '@privy-io/react-auth';
-import {API_BASE,formatTimestamp,formatNumber,formatSigned} from './data.js';
+import {API_BASE,formatTimestamp,formatNumber,formatSigned,formatMoney} from './data.js';
 import {PRIVY_APP_ID} from './privyConfig.js';
 
 const ASSETS=['BTC','ETH'];
@@ -113,33 +113,33 @@ function PersonalDemo({t,lang,paperAvailable=true}) {
         </p>}
       {current.status!=='NOT_STARTED'&&<div className="balance-grid">
         <div className="balance-line"><span>{t.personalDemoBudget}</span>
-          <b>{hasVirtualBudget?formatNumber(initialBudget,lang,2):'—'} {hasVirtualBudget?'USD':''}</b>
+          <b>{hasVirtualBudget?formatMoney(initialBudget,lang):'—'}</b>
         </div>
         <div className="balance-line"><span>{t.personalDemoCash}</span><b>{formatNumber(position.stable_cash??0,lang,2)} {current.settlement}</b></div>
         <div className="balance-line"><span>{t.personalDemoCoin}</span><b>{formatNumber(position.coin_quantity??0,lang,asset==='BTC'?8:6)} {asset}</b></div>
-        <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{formatSigned(position.realized_net_profit??0,lang,current.settlement)}</b></div>
+        <div className="balance-line"><span>{t.personalDemoPnl}</span><b>{formatSigned(position.realized_net_profit??0,lang)}</b></div>
         {position.valuation?.quote_valid===true&&Number(position.coin_quantity)>0&&<>
           <div className="balance-line">
             <span>{t.personalDemoExitNet}</span>
-            <b>{Number(position.valuation.estimated_exit_net_usd).toFixed(2)} {current.settlement}</b>
+            <b>{formatMoney(position.valuation.estimated_exit_net_usd,lang)}</b>
           </div>
           {position.valuation.last_buy_costs_usd!=null&&
             <div className="balance-line">
               <span>{t.personalDemoBuyCosts}</span>
-              <b>{Number(position.valuation.last_buy_costs_usd).toFixed(2)} {current.settlement}</b>
+              <b>{formatMoney(position.valuation.last_buy_costs_usd,lang)}</b>
             </div>}
           <div className="balance-line">
             <span>{t.personalDemoSaleCosts}</span>
-            <b>{Number(position.valuation.estimated_sale_costs_usd).toFixed(2)} {current.settlement}</b>
+            <b>{formatMoney(position.valuation.estimated_sale_costs_usd,lang)}</b>
           </div>
           <p className="privy-wallet-description">
-            {t.personalDemoSaleDetails}: {Number(position.valuation.estimated_sale_fee_usd).toFixed(2)}
-            {' / '}{Number(position.valuation.estimated_sale_spread_slippage_usd).toFixed(2)}
-            {' / '}{Number(position.valuation.estimated_sale_network_fee_usd).toFixed(2)} {current.settlement}
+            {t.personalDemoSaleDetails}: {formatMoney(position.valuation.estimated_sale_fee_usd,lang)}
+            {' / '}{formatMoney(position.valuation.estimated_sale_spread_slippage_usd,lang)}
+            {' / '}{formatMoney(position.valuation.estimated_sale_network_fee_usd,lang)}
           </p>
           <div className="balance-line">
             <span>{t.personalDemoUnrealized}</span>
-            <b>{Number(position.valuation.unrealized_net_pnl_usd).toFixed(2)} {current.settlement}
+            <b>{formatMoney(position.valuation.unrealized_net_pnl_usd,lang)}
               {' ('+Number(position.valuation.unrealized_net_pct).toFixed(2)+' %)'}
             </b>
           </div>

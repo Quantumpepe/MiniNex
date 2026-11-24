@@ -40,7 +40,7 @@ test('HWM numbers are formatted as ordinary USD amounts, not PostgreSQL exponent
 test('wallet introductory copy reflects integrated Privy login, not future integration',()=>{
   assert.doesNotMatch(langs,/Privy-Wallet wird erst in einer späteren Version integriert/);
   assert.doesNotMatch(langs,/Privy wallet integration will follow in a later version/);
-  assert.match(langs,/Privy-Anmeldung und Ethereum-Wallet sind unten verfügbar/);
+  assert.match(langs,/Melde dich auf der Hauptseite an, um deine Privy-Wallet zu öffnen/);
 });
 
 test('trading routes only show read-only verified disabled capability status',()=>{

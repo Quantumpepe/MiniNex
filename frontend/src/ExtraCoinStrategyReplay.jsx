@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {API_BASE} from './data.js';
+import {API_BASE,formatMoney} from './data.js';
+import {getDisplayCurrency} from './displayCurrency.js';
 import ExtraCoinPaperControl from './ExtraCoinPaperControl.jsx';
 import {coinPreferenceChanged} from './extraCoinPreferenceRules.js';
 import {EXTRA_REPLAY_COINS,MODES,HORIZONS,validExtraReplayBudget,
@@ -73,6 +74,7 @@ export default function ExtraCoinStrategyReplay({
         <input type="number" inputMode="numeric" min="1" step="1"
           value={options.budget} disabled={!enabled||busy}
           onChange={event=>onChange(asset,'budget',event.target.value)}/>
+        {getDisplayCurrency()!=='USD'&&<small>≈ {formatMoney(options.budget,document.documentElement.lang)}</small>}
       </label>
       <label><span>{t.privySetupMode}</span>
         <select value={options.mode} disabled={!enabled||busy}
@@ -134,7 +136,7 @@ export default function ExtraCoinStrategyReplay({
         {result.trades.slice(-4).reverse().map((trade,index)=>
           <div key={trade.at+'-'+index}>
             <span>{trade.kind==='PAPER_BUY'?t.extraReplayBuy:t.extraReplaySell}</span>
-            <strong>{Number(trade.total_spent??trade.net_proceeds??0).toFixed(2)} $</strong>
+            <strong>{formatMoney(trade.total_spent??trade.net_proceeds??0,document.documentElement.lang)}</strong>
           </div>)}
       </div>}
     </div>}

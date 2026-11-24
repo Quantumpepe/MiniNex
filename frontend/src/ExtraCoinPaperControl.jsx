@@ -1,3 +1,4 @@
+import {formatMoney,formatSigned as formatDisplaySigned} from './data.js';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {API_BASE} from './data.js';
 import {validExtraPaperState,extraPaperCanStart,liveOwnerSessionPath,
@@ -182,15 +183,15 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       </button>}
     {!liveMode&&['ACTIVE','PAUSED'].includes(state)&&<>
       <div className="mininex-extra-paper-balances">
-        <div><span>{t.extraPaperBudget}</span><strong>{fmt(data.budget_usd)} $</strong></div>
+        <div><span>{t.extraPaperBudget}</span><strong>{formatMoney(data.budget_usd,document.documentElement.lang)}</strong></div>
         <div><span>{t.extraPaperCash}</span>
           <strong>{fmt(cash)} {data.settlement}</strong></div>
         <div><span>{t.extraPaperHolding}</span>
           <strong>{coinQty.toPrecision(6)} {asset}</strong></div>
         <div><span>{t.extraPaperRealized}</span>
-          <strong>{realized>0?'+':''}{fmt(realized)} $</strong></div>
+          <strong>{formatDisplaySigned(realized,document.documentElement.lang)}</strong></div>
         <div><span>{t.extraPaperEquity}</span>
-          <strong>{valuation.quote_valid?fmt(valuation.estimated_total_equity_usd)+' $':'—'}</strong></div>
+          <strong>{valuation.quote_valid?formatMoney(valuation.estimated_total_equity_usd,document.documentElement.lang):'—'}</strong></div>
         <div><span>{t.extraPaperRuntime}</span>
           <strong>{hours}h {mins}m</strong></div>
       </div>
@@ -222,7 +223,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         {(data.trades||[]).slice(-4).reverse().map((trade,index)=>
           <div key={trade.at+'-'+index}>
             <span>{trade.kind==='PAPER_BUY'?t.extraReplayBuy:t.extraReplaySell}</span>
-            <strong>{fmt(Number(trade.total_spent??trade.net_proceeds??0))} $</strong>
+            <strong>{formatMoney(trade.total_spent??trade.net_proceeds??0,document.documentElement.lang)}</strong>
           </div>)}
         {data.trades.length===0&&
           <p className="privy-wallet-description">{t.extraPaperNoTrades}</p>}

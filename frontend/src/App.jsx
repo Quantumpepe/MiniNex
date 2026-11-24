@@ -12,6 +12,9 @@ import {
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
+import HomeAccount from './HomeAccount.jsx';
+import useDisplayCurrency from './useDisplayCurrency.js';
+import {CURRENCIES} from './displayCurrency.js';
 import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
 import useLiveHomeTrades from './useLiveHomeTrades.js';
 import useWalletPortfolioHome from './useWalletPortfolioHome.js';
@@ -339,7 +342,7 @@ function MoneyInfo({portfolio,asset,t,lang,paper}) {
   const stable=portfolio?.settlement||'USDT';
   return <div className="balance-grid">
     <div className="balance-line"><span>{t.coins}</span><b>{formatCoin(portfolio?.coin_quantity,lang)} {asset}</b></div>
-    <div className="balance-line"><span>{t.stable}</span><b>{formatMoney(portfolio?.stable_cash,lang)} {stable}</b></div>
+    <div className="balance-line"><span>{t.stable}</span><b>{formatNumber(portfolio?.stable_cash,lang,2)} {stable}</b></div>
     <div className="balance-line"><span>{t.costBasis}</span><b>{formatMoney(portfolio?.cost_basis,lang)}</b></div>
     <div className="balance-line"><span>{t.startingMode}</span><b>{portfolio?.starting_mode==='NATIVE_COINS'?t.startingCoin:t.startingStable}</b></div>
     <div className="balance-line"><span>{t.moves}</span><b>{portfolio?.trade_count??'—'}</b></div>
@@ -361,6 +364,7 @@ function FeeDetails({paper,portfolio,asset,t,lang}) {
 
 export default function App() {
   const [language,setLanguage]=useState(getLanguage);
+  const fx=useDisplayCurrency();
   const [asset,setAsset]=useState('BTC');
   const [showAllPaperHistory,setShowAllPaperHistory]=useState(false);
   const [page,setPage]=useState('overview');
@@ -452,6 +456,7 @@ export default function App() {
         <button className="mobile-brand" type="button" onClick={()=>navigate('overview')} aria-label={t.overview} title={t.overview}><MiniNexMark size={34}/><b>mini<span>nex</span></b></button>
         
         <div className="header-actions">
+          {page==='overview'&&<HomeAccount t={t}/>}
           <div className="lang-switch" role="group" aria-label={t.language}>
             <button type="button" className={language==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={language==='de'}>DE</button>
             <button type="button" className={language==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={language==='en'}>EN</button>
@@ -535,6 +540,20 @@ export default function App() {
 
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Globe2 size={21}/></span><div><h2>{t.language}</h2></div></div>
             <div className="language-options"><button type="button" className={language==='de'?'chosen':''} onClick={()=>chooseLang('de')}><span>🇩🇪 Deutsch</span>{language==='de'&&<Check size={17}/>}</button><button type="button" className={language==='en'?'chosen':''} onClick={()=>chooseLang('en')}><span>🇬🇧 English</span>{language==='en'&&<Check size={17}/>}</button></div>
+          </section>
+          <section className="panel settings-panel">
+            <div className="settings-row"><span className="settings-icon"><Wallet size={21}/></span><div><h2>{t.displayCurrency}</h2></div></div>
+            <div className="display-currency-options" role="group" aria-label={t.displayCurrency}>
+              {CURRENCIES.map(code=><button key={code} type="button" className={fx.currency===code?'chosen':''}
+                aria-pressed={fx.currency===code} onClick={()=>fx.chooseCurrency(code)}>
+                <span>{code} – {t['currency'+code]}</span>{fx.currency===code&&<Check size={17}/>}
+              </button>)}
+            </div>
+            <p className="privy-wallet-description">{t.displayCurrencyNote}</p>
+            {fx.currency!=='USD'&&<p className="privy-wallet-description" role="status">
+              {!fx.available?(fx.failed?t.displayCurrencyUnavailable:t.displayCurrencyLoading):
+                t.displayCurrencyReference+': '+fx.reference?.dates?.[fx.currency]}
+            </p>}
           </section>
           <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Wifi size={21}/></span><div><h2>{t.apiStatus}</h2></div></div>
             <div className="settings-state"><Pill tone={syncedAt&&Date.now()-syncedAt<FRESH_MS?'teal':'orange'} icon={syncedAt?Check:WifiOff}>{syncedAt&&Date.now()-syncedAt<FRESH_MS?t.apiConnected:t.apiDisconnected}</Pill></div>

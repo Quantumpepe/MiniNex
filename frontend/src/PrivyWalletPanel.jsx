@@ -170,9 +170,8 @@ function useNativeBtcWallet(user, enabled) {
 // Deliberately no sendTransaction, withdrawal or delegation path here.
 // The existing backend is PAPER-only, even when a user signs in to Privy.
 function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=true}) {
-  const {ready, authenticated, user, login, logout, getAccessToken} = usePrivy();
+  const {ready, authenticated, user, getAccessToken} = usePrivy();
   const {wallets, ready:walletsReady} = useWallets();
-  const [error,setError]=useState(false);
   const [retryNonce,setRetryNonce]=useState(0);
   const [identityStatus,setIdentityStatus]=useState('idle');
   const [databaseStatus,setDatabaseStatus]=useState('idle');
@@ -293,7 +292,6 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
   },[ready,authenticated,getAccessToken,retryNonce]);
   const embedded = wallets.find(wallet=>wallet.walletClientType==='privy' && /^0x[0-9a-fA-F]{40}$/.test(wallet.address||''));
   const address = embedded?.address;
-  const act = async (fn) => {try {setError(false); await fn();} catch {setError(true);}};
   const applyBudgetResponse = data => {
     if(!(data?.mode==='PREFERENCES_ONLY' && data.trading_enabled===false &&
         data.signing_authorized===false && ['BTC','ETH'].every(asset=>
@@ -510,7 +508,7 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2></div>
     <div className="privy-panel-body privy-wallet-layout">
       {!ready ? <div className="privy-wallet-description">{t.privyLoading}</div> :
-        !authenticated ? <button className="privy-wallet-action" type="button" onClick={()=>act(login)}>{t.privyLogin}</button> : <>
+        !authenticated ? <p className="privy-wallet-description">{t.homeAccountRequired}</p> : <>
           {identityStatus==='verified' && databaseStatus==='stored' && address &&
             <div className="mininex-main-address" style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0'}}>
               <span style={{fontFamily:'monospace',fontSize:'14px'}}>
@@ -542,18 +540,14 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
             renderCoinActions={renderCoinActions} renderCoinBalance={renderCoinBalance}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
-          <button className="privy-wallet-action privy-wallet-action--secondary privy-wallet-logout"
-            type="button" onClick={()=>act(logout)}>{t.privyLogout}</button>
         </>}
-      {error&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
     </div>
   </section>;
 }
 // Logged-out sessions must never mount native-wallet creation hooks.
 // They belong to the signed-in wallet subtree only.
 function WalletAuthGate({t,lang,marketSnapshot,syncedAt,paperAvailable,onGoHome}) {
-  const {ready,authenticated,user,login} = usePrivy();
-  const [loginError,setLoginError] = useState(false);
+  const {ready,authenticated,user} = usePrivy();
   if(!ready || (authenticated&&!user?.id))return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2></div>
     <div className="privy-panel-body"><p className="privy-wallet-description">{t.privyLoading}</p></div>
@@ -561,10 +555,9 @@ function WalletAuthGate({t,lang,marketSnapshot,syncedAt,paperAvailable,onGoHome}
   if(!authenticated)return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
     <div className="privy-panel-body">
-      <button className="privy-wallet-action" type="button" onClick={async()=>{
-        try{setLoginError(false);await login();}catch{setLoginError(true);}
-      }}>{t.privyLogin}</button>
-      {loginError&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
+      <p className="privy-wallet-description">{t.homeAccountRequired}</p>
+      <button className="privy-wallet-action" type="button"
+        onClick={()=>onGoHome?.()}>{t.overview}</button>
     </div>
   </section>;
   return <WalletRenderBoundary key={user.id} t={t} onGoHome={onGoHome}>
@@ -574,9 +567,6 @@ function WalletAuthGate({t,lang,marketSnapshot,syncedAt,paperAvailable,onGoHome}
 }
 
 function WalletRecovery({t,onGoHome}) {
-  const {logout} = usePrivy();
-  const [busy,setBusy] = useState(false);
-  const [error,setError] = useState(false);
   return <section className="panel privy-panel">
     <div className="privy-panel-header"><h2>{t.privyTitle}</h2><Wallet size={19}/></div>
     <div className="privy-panel-body">
@@ -585,13 +575,7 @@ function WalletRecovery({t,onGoHome}) {
       </p>
       <button type="button" className="privy-wallet-action"
         onClick={()=>onGoHome?.()}>{t.overview||'Startseite / Home'}</button>
-      <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
-        disabled={busy} onClick={async()=>{
-          setBusy(true);setError(false);
-          try{await logout();}catch{setError(true);}
-          finally{setBusy(false);}
-        }}>{t.privyLogout}</button>
-      {error&&<p role="alert" className="privy-wallet-note">{t.privyError}</p>}
+
     </div>
   </section>;
 }

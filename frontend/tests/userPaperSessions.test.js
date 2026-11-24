@@ -9,7 +9,7 @@ const dict=read('../src/i18n.js');
 test("skip wallet",()=>{});
 test('BTC and ETH wallet show actual server-persisted 5000 USD paper start budget',()=>{
   assert.match(ui,/const initialBudget=Number\(current\.demo_start_cash\)/);
-  assert.match(ui,/hasVirtualBudget\?formatNumber\(initialBudget,lang,2\):'—'/);
+  assert.match(ui,/hasVirtualBudget\?formatMoney\(initialBudget,lang\):'—'/);
   assert.match(ui,/t\.personalDemoBudget/);
   assert.match(dict,/personalDemoBudget: 'Virtual starting budget'/);
   assert.match(dict,/personalDemoBudget: 'Virtuelles Startbudget'/);

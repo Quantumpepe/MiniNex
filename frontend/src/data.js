@@ -1,3 +1,4 @@
+import {convertedDisplayAmount,displayCurrencySymbol} from './displayCurrency.js';
 export const API_BASE = (import.meta.env?.VITE_API_BASE_URL || 'https://mininex-backend.onrender.com').replace(/\/+$/, '');
 
 export function ensurePaperOnly(data) {
@@ -29,9 +30,10 @@ export function formatNumber(value, lang = 'en', digits = 2) {
 }
 
 export function formatMoney(value, lang = 'en', digits = 2) {
-  const v = cleanNumber(value);
-  if (v === null) return '—';
-  return `${formatNumber(v, lang, digits)} $`;
+  const v=cleanNumber(value);
+  if(v===null)return '—';
+  const converted=convertedDisplayAmount(v);
+  return converted===null?'—':formatNumber(converted,lang,digits)+' '+displayCurrencySymbol();
 }
 
 // Display precision only. Never feed a formatted/rounded value into trade,
@@ -55,9 +57,10 @@ export function formatCoin(value, lang = 'en') {
 }
 
 export function formatSigned(value, lang = 'en', suffix = '$') {
-  const n = cleanNumber(value);
-  if (n === null) return '—';
-  return `${n > 0 ? '+' : n < 0 ? '−' : ''}${formatNumber(Math.abs(n), lang, 2)} ${suffix}`;
+  const n=cleanNumber(value);
+  if(n===null)return '—';
+  const formatted=suffix==='$'?formatMoney(Math.abs(n),lang):formatNumber(Math.abs(n),lang,2)+' '+suffix;
+  return formatted==='—'?formatted:(n>0?'+':n<0?'−':'')+formatted;
 }
 
 export function formatTimestamp(value, lang = 'en', options = {}) {

@@ -7,7 +7,7 @@ const control=readFileSync(new URL('../src/ExtraCoinPaperControl.jsx',import.met
 test('BTC and ETH started paper budgets display as numbers, not unformatted strings',()=>{
   assert.match(control,/const initial=Number\(result\.demo_start_cash\?\?result\.position\?\.demo_start_cash\)/);
   assert.match(control,/result\.budget_usd=Number\.isFinite\(initial\)&&initial>0\?initial:null/);
-  assert.match(control,/fmt\(data\.budget_usd\)/);
+  assert.match(control,/formatMoney\(data\.budget_usd,document\.documentElement\.lang\)/);
 });
 
 import {liveOwnerSessionPath,validLiveOwnerSession,liveOwnerCounters}

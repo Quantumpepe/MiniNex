@@ -5,6 +5,7 @@ import {compactChartData} from './compact.js';
 import {paperSparkline} from './paperPortfolio.js';
 import {formatMoney,formatAssetMoney,formatAssetQuantity,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
+import HomeAccount from './HomeAccount.jsx';
 import {coinBySymbol} from './coins.js';
 
 function AssetIcon({asset}) {
@@ -101,6 +102,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         <strong>mini<span>nex</span></strong>
       </button>
       <div className="compact-home-actions">
+        <HomeAccount t={t}/>
         <div className="lang-switch" role="group" aria-label={t.language}>
           <button type="button" className={lang==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={lang==='de'}>DE</button>
           <button type="button" className={lang==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={lang==='en'}>EN</button>

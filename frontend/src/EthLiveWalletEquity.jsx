@@ -1,3 +1,4 @@
+import {formatMoney,formatSigned as formatDisplaySigned} from './data.js';
 import React,{useEffect,useState} from 'react';
 import {API_BASE} from './data.js';
 
@@ -41,12 +42,10 @@ export default function EthLiveWalletEquity({
       type="button" disabled={!enabled||busy||!walletAddress}
       onClick={refresh}>{busy?'…':t.liveEthWalletEquityRefresh}</button>
     {report&&<>
-      <strong>{t.liveEthWalletEquityTotal}: {
-        report.total_reference_value_usd} USD</strong>
+      <strong>{t.liveEthWalletEquityTotal}: {formatMoney(report.total_reference_value_usd,document.documentElement.lang)}</strong>
       {report.balances.map(entry=><p key={entry.asset}
         className="privy-wallet-description">
-        {entry.asset}: {entry.native_units} · {
-          entry.reference_value_usd} USD
+        {entry.asset}: {entry.native_units} · {formatMoney(entry.reference_value_usd,document.documentElement.lang)}
       </p>)}
     </>}
     {error&&<p className="privy-wallet-description" role="alert">
