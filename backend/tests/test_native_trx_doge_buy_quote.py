@@ -171,10 +171,15 @@ def test_original_privy_native_wallet_used_as_thor_destination(asset,monkeypatch
         DID,asset=asset,side="BUY",stable="USDC",amount="50"))
     assert result["destination_wallet"]==target
     assert result["can_submit"] is False
+    async def empty_native(did):
+        assert did==DID
+        return {"wallet_ownership_verified":True,"assets":{
+            asset:{"status":"verified","network":"tron-mainnet","balance":"0"}}}
+    monkeypatch.setattr(q,"get_native_balances",empty_native)
     with pytest.raises(HTTPException) as err:
         asyncio.run(q.get_private_native_thornode_terms(
-            DID,asset=asset,side="SELL",stable="USDC",amount="1"))
-    assert err.value.status_code==422
+            DID,asset=asset,side="SELL",stable="USDT",amount="1"))
+    assert err.value.status_code==409
 
 
 @pytest.mark.parametrize("asset",["TRX"])
