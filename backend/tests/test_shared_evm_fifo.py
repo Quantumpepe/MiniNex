@@ -147,3 +147,19 @@ def test_reader_rejects_untrusted_source(monkeypatch):
     with pytest.raises(HTTPException) as err:
         read_evm_fifo_gross_preview("did:privy:test","BNB")
     assert err.value.status_code==503
+
+
+def test_cross_chain_history_does_not_mix_local_cost_basis_or_gas():
+    buy=fill("POL","BUY","100","2","cross_buy")
+    buy.update(ethereum_settlement_verified=True,chain_id=1,network="ethereum-mainnet",destination_chain_id=137)
+    sell=fill("POL","SELL","1","70","cross_sell")
+    sell.update(ethereum_settlement_verified=True,destination_chain_id=1)
+    legacy=fill("POL","BUY","10","3","legacy")
+    result=evm_fifo_gross_preview(history("POL",sell,buy,legacy))
+    cross=result["ethereum_settlement"]
+    assert Decimal(cross["gross_spread_by_stable"]["USDC"])==20
+    assert Decimal(cross["remaining_fifo_units_not_wallet_balance"]["USDC"])==1
+    assert Decimal(result["remaining_fifo_units_not_wallet_balance"]["USDC"])==3
+    assert set(cross["source_gas_by_network"])=={"ethereum-mainnet","polygon-pos-mainnet"}
+    assert cross["verified_net_pnl_usd"] is None
+    assert not cross["performance_fee_assessed"]

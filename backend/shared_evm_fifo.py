@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 from fastapi import HTTPException
 
 from .shared_evm_swap_receipts import _pair
+from .ethereum_settlement_plan import settlement_route
 
 _ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
@@ -49,6 +50,14 @@ def evm_fifo_gross_preview(history: object) -> dict:
             or len(history["fills"])>100):
         raise ValueError("Untrusted EVM finalized trade history")
     asset=history["asset"]
+    # Keep legacy local settlements separate from Ethereum stable lots.
+    cross=[row for row in history["fills"] if isinstance(row,dict) and row.get("ethereum_settlement_verified") is True]
+    if cross:
+        legacy=[row for row in history["fills"] if row not in cross]
+        old=evm_fifo_gross_preview({**history,"fills":legacy})
+        old["ethereum_settlement"]=_cross_gross_preview(asset,cross,history["history_truncated"])
+        old["fee_blockers"].append("CROSS_CHAIN_COSTS_AND_CUSTODY_NOT_RECONCILED")
+        return old
     pairs={s:_pair(asset,s,"BUY") for s in ("USDC","USDT") if _pair_supported(asset,s)}
     gross={s:Decimal(0) for s in pairs}
     unmatched={s:Decimal(0) for s in pairs}
@@ -175,6 +184,54 @@ def evm_fifo_gross_preview(history: object) -> dict:
         "fee_paid_onchain":False,
         "fee_blockers":blockers,
     }
+
+
+def _cross_gross_preview(asset,rows,truncated):
+    """Matched stable spread only; never USD PnL or fee authority."""
+    lots={s:deque() for s in ("USDC","USDT")}
+    gross={s:Decimal(0) for s in lots}
+    gas={};seen=set();closes=[];unmatched=0
+    with localcontext() as ctx:
+        ctx.prec=100
+        for row in reversed(rows):
+            stable=row["stable"]; side=row["side"]
+            route=settlement_route(asset,side,stable)
+            if (row["asset"]!=asset or route["family"]!="CROSS_EVM"
+                or row["onchain_finalized"] is not True
+                or row["chain_id"]!=route["source_chain_id"]
+                or row["destination_chain_id"]!=route["destination_chain_id"]
+                or row["network"]!=route["source_network"]
+                or row["spent_asset"]!=route["source_asset"]
+                or row["received_asset"]!=route["destination_asset"]
+                or not row["intent_key"] or row["intent_key"] in seen):
+                raise ValueError("Original cross-chain fill differs")
+            seen.add(row["intent_key"])
+            source=_units(row["spent_amount"]); target=_units(row["received_amount"])
+            fee=_units(row["network_fee_native"],allow_zero=True)
+            chain=row["network"]; gas[chain]=gas.get(chain,Decimal(0))+fee
+            if side=="BUY":
+                lots[stable].append([target,source])
+                continue
+            remaining=source; cost=Decimal(0)
+            while remaining and lots[stable]:
+                lot=lots[stable][0]
+                take=min(remaining,lot[0]); allocation=lot[1]*take/lot[0]
+                cost+=allocation; lot[0]-=take; lot[1]-=allocation; remaining-=take
+                if lot[0]==0: lots[stable].popleft()
+            if remaining:
+                unmatched+=1
+                closes.append({"intent_key":row["intent_key"],"stable":stable,
+                    "status":"UNMATCHED_COST_BASIS","gross_spread_stable":None})
+            else:
+                spread=target-cost; gross[stable]+=spread
+                closes.append({"intent_key":row["intent_key"],"stable":stable,
+                    "status":"MATCHED_GROSS_ONLY","gross_spread_stable":format(spread,"f")})
+    return {"settlement_chain_id":1,"history_truncated":truncated,
+        "closed_trades":list(reversed(closes)),"unmatched_sell_count":unmatched,
+        "gross_spread_by_stable":{s:format(v,"f") if not truncated and not unmatched else None for s,v in gross.items()},
+        "remaining_fifo_units_not_wallet_balance":{s:format(sum((lot[0] for lot in q),Decimal(0)),"f") for s,q in lots.items()},
+        "source_gas_by_network":{s:format(v,"f") for s,v in gas.items()},
+        "verified_net_pnl_usd":None,"performance_fee_assessed":False}
 
 
 def _pair_supported(asset:str,stable:str)->bool:

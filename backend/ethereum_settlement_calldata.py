@@ -184,7 +184,7 @@ def inspect_across_v4(tx, *, terms, now):
         elif _word_address(sending32)!=token_in:
             raise ValueError("Direct bridge source token differs")
     else:
-        if token_in==ETH_NATIVE or len(values[1])!=1:
+        if len(values[1])!=1:
             raise ValueError("Unsupported source swap sequence")
         call_to,approve_to,sending,receiving,from_amount,calldata,deposit=values[1][0]
         router,allowed=_source_registry(src)
@@ -197,7 +197,10 @@ def inspect_across_v4(tx, *, terms, now):
             raise ValueError("Unverified source swap")
         words=decode(["address","address","uint24","address","uint256","uint256","uint160"],calldata[4:],strict=True)
         a,b,fee,recipient,spend,min_swap,limit=words
-        if (a.lower()!=token_in or b.lower()!=receiving.lower()
+        expected_input=token_in
+        if token_in==ETH_NATIVE:
+            expected_input=next((r.wrapped.lower() for r in CHAINS.values() if r.chain_id==src),None)
+        if (a.lower()!=expected_input or b.lower()!=receiving.lower()
                 or recipient.lower()!=DIAMOND or fee not in (100,500,3000,10000)
                 or spend!=amount or min_swap<bridge_min or limit!=0
                 or multiplier<=0 or bridge_min*multiplier//10**18<minimum):
