@@ -33,6 +33,7 @@ from .shared_evm_policy_reference_rates import (
 )
 from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
 from .ethereum_settlement_reconcile_worker import reconcile_bridge_receipts_once
+from .ethereum_settlement_plan import settlement_route
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
@@ -50,6 +51,7 @@ LOG=logging.getLogger("mininex.shared_evm_auto_live")
 _INTERVAL_SECONDS=30
 _ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 _NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
+_CROSS_EVM=frozenset(("BNB","POL","AVAX","ARB"))
 
 # Rotate the worker query across all owner-activated sessions. This is a
 # database work page only; it never restricts trading volumes or active users.
@@ -174,7 +176,11 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
 def _trusted_live_session(row:dict)->dict:
     if type(row) is not dict or row.get("asset") not in _ASSETS:
         raise ValueError("Untrusted coin LIVE session")
-    pair=_pair(row["asset"],row.get("stable"),"BUY")
+    if row["asset"] in _CROSS_EVM:
+        route=settlement_route(row["asset"],"BUY",row.get("stable"))
+        coin_chain_id=route["destination_chain_id"]
+    else:
+        coin_chain_id=_pair(row["asset"],row.get("stable"),"BUY")["chain_id"]
     started=row.get("started_by_owner_at")
     try:
         pending=Decimal(str(row.get("pending_buy_usd")))
@@ -187,7 +193,7 @@ def _trusted_live_session(row:dict)->dict:
             or row["budget_usd"]<=0
             or type(row.get("budget_revision")) is not int
             or row["budget_revision"]<=0
-            or row.get("chain_id")!=pair["chain_id"]
+            or row.get("chain_id")!=coin_chain_id
             or row.get("mode") not in ("LONG","SPOT_SHORT","AUTO")
             or row.get("horizon") not in ("5m","15m","1h","24h")):
         raise ValueError("Coin LIVE session settings are not verified")
@@ -277,7 +283,7 @@ async def execute_owner_evm_live_tick(
     # Ethereum-only settlement is mandatory for remote EVM assets. Do not
     # fall through to legacy local stablecoin swaps or router approvals.
     # The bridge executor must be integrated before these sessions can send.
-    if asset in ("BNB","POL","AVAX","ARB"):
+    if asset in _CROSS_EVM:
         from .ethereum_settlement_auto_plan import plan_cross_evm_buy, prepare_cross_evm_auto_candidate
         if side=="BUY":
             funding=await plan_cross_evm_buy(
