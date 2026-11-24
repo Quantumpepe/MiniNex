@@ -23,6 +23,7 @@ from .shared_evm_fill_history import _verified_fill_row
 from .shared_evm_historical_fill_bridge import independently_price_stored_evm_fill
 from .shared_evm_wallet_token_audit import audit_owner_erc20_token_inventory
 from .storage import _db_url, _ensure_schema, _safe_did
+from .shared_evm_approval_costs import attach_original_approval_costs
 
 _ASSETS = frozenset(("LINK", "QNT", "UNI", "ARB"))
 
@@ -117,6 +118,9 @@ async def read_owner_erc20_verified_realized_net(
     # and receipt-gas cost for each, so there is no extra native conversion.
     if any(f.get("native_conversion") is not None for f in priced):
         raise ValueError("Unexpected ERC20-token native conversion cost")
+    # Include independently finalized approvals and resets in FIFO cost.
+    approval_report=await attach_original_approval_costs(
+        did=did,asset=asset,wallet=wallet,fills=priced,client=client,now=now)
     audit["no_other_execution_costs_verified"] = True
     result = reconcile_verified_evm_fifo_net({
         "mode":"SERVER_VERIFIED_EVM_CUSTODY_HISTORY",
@@ -126,6 +130,7 @@ async def read_owner_erc20_verified_realized_net(
         "asset_transfer_audit":audit,"fills":priced,
     })
     result["asset_transfer_audit"] = audit
+    result["approval_costs"] = approval_report
     result["hwm_updated"] = False
     result["fee_assessed"] = False
     result["auto_fee_transfer_enabled"] = False
