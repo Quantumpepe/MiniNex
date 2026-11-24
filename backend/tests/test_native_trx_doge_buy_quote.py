@@ -278,11 +278,12 @@ def test_trx_doge_buy_source_reconciles_without_synthetic_native_payout(asset):
     from backend import native_live_source_finality as finality
     from backend import native_thor_transaction_status as protocol
     # The Ethereum-funded BUY is eligible for the shared source finalizer,
-    # while unsupported TRX/DOGE native SELL is still explicitly rejected.
+    # TRX SELL can now reconcile exact independently confirmed sources;
+    # DOGE remains buy-only. A BUY receipt cannot be relabeled as SELL.
     assert asset in finality._CHAIN
-    assert asset in finality._BUY_ONLY
+    assert asset not in finality._BUY_ONLY
     assert asset in protocol._CHAINS
-    assert asset in protocol._BUY_ONLY
+    assert asset not in protocol._BUY_ONLY
     assert "asset IN ('BTC','SOL','XRP','TRX','DOGE')" in (
         __import__("inspect").getsource(finality._pending_original_eth_buy_submissions))
     owner=owner_coin(asset)

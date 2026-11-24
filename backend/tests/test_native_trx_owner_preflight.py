@@ -44,6 +44,20 @@ def test_tron_sell_wire_matches_memo_and_owner_transfer():
              "fee":1000000,"receipt":{"net_usage":314}}
     proof=verified_tron_swap_source_receipt(manifest,quote,confirmed,receipt)
     assert proof["actual_source_fee_sun"]=="1000000"
+    from backend.native_live_source_finality import inspect_original_trx_journal_source,_confirmed_original_source
+    row={"asset":"TRX","side":"SELL","stable":"USDT","chain":"tron-mainnet",
+         "source_wallet":owner,"destination_wallet":quote["destination_wallet"],
+         "source_tx_hash":tx["txID"],"source_signed_tx_hash":tx["txID"],
+         "input_amount":"1","payload_sha256":"f"*64,"status":"SUBMITTED"}
+    source_proof=inspect_original_trx_journal_source(row,{"transaction":confirmed,"info":receipt})
+    assert source_proof["actual_source_fee_sun"]=="1000000"
+    final=_confirmed_original_source(row,source_proof,owner)
+    assert final["checkpoint"]["network_fee_atomic"]=="1000000"
+    assert final["destination_settlement_finalized"] is False
+    with pytest.raises(ValueError):
+        inspect_original_trx_journal_source({**row,"source_signed_tx_hash":"a"*64},
+            {"transaction":confirmed,"info":receipt})
+
     assert proof["source_finalized"] is True and proof["destination_settled"] is False
     with pytest.raises(ValueError):
         verified_tron_swap_source_receipt(manifest,quote,confirmed,{**receipt,"id":"b"*64})

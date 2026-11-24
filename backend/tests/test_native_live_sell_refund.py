@@ -246,3 +246,25 @@ def test_original_sell_refund_endpoint_is_authenticated_get_only(monkeypatch):
     endpoint=next(route for route in api.app.routes
                   if route.path=="/api/live/native/sell-refund/{asset}/{intent_key}")
     assert "verify_privy_bearer" in inspect.getsource(endpoint.endpoint)
+
+
+def test_tron_refund_requires_exact_solidified_native_credit():
+    from backend.native_trx_manual_send import tron_address_hex
+    from backend.native_trx_user_signed_send import _tron_address_from_public_key
+    from eth_keys import keys
+    owner=_tron_address_from_public_key(keys.PrivateKey(bytes([1])*32).public_key.to_bytes())
+    sender=_tron_address_from_public_key(keys.PrivateKey(bytes([2])*32).public_key.to_bytes())
+    row={**original("BTC"),"asset":"TRX","source_wallet":owner}
+    tx="d"*64
+    proto={**protocol("BTC"),"asset":"TRX","refund_original_source_chain":"TRON",
+           "source_tx_hash":row["source_tx_hash"],"protocol_refund_hashes":[tx]}
+    observed={"transaction":{"txID":tx,"ret":[{"contractRet":"SUCCESS"}],
+        "raw_data":{"contract":[{"type":"TransferContract","parameter":{"value":{
+            "owner_address":tron_address_hex(sender),"to_address":tron_address_hex(owner),
+            "amount":1000000}}}]}},
+        "info":{"id":tx,"blockNumber":42,"receipt":{}}}
+    proof=m.inspect_original_native_sell_refund(row,proto,observed)
+    assert proof["refund_amount_atomic"]=="1000000"
+    assert proof["native_sell_settlement_complete"] is False
+    with pytest.raises(ValueError):
+        m.inspect_original_native_sell_refund(row,proto,{**observed,"info":{"id":tx}})

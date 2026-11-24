@@ -18,7 +18,7 @@ WALLET="0x"+"a"*40
 SENDER="0x"+"b"*40
 TX="e"*64
 BLOCK="c"*64
-SOURCE={"BTC":"a"*64,"SOL":"2"*88,"XRP":"F"*64}
+SOURCE={"BTC":"a"*64,"SOL":"2"*88,"XRP":"F"*64,"TRX":"d"*64}
 
 
 def original(asset="BTC",stable="USDC"):
@@ -85,7 +85,7 @@ def inspect(asset="BTC",stable="USDC",changes=None):
 
 @pytest.mark.parametrize("asset,stable",[
     ("BTC","USDC"),("BTC","USDT"),
-    ("SOL","USDC"),("SOL","USDT"),("XRP","USDC"),
+    ("SOL","USDC"),("SOL","USDT"),("XRP","USDC"),("TRX","USDT"),
 ])
 def test_all_native_sell_coins_require_finalized_real_owner_erc20_credit(asset,stable):
     proof=inspect(asset,stable)
@@ -311,3 +311,8 @@ def test_partial_native_refund_prevents_claiming_full_sell_settlement(asset):
         proto["protocol_refund_units_1e8"]=["1000000"]
     with pytest.raises(ValueError):
         inspect(asset,changes=add_refund)
+
+
+def test_trx_sell_does_not_accept_usdc_receipt():
+    with pytest.raises(ValueError):
+        inspect("TRX","USDC")

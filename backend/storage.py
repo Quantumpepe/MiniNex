@@ -1281,6 +1281,9 @@ SCHEMA += (
                                 'REFUNDED_VERIFIED'))
     )""",
     """ALTER TABLE mininex_live_native_order_intents
+        ADD COLUMN IF NOT EXISTS source_network_fee_atomic NUMERIC(78,0)
+        CHECK (source_network_fee_atomic >= 0)""",
+    """ALTER TABLE mininex_live_native_order_intents
         ADD COLUMN IF NOT EXISTS source_signed_tx_hash TEXT
         CHECK (source_signed_tx_hash IS NULL
           OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$')""",

@@ -22,7 +22,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 _THOR_URL="https://thornode.ninerealms.com/thorchain/tx/status/"
 _CHAINS={"BTC":"BTC","SOL":"SOL","XRP":"XRP",
          "TRX":"TRON","DOGE":"DOGE"}
-_BUY_ONLY=frozenset(("TRX","DOGE"))
+_BUY_ONLY=frozenset(("DOGE",))
 _VALID_INTENT=re.compile(r"^native_[0-9a-f]{64}$")
 _NUMBER=re.compile(r"^[1-9][0-9]{0,34}$")
 _VALID_HEX=re.compile(r"^(?:0x)?[0-9A-Fa-f]{64}$")
@@ -35,7 +35,7 @@ def _matches_hash(asset:str,actual:object,expected:str)->bool:
         return bool(_VALID_HEX.fullmatch(actual)) and \
             actual.lower().removeprefix("0x")==expected.lower().removeprefix("0x")
     return (actual.upper()==expected.upper()
-            if asset in ("BTC","XRP") else actual==expected)
+            if asset in ("BTC","XRP","TRX") else actual==expected)
 
 
 def _valid_memo_destination(memo:object,expected_asset:str,
@@ -76,6 +76,8 @@ def inspect_original_thorchain_status(original:dict,observed:object)->dict:
             or original.get("side") not in ("BUY","SELL")
             or (original.get("asset") in _BUY_ONLY
                 and original.get("side")!="BUY")
+            or (original.get("asset")=="TRX" and original.get("side")=="SELL"
+                and original.get("stable")!="USDT")
             or original.get("status")!="SOURCE_FINALIZED"
             or type(original.get("source_tx_hash")) is not str
             or not _valid_source_hash(original["asset"],original["side"],

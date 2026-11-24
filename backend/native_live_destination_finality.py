@@ -28,7 +28,7 @@ from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url, _ensure_schema, _safe_did
 from .wallet_balances import verified_addresses
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _HASH=re.compile(r"^0x[a-fA-F0-9]{64}$")
 _WORD=re.compile(r"^0x[a-fA-F0-9]{64}$")
@@ -51,6 +51,7 @@ def inspect_original_eth_stable_destination(
             or original.get("status")!="SOURCE_FINALIZED"
             or original.get("stable") not in STABLES
             or (original.get("asset")=="XRP" and original.get("stable")!="USDC")
+            or (original.get("asset")=="TRX" and original.get("stable")!="USDT")
             or type(original.get("intent_key")) is not str
             or not _VALID_INTENT.fullmatch(original["intent_key"])
             or type(original.get("privy_did")) is not str
