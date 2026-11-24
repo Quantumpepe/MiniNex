@@ -168,6 +168,11 @@ def _coin_readiness(coin: CoinNetwork) -> dict:
         "ethereum_settlement_candidates":["USDC","USDT"],
         "ethereum_settlement_chain_id":1,
         "ethereum_settlement_family":settlement_route(asset,"BUY","USDC")["family"],
+        "ethereum_settlement_routes":{
+            stable:{side:settlement_route(asset,side,stable)
+                    for side in ("BUY","SELL")}
+            for stable in ("USDC","USDT")
+        },
         "source_route":(
             "OWNER_ETH_UNISWAP_ROUTER02" if asset=="ETH"
             else "OWNER_SCOPED_ROUTER02" if asset in _EVM_SOURCES

@@ -228,3 +228,14 @@ def test_eth_buy_unexpected_router_address_never_claims_prepared_transaction():
             asset="SOL",side="BUY",stable="USDC",amount="1",
             native_owner=native,eth_owner=ETH,
             quote=quote,inbounds=inbounds,now=now)
+
+
+def test_case_sensitive_native_vault_must_match_original_quote():
+    now=1803000000
+    quote,inbounds,native,target=route("SOL",now=now)
+    quote["inbound_address"]="a"+"7"*43
+    inbounds[0]["address"]="A"+"7"*43
+    with pytest.raises(ValueError):
+        m.validate_thornode_route_terms(asset="SOL",side="SELL",stable="USDC",
+            amount="1",native_owner=native,eth_owner=ETH,
+            quote=quote,inbounds=inbounds,now=now)

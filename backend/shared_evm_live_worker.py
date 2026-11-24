@@ -300,7 +300,8 @@ async def execute_owner_evm_live_tick(
         return await prepare_cross_evm_auto_candidate(
             did=did,asset=asset,side=side,stable=row["stable"],
             budget_revision=row["budget_revision"],
-            amount=funding["input_amount"],client=client,now=int(current))
+            amount=funding["input_amount"],client=client,now=int(current),
+            budget_usd=row["budget_usd"])
     if asset in _NATIVE and not _settlement_enabled():
         # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
         # a prior DEPOSIT. Both require the original receipt reconciler.

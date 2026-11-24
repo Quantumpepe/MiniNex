@@ -21,7 +21,7 @@ from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
 from .storage import _safe_did, _db_url, _ensure_schema
 from .ethereum_settlement_policy_migration import migration_review
 from .ethereum_settlement_funding import read_pending_ethereum_funding
-from .shared_evm_policy_reference_rates import _price,fetch_evm_policy_reference_rates
+from .shared_evm_policy_reference_rates import _price,fetch_evm_policy_reference_rates,derive_ethereum_settlement_atomic_caps
 
 
 def exact_balance(entry,decimals):
@@ -62,7 +62,7 @@ async def read_cross_evm_funding(did,asset,stable,client):
 
 
 async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revision,
-        amount,client,now):
+        amount,client,now,budget_usd=None):
     """Prepare exact route for a server-originated signal; old consent is
     audited but never treated as the new policy's signing permission.
 
@@ -94,7 +94,13 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
     review=migration_review(persisted,record,now=max(now,int(time.time())))
     plan=await prepare_bridge_privy_request(client,persisted,
         wallet_id=record["wallet_id"],now=max(now,int(time.time())),manual=True)
+    caps=None
+    if budget_usd is not None:
+        prices=await fetch_evm_policy_reference_rates(asset,stable)
+        caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
+            budget_usd=budget_usd,snapshot=prices,now=int(time.time()))
     return {"asset":asset,"quote_id":quote["quote_id"],"side":side,
+            "ethereum_policy_budget_preview":caps,
             "state":"CROSS_CHAIN_POLICY_MIGRATION_REQUIRED",
             "approval_needed":bool(plan.get("manual_approval")),
             "estimated_source_gas_atomic":plan["estimated_gas_atomic"],

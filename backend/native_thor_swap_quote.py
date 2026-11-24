@@ -7,6 +7,7 @@ broadcasts, charges a fee or publishes a vault/memo to the app.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime,timezone
 from decimal import Decimal,InvalidOperation
 import hashlib
@@ -124,7 +125,8 @@ def validate_thornode_route_terms(
     candidates=[entry for entry in inbounds if
         isinstance(entry,dict) and entry.get("chain")==chain
         and isinstance(entry.get("address"),str)
-        and entry["address"].lower()==quote["inbound_address"].lower()]
+        and (entry["address"].lower()==quote["inbound_address"].lower()
+             if chain=="ETH" else entry["address"]==quote["inbound_address"])]
     if len(candidates)!=1:
         raise ValueError("Quoted inbound vault differs from active THORNode vault")
     active=candidates[0]
@@ -203,12 +205,11 @@ async def get_private_native_thornode_terms(
         native_owner,eth_owner=_exact_owner_wallets(user,did,asset)
     except (ValueError,TypeError,KeyError):
         raise HTTPException(409,"Current Privy owner wallet unavailable") from None
-    evm=await get_wallet_balances(did)
-    # ETH-funded BUY uses the verified owner stablecoin balance, not a
-    # second remote native balance RPC. This avoids blocking a first BUY
-    # solely because the empty receiving TRON/DOGE/SOL wallet RPC is slow.
-    native=(await get_native_balances(did)
-            if asset!="BTC" and side=="SELL" else None)
+    # Only SELL on a dedicated native wallet needs a second balance read.
+    if asset!="BTC" and side=="SELL":
+        evm,native=await asyncio.gather(get_wallet_balances(did),get_native_balances(did))
+    else:
+        evm,native=await get_wallet_balances(did),None
     try:
         _read_owner_balance(asset,side,stable,amount,evm,native)
     except ValueError:
@@ -221,12 +222,13 @@ async def get_private_native_thornode_terms(
     try:
         async with httpx.AsyncClient(
                 timeout=httpx.Timeout(9),follow_redirects=False) as client:
-            rsp=await client.get(_API+"/thorchain/quote/swap",params=params)
+            rsp,active=await asyncio.gather(
+                client.get(_API+"/thorchain/quote/swap",params=params),
+                client.get(_API+"/thorchain/inbound_addresses"))
             rsp.raise_for_status()
             if len(rsp.content)>40_000:
                 raise ValueError("Oversized native quote")
             quote=rsp.json()
-            active=await client.get(_API+"/thorchain/inbound_addresses")
             active.raise_for_status()
             if len(active.content)>250_000:
                 raise ValueError("Oversized vault state")
