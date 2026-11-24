@@ -34,6 +34,7 @@ from .shared_evm_policy_reference_rates import (
 from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
 from .ethereum_settlement_reconcile_worker import reconcile_bridge_receipts_once
 from .ethereum_settlement_plan import settlement_route
+from .ethereum_settlement_funding import read_pending_ethereum_funding
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
@@ -357,11 +358,23 @@ async def execute_owner_evm_live_tick(
     # token inventory from the same onchain RPC batch. No extra wallet
     # roundtrip is needed to enforce owner-selected coin allocation.
     prices=await fetch_evm_policy_reference_rates(asset,stable)
+    pending_buy_usd=row["pending_buy_usd"]
+    if side=="BUY":
+        # Size the next order against spendable cash rather than the full
+        # wallet balance. A protected profit is not a new coin allocation.
+        shared=await asyncio.to_thread(read_pending_ethereum_funding,did,
+            asset=asset,stable=stable,stable_usd=_price(prices,stable,int(current)))
+        withheld=Decimal(shared["pending_wallet_stable_atomic"]).scaleb(-6)
+        if not withheld.is_finite() or withheld<0:
+            raise ValueError("Original protected funding unavailable")
+        available=max(Decimal(0),Decimal(evidence["source_balance"])-withheld)
+        evidence={**evidence,"source_balance":format(available,"f")}
+        pending_buy_usd=max(Decimal(pending_buy_usd),Decimal(shared["pending_coin_usd"]))
     amount=exact_user_coin_live_amount(
         asset=asset,side=side,stable=stable,
         budget_usd=row["budget_usd"],source_evidence=evidence,
         prices=prices,now=int(current),
-        pending_buy_usd=row["pending_buy_usd"],
+        pending_buy_usd=pending_buy_usd,
         ignore_allowance=True)
     if amount is None:
         return {"asset":asset,"state":"WAIT",

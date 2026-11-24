@@ -129,6 +129,8 @@ def use_tick_mocks(monkeypatch,asset="LINK",action="BUY"):
     monkeypatch.setattr(worker,"verified_live_evm_momentum",market_decision)
     monkeypatch.setattr(worker,"check_evm_source_allowance",allowance)
     monkeypatch.setattr(worker,"fetch_evm_policy_reference_rates",price)
+    monkeypatch.setattr(worker,"read_pending_ethereum_funding",lambda *a,**kw:{
+        "pending_wallet_stable_atomic":"0","pending_coin_usd":"0"})
     monkeypatch.setattr(worker,"execute_internal_evm_strategy_signal",execute)
     return actions
 
@@ -586,3 +588,21 @@ def test_pending_bridge_buy_reports_pending_not_empty_funds(monkeypatch):
                 session("POL"),market=object(),client=client,now=10000)
     assert asyncio.run(tick())=={"asset":"POL","state":"WAIT",
                                 "reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED"}
+
+
+@pytest.mark.parametrize("withheld,expected",[("4000000000","1000"),("5000000000",None)])
+def test_next_buy_is_resized_to_cash_after_profit_protection(monkeypatch,withheld,expected):
+    actions=use_tick_mocks(monkeypatch,asset="LINK",action="BUY")
+    monkeypatch.setattr(worker,"read_pending_ethereum_funding",lambda *a,**kw:{
+        "pending_wallet_stable_atomic":withheld,"pending_coin_usd":"0"})
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session("LINK"),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    sends=[a for a in actions if isinstance(a,tuple) and a[0]=="original_single_execution"]
+    if expected is None:
+        assert result["state"]=="WAIT" and not sends
+    else:
+        assert result["state"]=="SUBMITTED"
+        assert len(sends)==1 and Decimal(sends[0][1])==Decimal(expected)

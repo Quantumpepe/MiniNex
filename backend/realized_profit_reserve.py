@@ -104,8 +104,8 @@ PROFIT_FILLS_SQL="""SELECT asset,stable,side,source_amount,destination_amount,
           WHERE f.privy_did=o.privy_did AND f.chain_id=1 AND f.tx_hash=o.tx_hash)
       UNION ALL
       SELECT q.asset,q.stable,q.side,
-        q.input_atomic / CASE WHEN q.side='BUY' THEN 1000000::numeric ELSE 1000000000000000000::numeric END,
-        f.received_atomic / CASE WHEN q.side='BUY' THEN 1000000000000000000::numeric ELSE 1000000::numeric END,
+        q.input_atomic * CASE WHEN q.side='BUY' THEN 0.000001::numeric ELSE 0.000000000000000001::numeric END,
+        f.received_atomic * CASE WHEN q.side='BUY' THEN 0.000000000000000001::numeric ELSE 0.000001::numeric END,
         lower(q.wallet_address),'CROSS_EVM',f.source_tx_hash,
         EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
           WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
@@ -118,9 +118,9 @@ PROFIT_FILLS_SQL="""SELECT asset,stable,side,source_amount,destination_amount,
         AND ((q.side='BUY' AND q.source_chain_id=1) OR (q.side='SELL' AND q.destination_chain_id=1))
       UNION ALL
       SELECT n.asset,n.stable,n.side,n.input_amount,
-        n.destination_received_atomic / CASE WHEN n.side='SELL' THEN 1000000::numeric
-          WHEN n.asset='BTC' THEN 100000000::numeric WHEN n.asset='SOL' THEN 1000000000::numeric
-          ELSE 1000000::numeric END,
+        n.destination_received_atomic * CASE WHEN n.side='SELL' THEN 0.000001::numeric
+          WHEN n.asset='BTC' THEN 0.00000001::numeric WHEN n.asset='SOL' THEN 0.000000001::numeric
+          ELSE 0.000001::numeric END,
         CASE WHEN n.side='BUY' THEN n.destination_wallet ELSE n.source_wallet END,
         'NATIVE',n.intent_key,TRUE,n.destination_finalized_at
       FROM mininex_live_native_order_intents n
