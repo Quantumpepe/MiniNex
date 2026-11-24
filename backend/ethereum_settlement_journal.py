@@ -99,6 +99,24 @@ def load_quote(did, quote_id):
 
 
 
+def pending_bridge_order(cur,did,asset):
+    """Shared owner/coin pending gate for manual and automated bridge paths.
+    Submission callers must hold the owner account lock."""
+    cur.execute("""SELECT 1 FROM mininex_ethereum_settlement_quotes q
+        WHERE q.privy_did=%s AND q.asset=%s
+        AND NOT EXISTS(SELECT 1 FROM mininex_ethereum_settlement_finality f
+                       WHERE f.quote_id=q.quote_id)
+        AND (EXISTS(SELECT 1 FROM mininex_ethereum_settlement_manual_attempts m
+              WHERE m.quote_id=q.quote_id AND m.privy_did=q.privy_did
+                AND m.final_outcome IS NULL
+                AND m.state IN ('AWAITING_SIGNATURE','SUBMITTED','UNCERTAIN'))
+          OR EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
+              WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
+                AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')))
+        LIMIT 1""",(did,asset))
+    return cur.fetchone() is not None
+
+
 def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
                                        request_sha256, now):
     """Internal final claim; caller must already verify grant, calldata and budget.
@@ -121,6 +139,8 @@ def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
     if (not quote or not quote.get("route_sha256")
             or not quote["issued_at"] <= now < quote["expires_at"]):
         raise HTTPException(409, "Settlement quote expired or unavailable")
+    if pending_bridge_order(cur,did,quote["asset"]):
+        raise HTTPException(409,"Previous swap requires reconciliation")
     cur.execute("""INSERT INTO mininex_ethereum_settlement_submissions
         (quote_id,privy_did,intent_key,source_chain_id,request_sha256,state)
         VALUES (%s,%s,%s,%s,%s,'SENDING')

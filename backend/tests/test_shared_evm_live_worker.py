@@ -550,11 +550,16 @@ def test_cross_evm_session_uses_ethereum_settlement_never_legacy_local_send(
     async def candidate(**kw):
         actions.append("bridge_candidate")
         assert kw["stable"]==stable and kw["amount"]=="12.000000"
-        assert kw["budget_revision"]==7 and kw["side"]=="BUY"
-        route=settlement_route(asset,"BUY",stable)
-        assert route["source_chain_id"]==1
+        assert kw["budget_revision"]==7 and kw["side"]==action
+        route=settlement_route(asset,action,stable)
+        assert route["source_chain_id" if action=="BUY" else "destination_chain_id"]==1
         return {"state":"CROSS_CHAIN_POLICY_MIGRATION_REQUIRED","can_submit":False}
+    async def sell(**kw):
+        actions.append("strategy_coin_position")
+        assert kw["stable"]==stable and kw["asset"]==asset
+        return {"input_atomic":"12000000000000000000","input_amount":"12.000000"}
     monkeypatch.setattr(bridge,"plan_cross_evm_buy",funding)
+    monkeypatch.setattr(bridge,"plan_cross_evm_sell",sell)
     monkeypatch.setattr(bridge,"prepare_cross_evm_auto_candidate",candidate)
     async def tick():
         async with httpx.AsyncClient() as client:
@@ -565,6 +570,5 @@ def test_cross_evm_session_uses_ethereum_settlement_never_legacy_local_send(
         assert result["can_submit"] is False
         assert actions==["verified_market","ethereum_funding","bridge_candidate"]
     else:
-        assert result=={"asset":asset,"state":"WAIT",
-                        "reason":"ETHEREUM_SETTLEMENT_SELL_POSITION_REQUIRED"}
-        assert actions==["verified_market"]
+        assert result["can_submit"] is False
+        assert actions==["verified_market","strategy_coin_position","bridge_candidate"]

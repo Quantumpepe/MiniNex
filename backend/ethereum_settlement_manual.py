@@ -12,7 +12,7 @@ import psycopg
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
-from .ethereum_settlement_journal import load_quote
+from .ethereum_settlement_journal import load_quote, pending_bridge_order
 from .ethereum_settlement_preflight import prepare_bridge_privy_request
 from .privy_live_signer import _owned_eth_wallet
 from .privy_wallet_verification import fetch_privy_user
@@ -48,12 +48,7 @@ def claim_manual_attempt(did,quote_id,digest,*,balance_atomic=None,stable_usd=No
             q=cur.fetchone()
             if not q or q["route_sha256"]!=digest or q["expires_at"]<=int(time.time()):
                 raise HTTPException(409,"Original quote expired or changed")
-            cur.execute("""SELECT a.quote_id FROM mininex_ethereum_settlement_manual_attempts a
-                JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=a.quote_id
-                WHERE a.privy_did=%s AND q.asset=%s AND a.final_outcome IS NULL
-                AND a.state IN ('AWAITING_SIGNATURE','SUBMITTED','UNCERTAIN') LIMIT 1""",
-                (did,q["asset"]))
-            if cur.fetchone():
+            if pending_bridge_order(cur,did,q["asset"]):
                 raise HTTPException(409,"Previous swap requires reconciliation")
             if q["side"]=="BUY":
                 assert_ethereum_funds_locked(cur,did=did,asset=q["asset"],stable=q["stable"],

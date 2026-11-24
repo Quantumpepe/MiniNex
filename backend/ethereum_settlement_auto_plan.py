@@ -5,18 +5,20 @@ Router02 grant cannot authorize the new bridge router or source chain.
 """
 from decimal import Decimal, localcontext
 import asyncio
+import psycopg
+from psycopg.rows import dict_row
 from fastapi import HTTPException
 
 from .ethereum_settlement_plan import settlement_route, ethereum_buy_amount, ethereum_sell_amount
 from .ethereum_settlement_quote import get_ethereum_cross_evm_quote
-from .ethereum_settlement_journal import load_quote
+from .ethereum_settlement_journal import load_quote, pending_bridge_order
 from .ethereum_settlement_preflight import prepare_bridge_privy_request
 from .shared_evm_central_runtime import audit_original_evm_coin, original_evm_coin_record
 from .privy_wallet_verification import fetch_privy_user
 from .privy_live_signer import _owned_eth_wallet
 from .wallet_balances import _eth_rpc_call
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
-from .storage import _safe_did
+from .storage import _safe_did, _db_url, _ensure_schema
 from .ethereum_settlement_policy_migration import migration_review
 from .ethereum_settlement_funding import read_pending_ethereum_funding
 from .shared_evm_policy_reference_rates import _price,fetch_evm_policy_reference_rates
@@ -122,3 +124,72 @@ async def plan_cross_evm_buy(*,did,asset,stable,budget_usd,estimated_cost_usd,cl
     return {**result,"asset":asset,"stable":stable,"settlement_chain_id":1,
             "pending_entries":pending["pending_entries"],"atomic_claimed":False,
             "execution_authorized":False}
+
+
+def strategy_owned_bridge_position(rows):
+    """Only settled automatic buys create strategy inventory. All subsequent
+    settled sales reduce it conservatively; manual purchases do not add it."""
+    position=0
+    for row in rows:
+        side=row["side"]
+        value=Decimal(row["amount_atomic"])
+        if not value.is_finite() or value<=0 or value!=value.to_integral_value():
+            raise ValueError("Invalid finalized position amount")
+        if side=="BUY":
+            if row["automatic"] is True:
+                position+=int(value)
+        elif side=="SELL":
+            position=max(0,position-int(value))
+        else:
+            raise ValueError("Invalid finalized position side")
+    return position
+
+
+def read_strategy_bridge_position(did,asset,wallet):
+    did=_safe_did(did)
+    db=_db_url();_ensure_schema(db)
+    try:
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                # Do not plan another order while either manual or automatic
+                # settlement for this coin is still unresolved.
+                if pending_bridge_order(cur,did,asset):
+                    return None
+                cur.execute("""SELECT q.side,
+                    CASE WHEN q.side='BUY' THEN f.received_atomic ELSE q.input_atomic END
+                        AS amount_atomic,
+                    EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
+                        WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
+                          AND s.state='SUBMITTED' AND s.source_tx_hash=f.source_tx_hash)
+                        AS automatic
+                    FROM mininex_ethereum_settlement_finality f
+                    JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=f.quote_id
+                    WHERE q.privy_did=%s AND f.privy_did=%s AND q.asset=%s
+                      AND q.wallet_address=%s AND f.outcome='FINALIZED'
+                    ORDER BY f.verified_at,q.quote_id""",(did,did,asset,wallet.lower()))
+                return strategy_owned_bridge_position(cur.fetchall())
+    except psycopg.Error:
+        raise HTTPException(503,"Original cross-chain position unavailable") from None
+
+
+async def plan_cross_evm_sell(*,did,asset,stable,client):
+    route=settlement_route(asset,"SELL",stable)
+    if route["family"]!="CROSS_EVM":
+        raise ValueError("Expected cross-EVM asset")
+    did=_safe_did(did)
+    owner=_owned_eth_wallet(await fetch_privy_user(did),did)
+    wallet=owner["address"]
+    owned=await asyncio.to_thread(read_strategy_bridge_position,did,asset,wallet)
+    if owned is None:
+        return {"input_atomic":"0","reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED"}
+    if owned==0:
+        return {"input_atomic":"0","reason":"ETHEREUM_SETTLEMENT_SELL_POSITION_REQUIRED"}
+    # Automatic bridge BUYs credit the registered ERC20/wrapped coin. Never
+    # sell unrelated native gas holdings or wrap them to replace a missing lot.
+    source=await _read_chain(client,"ARB_TOKENS" if asset=="ARB" else asset,wallet)
+    symbol=_WRAPPED_GROUPS[asset][0] if asset in _WRAPPED_GROUPS else asset
+    balance=exact_balance(source.get(symbol),18)
+    result=ethereum_sell_amount(asset=asset,wallet_coin_atomic=balance,
+        owned_position_atomic=owned,pending_sell_atomic=0)
+    return {**result,"reason":"NO_VERIFIED_STRATEGY_COIN_BALANCE",
+            "settlement_chain_id":1,"execution_authorized":False}

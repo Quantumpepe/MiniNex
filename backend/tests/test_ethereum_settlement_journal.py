@@ -13,3 +13,16 @@ def test_quote_bound_to_ethereum_and_exact_atomic_amounts():
                    {"wallet_address":"not a wallet"},{"source_token":"0x"+"34"*20},{"destination_token":"0x"+"56"*20}):
         with pytest.raises(ValueError):
             validate_quote_terms({**terms, **change})
+
+
+def test_bridge_strategy_inventory_excludes_manual_buys_and_accounts_for_sales():
+    from backend.ethereum_settlement_auto_plan import strategy_owned_bridge_position
+    rows=[
+        dict(side="BUY",amount_atomic=900,automatic=False),
+        dict(side="BUY",amount_atomic=100,automatic=True),
+        dict(side="SELL",amount_atomic=30,automatic=False),
+        dict(side="BUY",amount_atomic=50,automatic=True),
+        dict(side="SELL",amount_atomic=20,automatic=True),
+    ]
+    assert strategy_owned_bridge_position(rows)==100
+    assert strategy_owned_bridge_position(rows+[dict(side="SELL",amount_atomic=200,automatic=False)])==0
