@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
+import HomeAccount from './HomeAccount.jsx';
 import useAllPaperHomeTrades from './useAllPaperHomeTrades.js';
 import useLiveHomeTrades from './useLiveHomeTrades.js';
 import useWalletPortfolioHome from './useWalletPortfolioHome.js';
@@ -452,6 +453,7 @@ export default function App() {
         <button className="mobile-brand" type="button" onClick={()=>navigate('overview')} aria-label={t.overview} title={t.overview}><MiniNexMark size={34}/><b>mini<span>nex</span></b></button>
         
         <div className="header-actions">
+          {page==='overview'&&<HomeAccount t={t}/>}
           <div className="lang-switch" role="group" aria-label={t.language}>
             <button type="button" className={language==='de'?'selected':''} onClick={()=>chooseLang('de')} aria-pressed={language==='de'}>DE</button>
             <button type="button" className={language==='en'?'selected':''} onClick={()=>chooseLang('en')} aria-pressed={language==='en'}>EN</button>
