@@ -1328,7 +1328,7 @@ def owner_pause_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/exit")
 def owner_exit_bridge_session(
-    asset: Literal["ETH","BNB","POL","ARB","LINK","QNT","UNI"],
+    asset: Literal["ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI"],
     authorization: str | None = Header(default=None),
 ):
     """Record a user's explicit exit request; only the worker can settle it."""
