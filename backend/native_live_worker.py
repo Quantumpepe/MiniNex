@@ -80,7 +80,7 @@ def owner_started_native_sessions(limit:int=30)->list[dict]:
            LEFT JOIN mininex_trade_preferences t
              ON s.asset='BTC'
               AND t.privy_did=s.privy_did AND t.asset='BTC'
-           WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('BTC','SOL')))
+           WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('BTC','SOL','XRP','TRX')))
              AND s.started_by_owner_at IS NOT NULL
              AND (
                (s.asset='BTC' AND b.revision=s.budget_revision
