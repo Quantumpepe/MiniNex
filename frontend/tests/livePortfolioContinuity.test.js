@@ -63,7 +63,7 @@ test('portfolio does not reset verified values or curve on tab switches',()=>{
   assert.match(hook,/previous.did===did/);
   assert.match(hook,/status:previous.sources\?'refreshing':'loading'/);
   assert.match(hook,/status:previous.sources\?'stale':'error'/);
-  assert.match(hook,/!visible\|\|!matched\|\|state.status!=='ready'/);
+  assert.match(hook,/!visible\|\|!matched\|\|!\['ready','partial'\]\.includes\(state.status\)/);
   assert.match(hook,/lastValued\.did===did/);
   assert.match(hook,/summary:displayedSummary/);
   assert.match(hook,/setLastValued\(\{did,summary\}\)/);

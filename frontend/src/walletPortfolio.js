@@ -22,7 +22,7 @@ export function combineVerifiedNativeAndWrapped(native,wrapped){
   const n=toAtomic(native),w=toAtomic(wrapped);
   if(n===null&&w===null)return {status:'unavailable',balance:null,incomplete:true};
   return {status:'verified',balance:atomicDisplay((n??0n)+(w??0n)),
-    incomplete:n===null||w===null};
+    incomplete:n===null||w===null,coverage:n===null?'wrapped':w===null?'native':'full'};
 }
 
 // Verified LIVE wallet balances, never simulation budgets or traded profit.
@@ -36,18 +36,20 @@ export function summarizeVerifiedWalletPortfolio(sources,markets,syncedAt,now=Da
   const native=validNativeBalanceResponse(sources.native)?sources.native.assets:null;
   if(!core&&!evm&&!native)return null;
   let amountUSD=0, incomplete=!core||!evm||!native, positiveUnpriced=0, priced=0;
-  const holdings=[];
+  const holdings=[],coverage=[];
   const read=(asset,entry,price)=>{
-    if(!entry){incomplete=true;return;}
+    if(!entry){incomplete=true;coverage.push(asset+':missing');return;}
     if(entry.incomplete)incomplete=true;
-    if(entry.status==='wallet_missing')return;
-    if(entry.status!=='verified'){incomplete=true;return;}
+    if(entry.status==='wallet_missing'){coverage.push(asset+':absent');return;}
+    if(entry.status!=='verified'){incomplete=true;coverage.push(asset+':unknown');return;}
     const quantity=Number(entry.balance);
-    if(!Number.isFinite(quantity)||quantity<0){incomplete=true;return;}
-    if(quantity===0)return;
-    if(price===null){incomplete=true;positiveUnpriced++;return;}
+    if(!Number.isFinite(quantity)||quantity<0){incomplete=true;coverage.push(asset+':unknown');return;}
+    const parts=entry.coverage||'full';
+    if(quantity===0){coverage.push(asset+':'+parts);return;}
+    if(price===null){incomplete=true;positiveUnpriced++;coverage.push(asset+':unpriced');return;}
     const value=quantity*price;
-    if(!Number.isFinite(value)||value<0){incomplete=true;positiveUnpriced++;return;}
+    if(!Number.isFinite(value)||value<0){incomplete=true;positiveUnpriced++;coverage.push(asset+':unpriced');return;}
+    coverage.push(asset+':'+parts);
     amountUSD+=value;
     priced++;
     holdings.push({asset,balance:entry.balance,value});
@@ -70,8 +72,9 @@ export function summarizeVerifiedWalletPortfolio(sources,markets,syncedAt,now=Da
   holdings.sort((a,b)=>b.value-a.value);
   return {
     equity:priced>0||(!incomplete&&positiveUnpriced===0)?Math.round(amountUSD*100)/100:null,
+    observedEquityUsd:priced>0||(!incomplete&&positiveUnpriced===0)?amountUSD:null,
     valuationAvailable:priced>0||(!incomplete&&positiveUnpriced===0),
-    incomplete,holdings,positiveUnpriced,
+    incomplete,holdings,positiveUnpriced,coverage:coverage.join('|'),
     assetCount:holdings.length,mode:'LIVE_WALLET',currency:'USD',
   };
 }

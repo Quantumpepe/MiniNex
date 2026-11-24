@@ -158,7 +158,7 @@ from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
 from .ethereum_settlement_status import check_ethereum_settlement
-from .ethereum_settlement_manual import prepare_manual_bridge, record_manual_attempt
+from .ethereum_settlement_manual import prepare_manual_bridge, record_manual_attempt, pending_manual_attempt
 from .ethereum_settlement_quote import (
     is_ethereum_cross_evm_pair, get_ethereum_cross_evm_quote,
 )
@@ -512,6 +512,14 @@ class ManualBridgeResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     state: Literal["SUBMITTED", "CANCELLED", "UNCERTAIN"]
     tx_hash: str | None = None
+
+
+@app.get("/api/wallet/swap/ethereum-settlement/manual/pending/{asset}")
+def recover_owner_manual_ethereum_swap(asset: Literal["BNB","POL","AVAX","ARB"],
+        authorization: str | None = Header(default=None)):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse({"pending":pending_manual_attempt(did,asset)},
+                        headers={"Cache-Control":"private, no-store"})
 
 
 @app.post("/api/wallet/swap/ethereum-settlement/manual/{quote_id}/prepare")

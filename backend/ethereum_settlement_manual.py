@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal, localcontext
 import re
 import time
 import uuid
@@ -39,12 +40,19 @@ def claim_manual_attempt(did,quote_id,digest):
                 WHERE privy_did=%s FOR UPDATE""",(did,))
             if cur.fetchone() is None:
                 raise HTTPException(409,"Owner account unavailable")
-            cur.execute("""SELECT source_chain_id,route_sha256,expires_at
+            cur.execute("""SELECT source_chain_id,route_sha256,expires_at,asset
                 FROM mininex_ethereum_settlement_quotes
                 WHERE privy_did=%s AND quote_id=%s FOR UPDATE""",(did,uuid.UUID(quote_id)))
             q=cur.fetchone()
             if not q or q["route_sha256"]!=digest or q["expires_at"]<=int(time.time()):
                 raise HTTPException(409,"Original quote expired or changed")
+            cur.execute("""SELECT a.quote_id FROM mininex_ethereum_settlement_manual_attempts a
+                JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=a.quote_id
+                WHERE a.privy_did=%s AND q.asset=%s AND a.final_outcome IS NULL
+                AND a.state IN ('AWAITING_SIGNATURE','SUBMITTED','UNCERTAIN') LIMIT 1""",
+                (did,q["asset"]))
+            if cur.fetchone():
+                raise HTTPException(409,"Previous swap requires reconciliation")
             cur.execute("""INSERT INTO mininex_ethereum_settlement_manual_attempts
                 (quote_id,privy_did,source_chain_id,state)
                 VALUES (%s,%s,%s,'AWAITING_SIGNATURE')
@@ -57,6 +65,8 @@ def claim_manual_attempt(did,quote_id,digest):
 async def prepare_manual_bridge(did,quote_id):
     did=_safe_did(did)
     q=await asyncio.to_thread(load_quote,did,quote_id)
+    if await asyncio.to_thread(pending_manual_attempt,did,q["asset"]):
+        raise HTTPException(409,"Previous swap requires reconciliation")
     if not q.get("unsigned_transaction"):
         raise HTTPException(409,"No supported executable route for this quote")
     try:
@@ -130,3 +140,47 @@ def load_manual_attempt(did,quote_id):
         return _manual_row(did,quote_id)
     except psycopg.Error:
         raise HTTPException(503,"Manual submission unavailable") from None
+
+
+def pending_manual_attempt(did,asset):
+    """Recover the same owner-bound attempt after app restart or lost local state."""
+    did=_safe_did(did)
+    if asset not in ("BNB","POL","AVAX","ARB"):
+        raise HTTPException(422,"Unsupported bridge asset")
+    db=_db_url();_ensure_schema(db)
+    try:
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("""SELECT a.quote_id,a.state,a.source_tx_hash,q.asset,
+                    q.side,q.stable,q.input_atomic,q.wallet_address
+                    FROM mininex_ethereum_settlement_manual_attempts a
+                    JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=a.quote_id
+                    WHERE a.privy_did=%s AND q.asset=%s AND a.final_outcome IS NULL
+                    AND a.state IN ('AWAITING_SIGNATURE','SUBMITTED','UNCERTAIN')
+                    ORDER BY a.created_at LIMIT 1""",(did,asset))
+                row=cur.fetchone()
+        if row is None:
+            return None
+        with localcontext() as context:
+            context.prec=80
+            amount=format(Decimal(row["input_atomic"]).scaleb(-6 if row["side"]=="BUY" else -18),"f")
+        return {"quote_id":str(row["quote_id"]),"asset":row["asset"],
+                "side":row["side"],"stable":row["stable"],"wallet":row["wallet_address"],
+                "amount":amount,"hash":row["source_tx_hash"],"state":row["state"]}
+    except psycopg.Error:
+        raise HTTPException(503,"Manual swap recovery unavailable") from None
+
+
+def mark_verified_manual_outcome(did,quote_id,tx_hash,outcome):
+    """Only called from the independent chain verifier, never a client result."""
+    did=_safe_did(did)
+    if outcome not in ("FINALIZED","SOURCE_REVERTED") or not _HASH.fullmatch(tx_hash):
+        raise ValueError("Invalid final chain outcome")
+    db=_db_url();_ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE mininex_ethereum_settlement_manual_attempts
+                SET final_outcome=%s,updated_at=now()
+                WHERE quote_id=%s AND privy_did=%s AND state='SUBMITTED'
+                AND source_tx_hash=%s AND (final_outcome IS NULL OR final_outcome=%s)""",
+                (outcome,uuid.UUID(quote_id),did,tx_hash.lower(),outcome))

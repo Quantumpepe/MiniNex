@@ -219,6 +219,8 @@ function useMiniNexData(asset, refreshNonce, paperVisible) {
 function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
   const {ready,authenticated,user,getAccessToken}=usePrivy();
   const did=user?.id||null;
+  const paperTokenRef=useRef(getAccessToken);
+  paperTokenRef.current=getAccessToken;
   const [state,setState]=useState({
     summary:null,samples:[],status:'idle',scope:null,did:null,
   });
@@ -241,7 +243,7 @@ function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
       const controller=new AbortController();
       controllers.add(controller);
       try{
-        const token=await getAccessToken();
+        const token=await paperTokenRef.current();
         if(!active||controller.signal.aborted)return;
         if(!token)throw Error('Login required');
         const fetchOne=async path=>{
@@ -288,7 +290,7 @@ function usePaperPortfolioHome(paperVisible,refreshNonce,scope,homeVisible){
       for(const controller of controllers)controller.abort();
       controllers.clear();
     };
-  },[paperVisible,homeVisible,ready,authenticated,did,getAccessToken,refreshNonce,scope]);
+  },[paperVisible,homeVisible,ready,authenticated,did,refreshNonce,scope]);
   // Persist only actual, account-scoped virtual portfolio observations.
   // A new OTA/app view restores history without assuming a green starting point.
   useEffect(()=>{

@@ -40,7 +40,7 @@ function MarketChart({history,period,valid,t,asset}) {
 
 
 function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
-  const chart=useMemo(()=>paperSparkline(samples),[samples]);
+  const chart=useMemo(()=>paperSparkline(samples,{recentMs:15*60*1000,allowSingle:true}),[samples]);
   const positive=summary?.pnl!=null&&summary.pnl>=0;
   // PAPER color is based on TOTAL cumulative PnL, not the first/last
   // short-window sample. LIVE wallet holdings have no verified cost basis,
@@ -50,6 +50,8 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
   const chartLabel=paperMode
     ?(lang==='de'?'Beobachteter Gesamtportfolio-Verlauf':'Observed total portfolio equity')
     :(lang==='de'?'Beobachteter Wallet-Verlauf':'Observed wallet value history');
+  const collecting=lang==='de'?'Verlauf wird erfasst':'Collecting history';
+  const partial=!paperMode&&summary?.incomplete===true;
   return <section className="compact-wallet-portfolio" aria-label={label}>
     <div className="compact-wallet-top">
       <span>{label}</span>
@@ -68,17 +70,18 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
         </small>}
       </div>
       <div className="compact-wallet-curve">
-        {summary?.valuationAvailable&&chart
+        {authenticated&&chart
           ? <svg viewBox="0 0 200 50" role="img" aria-label={chartLabel} preserveAspectRatio="none">
               <defs><linearGradient id="paper-equity-fill" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity=".24"/>
                 <stop offset="100%" stopColor={color} stopOpacity="0"/>
               </linearGradient></defs>
-              <path d={chart.area} fill="url(#paper-equity-fill)"/>
+              {chart.area&&<path d={chart.area} fill="url(#paper-equity-fill)"/>}
               <path d={chart.line} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="192" cy={chart.lastY} r="3.5" fill={color}/>
             </svg>
-          : null}
+          : summary?.valuationAvailable?<small className="compact-wallet-chart-empty">{collecting}</small>:null}
+        {partial&&chart&&<small className="compact-wallet-chart-empty">{lang==='de'?'Teilwert':'Partial value'}</small>}
       </div>
     </div>
     <div className="compact-wallet-foot">

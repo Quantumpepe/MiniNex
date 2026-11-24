@@ -1,4 +1,5 @@
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
+import {readLiveEquity,appendLiveEquity,saveLiveEquity} from './livePortfolioHistory.js';
 import {usePrivy} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
 import {onConfirmedWalletTransfer} from './walletBalanceRefresh.js';
@@ -16,6 +17,8 @@ const SOURCES=[
 export default function useWalletPortfolioHome(visible,refreshNonce,markets,syncedAt){
   const {ready,authenticated,user,getAccessToken}=usePrivy();
   const did=user?.id||null;
+  const tokenRef=useRef(getAccessToken);
+  tokenRef.current=getAccessToken;
   const [state,setState]=useState({did:null,sources:null,status:'idle'});
   const [samples,setSamples]=useState({did:null,points:[]});
   const [lastValued,setLastValued]=useState({did:null,summary:null});
@@ -41,7 +44,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       return {...previous,status:previous.sources?'refreshing':'loading'};
     });
     setSamples(previous=>
-      owned&&previous.did===did?previous:{did:owned?did:null,points:[]});
+      owned&&previous.did===did?previous:{did:owned?did:null,points:owned?readLiveEquity(did):[]});
     if(!visible||!owned)
       return ()=>{active=false;};
     const sync=async()=>{
@@ -50,7 +53,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       const controller=new AbortController();
       controllers.add(controller);
       try{
-        const token=await getAccessToken();
+        const token=await tokenRef.current();
         if(!token)throw new Error('Authentication required');
         const values=await Promise.all(SOURCES.map(async ([key,path,validate])=>{
           try{
@@ -101,7 +104,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       document.removeEventListener('visibilitychange',refreshWhenVisible);
       for(const c of controllers)c.abort();
     };
-  },[visible,ready,authenticated,did,getAccessToken,refreshNonce]);
+  },[visible,ready,authenticated,did,refreshNonce]);
   const matched=state.did===did&&ready&&authenticated;
   const summary=useMemo(()=>matched? summarizeVerifiedWalletPortfolio(
     state.sources,markets,syncedAt):null,
@@ -119,17 +122,20 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
     matched&&lastValued.did===did&&lastValued.summary
       ?{...lastValued.summary,incomplete:true}:summary;
   useEffect(()=>{
-    if(!visible||!matched||state.status!=='ready'||
+    if(!visible||!matched||!['ready','partial'].includes(state.status)||
        !summary?.valuationAvailable||summary.equity===null)return;
     setSamples(prev=>{
-      const points=prev.did===did?prev.points:[];
-      const now=Date.now();
-      if(points.length&&now-points[points.length-1].at<12000)return prev;
-      return {did,points:[...points,{at:now,value:summary.equity}].slice(-90)};
+      const points=prev.did===did?prev.points:readLiveEquity(did);
+      const next=appendLiveEquity(points,summary);
+      return next===points?prev:{did,points:next};
     });
-  },[visible,matched,did,state.status,summary?.equity,summary?.valuationAvailable]);
+  },[visible,matched,did,state.status,summary?.observedEquityUsd,summary?.valuationAvailable,summary?.coverage,syncedAt]);
+  useEffect(()=>{
+    if(matched&&samples.did===did&&samples.points.length)
+      saveLiveEquity(did,samples.points);
+  },[matched,did,samples]);
   return {
-    summary:displayedSummary,samples:samples.did===did?samples.points:[],
+    summary:displayedSummary,samples:matched&&samples.did===did?samples.points:[],
     status:matched?state.status:'loading',
     authenticated:ready&&authenticated,
   };

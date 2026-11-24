@@ -55,6 +55,7 @@ export default function CrossChainOwnerSwap({asset,quote,enabled,userId,getAcces
   const key='mininex_cross_chain_manual:'+userId+':'+asset+':'+(wallet?.address||'').toLowerCase();
   const [pending,setPending]=useState(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
   const locked=useRef(false);
+  const [recovered,setRecovered]=useState(false);
   const de=lang==='de';
   const words={waiting:de?'Tausch wird bestätigt …':'Swap is being confirmed…',
     unknown:de?'Übermittlung unklar. Nicht erneut senden.':'Submission uncertain. Do not send again.',
@@ -63,10 +64,29 @@ export default function CrossChainOwnerSwap({asset,quote,enabled,userId,getAcces
     done:de?'Tausch bestätigt':'Swap confirmed'};
   const save=p=>{localStorage.setItem(key,JSON.stringify(p));setPending(p);};
   const clear=()=>{localStorage.removeItem(key);setPending(null);};
-  useEffect(()=>{setPending(null);setMessage('');if(!enabled||!wallet)return;
+  useEffect(()=>{
+    let active=true;
+    setPending(null);setMessage('');setRecovered(false);
+    if(!enabled||!wallet)return;
+    let local=null;
     try{const p=JSON.parse(localStorage.getItem(key)||'null');
-      if(p?.quote_id&&p.asset===asset&&equal(p.wallet,wallet.address))setPending(p);
+      if(p?.quote_id&&p.asset===asset&&equal(p.wallet,wallet.address))local=p;
     }catch{/* Never interpret malformed storage as a transaction. */}
+    if(local)setPending(local);
+    const recover=async()=>{
+      try{
+        const r=await call('/api/wallet/swap/ethereum-settlement/manual/pending/'+asset);
+        if(!active)return;
+        const p=r?.pending;
+        if(p&&p.asset===asset&&equal(p.wallet,wallet.address)){
+          // A local hash may have arrived before its server acknowledgement.
+          save(local?.quote_id===p.quote_id&&local.hash&&!p.hash?local:p);
+        }
+        setRecovered(true);
+      }catch{if(active)setMessage(words.unknown);}
+    };
+    void recover();
+    return()=>{active=false;};
   },[key,enabled]);
   async function call(path,method='GET',body){
     const token=await getAccessToken();if(!token)throw Error('Login required');
@@ -88,19 +108,21 @@ export default function CrossChainOwnerSwap({asset,quote,enabled,userId,getAcces
     return p;
   }
   async function send(){
-    if(!quote||!wallet||!enabled||pending||locked.current||!quote.data.restricted_calldata_verified)return;
+    if(!quote||!wallet||!enabled||!recovered||pending||locked.current||!quote.data.restricted_calldata_verified)return;
     locked.current=true;setBusy(true);setMessage('');
     let plan,attempt,started=false;
     try{
       const buy=quote.request.to===asset;
       const p=await provider(buy?1:CHAINS[asset]);
       plan=await call(base+'/manual/'+quote.data.quote_id+'/prepare','POST',{});
-      const tx=validateBridgePlan(plan,quote,asset,wallet.address);
       if(plan.kind==='SWAP'){
         attempt={quote_id:plan.quote_id,asset,side:plan.side,stable:plan.stable,
           amount:quote.request.body.amount,wallet:wallet.address,hash:null};
         save(attempt); // Persist before the user opens the real Privy signature.
       }
+      const tx=validateBridgePlan(plan,quote,asset,wallet.address);
+      if(BigInt(await p.request({method:'eth_chainId'}))!==BigInt(plan.source_chain_id)||
+        Date.now()>=plan.expires_at*1000)throw Error('Quote or network changed');
       started=true;
       const hash=await p.request({method:'eth_sendTransaction',params:[tx]});
       if(!HASH.test(hash))throw Error('No transaction hash');
@@ -147,7 +169,7 @@ export default function CrossChainOwnerSwap({asset,quote,enabled,userId,getAcces
   if(!pending&&!quote&&!message)return null;
   return <div className="mininex-swap-quote">
     {!pending&&quote&&<button className="privy-wallet-action" type="button"
-      disabled={busy||!enabled||!wallet||quote.data.restricted_calldata_verified!==true}
+      disabled={busy||!enabled||!wallet||!recovered||quote.data.restricted_calldata_verified!==true}
       onClick={send}>{busy?(de?'Wird vorbereitet …':'Preparing…'):(de?'Swap bestätigen':'Confirm swap')}</button>}
     {pending&&!pending.hash&&<small role="status">{words.unknown}</small>}
     {message&&<small role="status">{message}</small>}

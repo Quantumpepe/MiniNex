@@ -230,7 +230,7 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
                and _eq(submission["source_tx_hash"],tx_hash))
     # Manual hash is a candidate supplied by the owner, not trusted signer
     # evidence. It becomes valid only after the independent on-chain proof.
-    from .ethereum_settlement_manual import load_manual_attempt
+    from .ethereum_settlement_manual import load_manual_attempt, mark_verified_manual_outcome
     manual=await asyncio.to_thread(load_manual_attempt,did,quote_id)
     manual_bound=bool(manual and manual["state"]=="SUBMITTED"
         and manual["source_chain_id"]==src and _eq(manual["source_tx_hash"],tx_hash))
@@ -271,6 +271,8 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             gas = _num(receipt["gasUsed"]) * _num(receipt["effectiveGasPrice"])
             base["source_fee_native"] = format(Decimal(gas).scaleb(-18), "f")
             if _num(receipt["status"]) == 0:
+                if manual_bound:
+                    await asyncio.to_thread(mark_verified_manual_outcome,did,quote_id,tx_hash,"SOURCE_REVERTED")
                 return {**base, "state": "SOURCE_REVERTED"}
             if _num(receipt["status"]) != 1:
                 raise ValueError("Invalid source receipt status")
@@ -327,6 +329,8 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             # and verified wallet credit establish settlement. Accounting is
             # intentionally separate; this read-only endpoint never books PnL.
             verified=bool((bound or manual_bound) and proof)
+            if manual_bound and verified:
+                await asyncio.to_thread(mark_verified_manual_outcome,did,quote_id,tx_hash,"FINALIZED")
             with localcontext() as context:
                 context.prec=80
                 actual=format(Decimal(received).scaleb(-dest_decimals),"f")

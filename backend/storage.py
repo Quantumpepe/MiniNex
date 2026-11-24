@@ -1393,6 +1393,9 @@ SCHEMA += (
         UNIQUE(source_chain_id,source_tx_hash),
         CHECK ((state='SUBMITTED') = (source_tx_hash IS NOT NULL))
     )""",
+    """ALTER TABLE mininex_ethereum_settlement_manual_attempts
+       ADD COLUMN IF NOT EXISTS final_outcome TEXT
+       CHECK (final_outcome IS NULL OR final_outcome IN ('FINALIZED','SOURCE_REVERTED'))""",
     """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_submissions (
         quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
         privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
