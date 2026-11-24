@@ -76,6 +76,66 @@ def _net_token_credit(logs, token, wallet):
     return total
 
 
+def _net_native_credit(trace, wallet):
+    """Sum real successful value transfers; exclude delegatecall and reverts.
+
+    callTracer reports nested execution. A reverted parent reverts every
+    descendant. A DELEGATECALL inherits msg.value but transfers no balance.
+    Never infer native payout from an ERC20 event or a provider status.
+    """
+    total = 0
+    stack = [trace]
+    count = 0
+    while stack:
+        frame = stack.pop()
+        count += 1
+        if count > 2000 or type(frame) is not dict:
+            raise ValueError("Invalid native settlement trace")
+        if frame.get("error"):
+            continue
+        kind = frame.get("type")
+        if kind not in ("CALL", "DELEGATECALL", "STATICCALL", "CALLCODE",
+                        "CREATE", "CREATE2", "SELFDESTRUCT"):
+            raise ValueError("Unknown native trace frame")
+        children = frame.get("calls", [])
+        if type(children) is not list:
+            raise ValueError("Invalid native trace children")
+        stack.extend(children)
+        if kind not in ("CALL", "CREATE", "CREATE2", "SELFDESTRUCT"):
+            continue
+        sender, recipient = frame.get("from"), frame.get("to")
+        if (not isinstance(sender, str) or not _ADDR.fullmatch(sender)
+                or not isinstance(recipient, str) or not _ADDR.fullmatch(recipient)):
+            raise ValueError("Invalid native transfer address")
+        raw = frame.get("value", "0x0")
+        if not isinstance(raw, str) or not re.fullmatch(r"0x[0-9a-fA-F]{1,64}", raw):
+            raise ValueError("Invalid native transfer value")
+        value = int(raw, 16)
+        if _eq(recipient, wallet):
+            total += value
+        if _eq(sender, wallet):
+            total -= value
+    return total
+
+
+async def _native_credit(client, chain, tx_hash, tx, wallet):
+    """Read only from the same verified chain RPC as the final receipt."""
+    try:
+        trace = await _receipt_rpc(
+            client, _rpc_url(chain), "debug_traceTransaction",
+            [tx_hash, {"tracer": "callTracer", "timeout": "5s"}], 6)
+    except (httpx.HTTPError, ValueError):
+        # Not all public RPC services expose callTracer. Remain pending
+        # instead of substituting an unverified provider payout.
+        return None
+    if (not isinstance(trace, dict) or trace.get("type") != "CALL"
+            or trace.get("error") or not _eq(trace.get("from"), tx.get("from"))
+            or not _eq(trace.get("to"), tx.get("to"))
+            or _num(trace.get("value", "0x0")) != _num(tx.get("value", "0x0"))):
+        raise ValueError("Native trace not bound to destination transaction")
+    return _net_native_credit(trace, wallet)
+
+
 async def _finalized_receipt(client, chain, tx_hash):
     url = _rpc_url(chain)
     chain_id, tx, receipt, final = await asyncio.gather(
@@ -211,14 +271,15 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             destination = await _finalized_receipt(client, dst, terms["hash"])
             if destination is None:
                 return base
-            _, dest_receipt = destination
+            dest_tx, dest_receipt = destination
             if _num(dest_receipt["status"]) != 1:
                 raise ValueError("Destination transaction failed")
-            # Native internal payments need a trace. Never substitute the
-            # provider's reported amount for real wallet evidence.
             if _eq(dest_token, ETH_NATIVE):
-                return {**base, "state": "NATIVE_CREDIT_PROOF_REQUIRED"}
-            received = _net_token_credit(dest_receipt["logs"], dest_token, wallet)
+                received = await _native_credit(client, dst, terms["hash"], dest_tx, wallet)
+                if received is None:
+                    return {**base, "state": "NATIVE_CREDIT_PROOF_REQUIRED"}
+            else:
+                received = _net_token_credit(dest_receipt["logs"], dest_token, wallet)
             if received <= 0 or received != terms["amount"]:
                 raise ValueError("Destination token credit not independently proven")
             if received < int(quote["minimum_output_atomic"]):

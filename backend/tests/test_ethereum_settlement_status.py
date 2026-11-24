@@ -43,3 +43,22 @@ def test_provider_done_requires_exact_source_and_destination():
         _status_terms(wrong, **kwargs)
     assert _status_terms({**payload, "status": "PENDING"}, **kwargs) is None
     assert _status_terms({**payload, "substatus": "REFUNDED"}, **kwargs)["state"] == "REFUND_OR_PARTIAL"
+
+
+
+def test_native_payout_counts_real_successful_transfers_only():
+    from backend.ethereum_settlement_status import _net_native_credit
+    def call(sender, recipient, amount, **extra):
+        return {"type": "CALL", "from": sender, "to": recipient,
+                "value": hex(amount), **extra}
+    trace = call(OTHER, OTHER, 0, calls=[
+        call(OTHER, WALLET, 250),
+        call(WALLET, OTHER, 10),
+        call(OTHER, OTHER, 0, error="execution reverted",
+             calls=[call(OTHER, WALLET, 1000)]),
+        {"type": "DELEGATECALL", "from": OTHER, "to": WALLET,
+         "value": hex(999), "calls": [call(OTHER, WALLET, 5)]},
+    ])
+    assert _net_native_credit(trace, WALLET) == 245
+    with pytest.raises(ValueError):
+        _net_native_credit(call(OTHER, WALLET, 1, value="bad"), WALLET)
