@@ -105,7 +105,10 @@ async def fetch_evm_policy_reference_rates(asset:str,stable:str)->dict:
     usable only while BOTH asset/stable provider timestamps remain fresh;
     a changed public-vs-paid endpoint immediately invalidates the cache.
     """
-    _pair(asset,stable,"BUY")
+    # Prices are chain-independent. The cross-EVM settlement routes allow
+    # both Ethereum stables even where the legacy local router supports one.
+    if asset not in _IDS or asset in ("USDC","USDT") or stable not in ("USDC","USDT"):
+        raise ValueError("Unknown settlement reference pair")
     endpoint,auth_headers,interval=coingecko_request_settings("/simple/price")
     global _REFERENCE_CACHE
     async with _REFERENCE_LOCK:

@@ -94,6 +94,7 @@ def _approved_quote_pair(quote: object, allowance: object, *,
         "router":pair["router"],
         "wallet_address":allowance["wallet_address"],
         "source_funds_sufficient":source_ok,
+        "source_balance_atomic":allowance.get("source_balance_atomic"),
         "router_allowance_sufficient":allowed,
         "native_gas_available":gas,
         "owner_approval_transaction":(

@@ -20,6 +20,7 @@ from .live_orders import valid_order_key,valid_notional
 from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_central_runtime import _locked_original_evm_coin
+from .ethereum_settlement_funding import assert_ethereum_funds_locked
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
@@ -28,7 +29,8 @@ _ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
                     amount_usd:str,quote_sha256:str,
-                    expected_revision:int,central:bool=False)->dict:
+                    expected_revision:int,central:bool=False,
+                    ethereum_funding:dict|None=None)->dict:
     """Serialize one coin's reservations by locking its OWN preference row.
 
     Other coins are entirely independent; their selected budgets never
@@ -43,6 +45,13 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
     if type(expected_revision) is not int or expected_revision<1:
         raise ValueError("User budget revision required")
     amount=valid_notional(amount_usd)
+    if ethereum_funding is not None:
+        if side!="BUY" or asset not in ("ETH","LINK","QNT","UNI"):
+            raise ValueError("Unexpected Ethereum funding evidence")
+        cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
+        if cur.fetchone()!={"privy_did":did}:
+            raise HTTPException(409,"Original Ethereum owner unavailable")
+        assert_ethereum_funds_locked(cur,did=did,asset=asset,stable=stable,**ethereum_funding)
     # Central wallet-lock order must precede preference rows, matching
     # extension/revocation and order claim transaction ordering.
     if central:
@@ -147,7 +156,7 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
 def reserve_internal_evm_coin_budget(
     *,did:str,asset:str,intent_key:str,side:str,stable:str,
     amount_usd:str,quote_sha256:str,expected_revision:int,
-    central:bool=False,
+    central:bool=False,ethereum_funding:dict|None=None,
 )->dict:
     """Internal strategy path only. No user-facing writer or scheduler."""
     did=_safe_did(did)
@@ -160,7 +169,7 @@ def reserve_internal_evm_coin_budget(
                     key=intent_key,side=side,stable=stable,
                     amount_usd=amount_usd,quote_sha256=quote_sha256,
                     expected_revision=expected_revision,
-                    central=central)
+                    central=central,ethereum_funding=ethereum_funding)
     except psycopg.Error:
         LOG.warning("Independent EVM budget reservation unavailable")
         raise HTTPException(503,"EVM coin budget reservation unavailable") from None

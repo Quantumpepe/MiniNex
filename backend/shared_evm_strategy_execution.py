@@ -149,13 +149,25 @@ async def execute_internal_evm_strategy_signal(
     amount_usd=verified_evm_quote_usd_notional(
         prepared=prepared,asset=asset,side=side,stable=stable,
         amount=amount,prices=rates,now=int(time.time()))
+    funding={}
+    if side=="BUY" and asset in ("ETH","LINK","QNT","UNI"):
+        try:
+            balance=prepared["source_balance_atomic"]
+            if type(balance) is not str or not balance.isascii() or not balance.isdecimal():
+                raise ValueError("Original Ethereum token balance missing")
+            _,atomic=_quantity(amount,6)
+            funding={"ethereum_funding":{
+                "input_atomic":int(atomic),"balance_atomic":int(balance),
+                "stable_usd":_price(rates,stable,int(time.time()))}}
+        except (ValueError,TypeError,KeyError,ArithmeticError):
+            raise HTTPException(409,"Verified Ethereum funding unavailable") from None
     # Reserve ONLY the owner's chosen per-coin budget, using the amount
     # derived from this exact DEX calldata and current USD market reference.
     reserve_internal_evm_coin_budget(
         did=did,asset=asset,intent_key=key,side=side,stable=stable,
         amount_usd=amount_usd,quote_sha256=quote_sha,
         expected_revision=budget_revision,
-        **({"central":True} if central else {}))
+        **funding,**({"central":True} if central else {}))
     try:
         return await submit_internal_privy_evm_order(
             did=did,asset=asset,intent_key=key,side=side,

@@ -73,7 +73,10 @@ _PENDING_SQL="""SELECT asset,stable,reserved_notional_usd AS amount,'USD' AS uni
     FROM mininex_live_native_order_intents
     WHERE privy_did=%(did)s AND stable=%(stable)s AND side='BUY'
       AND chain='ethereum-mainnet'
-      AND status IN ('PREPARED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED','SOURCE_FINALIZED')
+      AND (status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED','SOURCE_FINALIZED')
+           OR (status='PREPARED' AND quote_expires_at>now()))
+      AND (asset, intent_key) IS DISTINCT FROM
+          (%(excluded_native_asset)s::text,%(excluded_native_key)s::text)
     UNION ALL
     SELECT q.asset,q.stable,q.input_atomic,'ATOMIC'
     FROM mininex_ethereum_settlement_quotes q
@@ -100,14 +103,16 @@ def read_pending_ethereum_funding(did,*,asset,stable,stable_usd):
         _ensure_schema(db)
         with psycopg.connect(db,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(_PENDING_SQL,{"did":did,"stable":stable})
+                cur.execute(_PENDING_SQL,{"did":did,"stable":stable,
+                    "excluded_native_asset":None,"excluded_native_key":None})
                 rows=cur.fetchall()
         return summarize_pending_funding(rows,asset=asset,stable=stable,stable_usd=stable_usd)
     except psycopg.Error:
         raise HTTPException(503,"Ethereum funding journal unavailable") from None
 
 
-def assert_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_atomic,stable_usd):
+def assert_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_atomic,stable_usd,
+                                 excluded_native_key=None):
     """Recheck shared funding under the same owner lock as new bridge claims.
 
     Legacy workers still need migration to the identical atomic claim path
@@ -115,7 +120,9 @@ def assert_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_ato
     """
     if type(balance_atomic) is not int or type(input_atomic) is not int or input_atomic<=0 or balance_atomic<0:
         raise ValueError("Exact observed Ethereum token balance required")
-    cur.execute(_PENDING_SQL,{"did":did,"stable":stable})
+    cur.execute(_PENDING_SQL,{"did":did,"stable":stable,
+        "excluded_native_asset":asset if excluded_native_key is not None else None,
+        "excluded_native_key":excluded_native_key})
     pending=summarize_pending_funding(cur.fetchall(),asset=asset,stable=stable,stable_usd=stable_usd)
     if input_atomic+int(pending["pending_wallet_stable_atomic"])>balance_atomic:
         raise HTTPException(409,"Ethereum stable funds already committed to another order")
