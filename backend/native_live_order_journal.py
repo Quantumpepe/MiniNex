@@ -27,7 +27,8 @@ from .manual_swap_live_quotes import THOR_ASSETS
 _NATIVE_NETWORK={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet",
                  "XRP":"xrpl-mainnet","TRX":"tron-mainnet",
                  "DOGE":"dogecoin-mainnet"}
-_BUY_ONLY=frozenset(("TRX","DOGE"))
+_BUY_ONLY=frozenset(("DOGE",))
+_NATIVE_PRECISION={"BTC":8,"SOL":9,"XRP":6,"TRX":6,"DOGE":8}
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _EVENT=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 _MONEY=re.compile(r"^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
@@ -68,7 +69,7 @@ def _valid_source_hash(asset:str,side:str,hash_:object)->bool:
         return False
     if side=="BUY":
         return bool(re.fullmatch(r"0x[0-9a-f]{64}",hash_))
-    if asset=="BTC":
+    if asset in ("BTC","TRX"):
         return bool(re.fullmatch(r"[0-9a-f]{64}",hash_))
     return _valid_native_hash(asset,hash_)
 
@@ -90,6 +91,7 @@ def immutable_native_order_identity(
             or (side=="SELL" and asset in _BUY_ONLY)
             or stable not in ("USDC","USDT")
             or (asset=="XRP" and stable!="USDC")
+            or (asset=="TRX" and stable!="USDT")
             or type(budget_revision) is not int or budget_revision<0
             or type(strategy_run_id) is not str
             or not _EVENT.fullmatch(strategy_run_id)
@@ -107,7 +109,7 @@ def immutable_native_order_identity(
             or not _wallet_matches(dest_chain,destination_wallet)):
         raise ValueError("Native wallet / settlement network mismatch")
     amount=_positive_amount(amount,6 if side=="BUY" else
-                            (8 if asset=="BTC" else 9 if asset=="SOL" else 6))
+                            _NATIVE_PRECISION[asset])
     if (not isinstance(quote_expires_at,datetime)
             or quote_expires_at.tzinfo is None
             or quote_expires_at<=datetime.now(timezone.utc)):
@@ -288,7 +290,7 @@ def _assert_native_session_active_locked(cur,*,did:str,asset:str,revision:int,st
           AND started_by_owner_at IS NOT NULL FOR UPDATE""",
         (did,asset,revision,stable))
     session=cur.fetchone()
-    allowed=("ACTIVE","EXIT_PENDING") if side=="SELL" and asset in ("BTC","SOL") else ("ACTIVE",)
+    allowed=("ACTIVE","EXIT_PENDING") if side=="SELL" and asset in ("BTC","SOL","TRX") else ("ACTIVE",)
     if type(session) is not dict or session.get("status") not in allowed:
         raise HTTPException(409,"Original native trade session is not active")
     return session["status"]
@@ -348,7 +350,7 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
             exclude_key=key,require_single_wallet=True)
         with localcontext() as ctx:
             ctx.prec=100
-            atomic=Decimal(original["input_amount"])*10**(8 if asset=="BTC" else 9)
+            atomic=Decimal(original["input_amount"])*10**_NATIVE_PRECISION[asset]
             if held is None or atomic!=atomic.to_integral_value() or not 0<atomic<=held:
                 raise HTTPException(409,"Exit exceeds verified native strategy position")
     # Source-chain finalization means the original transaction is mined

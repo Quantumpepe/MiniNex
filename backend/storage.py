@@ -1324,6 +1324,25 @@ SCHEMA += (
                    (side='BUY' AND chain='ethereum-mainnet'));
          END IF;
        END $native_buy_five$""",
+    """DO $native_trx_sell_v3$
+       BEGIN
+         IF NOT EXISTS(
+           SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_native_order_intents'::regclass
+             AND conname='mininex_native_sell_network_v3'
+         ) THEN
+           ALTER TABLE mininex_live_native_order_intents
+             DROP CONSTRAINT IF EXISTS mininex_native_no_unsupported_sell_v2;
+           ALTER TABLE mininex_live_native_order_intents
+             ADD CONSTRAINT mininex_native_sell_network_v3
+             CHECK((asset!='DOGE' OR
+                    (side='BUY' AND chain='ethereum-mainnet'))
+               AND (asset!='TRX' OR
+                    (stable='USDT' AND
+                     ((side='BUY' AND chain='ethereum-mainnet') OR
+                      (side='SELL' AND chain='tron-mainnet')))));
+         END IF;
+       END $native_trx_sell_v3$""",
     """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique
        ON mininex_live_native_order_intents(chain,source_signed_tx_hash)
        WHERE source_signed_tx_hash IS NOT NULL""",
