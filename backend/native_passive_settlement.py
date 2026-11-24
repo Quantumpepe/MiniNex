@@ -1,12 +1,12 @@
-"""Opt-in passive native source reconciliation for BTC/SOL/XRP.
+"""Passive native source reconciliation for BTC/SOL/XRP/TRX and native BUYs.
 
 This component NEVER signs, broadcasts, creates orders, enables automatic
 trading, collects fees, or alters wallet policies. It periodically checks
 previously saved original transaction hashes and promotes only independently
 finalized source-chain receipts through the existing database journal.
 
-By default no process starts. A deliberate server-side read-only setting
-enables the worker when the deployment is ready for live receipt monitoring.
+With a configured database the worker observes only existing journal rows;
+no separate LIVE switch is required for receipt monitoring.
 The reconciler runs in a dedicated thread event loop so blocking PostgreSQL
 queries cannot freeze the API server's live pricing and user requests.
 """
@@ -38,22 +38,13 @@ _BATCH_SIZE = 24
 
 
 def _native_passive_enabled() -> bool:
-    """Attach receipt recovery to the original user-authorized LIVE worker.
+    """Observe existing durable orders whenever the database is configured.
 
-    A user should never need to configure a second switch to finish a wallet
-    transaction that was already sent. The preexisting explicit read-only
-    option still works by itself. This function signs or sends nothing.
+    Already submitted transactions must reconcile even after the user pauses
+    or the trading worker is disabled. This worker never creates orders,
+    signs, broadcasts, charges fees or requires another LIVE switch.
     """
-    if not os.getenv("DATABASE_URL","").strip():
-        return False
-    return (
-        os.getenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED")
-        == "explicit-readonly"
-        or (
-            os.getenv("MININEX_NATIVE_AUTO_WORKER_ENABLED")=="explicit-live"
-            and os.getenv("MININEX_LIVE_TRADING_ENABLED")=="true"
-        )
-    )
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 
 async def _reconcile_in_thread(callback, *, limit: int) -> dict:
@@ -136,7 +127,7 @@ async def reconcile_original_native_passive_once() -> dict:
 
 
 class PassiveNativeSettlementWorker:
-    """Optional passive observer, not a native trading strategy worker."""
+    """Passive observer, not a native trading strategy worker."""
     def __init__(self):
         self._task = None
 

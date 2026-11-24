@@ -1,4 +1,4 @@
-"""Native passive settlement is opt-in, read-only and crash-resilient."""
+"""Native passive settlement is read-only and crash-resilient."""
 from __future__ import annotations
 
 import asyncio
@@ -6,14 +6,11 @@ import asyncio
 from backend import native_passive_settlement as worker
 
 
-def test_passive_native_disabled_without_explicit_readonly_and_database(monkeypatch):
-    monkeypatch.delenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED", raising=False)
-    monkeypatch.setenv("DATABASE_URL", "postgresql://testing")
-    assert worker._native_passive_enabled() is False
-    monkeypatch.setenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED",
-                       "explicit-readonly")
+def test_passive_native_requires_database_not_extra_live_flags(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED", "explicit-readonly")
     assert worker._native_passive_enabled() is False
+    monkeypatch.delenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED")
     monkeypatch.setenv("DATABASE_URL", "postgresql://testing")
     assert worker._native_passive_enabled() is True
 
@@ -175,18 +172,13 @@ def test_native_passive_worker_lifecycle_does_not_create_live_orders(monkeypatch
     asyncio.run(exercise())
 
 
-def test_original_native_auto_worker_requires_no_second_receipt_flag(monkeypatch):
+def test_original_native_receipt_recovery_survives_trading_disabled(monkeypatch):
     monkeypatch.delenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_NATIVE_AUTO_WORKER_ENABLED",raising=False)
-    monkeypatch.delenv("MININEX_LIVE_TRADING_ENABLED",raising=False)
+    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","false")
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
-    assert worker._native_passive_enabled() is False
-    monkeypatch.setenv("MININEX_NATIVE_AUTO_WORKER_ENABLED","explicit-live")
-    assert worker._native_passive_enabled() is False
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
     assert worker._native_passive_enabled() is True
-    monkeypatch.delenv("MININEX_NATIVE_AUTO_WORKER_ENABLED")
-    monkeypatch.setenv("MININEX_NATIVE_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
+    monkeypatch.setenv("MININEX_NATIVE_AUTO_WORKER_ENABLED","explicit-live")
     assert worker._native_passive_enabled() is True
     monkeypatch.delenv("DATABASE_URL")
     assert worker._native_passive_enabled() is False
