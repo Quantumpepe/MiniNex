@@ -163,12 +163,13 @@ def pause_owner_evm_auto(did:str,asset:str)->dict:
 def request_owner_bridge_exit(did:str,asset:str)->dict:
     """Explicit authenticated Stop/Exit: prohibit new BUYs immediately.
 
-    Only the currently connected direct bridge execution family is eligible.
+    Direct bridge and Ethereum ERC20 execution families are eligible.
     Does not broadcast, revoke consent, or mark an open position closed.
     """
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
     did=_safe_did(did)
-    if asset not in DIRECT_SETTLEMENT_ASSETS:
+    from .shared_evm_exit_inventory import TOKEN_EXIT_ASSETS
+    if asset not in DIRECT_SETTLEMENT_ASSETS | TOKEN_EXIT_ASSETS:
         raise HTTPException(409,"Automatic exit route not connected for this coin")
     try:
         db=_db_url();_ensure_schema(db)
@@ -199,7 +200,8 @@ def complete_bridge_exit_if_flat(did,asset,started):
     from .ethereum_settlement_journal import pending_bridge_order
     from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_ASSETS
-    if asset not in DIRECT_SETTLEMENT_ASSETS:
+    from .shared_evm_exit_inventory import TOKEN_EXIT_ASSETS,token_exit_position_locked
+    if asset not in DIRECT_SETTLEMENT_ASSETS | TOKEN_EXIT_ASSETS:
         return False
     did=_safe_did(did)
     db=_db_url();_ensure_schema(db)
@@ -238,7 +240,10 @@ def complete_bridge_exit_if_flat(did,asset,started):
             legacy=cur.fetchone()
             if not legacy or Decimal(legacy["position"])>0:
                 return False
-            if strategy_bridge_position_locked(cur,did,asset,session["wallet_address"])!=0:
+            if asset in TOKEN_EXIT_ASSETS:
+                if token_exit_position_locked(cur,did,asset,session["wallet_address"])!=0:
+                    return False
+            elif strategy_bridge_position_locked(cur,did,asset,session["wallet_address"])!=0:
                 return False
             cur.execute("""UPDATE mininex_live_evm_auto_sessions SET status='STOPPED',updated_at=now()
                 WHERE privy_did=%s AND asset=%s AND status='EXIT_PENDING' RETURNING status""",(did,asset))

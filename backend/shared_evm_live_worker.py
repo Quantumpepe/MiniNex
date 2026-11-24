@@ -130,7 +130,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
-                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('BNB','POL','ARB')))
+                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('BNB','POL','ARB','LINK','QNT','UNI')))
                      AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB')
                      AND s.started_by_owner_at IS NOT NULL
                      AND (
@@ -278,7 +278,7 @@ async def execute_owner_evm_live_tick(
     current=time.time() if now is None else now
     exiting=row.get("session_status")=="EXIT_PENDING"
     if exiting:
-        if asset not in ("BNB","POL","ARB"):
+        if asset not in ("BNB","POL","ARB","LINK","QNT","UNI"):
             raise ValueError("No automatic exit route for this coin")
         decision={"action":"SELL","reason":"OWNER_REQUESTED_EXIT"}
     else:
@@ -354,6 +354,17 @@ async def execute_owner_evm_live_tick(
         except (ValueError,KeyError,ArithmeticError):
             return {"asset":asset,"state":"WAIT",
                     "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}
+    if exiting:
+        from .shared_evm_exit_inventory import read_token_exit_position
+        from .shared_evm_auto_sessions import complete_bridge_exit_if_flat
+        if evidence.get("wallet_identity_verified") is not True:
+            return {"asset":asset,"state":"WAIT","reason":"EXIT_WALLET_UNVERIFIED"}
+        held=await asyncio.to_thread(read_token_exit_position,did,asset,evidence["wallet_address"])
+        if held==0:
+            if await asyncio.to_thread(complete_bridge_exit_if_flat,did,asset,row["started_by_owner_at"]):
+                return {"asset":asset,"state":"STOPPED","reason":"VERIFIED_POSITION_FLAT"}
+            return {"asset":asset,"state":"WAIT","reason":"EXIT_SETTLEMENT_PENDING"}
+        evidence={**evidence,"source_balance":format(min(held,Decimal(evidence["source_balance"])),"f")}
     # The BUY allowance inspection already includes the current target
     # token inventory from the same onchain RPC batch. No extra wallet
     # roundtrip is needed to enforce owner-selected coin allocation.

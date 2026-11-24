@@ -606,3 +606,18 @@ def test_next_buy_is_resized_to_cash_after_profit_protection(monkeypatch,withhel
     else:
         assert result["state"]=="SUBMITTED"
         assert len(sends)==1 and Decimal(sends[0][1])==Decimal(expected)
+
+
+def test_token_exit_overrides_market_and_caps_wallet_sale(monkeypatch):
+    from backend import shared_evm_exit_inventory as inventory
+    actions=use_tick_mocks(monkeypatch,asset="LINK",action="BUY")
+    monkeypatch.setattr(inventory,"read_token_exit_position",lambda *args:Decimal("2"))
+    row=session("LINK")
+    row["session_status"]="EXIT_PENDING"
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(row,market=object(),client=client,now=10000)
+    assert asyncio.run(tick())["state"]=="SUBMITTED"
+    assert "verified_market" not in actions
+    assert any(isinstance(a,tuple) and a[0]=="original_single_execution"
+               and Decimal(a[1])==2 for a in actions)

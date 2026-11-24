@@ -117,13 +117,17 @@ def _claim_once_locked(
            FROM mininex_live_evm_auto_sessions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
-    if (type(session) is not dict or session.get("status")!="ACTIVE"
+    if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
+            (session.get("status")=="EXIT_PENDING" and side=="SELL" and asset in ("LINK","QNT","UNI")))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=stable
             or session.get("wallet_address")!=record["wallet_address"]
             or session.get("budget_revision")!=revision
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Coin trading is not owner-started and active")
+    if session["status"]=="EXIT_PENDING":
+        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
+        assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
     # Same-wallet, same-chain nonce conflicts. Every participating sender
     # must also check this approval journal before claiming a new nonce.
     for table in (
