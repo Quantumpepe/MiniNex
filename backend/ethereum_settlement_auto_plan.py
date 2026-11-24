@@ -102,8 +102,9 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
     direct=(record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
             and review["migration_kind"]=="EXACT_DIRECT_QUOTE")
-    if direct and session_started_at is not None and not plan.get("manual_approval"):
-        from .ethereum_settlement_auto_submit import submit_direct_bridge_once, check_direct_bridge_scope
+    if direct and session_started_at is not None:
+        from .ethereum_settlement_auto_submit import (submit_direct_bridge_once,check_direct_bridge_scope,
+            submit_direct_bridge_approval_once)
         check_direct_bridge_scope(persisted,record,now=int(time.time()))
         evidence=None; gas_usd=None; stable_usd=None; position_usd=None
         if side=="BUY":
@@ -126,7 +127,8 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
                         budget_revision=budget_revision,amount=available["input_amount"],client=client,now=now,
                         budget_usd=budget_usd,session_started_at=session_started_at,allow_resize=False)
                 return {"asset":asset,"state":"WAIT","reason":"COIN_BUDGET_INCLUDES_SOURCE_GAS","can_submit":False}
-        return await submit_direct_bridge_once(did=did,quote=persisted,record=record,plan=plan,
+        submit=submit_direct_bridge_approval_once if plan.get("manual_approval") else submit_direct_bridge_once
+        return await submit(did=did,quote=persisted,record=record,plan=plan,
             session_started_at=session_started_at,signal_time=now,client=client,
             funding=evidence,position_usd=position_usd,gas_usd=gas_usd,stable_usd=stable_usd)
     return {"asset":asset,"quote_id":quote["quote_id"],"side":side,

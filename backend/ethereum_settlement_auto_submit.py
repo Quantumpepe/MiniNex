@@ -1,7 +1,8 @@
 """Internal one-shot direct Across sender using the original Privy EVM wallet.
 No public send route. Only current user-started sessions, exact direct scope
 and a durable original journal claim may reach the existing Privy transport.
-Nested calls and approval transactions are not authorized by this sender.
+Nested calls are not authorized. Finite bridge approvals use the existing
+ERC20 approval journal and passive canonical receipt reconciliation.
 """
 import asyncio
 import hashlib
@@ -15,8 +16,10 @@ from psycopg.rows import dict_row
 from fastapi import HTTPException
 
 from .ethereum_settlement_plan import check_evm_quote_route,CROSS_COIN_CONTRACTS
-from .ethereum_settlement_calldata import inspect_settlement_route
-from .ethereum_settlement_journal import claim_authorized_submission_locked,record_claimed_submission_locked
+from .ethereum_settlement_calldata import inspect_settlement_route,DIAMOND
+from .ethereum_settlement_journal import claim_authorized_submission_locked,record_claimed_submission_locked,pending_bridge_order
+from .ethereum_settlement_funding import assert_ethereum_funds_locked
+from .shared_evm_router_approval_send import _finish as finish_approval
 from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY,DIRECT_SETTLEMENT_ASSETS
 from .shared_evm_central_runtime import _locked_original_evm_coin
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
@@ -64,6 +67,33 @@ def check_direct_bridge_scope(quote,record,*,now):
     return url,body
 
 
+def check_direct_bridge_approval(quote,record,plan,*,now):
+    """Only the quote's ERC20, exact LI.FI spender and finite input amount."""
+    url,swap=check_direct_bridge_scope(quote,record,now=now)
+    amount=int(quote["input_atomic"])
+    allowance=int(plan["verified_source_allowance_atomic"])
+    balance=int(plan["verified_source_balance_atomic"])
+    if (not 0<=allowance<amount<=balance
+            or plan.get("gas_estimate_kind")!="APPROVAL_ONLY"
+            or plan.get("route_sha256")!=quote["route_sha256"]
+            or plan.get("quote_id")!=str(quote["quote_id"])):
+        raise HTTPException(409,"Original insufficient bridge allowance not verified")
+    zero=quote["source_chain_id"]==1 and quote["stable"]=="USDT" and quote["side"]=="BUY" and allowance>0
+    value=0 if zero else amount
+    expected={"from":quote["wallet_address"],"to":quote["source_token"],
+        "data":"0x095ea7b3"+DIAMOND[2:].rjust(64,"0")+format(value,"064x"),"value":"0x0"}
+    if plan.get("manual_approval")!=expected:
+        raise HTTPException(409,"Original finite bridge approval differs")
+    name=f"MiniNex {quote['asset']} {quote['side']} {quote['stable']} token allowance"
+    rules=[r for r in record["candidate_json"]["rules"] if r["name"]==name
+           and r["method"]=="eth_sendTransaction" and r["action"]=="ALLOW"]
+    if len(rules)!=1:
+        raise HTTPException(409,"Original remote-reviewed approval rule missing")
+    body={"method":"eth_sendTransaction","caip2":swap["caip2"],
+        "params":{"transaction":{"to":expected["to"],"data":expected["data"],"value":"0"}}}
+    return url,body,("BRIDGE_USDT_ZERO" if zero else "BRIDGE_FINITE")
+
+
 def _identity(did,asset,started,signal_time):
     if not isinstance(started,datetime) or started.tzinfo is None or type(signal_time) is not int:
         raise ValueError("Original user-started strategy event required")
@@ -72,7 +102,7 @@ def _identity(did,asset,started,signal_time):
         separators=(",",":")).encode()).hexdigest()
 
 
-def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd,stable_usd):
+def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd,stable_usd,approval_mode=None):
     db=_db_url();_ensure_schema(db)
     asset=quote["asset"];stable=quote["stable"];now=int(time.time())
     with psycopg.connect(db,connect_timeout=6) as conn:
@@ -92,6 +122,29 @@ def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd
                     or session["stable"]!=stable or session["budget_revision"]!=record["budget_revision"]
                     or session["wallet_address"]!=record["wallet_address"]):
                 raise HTTPException(409,"Original user session paused or replaced")
+            # Both approval and swap use the existing account/chain journals.
+            chain=quote["source_chain_id"]
+            if approval_mode is not None:
+                _,_,mode=check_direct_bridge_approval(quote,current,plan,now=now)
+                if mode!=approval_mode:
+                    raise HTTPException(409,"Bridge approval changed")
+            for table in ("mininex_live_evm_router_approval_sends","mininex_live_evm_auto_broadcasts",
+                          "mininex_evm_auto_fee_sends","mininex_live_evm_native_auto_steps",
+                          "mininex_live_evm_native_sell_intents"):
+                cur.execute(f"""SELECT 1 FROM {table} WHERE privy_did=%s AND chain_id=%s
+                    AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,chain))
+                if cur.fetchone() is not None:
+                    raise HTTPException(409,"Earlier same-chain wallet send unresolved")
+            if chain==1:
+                for table in ("mininex_live_eth_auto_broadcasts","mininex_live_eth_auto_native_steps"):
+                    cur.execute(f"""SELECT 1 FROM {table} WHERE privy_did=%s
+                        AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,))
+                    if cur.fetchone() is not None:
+                        raise HTTPException(409,"Earlier Ethereum wallet send unresolved")
+                cur.execute("""SELECT 1 FROM mininex_live_native_order_intents WHERE privy_did=%s
+                    AND chain='ethereum-mainnet' AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,))
+                if cur.fetchone() is not None:
+                    raise HTTPException(409,"Earlier native Ethereum send unresolved")
             # A previous local-chain order must settle before switching that coin.
             cur.execute("""SELECT 1 FROM mininex_live_evm_budget_reservations
                 WHERE privy_did=%s AND asset=%s AND state IN
@@ -123,6 +176,32 @@ def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd
                 owned=strategy_bridge_position_locked(cur,did,asset,record["wallet_address"])
                 if owned<int(quote["input_atomic"]):
                     raise HTTPException(409,"Original strategy-owned position changed")
+            if approval_mode is not None:
+                if pending_bridge_order(cur,did,asset):
+                    raise HTTPException(409,"Earlier bridge order unresolved")
+                if balance<int(quote["input_atomic"]):
+                    raise HTTPException(409,"Verified source balance insufficient")
+                if quote["side"]=="BUY":
+                    from decimal import Decimal,localcontext
+                    pending=assert_ethereum_funds_locked(cur,did=did,asset=asset,stable=stable,
+                        input_atomic=int(quote["input_atomic"]),balance_atomic=balance,stable_usd=stable_usd)
+                    with localcontext() as ctx:
+                        ctx.prec=100
+                        if (Decimal(position_usd)+Decimal(gas_usd)+Decimal(pending["pending_coin_usd"])
+                                +Decimal(quote["input_atomic"]).scaleb(-6)*Decimal(stable_usd)>Decimal(extra["buy_budget_usd"])):
+                            raise HTTPException(409,"Original coin budget including approval gas already allocated")
+                cur.execute("""INSERT INTO mininex_live_evm_router_approval_sends
+                    (privy_did,asset,side,stable,chain_id,wallet_id,wallet_address,token_address,
+                    router_address,amount_atomic,policy_sha256,budget_revision,idempotency_key,
+                    request_digest,status,approval_mode)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING',%s)
+                    ON CONFLICT DO NOTHING RETURNING status""",
+                    (did,asset,quote["side"],stable,chain,current["wallet_id"],current["wallet_address"],
+                     quote["source_token"],DIAMOND,int(quote["input_atomic"]),current["policy_sha256"],
+                     current["budget_revision"],key,digest,approval_mode))
+                if cur.fetchone() is None:
+                    raise HTTPException(409,"Original bridge allowance already claimed")
+                return
             claim_authorized_submission_locked(cur,did=did,quote_id=str(quote["quote_id"]),
                 intent_key=key,request_sha256=digest,now=int(time.time()),
                 balance_atomic=balance,stable_usd=stable_usd,expected_quote=quote,**extra)
@@ -165,4 +244,30 @@ async def submit_direct_bridge_once(*,did,quote,record,plan,session_started_at,s
     await asyncio.to_thread(_finish,did,str(quote["quote_id"]),digest,tx_hash)
     return {"asset":quote["asset"],"side":quote["side"],"state":"SUBMITTED",
             "quote_id":str(quote["quote_id"]),"tx_hash":tx_hash,"real_trade_sent":True,
+            "settlement_verified":False,"can_submit":False}
+
+
+async def submit_direct_bridge_approval_once(*,did,quote,record,plan,session_started_at,signal_time,client,
+                                    funding=None,position_usd=None,gas_usd=None,stable_usd=None):
+    """One approval only; the next tick must see actual finalized allowance."""
+    did=_safe_did(did)
+    url,body,mode=check_direct_bridge_approval(quote,record,plan,now=int(time.time()))
+    event=_identity(did,quote["asset"],session_started_at,signal_time)
+    key="bridge_appr_"+hashlib.sha256((event+":"+mode).encode()).hexdigest()
+    digest=hashlib.sha256(json.dumps({"url":url,"body":body,"key":key},
+        sort_keys=True,separators=(",",":")).encode()).hexdigest()
+    await asyncio.to_thread(_claim,did,quote,record,session_started_at,key,digest,plan,
+                            funding,position_usd,gas_usd,stable_usd,mode)
+    try:
+        check_direct_bridge_approval(quote,record,plan,now=int(time.time()))
+        signed=sign_privy_rpc_payload(url=url,body=body,idempotency_key=key)
+        tx_hash=await post_claimed_privy_evm_rpc(url=url,body=body,
+            app_secret=os.environ.get("MININEX_PRIVY_APP_SECRET",""),
+            authorization_signature=signed,idempotency_key=key,client=client)
+    except BaseException:
+        await asyncio.to_thread(finish_approval,did=did,asset=quote["asset"],key=key,digest=digest,tx_hash=None)
+        raise
+    await asyncio.to_thread(finish_approval,did=did,asset=quote["asset"],key=key,digest=digest,tx_hash=tx_hash)
+    return {"asset":quote["asset"],"side":quote["side"],"state":"BRIDGE_APPROVAL_SUBMITTED",
+            "quote_id":str(quote["quote_id"]),"approval_tx_hash":tx_hash,"real_trade_sent":False,
             "settlement_verified":False,"can_submit":False}

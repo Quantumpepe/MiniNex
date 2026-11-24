@@ -54,6 +54,14 @@ def test_direct_sender_binds_original_policy_scope_and_refund():
     assert url.endswith("/wallet123/rpc")
     assert body["caip2"]=="eip155:1"
     assert body["params"]["transaction"]["data"]==tx["data"]
+    from backend.ethereum_settlement_auto_submit import check_direct_bridge_approval
+    plan=dict(verified_source_allowance_atomic="1",verified_source_balance_atomic="1000000",
+        gas_estimate_kind="APPROVAL_ONLY",route_sha256=quote["route_sha256"],quote_id="quote",
+        manual_approval={"from":W,"to":source,"data":"0x095ea7b3"+DIAMOND[2:].rjust(64,"0")+"0"*64,"value":"0x0"})
+    quote["quote_id"]="quote"
+    _,approval,mode=check_direct_bridge_approval(quote,rec,plan,now=1001)
+    assert mode=="BRIDGE_USDT_ZERO"
+    assert approval["caip2"]=="eip155:1"
     from fastapi import HTTPException
     for bad in (dict(rec,wallet_address="0x"+"34"*20),
                 dict(rec,scope={**scope,"buy_source_atomic_cap":"1"}),

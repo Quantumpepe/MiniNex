@@ -1170,6 +1170,29 @@ SCHEMA += (
               );
          END IF;
        END $native_thor_allowance$""",
+    """DO $bridge_allowance$
+       BEGIN
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
+             AND conname='mininex_bridge_approval_route_v3') THEN
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              DROP CONSTRAINT IF EXISTS mininex_live_evm_router_approval_sends_approval_mode_check,
+              DROP CONSTRAINT IF EXISTS mininex_thor_approval_route_mode_v2;
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              ADD CONSTRAINT mininex_bridge_approval_route_v3 CHECK(
+                (approval_mode='ROUTER02_FINITE' AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))
+                OR (approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO') AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
+                    AND side='BUY' AND chain_id=1)
+                OR (approval_mode IN ('BRIDGE_FINITE','BRIDGE_USDT_ZERO') AND asset IN ('BNB','POL','ARB')
+                    AND ((side='BUY' AND chain_id=1) OR
+                         (side='SELL' AND approval_mode='BRIDGE_FINITE'
+                           AND ((asset='BNB' AND chain_id=56) OR (asset='POL' AND chain_id=137)
+                                OR (asset='ARB' AND chain_id=42161))))
+                    AND (approval_mode<>'BRIDGE_USDT_ZERO' OR stable='USDT')
+                    AND router_address='0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae')
+              );
+         END IF;
+       END $bridge_allowance$""",
 )
 
 

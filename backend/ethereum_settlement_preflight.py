@@ -78,6 +78,8 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
             if gas<=0 or price<=0 or native<gas*price:
                 raise HTTPException(409,"Source gas funds insufficient")
             return {"manual_approval":approval,"estimated_gas_atomic":str(gas*price),
+                    "quote_id":str(quote["quote_id"]),"route_sha256":inspected["route_sha256"],
+                    "verified_source_allowance_atomic":str(allowance),
                     "gas_estimate_kind":"APPROVAL_ONLY",
                     "native_bridge_fee_atomic":str(inspected["native_bridge_fee_atomic"]),
                     "verified_source_balance_atomic":str(balance),

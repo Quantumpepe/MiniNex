@@ -70,7 +70,18 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
         raise ValueError("Unsupported originally submitted approval")
     mode=row.get("approval_mode","ROUTER02_FINITE")
     native=row["asset"] in ("BTC","SOL","XRP","TRX","DOGE")
-    if native:
+    if mode in ("BRIDGE_FINITE","BRIDGE_USDT_ZERO"):
+        from .ethereum_settlement_plan import settlement_route,CROSS_COIN_CONTRACTS
+        from .ethereum_settlement_calldata import DIAMOND
+        if row["asset"] not in ("BNB","POL","ARB"):
+            raise ValueError("Unsupported original bridge approval coin")
+        pair=settlement_route(row["asset"],row["side"],row["stable"])
+        if (row["chain_id"]!=pair["source_chain_id"] or _num(chain_id)!=row["chain_id"]
+                or (mode=="BRIDGE_USDT_ZERO" and (row["side"],row["stable"],row["chain_id"])!=("BUY","USDT",1))):
+            raise ValueError("Invalid bridge approval source chain")
+        route={"source_token":pair["settlement_contract"] if row["side"]=="BUY" else CROSS_COIN_CONTRACTS[row["asset"]],
+               "router":DIAMOND}
+    elif native:
         if (mode not in ("THOR_FINITE","THOR_USDT_ZERO")
                 or row.get("side")!="BUY" or row.get("stable") not in STABLES
                 or (row["asset"]=="XRP" and row["stable"]!="USDC")
@@ -107,7 +118,7 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
         raise ValueError("Original approved amount not finite")
     if not re.fullmatch(r"0x[0-9a-f]{40}",spender):
         raise ValueError("Invalid original approved spender")
-    approved_value=0 if mode=="THOR_USDT_ZERO" else amount
+    approved_value=0 if mode in ("THOR_USDT_ZERO","BRIDGE_USDT_ZERO") else amount
     expected="0x095ea7b3"+f"{int(spender,16):064x}"+f"{approved_value:064x}"
     if (str(tx.get("hash","")).lower()!=hash_
             or str(receipt.get("transactionHash","")).lower()!=hash_
@@ -167,7 +178,9 @@ async def reconcile_original_router_approvals_once(
     for row in rows:
         try:
             asset=row["asset"]
-            if asset in ("ETH","LINK","QNT","UNI","BTC","SOL","XRP","TRX","DOGE"):
+            if row.get("approval_mode") in ("BRIDGE_FINITE","BRIDGE_USDT_ZERO") and row["chain_id"]==1:
+                chain,network,fallback,env=_RPC["ETH_TOKENS"]
+            elif asset in ("ETH","LINK","QNT","UNI","BTC","SOL","XRP","TRX","DOGE"):
                 chain,network,fallback,env=_RPC["ETH_TOKENS"]
             elif asset=="ARB":
                 chain,network,fallback,env=_RPC["ARB_TOKENS"]
