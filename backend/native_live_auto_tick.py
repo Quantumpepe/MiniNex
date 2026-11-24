@@ -60,7 +60,7 @@ def _original_owner_native_session(row:object)->dict:
     started=row.get("started_by_owner_at")
     if (asset not in _NATIVE or stable not in _STABLES[asset]
             or not (row.get("status")=="ACTIVE" or
-                (row.get("status")=="EXIT_PENDING" and asset in ("BTC","SOL")))
+                (row.get("status")=="EXIT_PENDING" and asset in ("BTC","SOL","XRP","TRX")))
             or type(started) is not datetime or started.tzinfo is None
             or type(row.get("budget_revision")) is not int
             or row["budget_revision"]<=0
@@ -135,7 +135,7 @@ async def execute_owner_native_live_tick(
         supported=row["asset"] in ("BTC","SOL")
         candidate=await prepare_native_sell_candidate(row["privy_did"],
             asset=row["asset"],stable=row["stable"],client=client,
-            **({"_include_private_quote":True} if supported else {}))
+            **({"_include_private_quote":True} if supported or exiting else {}))
         quote=candidate.pop("_private_quote",None)
         exit_wallet=candidate.pop("_exit_wallet",None)
         exit_eth_wallet=candidate.pop("_exit_eth_wallet",None)
