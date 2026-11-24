@@ -83,6 +83,57 @@ def _read_quote(payload, *, wallet, source_chain, dest_chain, token_in,
                 format(Decimal(minimum).scaleb(-dest_decimals), "f"))
 
 
+async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,dest_chain,
+                        token_in,token_out,source_decimals,dest_decimals,units):
+    """Prefer a reviewed executable route over the provider's unsupported cheapest one.
+    Query a restricted Across alternative only if the first quote cannot be used.
+    Do not invent availability or promote an uninspected transaction to execution.
+    """
+    params={"fromChain":source_chain,"toChain":dest_chain,"fromToken":token_in,
+            "toToken":token_out,"fromAddress":wallet,"toAddress":wallet,
+            "fromAmount":units,"slippage":"0.005","allowDestinationCall":"true"}
+    indicative=None
+    last_error=None
+    alternatives=[params]
+    if source_chain!=43114 and dest_chain!=43114:
+        alternatives.append({**params,"allowBridges":"across"})
+    for choice in alternatives:
+        try:
+            response=await client.get(QUOTE_URL,headers=headers,params=choice)
+            response.raise_for_status()
+            if len(response.content)>512_000:
+                raise ValueError("Oversized cross-chain quote")
+            payload=response.json()
+            expected,minimum=_read_quote(payload,wallet=wallet,
+                source_chain=source_chain,dest_chain=dest_chain,token_in=token_in,
+                token_out=token_out,source_decimals=source_decimals,
+                dest_decimals=dest_decimals,units=units)
+            now=int(time.time())
+            with localcontext() as context:
+                context.prec=80
+                _,minimum_atomic=_quantity(minimum,dest_decimals)
+            terms={"wallet_address":wallet.lower(),"asset":asset,
+                "side":"BUY" if buy else "SELL","stable":stable,
+                "source_chain_id":source_chain,"destination_chain_id":dest_chain,
+                "source_token":token_in.lower(),"destination_token":token_out.lower(),
+                "input_atomic":units,"minimum_output_atomic":minimum_atomic,
+                "issued_at":now,"expires_at":now+30}
+            check_evm_quote_route(terms)
+            try:
+                inspected=inspect_across_v4(payload["transactionRequest"],terms=terms,now=now)
+            except Exception:
+                inspected=None
+            if inspected is not None:
+                return expected,minimum,terms,inspected
+            if indicative is None:
+                indicative=(expected,minimum,terms,None)
+        except (httpx.HTTPError,ValueError,TypeError,KeyError,ArithmeticError) as exc:
+            last_error=exc
+    if indicative is not None and indicative[2]["expires_at"]>int(time.time()):
+        return indicative
+    raise ValueError("No current Ethereum settlement quote") from last_error
+
+
 async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
                                       amount: str) -> dict:
     if not is_ethereum_cross_evm_pair(source, target):
@@ -127,47 +178,16 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
             source_chain,dest_chain=route["source_chain_id"],route["destination_chain_id"]
             token_in, token_out = ((STABLES[stable], coin_token) if buy
                                    else (coin_token, STABLES[stable]))
-            response = await client.get(QUOTE_URL, headers=headers, params={
-                "fromChain": source_chain, "toChain": dest_chain,
-                "fromToken": token_in, "toToken": token_out,
-                "fromAddress": wallet, "toAddress": wallet,
-                "fromAmount": units, "slippage": "0.005",
-            })
-            response.raise_for_status()
-            if len(response.content) > 512_000:
-                raise ValueError("Oversized cross-chain quote")
-            payload=response.json()
-            expected, minimum = _read_quote(
-                payload, wallet=wallet, source_chain=source_chain,
-                dest_chain=dest_chain, token_in=token_in, token_out=token_out,
-                source_decimals=source_decimals, dest_decimals=dest_decimals,
-                units=units)
+            expected,minimum,terms,inspected=await _select_quote(
+                client,headers=headers,wallet=wallet,asset=asset,buy=buy,stable=stable,
+                source_chain=source_chain,dest_chain=dest_chain,token_in=token_in,
+                token_out=token_out,source_decimals=source_decimals,
+                dest_decimals=dest_decimals,units=units)
     except HTTPException:
         raise
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):
         raise HTTPException(503, "Ethereum settlement route unavailable") from None
-    now = int(time.time())
-    with localcontext() as context:
-        context.prec=80
-        _, minimum_atomic = _quantity(minimum, dest_decimals)
-    terms = {
-        "wallet_address": wallet.lower(), "asset": asset,
-        "side": "BUY" if buy else "SELL", "stable": stable,
-        "source_chain_id": source_chain, "destination_chain_id": dest_chain,
-        "source_token": token_in.lower(), "destination_token": token_out.lower(),
-        "input_atomic": units, "minimum_output_atomic": minimum_atomic,
-        "issued_at": now, "expires_at": now + 30,
-    }
-    check_evm_quote_route(terms)
-    # Only a supported, decoded route may receive a durable calldata digest.
-    # Unsupported routes still show the real quote, never a signable request.
-    inspected=None
-    try:
-        inspected=inspect_across_v4(payload["transactionRequest"],terms=terms,now=now)
-    except Exception:
-        # ABI decode exceptions and unsupported provider route shapes are
-        # intentionally indicative-only; no transaction authority is returned.
-        pass
+    now=terms["issued_at"]
     terms["route_sha256"]=inspected["route_sha256"] if inspected else None
     terms["unsigned_transaction"]=inspected["transaction"] if inspected else None
     quote_id = await asyncio.to_thread(store_quote, did, terms)
