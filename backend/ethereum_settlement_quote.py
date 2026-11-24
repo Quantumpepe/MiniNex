@@ -86,7 +86,7 @@ def _read_quote(payload, *, wallet, source_chain, dest_chain, token_in,
 
 
 async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,dest_chain,
-                        token_in,token_out,source_decimals,dest_decimals,units):
+                        token_in,token_out,source_decimals,dest_decimals,units,prefer_direct=False):
     """Prefer a reviewed executable route over the provider's unsupported cheapest one.
     Query a restricted Across alternative only if the first quote cannot be used.
     Do not invent availability or promote an uninspected transaction to execution.
@@ -97,6 +97,10 @@ async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,de
     indicative=None
     last_error=None
     alternatives=[params]
+    reviewed_combined=None
+    if prefer_direct and asset!="AVAX":
+        # Request a policy-compatible quote before considering nested routes.
+        alternatives=[{**params,"allowBridges":"across","allowDestinationCall":"false"},params]
     if asset=="AVAX":
         alternatives.append({**params,"allowBridges":"stargateV2"})
     else:
@@ -128,18 +132,25 @@ async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,de
             except Exception:
                 inspected=None
             if inspected is not None:
-                return expected,minimum,terms,inspected
+                if not prefer_direct or asset=="AVAX" or (inspected["provider"]=="ACROSS_V4"
+                        and not inspected["source_swap"] and not inspected.get("destination_swap")):
+                    return expected,minimum,terms,inspected
+                if reviewed_combined is None:
+                    reviewed_combined=(expected,minimum,terms,inspected)
+                continue
             if indicative is None:
                 indicative=(expected,minimum,terms,None)
         except (httpx.HTTPError,ValueError,TypeError,KeyError,ArithmeticError) as exc:
             last_error=exc
+    if reviewed_combined is not None and reviewed_combined[2]["expires_at"]>int(time.time()):
+        return reviewed_combined
     if indicative is not None and indicative[2]["expires_at"]>int(time.time()):
         return indicative
     raise ValueError("No current Ethereum settlement quote") from last_error
 
 
 async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
-                                      amount: str, *, strategy_sell=False) -> dict:
+                                      amount: str, *, strategy_sell=False, prefer_direct=False) -> dict:
     if not is_ethereum_cross_evm_pair(source, target):
         raise HTTPException(422, "Unsupported Ethereum settlement pair")
     buy = source in STABLES
@@ -186,7 +197,7 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
                 client,headers=headers,wallet=wallet,asset=asset,buy=buy,stable=stable,
                 source_chain=source_chain,dest_chain=dest_chain,token_in=token_in,
                 token_out=token_out,source_decimals=source_decimals,
-                dest_decimals=dest_decimals,units=units)
+                dest_decimals=dest_decimals,units=units,prefer_direct=prefer_direct)
     except HTTPException:
         raise
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):

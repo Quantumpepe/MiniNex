@@ -87,6 +87,43 @@ def exact_direct_bridge_rules(quote,*,now):
             "remote_policy_verified":False,"recurring_auto_authority":False,"can_submit":False}
 
 
+def exact_nested_bridge_review(quote,*,now):
+    """Exact wire-bound candidate for a fully inspected combined route.
+
+    A static data equality predicate is a proposal, not proof that Privy's
+    remote policy evaluator supports this field. Never publish this draft
+    as a recurring signer grant. Dynamic calldata cannot be authorized by
+    matching only the router, selector, or an opaque message prefix.
+    """
+    from .ethereum_settlement_calldata import inspect_settlement_route
+    check_evm_quote_route(quote)
+    if not quote["issued_at"]<=now<quote["expires_at"]:
+        raise ValueError("Quote expired")
+    reviewed=inspect_settlement_route(quote["unsigned_transaction"],terms=quote,now=now)
+    if reviewed["route_sha256"]!=quote["route_sha256"]:
+        raise ValueError("Original nested route digest changed")
+    if not (reviewed["source_swap"] or reviewed.get("destination_swap")):
+        raise ValueError("Combined source or destination swap required")
+    tx=reviewed["transaction"]
+    base=[_tx("chain_id","eq",str(tx["chainId"])),_expiry(quote["expires_at"])]
+    label=f"MiniNex {quote['asset']} {quote['side']} exact combined quote"
+    rules=[{"name":label,"method":"eth_sendTransaction","action":"ALLOW",
+        "conditions":deepcopy(base)+[_tx("to","eq",DIAMOND),
+            _tx("value","eq",tx["value"]),_tx("data","eq",tx["data"])]}]
+    if quote["source_token"]!=ETH_NATIVE:
+        rules.append({"name":label+" allowance","method":"eth_sendTransaction","action":"ALLOW",
+            "conditions":deepcopy(base)+[_tx("to","eq",quote["source_token"]),_tx("value","eq","0"),
+                _call("function_name","eq","approve",ERC20_APPROVE_ABI),
+                _call("approve.spender","eq",DIAMOND,ERC20_APPROVE_ABI),
+                _call("approve.value","eq",str(quote["input_atomic"]),ERC20_APPROVE_ABI)]})
+    digest=hashlib.sha256(json.dumps(rules,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+    return {"rules":rules,"rules_sha256":digest,"route_sha256":reviewed["route_sha256"],
+            "provider":reviewed["provider"],"native_bridge_fee_atomic":str(reviewed["native_bridge_fee_atomic"]),
+            "source_swap":bool(reviewed["source_swap"]),"destination_swap":bool(reviewed.get("destination_swap")),
+            "remote_data_equality_verified":False,"remote_policy_verified":False,
+            "recurring_auto_authority":False,"can_submit":False}
+
+
 def migration_review(quote,record,*,now):
     if quote["asset"]!=record["asset"] or quote["stable"]!=record["stable"] or (
             quote["wallet_address"].lower()!=record["wallet_address"].lower()):
@@ -95,15 +132,20 @@ def migration_review(quote,record,*,now):
     inspected=inspect_settlement_route(quote["unsigned_transaction"],terms=quote,now=now)
     if inspected["route_sha256"]!=quote["route_sha256"]:
         raise ValueError("Original quote changed")
-    rules=None
+    rules=None; nested=None
     if inspected["provider"]=="ACROSS_V4" and not inspected["source_swap"] and not inspected.get("destination_swap"):
         rules=exact_direct_bridge_rules(quote,now=now)
+    else:
+        nested=exact_nested_bridge_review(quote,now=now)
     return {"asset":quote["asset"],"source_chain_id":quote["source_chain_id"],
         "destination_chain_id":quote["destination_chain_id"],
         "old_policy_sha256":record["policy_sha256"],
         "owner_budget_revision":record["budget_revision"],
         "direct_quote_rule_sha256":rules["rules_sha256"] if rules else None,
         "migration_kind":"EXACT_DIRECT_QUOTE" if rules else "NESTED_SWAP_POLICY_UNRESOLVED",
+        "exact_combined_quote_rule_sha256":nested["rules_sha256"] if nested else None,
+        "combined_route_provider":nested["provider"] if nested else None,
+        "remote_data_equality_verified":False,
         "requires_new_owner_consent":True,"remote_policy_verified":False,
         "can_submit":False}
 

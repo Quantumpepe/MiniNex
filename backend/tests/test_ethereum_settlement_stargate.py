@@ -83,3 +83,29 @@ def test_wrong_destination_router_recipient_refused():
     unsigned,terms=tx("BUY","USDC",bad_receiver=True)
     with pytest.raises(ValueError):
         inspect_settlement_route(unsigned,terms=terms,now=101)
+
+
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+@pytest.mark.parametrize("side",["BUY","SELL"])
+def test_stargate_combined_review_binds_exact_bytes_and_native_fee_without_auto_grant(stable,side):
+    from backend.ethereum_settlement_calldata import route_digest
+    from backend.ethereum_settlement_policy_migration import exact_nested_bridge_review,migration_review
+    unsigned,terms=tx(side,stable)
+    q={**terms,"issued_at":100,"expires_at":130,"unsigned_transaction":unsigned,
+        "route_sha256":route_digest(unsigned,terms["source_chain_id"])}
+    review=exact_nested_bridge_review(q,now=101)
+    cond={c["field"]:c["value"] for c in review["rules"][0]["conditions"]}
+    assert cond["data"]==unsigned["data"]
+    assert cond["value"]==str(FEE)
+    assert cond["chain_id"]==str(terms["source_chain_id"])
+    assert not review["remote_data_equality_verified"] and not review["can_submit"]
+    assert not review["recurring_auto_authority"]
+    record=dict(asset="AVAX",stable=stable,wallet_address=W,policy_sha256="ab"*32,budget_revision=1)
+    report=migration_review(q,record,now=101)
+    assert report["exact_combined_quote_rule_sha256"]==review["rules_sha256"]
+    assert report["combined_route_provider"]=="STARGATE_V2"
+    assert report["direct_quote_rule_sha256"] is None
+    with pytest.raises(ValueError):
+        exact_nested_bridge_review({**q,"route_sha256":"00"*32},now=101)
+    with pytest.raises(ValueError):
+        exact_nested_bridge_review(q,now=130)

@@ -62,3 +62,20 @@ def test_automatic_sell_cannot_fall_back_to_unrelated_native_coin():
     assert _source_token("POL",Decimal("2"),balances,wrapped_only=True).lower()==CROSS_COIN_CONTRACTS["POL"]
     with pytest.raises(HTTPException):
         _source_token("POL",Decimal("3"),balances,wrapped_only=True)
+
+
+def test_across_combined_review_preserves_exact_destination_message():
+    from backend.ethereum_settlement_calldata import route_digest
+    from backend.ethereum_settlement_policy_migration import exact_nested_bridge_review
+    tx,terms,_=example()
+    q={**terms,"asset":"POL","side":"BUY","stable":"USDC","issued_at":100,"expires_at":130,
+        "unsigned_transaction":tx,"route_sha256":route_digest(tx,1)}
+    r=exact_nested_bridge_review(q,now=101)
+    cond={c["field"]:c["value"] for c in r["rules"][0]["conditions"]}
+    assert cond["data"]==tx["data"]
+    assert cond["value"]=="0"
+    assert r["destination_swap"] and not r["source_swap"]
+    assert not r["can_submit"] and not r["remote_policy_verified"]
+    wrong,_,_=example(recipient=W)
+    with pytest.raises(ValueError):
+        exact_nested_bridge_review({**q,"unsigned_transaction":wrong,"route_sha256":route_digest(wrong,1)},now=101)

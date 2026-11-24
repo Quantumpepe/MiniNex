@@ -82,8 +82,10 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
         or record["wallet_id"]!=audit["remote_verified_wallet_id"]
         or record["signer_id"]!=audit["remote_verified_signer_id"]):
         raise HTTPException(409,"Owner-approved coin budget changed")
+    from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
+    direct_scope=record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
     quote=await get_ethereum_cross_evm_quote(did,route["source_asset"],route["destination_asset"],amount,
-        strategy_sell=side=="SELL")
+        strategy_sell=side=="SELL",prefer_direct=direct_scope)
     if not quote["restricted_calldata_verified"]:
         return {"asset":asset,"state":"ROUTE_INDICATIVE_ONLY","can_submit":False}
     persisted=await asyncio.to_thread(load_quote,did,quote["quote_id"])
@@ -99,9 +101,7 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
         prices=await fetch_evm_policy_reference_rates(asset,stable)
         caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
             budget_usd=budget_usd,snapshot=prices,now=int(time.time()))
-    from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
-    direct=(record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
-            and review["migration_kind"]=="EXACT_DIRECT_QUOTE")
+    direct=direct_scope and review["migration_kind"]=="EXACT_DIRECT_QUOTE"
     if direct and session_started_at is not None:
         from .ethereum_settlement_auto_submit import (submit_direct_bridge_once,check_direct_bridge_scope,
             submit_direct_bridge_approval_once)
@@ -144,6 +144,9 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
             "owner_budget_revision":budget_revision,
             "policy_migration_kind":review["migration_kind"],
             "direct_quote_rule_sha256":review["direct_quote_rule_sha256"],
+            "exact_combined_quote_rule_sha256":review["exact_combined_quote_rule_sha256"],
+            "combined_route_provider":review["combined_route_provider"],
+            "remote_data_equality_verified":False,
             "source_chain_id":route["source_chain_id"],
             "destination_chain_id":route["destination_chain_id"],
             "can_submit":False,"real_trade_sent":False}
