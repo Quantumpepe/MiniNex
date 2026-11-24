@@ -156,6 +156,7 @@ from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
+from .ethereum_settlement_status import check_ethereum_settlement
 from .ethereum_settlement_quote import (
     is_ethereum_cross_evm_pair, get_ethereum_cross_evm_quote,
 )
@@ -503,6 +504,18 @@ async def manual_wallet_swap_live_market_quote(
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
+
+
+@app.get("/api/wallet/swap/ethereum-settlement/{asset}/{tx_hash}")
+async def ethereum_cross_chain_settlement_status(
+        asset: Literal["BNB", "POL", "AVAX", "ARB"], tx_hash: str,
+        side: Literal["BUY", "SELL"], stable: Literal["USDC", "USDT"],
+        amount: str, authorization: str | None = Header(default=None)):
+    """Track the original owner transaction without signing or resending."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await check_ethereum_settlement(
+        did, asset=asset, side=side, stable=stable, amount=amount, tx_hash=tx_hash)
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/wallet/swap/route")
