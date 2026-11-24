@@ -122,14 +122,14 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
     matched&&lastValued.did===did&&lastValued.summary
       ?{...lastValued.summary,incomplete:true}:summary;
   useEffect(()=>{
-    if(!visible||!matched||state.status!=='ready'||
+    if(!visible||!matched||!['ready','partial'].includes(state.status)||
        !summary?.valuationAvailable||summary.equity===null)return;
     setSamples(prev=>{
       const points=prev.did===did?prev.points:readLiveEquity(did);
       const next=appendLiveEquity(points,summary);
       return next===points?prev:{did,points:next};
     });
-  },[visible,matched,did,state.status,summary?.observedEquityUsd,summary?.valuationAvailable,summary?.incomplete,syncedAt]);
+  },[visible,matched,did,state.status,summary?.observedEquityUsd,summary?.valuationAvailable,summary?.coverage,syncedAt]);
   useEffect(()=>{
     if(matched&&samples.did===did&&samples.points.length)
       saveLiveEquity(did,samples.points);
