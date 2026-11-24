@@ -15,7 +15,8 @@ import httpx
 from fastapi import HTTPException
 
 from .ethereum_settlement_quote import CROSS_EVM, _token_matches
-from .ethereum_settlement_journal import load_quote
+from .ethereum_settlement_journal import load_quote, load_submission
+from .ethereum_settlement_calldata import route_digest
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .live_eth_receipts import _num
 from .multicoin_evm_balances import _RPC, _WRAPPED_GROUPS
@@ -217,11 +218,19 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             or not _eq(quote["destination_token"], dest_token)):
         raise HTTPException(409, "Settlement differs from original quote")
     source_tokens = [quote["source_token"]]
+    submission=await asyncio.to_thread(load_submission,did,quote_id)
+    if submission is not None and (submission["source_chain_id"]!=src
+            or (submission["source_tx_hash"] is not None
+                and not _eq(submission["source_tx_hash"],tx_hash))):
+        raise HTTPException(409,"Transaction differs from original submitted order")
+    bound=bool(submission and submission["state"]=="SUBMITTED"
+               and _eq(submission["source_tx_hash"],tx_hash))
     base = {"mode": "ETHEREUM_CROSS_CHAIN_SETTLEMENT", "asset": asset,
             "quote_id": quote_id, "side": side, "stable": stable, "source_chain_id": src,
             "destination_chain_id": dst, "source_tx_hash": tx_hash.lower(),
             "destination_tx_hash": None, "received_amount": None,
             "source_fee_native": None, "state": "PENDING",
+            "original_submission_bound": bound,
             "settlement_verified": False, "execution_enabled": False}
     try:
         user = await fetch_privy_user(did)
@@ -241,6 +250,11 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             tx, receipt = source
             if not _eq(tx.get("from"), wallet) or not _eq(tx.get("to"), DIAMOND):
                 raise ValueError("Not an owned LI.FI source transaction")
+            if quote.get("route_sha256") is not None:
+                if route_digest({**tx,"chainId":src},src)!=quote["route_sha256"]:
+                    raise ValueError("Mined calldata differs from original quote")
+            elif bound:
+                raise ValueError("Submitted route has no inspected calldata")
             gas = _num(receipt["gasUsed"]) * _num(receipt["effectiveGasPrice"])
             base["source_fee_native"] = format(Decimal(gas).scaleb(-18), "f")
             if _num(receipt["status"]) == 0:
@@ -265,6 +279,11 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             if _eq(source_token, ETH_NATIVE):
                 if _num(tx.get("value")) < int(units):
                     raise ValueError("Native source amount not funded")
+                debit=await _native_credit(client,src,tx_hash,tx,wallet)
+                if debit is None:
+                    return {**base,"state":"NATIVE_DEBIT_PROOF_REQUIRED"}
+                if -debit!=int(units):
+                    raise ValueError("Native source debit differs from original amount")
             elif -_net_token_credit(receipt["logs"], source_token, wallet) != int(units):
                 raise ValueError("Source token debit differs from original amount")
             base["destination_tx_hash"] = terms["hash"]
@@ -285,9 +304,8 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             if received < int(quote["minimum_output_atomic"]):
                 return {**base, "state": "BELOW_QUOTED_MINIMUM",
                         "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
-            # These receipts establish observed credits, but no trusted signer
-            # journal yet binds this source hash to this quote. Never book PnL,
-            # release a reserved budget or authorize another trade here.
+            # Even a bound original send still needs bridge-message proof
+            # and a unique accounting entry. Never book PnL here.
             return {**base, "state": "CREDIT_OBSERVED",
                     "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):

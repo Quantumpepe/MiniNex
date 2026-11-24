@@ -55,7 +55,9 @@ export function validManualSwapQuote(data, request) {
     if(data?.mode==='ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE'){
       const chains={BNB:56,POL:137,AVAX:43114,ARB:42161,USDC:1,USDT:1};
       const src=chains[request.from],dst=chains[request.to];
-      return !!src&&!!dst&&src!==dst&&(src===1||dst===1)&&
+      return typeof data.quote_id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(data.quote_id)&&
+        typeof data.restricted_calldata_verified==='boolean'&&
+        !!src&&!!dst&&src!==dst&&(src===1||dst===1)&&
         data.source_chain_id===src&&data.destination_chain_id===dst&&
         data.source_asset===request.from&&data.destination_asset===request.to&&
         data.source_network===network(request.from)&&data.destination_network===network(request.to)&&

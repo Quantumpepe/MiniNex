@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import os
 import time
 
@@ -10,11 +10,12 @@ import httpx
 from fastapi import HTTPException
 
 from .ethereum_settlement_journal import store_quote
+from .ethereum_settlement_calldata import inspect_across_v4
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
 from .manual_swap_routes import _asset_network
 from .privy_wallet_verification import fetch_privy_user
-from .wallet_balances import verified_addresses
+from .wallet_balances import verified_addresses, _eth_rpc_call
 
 CROSS_EVM = {
     "BNB": (56, ETH_NATIVE),
@@ -87,7 +88,9 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
     asset, stable = (target, source) if buy else (source, target)
     chain_id, coin_token = CROSS_EVM[asset]
     source_decimals, dest_decimals = (6, 18) if buy else (18, 6)
-    exact_amount, units = _quantity(amount, source_decimals)
+    with localcontext() as context:
+        context.prec=80
+        exact_amount, units = _quantity(amount, source_decimals)
     try:
         user = await fetch_privy_user(did)
         wallet = verified_addresses(user, did)["ETH"]
@@ -99,7 +102,16 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
             headers["x-lifi-api-key"] = key
         async with httpx.AsyncClient(timeout=httpx.Timeout(9),
                                      follow_redirects=False) as client:
-            if not buy:
+            if buy:
+                # Only the canonical Ethereum token may fund a purchase.
+                if await _eth_rpc_call(client,"eth_chainId",[],1)!=1:
+                    raise ValueError("Wrong Ethereum source chain")
+                calldata="0x70a08231"+wallet[2:].lower().rjust(64,"0")
+                balance=await _eth_rpc_call(client,"eth_call",[
+                    {"to":STABLES[stable],"data":calldata},"latest"],2)
+                if balance<int(units):
+                    raise HTTPException(409,"Verified Ethereum settlement balance insufficient")
+            else:
                 # Read the existing source-chain balances, not all networks.
                 balances = await _read_chain(
                     client, "ARB_TOKENS" if asset == "ARB" else asset, wallet)
@@ -116,8 +128,9 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
             response.raise_for_status()
             if len(response.content) > 512_000:
                 raise ValueError("Oversized cross-chain quote")
+            payload=response.json()
             expected, minimum = _read_quote(
-                response.json(), wallet=wallet, source_chain=source_chain,
+                payload, wallet=wallet, source_chain=source_chain,
                 dest_chain=dest_chain, token_in=token_in, token_out=token_out,
                 source_decimals=source_decimals, dest_decimals=dest_decimals,
                 units=units)
@@ -126,17 +139,31 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):
         raise HTTPException(503, "Ethereum settlement route unavailable") from None
     now = int(time.time())
-    _, minimum_atomic = _quantity(minimum, dest_decimals)
-    quote_id = await asyncio.to_thread(store_quote, did, {
+    with localcontext() as context:
+        context.prec=80
+        _, minimum_atomic = _quantity(minimum, dest_decimals)
+    terms = {
         "wallet_address": wallet.lower(), "asset": asset,
         "side": "BUY" if buy else "SELL", "stable": stable,
         "source_chain_id": source_chain, "destination_chain_id": dest_chain,
         "source_token": token_in.lower(), "destination_token": token_out.lower(),
         "input_atomic": units, "minimum_output_atomic": minimum_atomic,
         "issued_at": now, "expires_at": now + 30,
-    })
+    }
+    # Only a supported, decoded route may receive a durable calldata digest.
+    # Unsupported routes still show the real quote, never a signable request.
+    inspected=None
+    try:
+        inspected=inspect_across_v4(payload["transactionRequest"],terms=terms,now=now)
+    except Exception:
+        # ABI decode exceptions and unsupported provider route shapes are
+        # intentionally indicative-only; no transaction authority is returned.
+        pass
+    terms["route_sha256"]=inspected["route_sha256"] if inspected else None
+    quote_id = await asyncio.to_thread(store_quote, did, terms)
     return {
         "quote_id": quote_id,
+        "restricted_calldata_verified": inspected is not None,
         "mode": "ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE",
         "source_asset": source, "destination_asset": target,
         "source_network": _asset_network(source)["network"],

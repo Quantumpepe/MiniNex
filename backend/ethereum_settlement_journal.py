@@ -33,6 +33,9 @@ def validate_quote_terms(terms):
     if (type(terms["issued_at"]) is not int or type(terms["expires_at"]) is not int
             or not 0 < terms["expires_at"] - terms["issued_at"] <= 30):
         raise ValueError("Invalid quote lifetime")
+    digest=terms.get("route_sha256")
+    if digest is not None and (not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{64}",digest)):
+        raise ValueError("Invalid inspected route digest")
     return terms
 
 
@@ -50,13 +53,13 @@ def store_quote(did, terms):
                 cur.execute("""INSERT INTO mininex_ethereum_settlement_quotes
                     (quote_id,privy_did,wallet_address,asset,side,stable,
                      source_chain_id,destination_chain_id,source_token,destination_token,
-                     input_atomic,minimum_output_atomic,issued_at,expires_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                     input_atomic,minimum_output_atomic,issued_at,expires_at,route_sha256)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (key,did,terms["wallet_address"],terms["asset"],terms["side"],
                      terms["stable"],terms["source_chain_id"],terms["destination_chain_id"],
                      terms["source_token"],terms["destination_token"],
                      terms["input_atomic"],terms["minimum_output_atomic"],
-                     terms["issued_at"],terms["expires_at"]))
+                     terms["issued_at"],terms["expires_at"],terms.get("route_sha256")))
     except psycopg.Error:
         raise HTTPException(503, "Settlement quote storage unavailable") from None
     return str(key)
@@ -107,7 +110,8 @@ def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
     cur.execute("""SELECT * FROM mininex_ethereum_settlement_quotes
         WHERE quote_id=%s AND privy_did=%s FOR UPDATE""", (key,did))
     quote = cur.fetchone()
-    if not quote or not quote["issued_at"] <= now < quote["expires_at"]:
+    if (not quote or not quote.get("route_sha256")
+            or not quote["issued_at"] <= now < quote["expires_at"]):
         raise HTTPException(409, "Settlement quote expired or unavailable")
     cur.execute("""INSERT INTO mininex_ethereum_settlement_submissions
         (quote_id,privy_did,intent_key,source_chain_id,request_sha256,state)
@@ -138,3 +142,19 @@ def record_claimed_submission_locked(cur, *, did, quote_id, request_sha256,
     if cur.fetchone() is None:
         raise HTTPException(409, "Original settlement submission not found")
     return state
+
+
+def load_submission(did, quote_id):
+    """Read a trusted transport result; a client hash never creates a claim."""
+    did = _safe_did(did)
+    url = _db_url()
+    try:
+        _ensure_schema(url)
+        with psycopg.connect(url, connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("""SELECT state,source_tx_hash,source_chain_id FROM
+                    mininex_ethereum_settlement_submissions
+                    WHERE privy_did=%s AND quote_id=%s""", (did,uuid.UUID(quote_id)))
+                return cur.fetchone()
+    except psycopg.Error:
+        raise HTTPException(503, "Settlement submission unavailable") from None
