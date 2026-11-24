@@ -114,3 +114,15 @@ def test_missing_native_wallet_prevents_any_network_trade(monkeypatch):
     with pytest.raises(HTTPException) as err:
         asyncio.run(run())
     assert err.value.status_code==409
+
+
+def test_native_sell_inventory_uses_native_atomic_credits_not_stable_input():
+    rows=[dict(side="BUY",destination_received_atomic=200000000),
+          dict(side="SELL",input_amount="0.75"),
+          dict(side="BUY",destination_received_atomic=25000000)]
+    position=m.finalized_native_position_atomic(rows,asset="BTC")
+    assert position==150000000
+    assert m.exact_native_sell_amount(asset="BTC",position_atomic=position,
+                                      wallet_balance="1.25")=="1.25"
+    assert m.exact_native_sell_amount(asset="BTC",position_atomic=0,
+                                      wallet_balance="2") is None

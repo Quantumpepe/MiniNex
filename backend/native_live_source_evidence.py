@@ -9,7 +9,7 @@ THORChain quote and immutable Privy grant.
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal,InvalidOperation
+from decimal import Decimal,InvalidOperation,localcontext
 import logging
 import time
 
@@ -18,7 +18,8 @@ import psycopg
 from fastapi import HTTPException
 from psycopg.rows import dict_row
 
-from .coingecko_provider import COIN_IDS,coingecko_request_settings
+from .coingecko_provider import COIN_IDS
+from .shared_evm_policy_reference_rates import fetch_evm_policy_reference_rates
 from .native_coin_balances import (
     CHAINS,_read_one,verified_native_addresses,
 )
@@ -28,13 +29,11 @@ from .native_live_budget import (
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url,_ensure_schema,_safe_did
 from .wallet_balances import get_wallet_balances
-from .native_thor_swap_quote import _exact_owner_wallets
+from .native_thor_swap_quote import _exact_owner_wallets,get_private_native_thornode_terms
 from .ethereum_settlement_funding import read_pending_ethereum_funding
 
 LOG=logging.getLogger("mininex.native_live_source")
 _PRICE_TTL=180
-_REF_CACHE:dict|None=None
-_REF_LOCK=asyncio.Lock()
 _SOURCES=frozenset(("USDC","USDT"))
 
 
@@ -71,41 +70,12 @@ async def fresh_native_usd_prices(asset:str)->dict[str,Decimal]:
     """
     if asset not in _NATIVE or asset not in COIN_IDS:
         raise HTTPException(422,"Unknown original native live price asset")
-    endpoint,headers,interval=coingecko_request_settings("/simple/price")
-    global _REF_CACHE
-    async with _REF_LOCK:
-        now=int(time.time())
-        cache=_REF_CACHE
-        if (type(cache) is dict and cache.get("endpoint")==endpoint
-                and type(cache.get("read_at")) is int
-                and 0<=now-cache["read_at"]<=interval):
-            try:
-                return {coin:_native_rate(cache["data"],coin,now)
-                        for coin in (asset,"USDC","USDT")}
-            except (ValueError,TypeError,KeyError):
-                pass
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(9.0),follow_redirects=False,
-            ) as client:
-                response=await client.get(
-                    endpoint,params={
-                        "ids":",".join(dict.fromkeys(COIN_IDS[x] for x in
-                                                   (x for x in (*_NATIVE.keys(),"USDC","USDT") if x in COIN_IDS))),
-                        "vs_currencies":"usd",
-                        "include_last_updated_at":"true",
-                    },headers={"Accept":"application/json",**headers})
-                response.raise_for_status()
-                if len(response.content)>35_000:
-                    raise ValueError("Oversized native USD reference")
-                data=response.json()
-            rates={coin:_native_rate(data,coin,now)
-                   for coin in (asset,"USDC","USDT")}
-            _REF_CACHE={"endpoint":endpoint,"read_at":now,"data":data}
-            return rates
-        except (httpx.HTTPError,ValueError,KeyError,TypeError):
-            LOG.warning("Original native real-price evidence unavailable")
-            raise HTTPException(503,"Current native USD reference unavailable") from None
+    data=await fetch_evm_policy_reference_rates(asset,"USDC")
+    now=int(time.time())
+    try:
+        return {coin:_native_rate(data,coin,now) for coin in (asset,"USDC","USDT")}
+    except (ValueError,TypeError,KeyError):
+        raise HTTPException(503,"Current native USD reference unavailable") from None
 
 
 def _pending_owner_native_buys(did:str,asset:str)->list[dict]:
@@ -229,3 +199,108 @@ async def verified_owner_native_buy_amount(
             httpx.HTTPError):
         LOG.warning("Native original BUY owner/source exposure unavailable")
         raise HTTPException(503,"Real native owner budget evidence unavailable") from None
+
+
+def finalized_native_position_atomic(rows,*,asset):
+    if asset not in _NATIVE:
+        raise ValueError("Unknown native position")
+    with localcontext() as ctx:
+        ctx.prec=100
+        position=0
+        scale=10**_NATIVE[asset][1]
+        for row in rows:
+            if row["side"]=="BUY":
+                amount=Decimal(row["destination_received_atomic"])
+                if not amount.is_finite() or amount<=0 or amount!=amount.to_integral_value():
+                    raise ValueError("Invalid original native credit")
+                position+=int(amount)
+            elif row["side"]=="SELL":
+                amount=Decimal(row["input_amount"])*scale
+                if not amount.is_finite() or amount<=0 or amount!=amount.to_integral_value():
+                    raise ValueError("Invalid original native debit")
+                position=max(0,position-int(amount))
+            else:
+                raise ValueError("Invalid original order side")
+        return position
+
+
+def read_native_position_atomic(did,*,asset,wallet):
+    """Read only original owner-specific, fully finalized strategy orders."""
+    did=_safe_did(did)
+    db=_db_url();_ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""SELECT 1 FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND asset=%s
+                  AND ((status='PREPARED' AND quote_expires_at>now()) OR
+                    status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED','SOURCE_FINALIZED'))
+                LIMIT 1""",(did,asset))
+            if cur.fetchone() is not None:
+                return None
+            cur.execute("""SELECT side,input_amount,destination_received_atomic
+                FROM mininex_live_native_order_intents
+                WHERE privy_did=%s AND asset=%s AND status='DESTINATION_FINALIZED'
+                  AND source_proof_sha256 IS NOT NULL
+                  AND destination_proof_sha256 IS NOT NULL
+                  AND ((side='BUY' AND destination_wallet=%s)
+                       OR (side='SELL' AND source_wallet=%s))
+                ORDER BY destination_finalized_at,intent_key""",(did,asset,wallet,wallet))
+            return finalized_native_position_atomic(cur.fetchall(),asset=asset)
+
+
+def exact_native_sell_amount(*,asset,position_atomic,wallet_balance):
+    if asset not in _NATIVE or type(position_atomic) is not int or position_atomic<0:
+        raise ValueError("Invalid verified strategy position")
+    with localcontext() as ctx:
+        ctx.prec=100
+        scale=10**_NATIVE[asset][1]
+        wallet=Decimal(wallet_balance)*scale
+        if not wallet.is_finite() or wallet<0 or wallet!=wallet.to_integral_value():
+            raise ValueError("Invalid confirmed native wallet balance")
+        available=min(position_atomic,int(wallet))
+        return format(Decimal(available)/scale,"f") if available else None
+
+
+async def prepare_native_sell_candidate(did,*,asset,stable,client):
+    """Read-only SELL preparation; fee reserve and actual signer remain required."""
+    did=_safe_did(did)
+    if asset not in ("BTC","SOL","XRP"):
+        return {"asset":asset,"state":"WAIT","reason":"NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"}
+    user=await fetch_privy_user(did)
+    wallet,eth=_exact_owner_wallets(user,did,asset)
+    position=await asyncio.to_thread(read_native_position_atomic,did,asset=asset,wallet=wallet)
+    if position is None:
+        return {"asset":asset,"state":"WAIT","reason":"PREVIOUS_NATIVE_ORDER_UNRESOLVED"}
+    if position==0:
+        return {"asset":asset,"state":"WAIT","reason":"NO_FINALIZED_NATIVE_POSITION"}
+    if asset=="BTC":
+        evidence=await get_wallet_balances(did)
+        balance=evidence.get("balances",{}).get("BTC",{})
+        if (evidence.get("wallet_ownership_verified") is not True
+            or evidence.get("wallets",{}).get("BTC")!=wallet
+            or balance.get("status")!="verified" or balance.get("network")!="bitcoin-mainnet"):
+            raise ValueError("Original Bitcoin wallet balance unavailable")
+        amount=exact_native_sell_amount(asset=asset,position_atomic=position,wallet_balance=balance["balance"])
+    else:
+        balance=await _read_one(client,asset,wallet)
+        amount=exact_native_sell_amount(asset=asset,position_atomic=position,wallet_balance=balance)
+    if amount is None:
+        return {"asset":asset,"state":"WAIT","reason":"NO_VERIFIED_NATIVE_SELL_BALANCE"}
+    # THORChain quotes use at most eight decimal places. Round DOWN in native
+    # units only, not in the value of the Ethereum stablecoin.
+    from decimal import ROUND_DOWN
+    with localcontext() as ctx:
+        ctx.prec=100
+        amount=format(Decimal(amount).quantize(Decimal(1).scaleb(-min(8,_NATIVE[asset][1])),rounding=ROUND_DOWN),"f")
+    if Decimal(amount)==0:
+        return {"asset":asset,"state":"WAIT","reason":"NO_REPRESENTABLE_NATIVE_SELL_AMOUNT"}
+    quote=await get_private_native_thornode_terms(did,asset=asset,side="SELL",stable=stable,amount=amount)
+    if quote["source_wallet"]!=wallet or quote["destination_wallet"].lower()!=eth.lower():
+        raise ValueError("Original native SELL wallet changed")
+    return {"asset":asset,"side":"SELL","state":"NATIVE_SELL_QUOTE_PREPARED",
+            "input_amount":amount,"stable":stable,
+            "expected_output_units_1e8":quote["expected_output_units_1e8"],
+            "venue_fee_units_1e8":quote["venue_fee_units_1e8"],
+            "needs_extended_btc_memo":quote["needs_extended_btc_memo"],
+            "can_submit":False,"real_trade_sent":False,
+            "reason":"NATIVE_SELL_FEE_AND_SIGNER_REQUIRED"}

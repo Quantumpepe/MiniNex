@@ -18,7 +18,8 @@ import httpx
 
 from .eth_live_strategy_tick import verified_live_native_momentum
 from .native_buy_strategy_execution import coordinate_original_native_buy_once
-from .native_live_source_evidence import verified_owner_native_buy_amount
+from .native_live_source_evidence import verified_owner_native_buy_amount,prepare_native_sell_candidate
+from fastapi import HTTPException
 from .storage import _safe_did
 
 LOG=logging.getLogger("mininex.native_live_tick")
@@ -128,11 +129,8 @@ async def execute_owner_native_live_tick(
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
     if decision.get("action")=="SELL":
-        # No synthetic BUY amount, fake PSBT or empty UTXO list can represent a
-        # native position exit. Connect the actual signed SELL coordinator
-        # before this branch is permitted to send a source transaction.
-        return {"asset":row["asset"],"state":"WAIT",
-                "reason":"NATIVE_SELL_SOURCE_COORDINATOR_REQUIRED"}
+        return await prepare_native_sell_candidate(row["privy_did"],
+            asset=row["asset"],stable=row["stable"],client=client)
     if decision.get("action")!="BUY":
         raise ValueError("Invalid actual live market signal")
     amount=await verified_owner_native_buy_amount(
@@ -148,10 +146,15 @@ async def execute_owner_native_live_tick(
     run="owner_"+row["started_by_owner_at"].astimezone(
         timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     event="market_"+str(int(current//60))
-    audit=await grant_auditor(
-        row["privy_did"],asset=row["asset"],stable=row["stable"],
-        amount=amount,budget_revision=row["budget_revision"],
-        signal_event_id=event)
+    try:
+        audit=await grant_auditor(
+            row["privy_did"],asset=row["asset"],stable=row["stable"],
+            amount=amount,budget_revision=row["budget_revision"],
+            signal_event_id=event)
+    except HTTPException as exc:
+        if isinstance(exc.detail,dict) and exc.detail.get("code")=="NATIVE_PRIVY_GRANT_NOT_VERIFIED":
+            return {"asset":row["asset"],"state":"WAIT","reason":"NATIVE_PRIVY_GRANT_NOT_VERIFIED"}
+        raise
     evidence=_independent_native_owner_permission(
         audit,row=row,amount=amount)
     return await coordinate_original_native_buy_once(
