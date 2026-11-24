@@ -108,23 +108,8 @@ def test_feature_flag_disabled_never_fetches_user_wallet(monkeypatch):
     assert calls==[]
 
 
-def test_single_owner_granted_live_worker_also_enables_real_hwm_fee_reconciliation(
-    monkeypatch,
-):
-    # The final owner/fee policy, Treasury, claim and amount are independently
-    # verified before each send. This only attaches the already-scoped worker.
+def test_retired_hwm_sender_cannot_be_enabled_by_old_configuration(monkeypatch):
     monkeypatch.setenv("DATABASE_URL","postgresql://test.invalid")
-    monkeypatch.setenv("MININEX_LIVE_TRADING_ENABLED","true")
-    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
-    monkeypatch.delenv("MININEX_EVM_AUTO_FEES_ENABLED",raising=False)
-    assert autosend.automatic_fee_transfer_worker_enabled() is True
-    monkeypatch.setenv("MININEX_EVM_AUTO_WORKER_ENABLED","explicit-live")
-    assert autosend.automatic_fee_transfer_worker_enabled() is True
-    monkeypatch.setenv("MININEX_EVM_AUTO_FEES_ENABLED","disabled")
-    assert autosend.automatic_fee_transfer_worker_enabled() is False
-    monkeypatch.setenv(
-        "MININEX_EVM_AUTO_FEES_ENABLED","explicit-owner-privy-grant")
-    monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED")
-    assert autosend.automatic_fee_transfer_worker_enabled() is True
-    monkeypatch.delenv("DATABASE_URL")
-    assert autosend.automatic_fee_transfer_worker_enabled() is False
+    for value in ("","explicit-owner-privy-grant","false","true"):
+        monkeypatch.setenv("MININEX_EVM_AUTO_FEES_ENABLED",value)
+        assert autosend.automatic_fee_transfer_worker_enabled() is False

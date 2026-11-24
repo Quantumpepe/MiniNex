@@ -17,6 +17,7 @@ from .privy_live_signer import _owned_eth_wallet
 from .wallet_balances import _eth_rpc_call
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
 from .storage import _safe_did
+from .ethereum_settlement_policy_migration import migration_review
 from .ethereum_settlement_funding import read_pending_ethereum_funding
 from .shared_evm_policy_reference_rates import _price,fetch_evm_policy_reference_rates
 
@@ -82,6 +83,7 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
     if persisted["wallet_address"]!=record["wallet_address"].lower():
         raise HTTPException(409,"Original wallet differs")
     import time
+    review=migration_review(persisted,record,now=max(now,int(time.time())))
     plan=await prepare_bridge_privy_request(client,persisted,
         wallet_id=record["wallet_id"],now=max(now,int(time.time())),manual=True)
     return {"asset":asset,"quote_id":quote["quote_id"],"side":side,
@@ -89,6 +91,8 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
             "approval_needed":bool(plan.get("manual_approval")),
             "estimated_source_gas_atomic":plan["estimated_gas_atomic"],
             "owner_budget_revision":budget_revision,
+            "policy_migration_kind":review["migration_kind"],
+            "direct_quote_rule_sha256":review["direct_quote_rule_sha256"],
             "source_chain_id":route["source_chain_id"],
             "destination_chain_id":route["destination_chain_id"],
             "can_submit":False,"real_trade_sent":False}
