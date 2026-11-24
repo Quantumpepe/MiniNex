@@ -28,7 +28,7 @@ def pending_bridge_receipts(page_size=20):
                     FROM mininex_ethereum_settlement_submissions WHERE state='SUBMITTED'
                 ) attempt ON attempt.quote_id=q.quote_id AND attempt.privy_did=q.privy_did
                 WHERE NOT EXISTS(SELECT 1 FROM mininex_ethereum_settlement_finality f
-                    WHERE f.quote_id=q.quote_id)
+                    WHERE f.quote_id=q.quote_id AND f.privy_did=q.privy_did)
                 ORDER BY attempt.updated_at LIMIT %s""",(page_size,))
             return cur.fetchall()
 

@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from .storage import _db_url, _ensure_schema, _safe_did
 from .ethereum_settlement_plan import check_evm_quote_route
+from .ethereum_settlement_funding import assert_ethereum_funds_locked
 
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
 _UINT = re.compile(r"^[1-9][0-9]{0,77}$")
@@ -118,7 +119,8 @@ def pending_bridge_order(cur,did,asset):
 
 
 def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
-                                       request_sha256, now):
+                                       request_sha256, now, balance_atomic=None,
+                                       stable_usd=None):
     """Internal final claim; caller must already verify grant, calldata and budget.
 
     Caller must hold the existing account/budget/policy locks and check all
@@ -133,6 +135,10 @@ def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
             or not re.fullmatch(r"[0-9a-f]{64}", request_sha256)
             or type(now) is not int):
         raise ValueError("Invalid authorized submission identity")
+    cur.execute("""SELECT privy_did FROM mininex_accounts
+        WHERE privy_did=%s FOR UPDATE""",(did,))
+    if cur.fetchone() is None:
+        raise HTTPException(409,"Owner account unavailable")
     cur.execute("""SELECT * FROM mininex_ethereum_settlement_quotes
         WHERE quote_id=%s AND privy_did=%s FOR UPDATE""", (key,did))
     quote = cur.fetchone()
@@ -141,6 +147,11 @@ def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
         raise HTTPException(409, "Settlement quote expired or unavailable")
     if pending_bridge_order(cur,did,quote["asset"]):
         raise HTTPException(409,"Previous swap requires reconciliation")
+    if quote["side"]=="BUY":
+        assert_ethereum_funds_locked(cur,did=did,asset=quote["asset"],stable=quote["stable"],
+            input_atomic=int(quote["input_atomic"]),balance_atomic=balance_atomic,stable_usd=stable_usd)
+    elif type(balance_atomic) is not int or balance_atomic<int(quote["input_atomic"]):
+        raise HTTPException(409,"Verified sell source balance insufficient")
     cur.execute("""INSERT INTO mininex_ethereum_settlement_submissions
         (quote_id,privy_did,intent_key,source_chain_id,request_sha256,state)
         VALUES (%s,%s,%s,%s,%s,'SENDING')

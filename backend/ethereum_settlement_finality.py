@@ -6,6 +6,7 @@ original transaction is verified. An unknown/partial/refund case remains open.
 """
 import re
 import uuid
+from decimal import Decimal, localcontext
 
 import psycopg
 from psycopg.rows import dict_row
@@ -90,3 +91,48 @@ def persist_verified_outcome(did,quote_id,*,source_hash,destination_hash=None,
         return True
     except psycopg.Error:
         raise HTTPException(503,"Original settlement finality persistence unavailable") from None
+
+
+def load_verified_outcome(did,quote_id):
+    """Read only immutable, independently verified chain settlement records."""
+    did=_safe_did(did)
+    db=_db_url();_ensure_schema(db)
+    try:
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("""SELECT source_chain_id,destination_chain_id,
+                    source_tx_hash,destination_tx_hash,bridge_deposit_id,
+                    received_atomic,source_gas_atomic,outcome
+                    FROM mininex_ethereum_settlement_finality
+                    WHERE privy_did=%s AND quote_id=%s""",(did,uuid.UUID(quote_id)))
+                return cur.fetchone()
+    except psycopg.Error:
+        raise HTTPException(503,"Original settlement outcome unavailable") from None
+
+
+def verified_outcome_status(row,quote,source_hash):
+    """Restore an original terminal status without querying the bridge again."""
+    if row is None:
+        return None
+    if (row["source_chain_id"]!=quote["source_chain_id"]
+            or row["destination_chain_id"]!=quote["destination_chain_id"]
+            or row["source_tx_hash"]!=source_hash.lower()):
+        raise HTTPException(409,"Stored outcome differs from original transaction")
+    outcome=row["outcome"]
+    received=None if row["received_atomic"] is None else int(row["received_atomic"])
+    deposit=None if row["bridge_deposit_id"] is None else str(row["bridge_deposit_id"])
+    gas=int(row["source_gas_atomic"])
+    original_outcome_terms(source_hash=source_hash,
+        destination_hash=row["destination_tx_hash"],received=received,
+        deposit_id=deposit,gas=gas,outcome=outcome)
+    if outcome=="FINALIZED" and received<int(quote["minimum_output_atomic"]):
+        raise ValueError("Stored settlement falls below original quote")
+    with localcontext() as ctx:
+        ctx.prec=100
+        actual=None if received is None else format(Decimal(received).scaleb(
+            -18 if quote["side"]=="BUY" else -6),"f")
+        cost=format(Decimal(gas).scaleb(-18),"f")
+    return {"state":outcome,"destination_tx_hash":row["destination_tx_hash"],
+        "received_amount":actual,"source_fee_native":cost,
+        "bridge_deposit_id":deposit,"bridge_message_verified":outcome=="FINALIZED",
+        "settlement_verified":outcome=="FINALIZED"}

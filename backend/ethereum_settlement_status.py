@@ -238,7 +238,8 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
     # Manual hash is a candidate supplied by the owner, not trusted signer
     # evidence. It becomes valid only after the independent on-chain proof.
     from .ethereum_settlement_manual import load_manual_attempt
-    from .ethereum_settlement_finality import persist_verified_outcome
+    from .ethereum_settlement_finality import (persist_verified_outcome,
+        load_verified_outcome,verified_outcome_status)
     manual=await asyncio.to_thread(load_manual_attempt,did,quote_id)
     manual_bound=bool(manual and manual["state"]=="SUBMITTED"
         and manual["source_chain_id"]==src and _eq(manual["source_tx_hash"],tx_hash))
@@ -253,6 +254,11 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             "manual_submission_candidate":manual_bound,
             "bridge_message_verified":False,
             "settlement_verified": False, "execution_enabled": False}
+    if bound or manual_bound:
+        original=await asyncio.to_thread(load_verified_outcome,did,quote_id)
+        cached=verified_outcome_status(original,quote,tx_hash)
+        if cached is not None:
+            return {**base,**cached}
     try:
         user = await fetch_privy_user(did)
         wallet = verified_addresses(user, did)["ETH"]
