@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from .ethereum_settlement_quote import CROSS_EVM, _token_matches
 from .ethereum_settlement_journal import load_quote, load_submission
+from .ethereum_settlement_plan import settlement_route, check_evm_quote_route
 from .ethereum_settlement_calldata import route_digest, inspect_across_v4
 from .ethereum_settlement_bridge_proof import prove_across_pair
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
@@ -204,8 +205,9 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
         raise HTTPException(422, "Invalid cross-chain settlement request")
     buy = side == "BUY"
     chain, coin_token = CROSS_EVM[asset]
-    src, dst = (1, chain) if buy else (chain, 1)
-    source_decimals, dest_decimals = (6, 18) if buy else (18, 6)
+    route=settlement_route(asset,side,stable)
+    src,dst=route["source_chain_id"],route["destination_chain_id"]
+    source_decimals,dest_decimals=route["source_decimals"],route["destination_decimals"]
     with localcontext() as context:
         context.prec=80
         _, units = _quantity(amount, source_decimals)
@@ -214,6 +216,10 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
         source_tokens.append(_WRAPPED_GROUPS[asset][1])
     dest_token = coin_token if buy else STABLES[stable]
     quote = await asyncio.to_thread(load_quote, did, quote_id)
+    try:
+        check_evm_quote_route(quote)
+    except ValueError:
+        raise HTTPException(409,"Original quote is not Ethereum-settled") from None
     if (quote["asset"] != asset or quote["side"] != side or quote["stable"] != stable
             or quote["source_chain_id"] != src or quote["destination_chain_id"] != dst
             or quote["input_atomic"] != units

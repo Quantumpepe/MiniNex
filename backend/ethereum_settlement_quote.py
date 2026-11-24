@@ -10,6 +10,7 @@ import httpx
 from fastapi import HTTPException
 
 from .ethereum_settlement_journal import store_quote
+from .ethereum_settlement_plan import settlement_route, check_evm_quote_route
 from .ethereum_settlement_calldata import inspect_across_v4
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
@@ -89,7 +90,8 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
     buy = source in STABLES
     asset, stable = (target, source) if buy else (source, target)
     chain_id, coin_token = CROSS_EVM[asset]
-    source_decimals, dest_decimals = (6, 18) if buy else (18, 6)
+    route=settlement_route(asset,"BUY" if buy else "SELL",stable)
+    source_decimals,dest_decimals=route["source_decimals"],route["destination_decimals"]
     with localcontext() as context:
         context.prec=80
         exact_amount, units = _quantity(amount, source_decimals)
@@ -118,7 +120,7 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
                 balances = await _read_chain(
                     client, "ARB_TOKENS" if asset == "ARB" else asset, wallet)
                 coin_token = _source_token(asset, exact_amount, balances)
-            source_chain, dest_chain = (1, chain_id) if buy else (chain_id, 1)
+            source_chain,dest_chain=route["source_chain_id"],route["destination_chain_id"]
             token_in, token_out = ((STABLES[stable], coin_token) if buy
                                    else (coin_token, STABLES[stable]))
             response = await client.get(QUOTE_URL, headers=headers, params={
@@ -152,6 +154,7 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
         "input_atomic": units, "minimum_output_atomic": minimum_atomic,
         "issued_at": now, "expires_at": now + 30,
     }
+    check_evm_quote_route(terms)
     # Only a supported, decoded route may receive a durable calldata digest.
     # Unsupported routes still show the real quote, never a signable request.
     inspected=None

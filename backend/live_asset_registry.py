@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 import os
 
 from fastapi import HTTPException
+from .ethereum_settlement_plan import settlement_route
 
 # UI order for all twelve independent owner wallets and real-market engines.
 ASSET_ORDER = ("BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "POL",
@@ -162,6 +163,11 @@ def _coin_readiness(coin: CoinNetwork) -> dict:
     return {
         **asdict(coin),
         "stablecoin_candidates":list(coin.stablecoin_candidates),
+        # Legacy adapter candidates remain separate from the desired central
+        # settlement topology. Neither is proof of live execution.
+        "ethereum_settlement_candidates":["USDC","USDT"],
+        "ethereum_settlement_chain_id":1,
+        "ethereum_settlement_family":settlement_route(asset,"BUY","USDC")["family"],
         "source_route":(
             "OWNER_ETH_UNISWAP_ROUTER02" if asset=="ETH"
             else "OWNER_SCOPED_ROUTER02" if asset in _EVM_SOURCES

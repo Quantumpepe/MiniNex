@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 from .live_asset_registry import ASSET_ORDER, BY_SYMBOL
+from .ethereum_settlement_plan import settlement_route
 
 STABLE_ASSETS = ("USDC", "USDT")
 ALL_SWAP_ASSETS = ASSET_ORDER + STABLE_ASSETS
@@ -70,8 +71,14 @@ def build_manual_swap_route(source: str, target: str) -> dict:
     if incoming["kind"] in {"xrpl", "tron"} or outgoing["kind"] in {
             "xrpl", "tron"}:
         required.append("native_wallet_signer_and_token_issuer_validation")
+    settlement=None
+    if (source in STABLE_ASSETS) != (target in STABLE_ASSETS):
+        settlement=settlement_route(target if source in STABLE_ASSETS else source,
+            "BUY" if source in STABLE_ASSETS else "SELL",
+            source if source in STABLE_ASSETS else target)
     return {
         "mode": "MANUAL_SWAP_ROUTE_DISCOVERY_ONLY",
+        "ethereum_settlement":settlement,
         "source": incoming,
         "destination": outgoing,
         "route_class": "SAME_CHAIN" if same_network else "CROSS_CHAIN",
