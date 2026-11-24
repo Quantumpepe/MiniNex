@@ -40,7 +40,9 @@ from .native_eth_nonce_binding import pin_original_privy_eth_nonce
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .shared_evm_router_approval_send import _finish as _finish_shared_approval
 from .storage import _db_url, _ensure_schema, _safe_did
-from .native_live_order_journal import _assert_native_owner_budget_current_locked
+from .native_live_order_journal import (
+    _assert_native_owner_budget_current_locked,_assert_native_session_active_locked,
+)
 
 _ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
@@ -157,6 +159,8 @@ def _claim_original_thor_approval(
             _assert_native_owner_budget_current_locked(
                 cur,did=did,asset=asset,
                 revision=audit["budget_revision"],stable=stable)
+            _assert_native_session_active_locked(
+                cur,did=did,asset=asset,revision=audit["budget_revision"],stable=stable)
             # The exact original wallet's pending Ethereum nonce is shared
             # across ALL engines. These are transaction races, not frequency
             # or per-coin capital limits.

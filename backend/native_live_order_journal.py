@@ -276,6 +276,22 @@ def _assert_native_owner_budget_current_locked(
         raise HTTPException(409,"Original owner coin settings changed")
 
 
+def _assert_native_session_active_locked(cur,*,did:str,asset:str,revision:int,stable:str)->None:
+    """Serialize the final claim with the owner's Pause action.
+
+    An already committed SENDING transaction still reconciles normally.
+    An earlier market signal or unsigned preparation cannot start a new
+    transaction after Pause has committed.
+    """
+    cur.execute("""SELECT status FROM mininex_live_native_auto_sessions
+        WHERE privy_did=%s AND asset=%s AND budget_revision=%s AND stable=%s
+          AND started_by_owner_at IS NOT NULL FOR UPDATE""",
+        (did,asset,revision,stable))
+    session=cur.fetchone()
+    if type(session) is not dict or session.get("status")!="ACTIVE":
+        raise HTTPException(409,"Original native trade session is not active")
+
+
 def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
                        permission_audit:dict)->str:
     """Called only by a future fully signed native executor, never public API.
@@ -320,6 +336,8 @@ def _claim_once_locked(cur,*,did:str,asset:str,key:str,digest:str,
     _assert_native_owner_budget_current_locked(
         cur,did=did,asset=asset,
         revision=original["budget_revision"],stable=original["stable"])
+    _assert_native_session_active_locked(
+        cur,did=did,asset=asset,revision=original["budget_revision"],stable=original["stable"])
     # Source-chain finalization means the original transaction is mined
     # and its source nonce/UTXO can no longer be reused. The cross-chain
     # destination may still take a long time, but should not freeze
