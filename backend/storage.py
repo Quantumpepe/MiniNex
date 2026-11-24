@@ -1338,9 +1338,8 @@ SCHEMA += (
              CHECK((asset!='DOGE' OR
                     (side='BUY' AND chain='ethereum-mainnet'))
                AND (asset!='TRX' OR
-                    (stable='USDT' AND
-                     ((side='BUY' AND chain='ethereum-mainnet') OR
-                      (side='SELL' AND chain='tron-mainnet')))));
+                    ((side='BUY' AND chain='ethereum-mainnet') OR
+                     (side='SELL' AND chain='tron-mainnet' AND stable='USDT'))));
          END IF;
        END $native_trx_sell_v3$""",
     """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique

@@ -91,7 +91,7 @@ def immutable_native_order_identity(
             or (side=="SELL" and asset in _BUY_ONLY)
             or stable not in ("USDC","USDT")
             or (asset=="XRP" and stable!="USDC")
-            or (asset=="TRX" and stable!="USDT")
+            or (asset=="TRX" and side=="SELL" and stable!="USDT")
             or type(budget_revision) is not int or budget_revision<0
             or type(strategy_run_id) is not str
             or not _EVENT.fullmatch(strategy_run_id)
