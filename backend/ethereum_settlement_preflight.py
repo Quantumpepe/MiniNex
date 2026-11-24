@@ -7,6 +7,7 @@ from eth_abi import decode
 from eth_utils import keccak
 from fastapi import HTTPException
 from .ethereum_settlement_calldata import ACROSS_FACET, DIAMOND, inspect_across_v4
+from .ethereum_settlement_bridge_proof import POOLS
 from .ethereum_settlement_status import _rpc_url
 from .shared_evm_swap_receipts import _receipt_rpc
 from .live_eth_quotes import ETH_NATIVE
@@ -31,6 +32,17 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
         [{"to":DIAMOND,"data":loupe},"latest"],2))[2:]))[0].lower()
     if facet!=ACROSS_FACET:
         raise HTTPException(409,"Bridge facet differs from reviewed deployment")
+    destination=inspected.get("destination_swap")
+    if destination:
+        dst=quote["destination_chain_id"]; dst_url=_rpc_url(dst)
+        if int(await _receipt_rpc(client,dst_url,"eth_chainId",[],20),16)!=dst:
+            raise ValueError("Wrong destination RPC")
+        for method,expected,rid in (("SPOKEPOOL()",POOLS[dst],21),
+                ("EXECUTOR()",destination["executor"],22)):
+            raw=await _receipt_rpc(client,dst_url,"eth_call",[
+                {"to":destination["receiver"],"data":"0x"+keccak(text=method)[:4].hex()},"latest"],rid)
+            if decode(["address"],bytes.fromhex(raw[2:]))[0].lower()!=expected:
+                raise HTTPException(409,"Destination receiver deployment differs")
     source=quote["source_token"]; amount=int(quote["input_atomic"])
     owner=tx["from"][2:].rjust(64,"0")
     native=int(await rpc("eth_getBalance",[tx["from"],"latest"],3),16)

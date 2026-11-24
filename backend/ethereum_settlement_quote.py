@@ -10,7 +10,7 @@ import httpx
 from fastapi import HTTPException
 
 from .ethereum_settlement_journal import store_quote
-from .ethereum_settlement_plan import settlement_route, check_evm_quote_route
+from .ethereum_settlement_plan import settlement_route, check_evm_quote_route, CROSS_COIN_CONTRACTS
 from .ethereum_settlement_calldata import inspect_across_v4
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
@@ -90,6 +90,10 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
     buy = source in STABLES
     asset, stable = (target, source) if buy else (source, target)
     chain_id, coin_token = CROSS_EVM[asset]
+    if buy:
+        # Keep the exact registered wrapped inventory behind the coin label.
+        # This permits a destination ERC20 swap without a separate unwrap.
+        coin_token=CROSS_COIN_CONTRACTS[asset]
     route=settlement_route(asset,"BUY" if buy else "SELL",stable)
     source_decimals,dest_decimals=route["source_decimals"],route["destination_decimals"]
     with localcontext() as context:

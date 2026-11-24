@@ -70,17 +70,22 @@ def prove_across_pair(source_logs,destination_logs,*,src,dst,wallet,route,receiv
     i,o,a,b,_repay,fill_deadline,fill_exclusive,fill_relayer,fill_depositor,fill_recipient,message_hash,execution=r
     updated_recipient,updated_message_hash,updated_amount,fill_type=execution
     owner=address_word(wallet)
+    destination=route.get("destination_swap")
+    receiver=address_word(destination["receiver"]) if destination else owner
+    expected_message_hash=destination["message_hash"] if destination else bytes(32)
+    bridge_received=destination["bridge_amount"] if destination else received
     if (int.from_bytes(dst_word,"big")!=dst or int.from_bytes(src_word,"big")!=src
-            or deposit_id!=fill_id or depositor!=owner or recipient!=owner
-            or fill_depositor!=owner or fill_recipient!=owner or updated_recipient!=owner
-            or message or message_hash!=bytes(32) or updated_message_hash!=bytes(32)
+            or deposit_id!=fill_id or depositor!=owner or recipient!=receiver
+            or fill_depositor!=owner or fill_recipient!=receiver or updated_recipient!=receiver
+            or (keccak(message) if message else bytes(32))!=expected_message_hash
+            or message_hash!=expected_message_hash or updated_message_hash!=expected_message_hash
             or token_in!=address_word(route["bridge_source_token"])
             or token_out!=address_word(route["bridge_destination_token"])
             or (i,o,a,b)!=(token_in,token_out,amount,output)
             or quote_ts!=route["quote_timestamp"] or deadline!=route["fill_deadline"]
             or fill_deadline!=deadline or fill_exclusive!=exclusive_deadline
             or fill_relayer!=exclusive_relayer
-            or fill_type not in (0,1,2) or updated_amount!=received
+            or fill_type not in (0,1,2) or updated_amount!=bridge_received
             or received<route["minimum_output_atomic"]):
         raise ValueError("Bridge fill does not match the original owner deposit")
     if route["source_swap"]:
@@ -90,5 +95,29 @@ def prove_across_pair(source_logs,destination_logs,*,src,dst,wallet,route,receiv
         raise ValueError("Direct bridge deposit differs from inspected calldata")
     if updated_amount!=output:
         raise ValueError("Modified bridge payout not accepted for original order")
+    if destination:
+        if received<destination["minimum_final"]:
+            raise ValueError("Final swap credit below its exact minimum")
+        completion="0x"+keccak(text="LiFiTransferCompleted(bytes32,address,address,uint256,uint256)").hex()
+        recovery="0x"+keccak(text="LiFiTransferRecovered(bytes32,address,address,uint256,uint256)").hex()
+        matches=0
+        for event in destination_logs:
+            topics=event.get("topics",[])
+            if len(topics)!=2 or topics[1].lower()!="0x"+destination["transaction_id"].hex():
+                continue
+            address=str(event.get("address","")).lower()
+            if address==destination["receiver"] and topics[0].lower()==recovery:
+                raise ValueError("Destination swap recovered intermediate asset, not completed")
+            if address==destination["executor"] and topics[0].lower()==completion:
+                if event.get("removed") is True:
+                    raise ValueError("Removed completion event")
+                data=bytes.fromhex(event["data"][2:])
+                fields=["address","address","uint256","uint256"]
+                values=decode(fields,data,strict=True)
+                if encode(fields,values)!=data or values[0].lower()!=route["bridge_destination_token"] or values[1].lower()!=wallet:
+                    raise ValueError("Executor completion does not bind original wallet")
+                matches+=1
+        if matches!=1:
+            raise ValueError("Original destination swap completion not proven")
     return {"deposit_id":str(int.from_bytes(deposit_id,"big")),
             "bridge_message_verified":True}

@@ -224,9 +224,10 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             or quote["source_chain_id"] != src or quote["destination_chain_id"] != dst
             or quote["input_atomic"] != units
             or not any(_eq(quote["source_token"], token) for token in source_tokens)
-            or not _eq(quote["destination_token"], dest_token)):
+            ):
         raise HTTPException(409, "Settlement differs from original quote")
     source_tokens = [quote["source_token"]]
+    dest_token=quote["destination_token"]  # canonical native/wrapped coin or ETH stable
     submission=await asyncio.to_thread(load_submission,did,quote_id)
     if submission is not None and (submission["source_chain_id"]!=src
             or (submission["source_tx_hash"] is not None

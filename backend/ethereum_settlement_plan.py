@@ -65,7 +65,7 @@ def check_evm_quote_route(terms):
     buy=terms["side"]=="BUY"
     coin_key="destination_token" if buy else "source_token"
     canonical=CROSS_COIN_CONTRACTS[asset]
-    allowed={canonical} if asset=="ARB" else ({NATIVE_ADDRESS} if buy else {NATIVE_ADDRESS,canonical})
+    allowed={canonical} if asset=="ARB" else {NATIVE_ADDRESS,canonical}
     if str(terms[coin_key]).lower() not in allowed:
         raise ValueError("Quote uses a noncanonical coin contract")
     return route

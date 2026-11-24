@@ -95,7 +95,7 @@ def migration_review(quote,record,*,now):
     if inspected["route_sha256"]!=quote["route_sha256"]:
         raise ValueError("Original quote changed")
     rules=None
-    if not inspected["source_swap"]:
+    if not inspected["source_swap"] and not inspected.get("destination_swap"):
         rules=exact_direct_bridge_rules(quote,now=now)
     return {"asset":quote["asset"],"source_chain_id":quote["source_chain_id"],
         "destination_chain_id":quote["destination_chain_id"],

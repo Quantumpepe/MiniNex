@@ -27,6 +27,42 @@ SWAP = "(address,address,address,address,uint256,bytes,bool)"
 DIRECT = keccak(text="startBridgeTokensViaAcrossV4("+BRIDGE+","+ACROSS+")")[:4]
 WITH_SWAP = keccak(text="swapAndStartBridgeTokensViaAcrossV4("+BRIDGE+","+SWAP+"[],"+ACROSS+")")[:4]
 EXACT_SINGLE = bytes.fromhex("04e45aaf")
+# Official lifinance/contracts deployments/{mainnet,bsc,polygon,arbitrum}.json.
+# ReceiverAcrossV4.handleV3AcrossMessage decodes (bytes32,SwapData[],address).
+RECEIVERS={
+    1:("0x07cc0a0b41641d349240e1988169fa11b31fc24e","0xd9b2da9c45b118e4e93a004fb1452bcdb6cc0e88"),
+    56:("0x33b255b5db44a78c34381f89f1a454bc0ef49871","0x2dfadab8266483bed9fd9a292ce56596a2d1378d"),
+    137:("0x33b255b5db44a78c34381f89f1a454bc0ef49871","0x2dfadab8266483bed9fd9a292ce56596a2d1378d"),
+    42161:("0x33b255b5db44a78c34381f89f1a454bc0ef49871","0x2dfadab8266483bed9fd9a292ce56596a2d1378d"),
+}
+
+def inspect_destination_swap(message,*,dst,tid,wallet,bridge_token,bridge_amount,final_token,minimum):
+    """One known Router02 ERC20 swap consuming the full bridge output.
+    No arbitrary receiver calls, leftover stablecoins or nested calls.
+    """
+    receiver,executor=RECEIVERS[dst]
+    types=["bytes32",SWAP+"[]","address"]
+    values=decode(types,message,strict=True)
+    if encode(types,values)!=message or values[0]!=tid or values[2].lower()!=wallet or len(values[1])!=1:
+        raise ValueError("Destination payload differs from original owner")
+    call_to,approve_to,sending,receiving,amount,data,deposit=values[1][0]
+    router,allowed=_source_registry(dst)
+    if (call_to.lower()!=router or approve_to.lower()!=router
+            or sending.lower()!=bridge_token or receiving.lower()!=final_token
+            or bridge_token==final_token or bridge_token not in allowed
+            or final_token not in allowed or final_token==ETH_NATIVE
+            or amount!=bridge_amount or amount<=0 or deposit
+            or len(data)!=228 or data[:4]!=EXACT_SINGLE):
+        raise ValueError("Unreviewed destination swap sequence")
+    a,b,fee,recipient,spend,minout,limit=decode(
+        ["address","address","uint24","address","uint256","uint256","uint160"],data[4:],strict=True)
+    if (a.lower()!=bridge_token or b.lower()!=final_token or recipient.lower()!=executor
+            or fee not in (100,500,3000,10000) or spend!=amount
+            or minout<minimum or limit!=0):
+        raise ValueError("Destination swap input, recipient or minimum differs")
+    return {"receiver":receiver,"executor":executor,"message_hash":keccak(message),
+            "bridge_amount":amount,"minimum_final":minout,"transaction_id":tid}
+
 _ADDR = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _DATA = re.compile(r"^0x(?:[0-9a-fA-F]{2}){4,16384}$")
 
@@ -112,19 +148,25 @@ def inspect_across_v4(tx, *, terms, now):
     bridge,across=values[0],values[-1]
     tid,_,_,_,bridge_token,receiver,bridge_min,chain,swaps,dest_call=bridge
     if (tid==bytes(32) or receiver.lower()!=wallet or chain!=dst
-            or dest_call or swaps!=(selector==WITH_SWAP) or bridge_min<=0):
+            or swaps!=(selector==WITH_SWAP) or bridge_min<=0):
         raise ValueError("Bridge destination or flags differ")
     (receiver32,refund32,sending32,receiving32,output,multiplier,
      _,timestamp,deadline,_,message)=across
     bridge_out=_word_address(receiving32)
-    if token_out==ETH_NATIVE:
+    destination_swap=None
+    if dest_call:
+        if selector!=DIRECT or not message or dst not in RECEIVERS or token_out==ETH_NATIVE:
+            raise ValueError("Unsupported combined destination sequence")
+        destination_swap=inspect_destination_swap(message,dst=dst,tid=tid,wallet=wallet,
+            bridge_token=bridge_out,bridge_amount=output,final_token=token_out,minimum=minimum)
+    elif token_out==ETH_NATIVE:
         expected=next((r.wrapped.lower() for r in CHAINS.values() if r.chain_id==dst),None)
         if bridge_out!=expected:
             raise ValueError("Unverified native payout token")
     elif bridge_out!=token_out:
         raise ValueError("Bridge destination token differs")
-    if (_word_address(receiver32)!=wallet or _word_address(refund32)!=wallet
-            or message
+    if (_word_address(receiver32)!=(destination_swap["receiver"] if destination_swap else wallet)
+            or _word_address(refund32)!=wallet or bool(message)!=bool(dest_call)
             or timestamp>now+30 or deadline<=now):
         raise ValueError("Bridge receiver, refund, token or deadline differs")
     if token_in==ETH_NATIVE:
@@ -133,7 +175,7 @@ def inspect_across_v4(tx, *, terms, now):
     elif int(tx["value"])!=0:
         raise ValueError("Unexpected additional native spend")
     if selector==DIRECT:
-        if bridge_token.lower()!=token_in or bridge_min!=amount or output<minimum:
+        if bridge_token.lower()!=token_in or bridge_min!=amount or (not destination_swap and output<minimum):
             raise ValueError("Direct bridge amount or minimum differs")
         if token_in==ETH_NATIVE:
             expected=next((r.wrapped.lower() for r in CHAINS.values() if r.chain_id==src),None)
@@ -167,5 +209,6 @@ def inspect_across_v4(tx, *, terms, now):
             "bridge_minimum_atomic":bridge_min,"direct_output_atomic":output,
             "output_multiplier":multiplier,"source_swap":selector==WITH_SWAP,
             "quote_timestamp":timestamp,"fill_deadline":deadline,
+            "destination_swap":destination_swap,
             "minimum_output_atomic":minimum,
             "calldata_verified":True,"execution_authorized":False}
