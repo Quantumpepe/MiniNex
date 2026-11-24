@@ -52,7 +52,8 @@ def claim_manual_attempt(did,quote_id,digest,*,balance_atomic=None,stable_usd=No
                 raise HTTPException(409,"Previous swap requires reconciliation")
             if q["side"]=="BUY":
                 assert_ethereum_funds_locked(cur,did=did,asset=q["asset"],stable=q["stable"],
-                    input_atomic=int(q["input_atomic"]),balance_atomic=balance_atomic,stable_usd=stable_usd)
+                    input_atomic=int(q["input_atomic"]),balance_atomic=balance_atomic,stable_usd=stable_usd,
+                    protect_realized=False)
             cur.execute("""INSERT INTO mininex_ethereum_settlement_manual_attempts
                 (quote_id,privy_did,source_chain_id,state)
                 VALUES (%s,%s,%s,'AWAITING_SIGNATURE')

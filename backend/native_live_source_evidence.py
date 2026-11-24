@@ -181,6 +181,12 @@ async def verified_owner_native_buy_amount(
         if asset!="DOGE":
             shared=await asyncio.to_thread(read_pending_ethereum_funding,did,
                 asset=asset,stable=stable,stable_usd=prices[stable])
+            if asset=="BTC":
+                # BTC percentage applies to capital excluding the protected
+                # surplus; it must not silently compound realized gains.
+                protected=Decimal(shared.get("protected_profit_gross_atomic","0")).scaleb(-6)
+                stable_value=max(Decimal(0),Decimal(source["balance"])-protected)*prices[stable]
+                budget_usd=(native_value+stable_value+pending_usd)*(Decimal(budget_percent)/100)
             cash=max(Decimal(0),Decimal(source["balance"])-
                      Decimal(shared["pending_wallet_stable_atomic"]).scaleb(-6))
             source={**source,"balance":format(cash,"f")}

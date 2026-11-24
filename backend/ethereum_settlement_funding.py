@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from .storage import _db_url,_ensure_schema,_safe_did
 from .ethereum_settlement_plan import ETHEREUM_STABLES,COIN_NETWORKS
+from .realized_profit_reserve import PROFIT_FILLS_SQL,protected_profit_atomic
 
 
 def summarize_pending_funding(rows,*,asset,stable,stable_usd):
@@ -25,7 +26,10 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
             raise ValueError("Invalid stable reference")
         wallet_atomic=0
         coin_usd=Decimal(0)
-        for row in rows:
+        finalized=[row for row in rows if row["unit"]=="FINALIZED_PROFIT_INPUT"]
+        pending=[row for row in rows if row["unit"]!="FINALIZED_PROFIT_INPUT"]
+        reserve=protected_profit_atomic(finalized,stable=stable)
+        for row in pending:
             if row["stable"]!=stable or row["asset"] not in (*COIN_NETWORKS,"DOGE"):
                 raise ValueError("Funding journal scope differs")
             value=Decimal(row["amount"])
@@ -50,9 +54,16 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
             wallet_atomic+=atomic
             if row["asset"]==asset:
                 coin_usd+=usd
-        return {"pending_wallet_stable_atomic":str(wallet_atomic),
+        # Existing sizing callers subtract the combined unavailable cash;
+        # the protected surplus is NOT an in-flight order or coin exposure.
+        return {"pending_wallet_stable_atomic":str(wallet_atomic+reserve["protected_gross_atomic"]),
+                "pending_order_stable_atomic":str(wallet_atomic),
+                "protected_profit_gross_atomic":str(reserve["protected_gross_atomic"]),
+                "protected_profit_by_asset_atomic":{a:str(v) for a,v in reserve["protected_gross_by_asset_atomic"].items()},
+                "profit_reserve_net_verified":False,
+                "unmatched_profit_sells":reserve["unmatched_automatic_sells"],
                 "pending_coin_usd":format(coin_usd,"f"),
-                "pending_entries":len(rows),"atomic_claimed":False}
+                "pending_entries":len(pending),"atomic_claimed":False}
 
 
 # Each original journal is queried once. The old BTC/ETH and EVM systems can
@@ -94,6 +105,20 @@ _PENDING_SQL="""SELECT asset,stable,reserved_notional_usd AS amount,'USD' AS uni
       )"""
 
 
+# One database statement/snapshot for pending funding and finalized profit:
+# no gap in which a newly settled SELL is treated as free automatic cash.
+_PROTECTED_FUNDING_SQL="""WITH pending AS ("""+_PENDING_SQL+"""),
+    finalized AS ("""+PROFIT_FILLS_SQL+""")
+    SELECT asset,stable,amount,unit,NULL::text AS side,
+      NULL::numeric AS source_amount,NULL::numeric AS destination_amount,
+      NULL::text AS coin_wallet,NULL::text AS family,NULL::text AS fill_key,
+      NULL::boolean AS automatic,NULL::timestamptz AS settled_at FROM pending
+    UNION ALL
+    SELECT asset,stable,0::numeric,'FINALIZED_PROFIT_INPUT',side,
+      source_amount,destination_amount,coin_wallet,family,fill_key,automatic,settled_at
+    FROM finalized ORDER BY settled_at NULLS FIRST,fill_key NULLS FIRST"""
+
+
 def read_pending_ethereum_funding(did,*,asset,stable,stable_usd):
     did=_safe_did(did)
     if asset not in COIN_NETWORKS or stable not in ETHEREUM_STABLES:
@@ -103,7 +128,7 @@ def read_pending_ethereum_funding(did,*,asset,stable,stable_usd):
         _ensure_schema(db)
         with psycopg.connect(db,connect_timeout=6) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(_PENDING_SQL,{"did":did,"stable":stable,
+                cur.execute(_PROTECTED_FUNDING_SQL,{"did":did,"stable":stable,
                     "excluded_native_asset":None,"excluded_native_key":None})
                 rows=cur.fetchall()
         return summarize_pending_funding(rows,asset=asset,stable=stable,stable_usd=stable_usd)
@@ -112,7 +137,7 @@ def read_pending_ethereum_funding(did,*,asset,stable,stable_usd):
 
 
 def assert_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_atomic,stable_usd,
-                                 excluded_native_key=None):
+                                 excluded_native_key=None,protect_realized=True):
     """Recheck shared funding under the same owner lock as new bridge claims.
 
     Legacy workers still need migration to the identical atomic claim path
@@ -120,10 +145,10 @@ def assert_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_ato
     """
     if type(balance_atomic) is not int or type(input_atomic) is not int or input_atomic<=0 or balance_atomic<0:
         raise ValueError("Exact observed Ethereum token balance required")
-    cur.execute(_PENDING_SQL,{"did":did,"stable":stable,
+    cur.execute(_PROTECTED_FUNDING_SQL if protect_realized else _PENDING_SQL,{"did":did,"stable":stable,
         "excluded_native_asset":asset if excluded_native_key is not None else None,
         "excluded_native_key":excluded_native_key})
     pending=summarize_pending_funding(cur.fetchall(),asset=asset,stable=stable,stable_usd=stable_usd)
     if input_atomic+int(pending["pending_wallet_stable_atomic"])>balance_atomic:
-        raise HTTPException(409,"Ethereum stable funds already committed to another order")
+        raise HTTPException(409,"Ethereum cash reserved for another order or protected profit")
     return pending
