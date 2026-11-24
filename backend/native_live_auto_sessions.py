@@ -198,7 +198,7 @@ def get_owner_native_auto(did:str,asset:str)->dict:
     }
 
 
-NATIVE_EXIT_ASSETS=frozenset(("BTC","SOL"))
+NATIVE_EXIT_ASSETS=frozenset(("BTC","SOL","XRP","TRX"))
 
 
 def _request_native_exit_locked(cur,did,asset):
