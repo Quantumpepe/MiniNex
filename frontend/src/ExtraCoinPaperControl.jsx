@@ -90,7 +90,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
     // LIVE is controlled by the original Privy-signed per-coin session.
     // The paper start/resume API can never authorize a real transaction.
     if(liveMode&&!['pause','exit'].includes(action))return;
-    if(action==='exit'&&(!liveMode||!['BTC','SOL'].includes(asset)||
+    if(action==='exit'&&(!liveMode||!['BTC','SOL','XRP','TRX'].includes(asset)||
        !['ACTIVE','PAUSED'].includes(data?.status)))return;
     if(busyRef.current||!enabled||!getAccessToken||!data||
        (action==='start' && (data.status!=='NOT_STARTED'||!extraPaperCanStart(options)))||
@@ -176,7 +176,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         {t.extraPaperHistory}: {liveCounters.sent} / {liveCounters.finalized}
         {' '}(sent / finalized)
       </p>
-      {['BTC','SOL'].includes(asset)&&['ACTIVE','PAUSED'].includes(state)&&
+      {['BTC','SOL','XRP','TRX'].includes(asset)&&['ACTIVE','PAUSED'].includes(state)&&
         <button type="button" className="privy-wallet-action" disabled={busy}
           onClick={()=>command('exit')}>Stop / Exit · {asset}</button>}
       {['ACTIVE','EXIT_PENDING'].includes(state)&&<button type="button" className="privy-wallet-action"
