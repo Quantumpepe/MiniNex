@@ -85,3 +85,56 @@ def load_quote(did, quote_id):
     row["input_atomic"] = str(row["input_atomic"])
     row["minimum_output_atomic"] = str(row["minimum_output_atomic"])
     return validate_quote_terms(row)
+
+
+
+def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
+                                       request_sha256, now):
+    """Internal final claim; caller must already verify grant, calldata and budget.
+
+    Caller must hold the existing account/budget/policy locks and check all
+    legacy network journals in the same transaction. No public write route.
+    This primitive alone is NOT an execution authorization.
+    """
+    did = _safe_did(did)
+    key = uuid.UUID(quote_id)
+    if (not isinstance(intent_key, str)
+            or not re.fullmatch(r"[A-Za-z0-9_.:-]{8,128}", intent_key)
+            or not isinstance(request_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", request_sha256)
+            or type(now) is not int):
+        raise ValueError("Invalid authorized submission identity")
+    cur.execute("""SELECT * FROM mininex_ethereum_settlement_quotes
+        WHERE quote_id=%s AND privy_did=%s FOR UPDATE""", (key,did))
+    quote = cur.fetchone()
+    if not quote or not quote["issued_at"] <= now < quote["expires_at"]:
+        raise HTTPException(409, "Settlement quote expired or unavailable")
+    cur.execute("""INSERT INTO mininex_ethereum_settlement_submissions
+        (quote_id,privy_did,intent_key,source_chain_id,request_sha256,state)
+        VALUES (%s,%s,%s,%s,%s,'SENDING')
+        ON CONFLICT DO NOTHING RETURNING quote_id""",
+        (key,did,intent_key,quote["source_chain_id"],request_sha256))
+    if cur.fetchone() is None:
+        raise HTTPException(409, "Settlement submission already claimed")
+    return str(key)
+
+
+def record_claimed_submission_locked(cur, *, did, quote_id, request_sha256,
+                                     source_tx_hash):
+    """Record a single trusted transport result; ambiguity is never a retry."""
+    did = _safe_did(did)
+    key = uuid.UUID(quote_id)
+    if not isinstance(request_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}",request_sha256):
+        raise ValueError("Invalid submission digest")
+    if source_tx_hash is not None:
+        if not isinstance(source_tx_hash,str) or not re.fullmatch(r"0x[0-9a-fA-F]{64}",source_tx_hash):
+            raise ValueError("Invalid source transaction hash")
+        source_tx_hash = source_tx_hash.lower()
+    state = "SUBMITTED" if source_tx_hash else "RECONCILIATION_REQUIRED"
+    cur.execute("""UPDATE mininex_ethereum_settlement_submissions
+        SET state=%s,source_tx_hash=%s,updated_at=now()
+        WHERE quote_id=%s AND privy_did=%s AND request_sha256=%s AND state='SENDING'
+        RETURNING quote_id""", (state,source_tx_hash,key,did,request_sha256))
+    if cur.fetchone() is None:
+        raise HTTPException(409, "Original settlement submission not found")
+    return state

@@ -1377,6 +1377,20 @@ SCHEMA += (
     )""",
     """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_quotes_owner
        ON mininex_ethereum_settlement_quotes(privy_did,issued_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_submissions (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        intent_key TEXT NOT NULL,
+        source_chain_id BIGINT NOT NULL,
+        request_sha256 TEXT NOT NULL CHECK (request_sha256 ~ '^[0-9a-f]{64}$'),
+        state TEXT NOT NULL CHECK (state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')),
+        source_tx_hash TEXT CHECK (source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (privy_did,intent_key),
+        UNIQUE (source_chain_id,source_tx_hash),
+        CHECK ((state='SUBMITTED') = (source_tx_hash IS NOT NULL))
+    )""",
 )
 
 def _db_url() -> str:
