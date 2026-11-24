@@ -5,6 +5,7 @@ Router02 grant cannot authorize the new bridge router or source chain.
 """
 from decimal import Decimal, localcontext
 import asyncio
+import time
 import psycopg
 from psycopg.rows import dict_row
 from fastapi import HTTPException
@@ -62,7 +63,7 @@ async def read_cross_evm_funding(did,asset,stable,client):
 
 
 async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revision,
-        amount,client,now,budget_usd=None):
+        amount,client,now,budget_usd=None,session_started_at=None,allow_resize=True):
     """Prepare exact route for a server-originated signal; old consent is
     audited but never treated as the new policy's signing permission.
 
@@ -90,7 +91,6 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
         raise HTTPException(409,"Original wallet differs")
     if side=="SELL" and persisted["source_token"]!=CROSS_COIN_CONTRACTS[asset]:
         raise HTTPException(409,"Original strategy coin contract changed")
-    import time
     review=migration_review(persisted,record,now=max(now,int(time.time())))
     plan=await prepare_bridge_privy_request(client,persisted,
         wallet_id=record["wallet_id"],now=max(now,int(time.time())),manual=True)
@@ -99,9 +99,40 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
         prices=await fetch_evm_policy_reference_rates(asset,stable)
         caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
             budget_usd=budget_usd,snapshot=prices,now=int(time.time()))
+    from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
+    direct=(record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+            and review["migration_kind"]=="EXACT_DIRECT_QUOTE")
+    if direct and session_started_at is not None and not plan.get("manual_approval"):
+        from .ethereum_settlement_auto_submit import submit_direct_bridge_once, check_direct_bridge_scope
+        check_direct_bridge_scope(persisted,record,now=int(time.time()))
+        evidence=None; gas_usd=None; stable_usd=None; position_usd=None
+        if side=="BUY":
+            evidence=await read_cross_evm_funding(did,asset,stable,client)
+            price_now=int(time.time())
+            prices=await fetch_evm_policy_reference_rates(asset,stable)
+            stable_usd=_price(prices,stable,price_now)
+            with localcontext() as ctx:
+                ctx.prec=100
+                gas_usd=Decimal(plan["estimated_gas_atomic"]).scaleb(-18)*_price(prices,"ETH",price_now)
+                position_usd=Decimal(evidence["coin_atomic"]).scaleb(-18)*_price(prices,asset,price_now)
+            pending=await asyncio.to_thread(read_pending_ethereum_funding,did,asset=asset,stable=stable,stable_usd=stable_usd)
+            available=ethereum_buy_amount(budget_usd=budget_usd,position_usd=position_usd,
+                pending_coin_usd=pending["pending_coin_usd"],wallet_stable_atomic=evidence["stable_atomic"],
+                pending_wallet_stable_atomic=pending["pending_wallet_stable_atomic"],stable_usd=stable_usd,
+                estimated_cost_usd=gas_usd)
+            if int(available["input_atomic"])<int(persisted["input_atomic"]):
+                if allow_resize and int(available["input_atomic"])>0:
+                    return await prepare_cross_evm_auto_candidate(did=did,asset=asset,side=side,stable=stable,
+                        budget_revision=budget_revision,amount=available["input_amount"],client=client,now=now,
+                        budget_usd=budget_usd,session_started_at=session_started_at,allow_resize=False)
+                return {"asset":asset,"state":"WAIT","reason":"COIN_BUDGET_INCLUDES_SOURCE_GAS","can_submit":False}
+        return await submit_direct_bridge_once(did=did,quote=persisted,record=record,plan=plan,
+            session_started_at=session_started_at,signal_time=now,client=client,
+            funding=evidence,position_usd=position_usd,gas_usd=gas_usd,stable_usd=stable_usd)
     return {"asset":asset,"quote_id":quote["quote_id"],"side":side,
             "ethereum_policy_budget_preview":caps,
-            "state":"CROSS_CHAIN_POLICY_MIGRATION_REQUIRED",
+            "state":("BRIDGE_ALLOWANCE_REQUIRED" if direct and plan.get("manual_approval") else
+                     "DIRECT_BRIDGE_SESSION_REQUIRED" if direct else "CROSS_CHAIN_POLICY_MIGRATION_REQUIRED"),
             "approval_needed":bool(plan.get("manual_approval")),
             "estimated_source_gas_atomic":plan["estimated_gas_atomic"],
             "gas_estimate_kind":plan["gas_estimate_kind"],
@@ -174,21 +205,26 @@ def read_strategy_bridge_position(did,asset,wallet):
                 # settlement for this coin is still unresolved.
                 if pending_bridge_order(cur,did,asset):
                     return None
-                cur.execute("""SELECT q.side,
-                    CASE WHEN q.side='BUY' THEN f.received_atomic ELSE q.input_atomic END
-                        AS amount_atomic,
-                    EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
-                        WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
-                          AND s.state='SUBMITTED' AND s.source_tx_hash=f.source_tx_hash)
-                        AS automatic
-                    FROM mininex_ethereum_settlement_finality f
-                    JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=f.quote_id
-                    WHERE q.privy_did=%s AND f.privy_did=%s AND q.asset=%s
-                      AND q.wallet_address=%s AND f.outcome='FINALIZED'
-                    ORDER BY f.verified_at,q.quote_id""",(did,did,asset,wallet.lower()))
-                return strategy_owned_bridge_position(cur.fetchall())
+                return strategy_bridge_position_locked(cur,did,asset,wallet)
     except psycopg.Error:
         raise HTTPException(503,"Original cross-chain position unavailable") from None
+
+
+def strategy_bridge_position_locked(cur,did,asset,wallet):
+    """Use the same original finalized inventory while claiming a SELL."""
+    cur.execute("""SELECT q.side,
+        CASE WHEN q.side='BUY' THEN f.received_atomic ELSE q.input_atomic END
+            AS amount_atomic,
+        EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
+            WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
+              AND s.state='SUBMITTED' AND s.source_tx_hash=f.source_tx_hash)
+            AS automatic
+        FROM mininex_ethereum_settlement_finality f
+        JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=f.quote_id
+        WHERE q.privy_did=%s AND f.privy_did=%s AND q.asset=%s
+          AND q.wallet_address=%s AND f.outcome='FINALIZED'
+        ORDER BY f.verified_at,q.quote_id""",(did,did,asset,wallet.lower()))
+    return strategy_owned_bridge_position(cur.fetchall())
 
 
 async def plan_cross_evm_sell(*,did,asset,stable,client):

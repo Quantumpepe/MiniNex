@@ -282,7 +282,7 @@ async def execute_owner_evm_live_tick(
     side=decision["action"]
     # Ethereum-only settlement is mandatory for remote EVM assets. Do not
     # fall through to legacy local stablecoin swaps or router approvals.
-    # The bridge executor must be integrated before these sessions can send.
+    # The direct bridge executor uses the existing remote-verified wallet scope.
     if asset in _CROSS_EVM:
         from .ethereum_settlement_auto_plan import plan_cross_evm_buy, plan_cross_evm_sell, prepare_cross_evm_auto_candidate
         if side=="BUY":
@@ -301,7 +301,7 @@ async def execute_owner_evm_live_tick(
             did=did,asset=asset,side=side,stable=row["stable"],
             budget_revision=row["budget_revision"],
             amount=funding["input_amount"],client=client,now=int(current),
-            budget_usd=row["budget_usd"])
+            budget_usd=row["budget_usd"],session_started_at=row["started_by_owner_at"])
     if asset in _NATIVE and not _settlement_enabled():
         # Native BUY needs an onchain WITHDRAW after swap, while SELL needs
         # a prior DEPOSIT. Both require the original receipt reconciler.

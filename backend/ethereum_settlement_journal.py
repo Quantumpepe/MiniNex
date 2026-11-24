@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from decimal import Decimal, localcontext
 
 import psycopg
 from psycopg.rows import dict_row
@@ -120,7 +121,8 @@ def pending_bridge_order(cur,did,asset):
 
 def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
                                        request_sha256, now, balance_atomic=None,
-                                       stable_usd=None):
+                                       stable_usd=None, expected_quote=None,
+                                       buy_budget_usd=None, position_usd=None, gas_usd=None):
     """Internal final claim; caller must already verify grant, calldata and budget.
 
     Caller must hold the existing account/budget/policy locks and check all
@@ -145,11 +147,28 @@ def claim_authorized_submission_locked(cur, *, did, quote_id, intent_key,
     if (not quote or not quote.get("route_sha256")
             or not quote["issued_at"] <= now < quote["expires_at"]):
         raise HTTPException(409, "Settlement quote expired or unavailable")
+    if expected_quote is not None:
+        for field in ("wallet_address","asset","side","stable","source_chain_id",
+                      "destination_chain_id","source_token","destination_token","input_atomic",
+                      "minimum_output_atomic","issued_at","expires_at","route_sha256","unsigned_transaction"):
+            actual=quote[field]
+            if field in ("input_atomic","minimum_output_atomic"):
+                actual=str(actual)
+            if actual!=expected_quote[field]:
+                raise HTTPException(409,"Original claimed bridge quote changed")
     if pending_bridge_order(cur,did,quote["asset"]):
         raise HTTPException(409,"Previous swap requires reconciliation")
     if quote["side"]=="BUY":
-        assert_ethereum_funds_locked(cur,did=did,asset=quote["asset"],stable=quote["stable"],
+        pending=assert_ethereum_funds_locked(cur,did=did,asset=quote["asset"],stable=quote["stable"],
             input_atomic=int(quote["input_atomic"]),balance_atomic=balance_atomic,stable_usd=stable_usd)
+        if buy_budget_usd is not None:
+            with localcontext() as ctx:
+                ctx.prec=100
+                budget,position,gas,rate=map(Decimal,(buy_budget_usd,position_usd,gas_usd,stable_usd))
+                if (not all(x.is_finite() and x>=0 for x in (budget,position,gas,rate))
+                        or budget<=0 or rate<=0 or
+                        position+gas+Decimal(pending["pending_coin_usd"])+Decimal(quote["input_atomic"]).scaleb(-6)*rate>budget):
+                    raise HTTPException(409,"Original coin budget including source gas already allocated")
     elif type(balance_atomic) is not int or balance_atomic<int(quote["input_atomic"]):
         raise HTTPException(409,"Verified sell source balance insufficient")
     cur.execute("""INSERT INTO mininex_ethereum_settlement_submissions
