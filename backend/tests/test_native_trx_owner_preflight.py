@@ -32,3 +32,33 @@ def test_tron_sell_wire_matches_memo_and_owner_transfer():
     changed["txID"]=hashlib.sha256(changed_wire).hexdigest()
     with pytest.raises(ValueError):
         verify_tron_swap_wire(changed,**args)
+
+
+def test_tron_fee_reserve_uses_signed_size_live_rates_and_separate_quotas():
+    from fastapi import HTTPException
+    from backend.native_trx_owner_preflight import _trx_fee_snapshot
+    owner=_tron_address_from_public_key(keys.PrivateKey(bytes([1])*32).public_key.to_bytes())
+    vault=_tron_address_from_public_key(keys.PrivateKey(bytes([2])*32).public_key.to_bytes())
+    unsigned={"raw_data_hex": "ab"*180}
+    parameters={"chainParameter":[{"key":"getTransactionFee","value":1000},
+                                  {"key":"getMemoFee","value":1000000}]}
+    args=dict(source=owner,vault=vault,sun=1000000,parameters=parameters,
+              sender={"address":tron_address_hex(owner),"balance":3000000},
+              recipient={"address":tron_address_hex(vault)})
+    resources={"NetLimit":200,"freeNetLimit":200}
+    result=_trx_fee_snapshot(unsigned,resources=resources,**args)
+    assert result["bandwidth_required"]==314
+    assert result["estimated_source_fee_sun"]=="1314000"
+    assert result["source_fee_reserve_sun"]=="1314000"
+    assert result["actual_source_fee_sun"] is None
+    assert result["fee_reserve_verified"] is True
+    result=_trx_fee_snapshot(unsigned,resources={"freeNetLimit":600},**args)
+    assert result["estimated_source_fee_sun"]=="1000000"
+    assert result["source_fee_reserve_sun"]=="1314000"
+    with pytest.raises(HTTPException):
+        _trx_fee_snapshot(unsigned,resources=resources,**{**args,"sender":{
+            "address":tron_address_hex(owner),"balance":2313999}})
+    with pytest.raises(ValueError):
+        _trx_fee_snapshot(unsigned,resources=resources,**{**args,"recipient":{}})
+    with pytest.raises(ValueError):
+        _trx_fee_snapshot(unsigned,resources=resources,**{**args,"parameters":{"chainParameter":[]}})

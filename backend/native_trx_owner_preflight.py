@@ -6,6 +6,7 @@ any later signer sees its hash. This module never signs or broadcasts.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import time
@@ -78,6 +79,52 @@ def verify_tron_swap_wire(tx,*,source,destination,sun,memo):
     return txid,unsigned
 
 
+def _nonnegative_int(value):
+    if type(value) is not int or not 0 <= value < 2**63:
+        raise ValueError("Invalid TRON resource value")
+    return value
+
+
+def _trx_fee_snapshot(unsigned, *, source, vault, sun, parameters, sender, recipient, resources):
+    """Estimate the one-signature transfer; actual fees require a solid receipt."""
+    if (sender.get("address", "").upper() != tron_address_hex(source)
+            or recipient.get("address", "").upper() != tron_address_hex(vault)
+            or "Error" in resources or "error" in resources):
+        raise ValueError("TRON sender or active vault unavailable")
+    chain_parameters = parameters.get("chainParameter")
+    if type(chain_parameters) is not list:
+        raise ValueError("TRON chain fees unavailable")
+    fees = {}
+    for item in chain_parameters:
+        if type(item) is dict and item.get("key") in ("getTransactionFee", "getMemoFee"):
+            key = item["key"]
+            if key in fees:
+                raise ValueError("Duplicate TRON chain fee")
+            fees[key] = _nonnegative_int(item.get("value", 0))
+    if set(fees) != {"getTransactionFee", "getMemoFee"}:
+        raise ValueError("TRON chain fees unavailable")
+    # Transaction protobuf raw_data + one 65-byte signature + 64-byte result allowance.
+    bandwidth = len(_bytes(1, bytes.fromhex(unsigned["raw_data_hex"]))) + len(_bytes(2, bytes(65))) + 64
+    staked = max(0, _nonnegative_int(resources.get("NetLimit", 0)) -
+                 _nonnegative_int(resources.get("NetUsed", 0)))
+    free = max(0, _nonnegative_int(resources.get("freeNetLimit", 0)) -
+               _nonnegative_int(resources.get("freeNetUsed", 0)))
+    balance = _nonnegative_int(sender.get("balance", 0))
+    memo_fee = fees["getMemoFee"]
+    full_burn = bandwidth * fees["getTransactionFee"]
+    estimated = memo_fee + (0 if max(staked, free) >= bandwidth else full_burn)
+    # Free bandwidth is also subject to a shared network quota. Keep a
+    # full-burn fallback estimate separately; never report it as a paid fee.
+    reserve = memo_fee + full_burn
+    if balance < sun + reserve:
+        raise HTTPException(409, "Insufficient TRX for transfer and network fee reserve")
+    return {"source_balance_sun": str(balance), "bandwidth_required": bandwidth,
+            "staked_bandwidth_available": staked, "free_bandwidth_available": free,
+            "memo_fee_sun": str(memo_fee), "estimated_source_fee_sun": str(estimated),
+            "source_fee_reserve_sun": str(reserve), "fee_reserve_verified": True,
+            "actual_source_fee_sun": None}
+
+
 async def prepare_original_trx_unsigned_owner_transfer(did,*,stable,amount,
         _private_quote=None,_internal_bundle=False):
     did=_safe_did(did)
@@ -111,11 +158,19 @@ async def prepare_original_trx_unsigned_owner_transfer(did,*,stable,amount,
         raise HTTPException(409,"Original TRON swap destination changed")
     sun=trx_to_sun(amount)
     async with httpx.AsyncClient(timeout=httpx.Timeout(9),follow_redirects=False) as client:
-        tx=await _tron_rpc(client,"/wallet/createtransaction",{
+        tx,parameters,sender,recipient,resources=await asyncio.gather(
+            _tron_rpc(client,"/wallet/createtransaction",{
             "owner_address":tron_address_hex(source),"to_address":tron_address_hex(vault),
-            "amount":sun,"visible":False,"extra_data":memo.encode("utf-8").hex()})
+            "amount":sun,"visible":False,"extra_data":memo.encode("utf-8").hex()}),
+            _tron_rpc(client,"/wallet/getchainparameters",{}),
+            _tron_rpc(client,"/wallet/getaccount",{"address":tron_address_hex(source),"visible":False}),
+            _tron_rpc(client,"/wallet/getaccount",{"address":tron_address_hex(vault),"visible":False}),
+            _tron_rpc(client,"/wallet/getaccountresource",{"address":tron_address_hex(source),"visible":False}),
+        )
     try:
         txid,unsigned=verify_tron_swap_wire(tx,source=source,destination=vault,sun=sun,memo=memo)
+        fee_snapshot=_trx_fee_snapshot(unsigned,source=source,vault=vault,sun=sun,
+            parameters=parameters,sender=sender,recipient=recipient,resources=resources)
         if time.time()>=end.timestamp():
             raise ValueError("Original quote expired")
     except (ValueError,KeyError,TypeError,OverflowError):
@@ -123,6 +178,6 @@ async def prepare_original_trx_unsigned_owner_transfer(did,*,stable,amount,
     return {"mode":"ORIGINAL_TRX_SOURCE_UNSIGNED_PREFLIGHT","asset":"TRX","side":"SELL","stable":stable,
             "source_wallet":source,"destination_wallet":eth,"inbound_vault":vault,
             "source_amount_sun":str(sun),"original_transaction_sha256":txid.lower(),
-            "unsigned_transaction":unsigned,"fee_reserve_verified":False,
+            "unsigned_transaction":unsigned,**fee_snapshot,
             "wallet_signed":False,"source_transaction_sent":False,"execution_enabled":False,"can_submit":False,
             **({"_private_quote":quote} if _internal_bundle else {})}
