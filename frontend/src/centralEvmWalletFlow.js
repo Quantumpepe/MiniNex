@@ -86,8 +86,8 @@ function validateOffer(offer,{address,asset,stable}){
     !eqAddress(address,offer.wallet_address)||offer.asset!==asset||
     offer.stable!==stable||!isId(offer.execution_signer_id)||
     !isId(offer.policy_id)||!SHA.test(offer.policy_sha256||'')||
-    offer.owner_add_signer_required!==true||
-    offer.original_wallet_approved!==false||
+    !((offer.owner_add_signer_required===true&&offer.original_wallet_approved===false)||
+      (offer.owner_add_signer_required===false&&offer.original_wallet_approved===true))||
     offer.live_trading_enabled!==false||offer.can_submit!==false||
     (needsDirect(asset)?(offer.settlement_policy!==DIRECT_POLICY||offer.fee_scope!==null):
       (offer.fee_scope?.performance_fee_percent!==5||
@@ -160,13 +160,15 @@ export async function authorizeCentralEvmWalletCoin({
     }
     const offer=await request(root+'/grant-offer');
     validateOffer(offer,{asset,address,stable});
-    await addSigners({
-      address,
-      signers:[{
-        signerId:offer.execution_signer_id,
-        policyIds:[offer.policy_id],
-      }],
-    });
+    if(offer.owner_add_signer_required){
+      await addSigners({
+        address,
+        signers:[{
+          signerId:offer.execution_signer_id,
+          policyIds:[offer.policy_id],
+        }],
+      });
+    }
     const verified=await request(root+'/confirm-grant','POST');
     if(verified?.state!=='GRANT_VERIFIED'||
        verified.owner_signer_grant_verified!==true||
