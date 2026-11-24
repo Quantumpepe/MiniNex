@@ -40,7 +40,43 @@ def valid_scope_fields(scope):
     return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
             and scope.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
             and scope.get("asset") in DIRECT_SETTLEMENT_ASSETS
-            and scope.get("native_wrap_atomic_cap") is None)
+            and scope.get("native_wrap_atomic_cap") is None
+            and scope.get("owner_max_fee_atomic")=="0")
+
+
+def is_direct_settlement_upgrade(asset,old):
+    return (asset in DIRECT_SETTLEMENT_ASSETS and valid_scope_fields(old)
+            and old.get("asset")==asset and "settlement_policy" not in old)
+
+
+def changed_wallet_coin(original,target,original_revisions=None,target_revisions=None):
+    """Only add one coin or migrate one legacy scope to Ethereum direct settlement.
+
+    No sibling changes/removals or stablecoin/budget revision changes are
+    allowed by the migration path. The exact target still requires the
+    original wallet's signed policy digest and independent Privy readback.
+    """
+    if (type(original) is not dict or type(target) is not dict or not original
+            or not set(original).issubset(target)):
+        raise ValueError("Original approved coin scope removed")
+    changed=[a for a in target if a not in original or target[a]!=original[a]]
+    if len(changed)!=1:
+        raise ValueError("Exactly one approved coin scope may change")
+    asset=changed[0]
+    if asset in original:
+        before,after=original[asset],target[asset]
+        if (not is_direct_settlement_upgrade(asset,before)
+                or not valid_scope_fields(after)
+                or after.get("settlement_policy")!=DIRECT_SETTLEMENT_POLICY
+                or after.get("asset")!=asset or after.get("stable")!=before.get("stable")):
+            raise ValueError("Only original Ethereum settlement upgrade is allowed")
+    if original_revisions is not None or target_revisions is not None:
+        if (type(original_revisions) is not dict or type(target_revisions) is not dict
+                or set(original_revisions)!=set(original)
+                or set(target_revisions)!=set(target)
+                or any(target_revisions.get(a)!=v for a,v in original_revisions.items())):
+            raise ValueError("Original approved budget revision changed")
+    return asset
 
 
 def compose_scoped_evm_wallet_policy(

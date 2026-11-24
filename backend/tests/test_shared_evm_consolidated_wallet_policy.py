@@ -99,3 +99,21 @@ def test_versioned_direct_bridge_scope_coexists_with_unchanged_ethereum_scope(as
     assert not any(r["name"].endswith(" native") for r in bridge)
     assert not any("fee" in r["name"] for r in bridge)
     assert verified_wallet_policy_digest(candidate,**kwargs([old,cross]))
+
+
+def test_only_one_legacy_coin_can_migrate_without_changing_sibling_or_budget():
+    from backend.shared_evm_consolidated_wallet_policy import changed_wallet_coin,DIRECT_SETTLEMENT_POLICY
+    original={"LINK":scope("LINK"),"POL":scope("POL",native=True)}
+    migrated=dict(original["POL"],settlement_policy=DIRECT_SETTLEMENT_POLICY,
+                  native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    target={**original,"POL":migrated}
+    revisions={"LINK":2,"POL":3}
+    assert changed_wallet_coin(original,target,revisions,revisions)=="POL"
+    for bad in ({**target,"LINK":scope("LINK","USDT")},
+                {"POL":migrated},
+                {**target,"POL":dict(migrated,stable="USDT")},
+                {**target,"POL":dict(migrated,owner_max_fee_atomic="1")}):
+        with pytest.raises(ValueError):
+            changed_wallet_coin(original,bad,revisions,revisions)
+    with pytest.raises(ValueError):
+        changed_wallet_coin(original,target,revisions,{"LINK":2,"POL":4})

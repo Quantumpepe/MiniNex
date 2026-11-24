@@ -7,6 +7,7 @@ from eth_account.messages import encode_defunct
 from fastapi import HTTPException
 
 from backend import shared_evm_wallet_policy_extend as ext
+from backend import shared_evm_wallet_policy_prepare as prepare
 from backend.shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy,verified_wallet_policy_digest,
 )
@@ -80,7 +81,7 @@ def test_stage_second_coin_keeps_first_and_reuses_one_signer(monkeypatch):
         budget_checks.append((asset,stable,expected_revision))
         return 1000,expected_revision
     monkeypatch.setattr(ext,"_locked_selected_budget",locked)
-    monkeypatch.setattr(ext,"owner_fee_treasury",lambda **_:TREASURY)
+    monkeypatch.setattr(prepare,"owner_fee_treasury",lambda **_:TREASURY)
     # Account row, wallet row, no conflicting legacy per-coin signer,
     # existing original wallet row, inserted challenge, attached snapshot.
     cur=Cur([

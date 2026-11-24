@@ -38,6 +38,7 @@ def _inert_response(status: str = "NOT_CONFIGURED") -> dict:
         "mode": "MININEX_ORIGINAL_EVM_WALLET_POLICY_READONLY_STATUS",
         "status": status,
         "scope_coins": [],
+        "settlement_policy_by_asset": {},
         "current_user_budgets_verified": False,
         "one_scoped_signer_verified": False,
         "remote_policy_exactly_verified": False,
@@ -148,6 +149,7 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         return {**result,"status":"REQUIRES_RECONCILIATION"}
     result["status"]=status
     result["scope_coins"]=sorted(row["asset"] for row in scopes)
+    result["settlement_policy_by_asset"]={row["asset"]:row.get("settlement_policy") for row in scopes}
     result["legacy_reconciliation_required"]=(
         record.get("legacy_reconciliation_required") is not False
     )
