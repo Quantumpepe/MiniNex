@@ -11,6 +11,14 @@ ETHEREUM_STABLES=MappingProxyType({
     "USDC":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
     "USDT":"0xdac17f958d2ee523a2206206994597c13d831ec7",
 })
+# Canonical native and wrapped contract identities, not ticker aliases.
+NATIVE_ADDRESS="0x"+"0"*40
+CROSS_COIN_CONTRACTS=MappingProxyType({
+    "BNB":"0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "POL":"0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270",
+    "AVAX":"0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7",
+    "ARB":"0x912ce59144191c1204e64559fe8253a0e49e6548",
+})
 COIN_NETWORKS=MappingProxyType({
     "BTC":("bitcoin-mainnet",None,8,"NATIVE"),
     "ETH":("ethereum-mainnet",1,18,"ETHEREUM"),
@@ -53,6 +61,13 @@ def check_evm_quote_route(terms):
     key="source_token" if terms["side"]=="BUY" else "destination_token"
     if str(terms[key]).lower()!=route["settlement_contract"]:
         raise ValueError("Quote uses a noncanonical settlement token")
+    asset=terms["asset"]
+    buy=terms["side"]=="BUY"
+    coin_key="destination_token" if buy else "source_token"
+    canonical=CROSS_COIN_CONTRACTS[asset]
+    allowed={canonical} if asset=="ARB" else ({NATIVE_ADDRESS} if buy else {NATIVE_ADDRESS,canonical})
+    if str(terms[coin_key]).lower() not in allowed:
+        raise ValueError("Quote uses a noncanonical coin contract")
     return route
 
 

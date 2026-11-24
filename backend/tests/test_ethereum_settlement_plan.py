@@ -20,7 +20,7 @@ def test_all_twelve_coins_both_stables_both_directions():
 
 def test_noncanonical_stable_contract_cannot_fund_or_settle():
     terms=dict(asset="POL",side="BUY",stable="USDC",source_chain_id=1,
-               destination_chain_id=137,source_token=ETHEREUM_STABLES["USDC"])
+               destination_chain_id=137,source_token=ETHEREUM_STABLES["USDC"],destination_token="0x"+"0"*40)
     assert check_evm_quote_route(terms)["family"]=="CROSS_EVM"
     with pytest.raises(ValueError):
         check_evm_quote_route({**terms,"source_token":"0x"+"ab"*20})

@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 from fastapi import HTTPException
 
 from .storage import _db_url, _ensure_schema, _safe_did
+from .ethereum_settlement_plan import check_evm_quote_route
 
 _ADDR = re.compile(r"^0x[0-9a-f]{40}$")
 _UINT = re.compile(r"^[1-9][0-9]{0,77}$")
@@ -26,6 +27,7 @@ def validate_quote_terms(terms):
     for field in ("wallet_address", "source_token", "destination_token"):
         if not isinstance(terms[field], str) or not _ADDR.fullmatch(terms[field]):
             raise ValueError("Invalid quote address")
+    check_evm_quote_route(terms)
     for field in ("input_atomic", "minimum_output_atomic"):
         if not isinstance(terms[field], str) or not _UINT.fullmatch(terms[field]):
             raise ValueError("Invalid atomic amount")
