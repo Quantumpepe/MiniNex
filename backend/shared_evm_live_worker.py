@@ -32,6 +32,7 @@ from .shared_evm_policy_reference_rates import (
     _price,fetch_evm_policy_reference_rates,
 )
 from .shared_evm_strategy_execution import execute_internal_evm_strategy_signal
+from .ethereum_settlement_reconcile_worker import reconcile_bridge_receipts_once
 from .shared_evm_swap_receipts import _pair
 from .shared_evm_native_buy_reconcile import reconcile_native_buy_cycle_once
 from .shared_evm_native_sell_reconcile import reconcile_native_sell_once
@@ -416,17 +417,38 @@ class SharedEvmLiveWorker:
     def __init__(self,market):
         self.market=market
         self._task=None
+        self._bridge_task=None
 
     async def start(self)->None:
         if evm_auto_worker_enabled() and self._task is None:
             self._task=asyncio.create_task(
                 self._run(),name="mininex-shared-evm-auto-live")
+        if evm_auto_worker_enabled() and self._bridge_task is None:
+            self._bridge_task=asyncio.create_task(
+                self._run_bridge_receipts(),name="mininex-ethereum-bridge-receipts")
 
     async def stop(self)->None:
-        task,self._task=self._task,None
-        if task is not None:
+        tasks=[t for t in (self._task,self._bridge_task) if t is not None]
+        self._task=None
+        self._bridge_task=None
+        for task in tasks:
             task.cancel()
-            await asyncio.gather(task,return_exceptions=True)
+        if tasks:
+            await asyncio.gather(*tasks,return_exceptions=True)
+
+    async def _run_bridge_receipts(self):
+        # Separate passive polling task: a slow bridge cannot delay new
+        # independent coin signals or the existing live worker.
+        while True:
+            await asyncio.sleep(_INTERVAL_SECONDS)
+            if not evm_auto_worker_enabled():
+                continue
+            try:
+                await reconcile_bridge_receipts_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("Original Ethereum bridge finality unavailable")
 
     async def _run(self)->None:
         while True:

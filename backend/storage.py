@@ -1410,6 +1410,27 @@ SCHEMA += (
         UNIQUE (source_chain_id,source_tx_hash),
         CHECK ((state='SUBMITTED') = (source_tx_hash IS NOT NULL))
     )""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_finality (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        source_chain_id BIGINT NOT NULL,
+        destination_chain_id BIGINT NOT NULL,
+        source_tx_hash TEXT NOT NULL CHECK (source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        destination_tx_hash TEXT CHECK (destination_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        bridge_deposit_id NUMERIC(78,0),
+        received_atomic NUMERIC(78,0),
+        source_gas_atomic NUMERIC(78,0) NOT NULL CHECK(source_gas_atomic >= 0),
+        outcome TEXT NOT NULL CHECK(outcome IN ('FINALIZED','SOURCE_REVERTED')),
+        verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(source_chain_id,source_tx_hash),
+        UNIQUE(source_chain_id,bridge_deposit_id),
+        CHECK ((outcome='FINALIZED' AND destination_tx_hash IS NOT NULL
+             AND bridge_deposit_id IS NOT NULL AND received_atomic > 0)
+          OR (outcome='SOURCE_REVERTED' AND destination_tx_hash IS NULL
+             AND bridge_deposit_id IS NULL AND received_atomic IS NULL))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_finality_owner
+       ON mininex_ethereum_settlement_finality(privy_did,verified_at DESC)""",
 )
 
 def _db_url() -> str:

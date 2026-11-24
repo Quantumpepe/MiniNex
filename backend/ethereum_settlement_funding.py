@@ -78,7 +78,9 @@ _PENDING_SQL="""SELECT asset,stable,reserved_notional_usd AS amount,'USD' AS uni
     SELECT q.asset,q.stable,q.input_atomic,'ATOMIC'
     FROM mininex_ethereum_settlement_quotes q
     WHERE q.privy_did=%(did)s AND q.stable=%(stable)s AND q.side='BUY'
-      AND q.source_chain_id=1 AND (
+      AND q.source_chain_id=1 AND NOT EXISTS(
+      SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=q.quote_id
+    ) AND (
         EXISTS(SELECT 1 FROM mininex_ethereum_settlement_manual_attempts m
             WHERE m.quote_id=q.quote_id AND m.privy_did=q.privy_did
             AND m.final_outcome IS NULL
