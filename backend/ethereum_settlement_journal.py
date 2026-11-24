@@ -6,6 +6,7 @@ import uuid
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from fastapi import HTTPException
 
 from .storage import _db_url, _ensure_schema, _safe_did
@@ -36,6 +37,10 @@ def validate_quote_terms(terms):
     digest=terms.get("route_sha256")
     if digest is not None and (not isinstance(digest,str) or not re.fullmatch(r"[0-9a-f]{64}",digest)):
         raise ValueError("Invalid inspected route digest")
+    if terms.get("unsigned_transaction") is not None:
+        from .ethereum_settlement_calldata import route_digest
+        if route_digest(terms["unsigned_transaction"],terms["source_chain_id"])!=digest:
+            raise ValueError("Stored route transaction differs from digest")
     return terms
 
 
@@ -53,13 +58,14 @@ def store_quote(did, terms):
                 cur.execute("""INSERT INTO mininex_ethereum_settlement_quotes
                     (quote_id,privy_did,wallet_address,asset,side,stable,
                      source_chain_id,destination_chain_id,source_token,destination_token,
-                     input_atomic,minimum_output_atomic,issued_at,expires_at,route_sha256)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                     input_atomic,minimum_output_atomic,issued_at,expires_at,route_sha256,unsigned_transaction)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (key,did,terms["wallet_address"],terms["asset"],terms["side"],
                      terms["stable"],terms["source_chain_id"],terms["destination_chain_id"],
                      terms["source_token"],terms["destination_token"],
                      terms["input_atomic"],terms["minimum_output_atomic"],
-                     terms["issued_at"],terms["expires_at"],terms.get("route_sha256")))
+                     terms["issued_at"],terms["expires_at"],terms.get("route_sha256"),
+                     Jsonb(terms["unsigned_transaction"]) if terms.get("unsigned_transaction") else None))
     except psycopg.Error:
         raise HTTPException(503, "Settlement quote storage unavailable") from None
     return str(key)

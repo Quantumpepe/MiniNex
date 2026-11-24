@@ -16,8 +16,11 @@ from eth_utils import keccak
 from .live_eth_quotes import ETH_NATIVE, STABLES
 from .native_evm_v3_quote import CHAINS
 from .eth_swaprouter02_preflight import SWAPROUTER02_MAINNET, WETH_MAINNET
+from .ethereum_settlement_bridge_proof import POOLS
 
 DIAMOND = "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae"
+# Official deployment manifests, checked against facetAddress at preflight.
+ACROSS_FACET="0xad3f1634a917924cbb54a0f76e43ca035d2b6bcd"
 BRIDGE = "(bytes32,string,string,address,address,address,uint256,uint256,bool,bool)"
 ACROSS = "(bytes32,bytes32,bytes32,bytes32,uint256,uint128,bytes32,uint32,uint32,uint32,bytes)"
 SWAP = "(address,address,address,address,uint256,bytes,bool)"
@@ -85,6 +88,8 @@ def inspect_across_v4(tx, *, terms, now):
     deployed facet identity, liquidity, remote Privy permission or execution.
     """
     src,dst=terms["source_chain_id"],terms["destination_chain_id"]
+    if src not in POOLS or dst not in POOLS:
+        raise ValueError("Across route not deployed on both networks")
     wallet=terms["wallet_address"].lower()
     token_in=terms["source_token"].lower()
     token_out=terms["destination_token"].lower()
@@ -111,8 +116,15 @@ def inspect_across_v4(tx, *, terms, now):
         raise ValueError("Bridge destination or flags differ")
     (receiver32,refund32,sending32,receiving32,output,multiplier,
      _,timestamp,deadline,_,message)=across
+    bridge_out=_word_address(receiving32)
+    if token_out==ETH_NATIVE:
+        expected=next((r.wrapped.lower() for r in CHAINS.values() if r.chain_id==dst),None)
+        if bridge_out!=expected:
+            raise ValueError("Unverified native payout token")
+    elif bridge_out!=token_out:
+        raise ValueError("Bridge destination token differs")
     if (_word_address(receiver32)!=wallet or _word_address(refund32)!=wallet
-            or _word_address(receiving32)!=token_out or message
+            or message
             or timestamp>now+30 or deadline<=now):
         raise ValueError("Bridge receiver, refund, token or deadline differs")
     if token_in==ETH_NATIVE:
@@ -123,7 +135,11 @@ def inspect_across_v4(tx, *, terms, now):
     if selector==DIRECT:
         if bridge_token.lower()!=token_in or bridge_min!=amount or output<minimum:
             raise ValueError("Direct bridge amount or minimum differs")
-        if token_in!=ETH_NATIVE and _word_address(sending32)!=token_in:
+        if token_in==ETH_NATIVE:
+            expected=next((r.wrapped.lower() for r in CHAINS.values() if r.chain_id==src),None)
+            if _word_address(sending32)!=expected:
+                raise ValueError("Unverified native source token")
+        elif _word_address(sending32)!=token_in:
             raise ValueError("Direct bridge source token differs")
     else:
         if token_in==ETH_NATIVE or len(values[1])!=1:
@@ -146,4 +162,10 @@ def inspect_across_v4(tx, *, terms, now):
             raise ValueError("Source swap or bridge minimum differs")
     return {"transaction":tx,"route_sha256":route_digest(tx,src),
             "bridge_transaction_id":"0x"+tid.hex(),
+            "bridge_source_token":_word_address(sending32),
+            "bridge_destination_token":bridge_out,
+            "bridge_minimum_atomic":bridge_min,"direct_output_atomic":output,
+            "output_multiplier":multiplier,"source_swap":selector==WITH_SWAP,
+            "quote_timestamp":timestamp,"fill_deadline":deadline,
+            "minimum_output_atomic":minimum,
             "calldata_verified":True,"execution_authorized":False}

@@ -7,7 +7,7 @@ nor a mined source transaction alone establishes a completed swap.
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import os
 import re
 
@@ -16,7 +16,8 @@ from fastapi import HTTPException
 
 from .ethereum_settlement_quote import CROSS_EVM, _token_matches
 from .ethereum_settlement_journal import load_quote, load_submission
-from .ethereum_settlement_calldata import route_digest
+from .ethereum_settlement_calldata import route_digest, inspect_across_v4
+from .ethereum_settlement_bridge_proof import prove_across_pair
 from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
 from .live_eth_receipts import _num
 from .multicoin_evm_balances import _RPC, _WRAPPED_GROUPS
@@ -205,7 +206,9 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
     chain, coin_token = CROSS_EVM[asset]
     src, dst = (1, chain) if buy else (chain, 1)
     source_decimals, dest_decimals = (6, 18) if buy else (18, 6)
-    _, units = _quantity(amount, source_decimals)
+    with localcontext() as context:
+        context.prec=80
+        _, units = _quantity(amount, source_decimals)
     source_tokens = [STABLES[stable]] if buy else [coin_token]
     if not buy and asset in _WRAPPED_GROUPS:
         source_tokens.append(_WRAPPED_GROUPS[asset][1])
@@ -231,6 +234,7 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             "destination_tx_hash": None, "received_amount": None,
             "source_fee_native": None, "state": "PENDING",
             "original_submission_bound": bound,
+            "bridge_message_verified":False,
             "settlement_verified": False, "execution_enabled": False}
     try:
         user = await fetch_privy_user(did)
@@ -304,9 +308,22 @@ async def check_ethereum_settlement(did, *, asset, side, stable, amount, tx_hash
             if received < int(quote["minimum_output_atomic"]):
                 return {**base, "state": "BELOW_QUOTED_MINIMUM",
                         "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
-            # Even a bound original send still needs bridge-message proof
-            # and a unique accounting entry. Never book PnL here.
-            return {**base, "state": "CREDIT_OBSERVED",
-                    "received_amount": format(Decimal(received).scaleb(-dest_decimals), "f")}
+            proof=None
+            if quote.get("unsigned_transaction") is not None:
+                inspected=inspect_across_v4(quote["unsigned_transaction"],
+                    terms=quote,now=quote["issued_at"])
+                proof=prove_across_pair(receipt["logs"],dest_receipt["logs"],
+                    src=src,dst=dst,wallet=wallet,route=inspected,received=received)
+            # Only the original trusted submission plus matched bridge events
+            # and verified wallet credit establish settlement. Accounting is
+            # intentionally separate; this read-only endpoint never books PnL.
+            verified=bool(bound and proof)
+            with localcontext() as context:
+                context.prec=80
+                actual=format(Decimal(received).scaleb(-dest_decimals),"f")
+            return {**base, "state":"FINALIZED" if verified else "CREDIT_OBSERVED",
+                    "bridge_message_verified":bool(proof),
+                    "settlement_verified":verified,"received_amount":actual,
+                    "bridge_deposit_id":proof["deposit_id"] if proof else None}
     except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):
         raise HTTPException(502, "Cross-chain settlement not independently verified") from None

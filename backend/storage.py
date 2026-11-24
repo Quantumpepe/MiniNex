@@ -1378,6 +1378,8 @@ SCHEMA += (
     """ALTER TABLE mininex_ethereum_settlement_quotes
        ADD COLUMN IF NOT EXISTS route_sha256 TEXT
        CHECK (route_sha256 IS NULL OR route_sha256 ~ '^[0-9a-f]{64}$')""",
+    """ALTER TABLE mininex_ethereum_settlement_quotes
+       ADD COLUMN IF NOT EXISTS unsigned_transaction JSONB""",
     """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_quotes_owner
        ON mininex_ethereum_settlement_quotes(privy_did,issued_at DESC)""",
     """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_submissions (

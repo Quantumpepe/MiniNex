@@ -76,8 +76,10 @@ def _read_quote(payload, *, wallet, source_chain, dest_chain, token_in,
     minimum = _valid_units(estimate["toAmountMin"])
     if minimum > output:
         raise ValueError("Invalid minimum cross-chain output")
-    return (format(Decimal(output).scaleb(-dest_decimals), "f"),
-            format(Decimal(minimum).scaleb(-dest_decimals), "f"))
+    with localcontext() as context:
+        context.prec=80
+        return (format(Decimal(output).scaleb(-dest_decimals), "f"),
+                format(Decimal(minimum).scaleb(-dest_decimals), "f"))
 
 
 async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
@@ -160,6 +162,7 @@ async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
         # intentionally indicative-only; no transaction authority is returned.
         pass
     terms["route_sha256"]=inspected["route_sha256"] if inspected else None
+    terms["unsigned_transaction"]=inspected["transaction"] if inspected else None
     quote_id = await asyncio.to_thread(store_quote, did, terms)
     return {
         "quote_id": quote_id,
