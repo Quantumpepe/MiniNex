@@ -46,9 +46,11 @@ async def read_cross_evm_funding(did,asset,stable,client):
     if await _eth_rpc_call(client,"eth_chainId",[],1)!=1:
         raise ValueError("Wrong Ethereum RPC")
     token=route["settlement_contract"]
-    balance=await _eth_rpc_call(client,"eth_call",[
-        {"to":token,"data":"0x70a08231"+wallet[2:].lower().rjust(64,"0")},"latest"],2)
-    source=await _read_chain(client,"ARB_TOKENS" if asset=="ARB" else asset,wallet)
+    balance,source=await asyncio.gather(
+        _eth_rpc_call(client,"eth_call",[
+            {"to":token,"data":"0x70a08231"+wallet[2:].lower().rjust(64,"0")},"latest"],2),
+        _read_chain(client,"ARB_TOKENS" if asset=="ARB" else asset,wallet),
+    )
     native=exact_balance(source.get(asset),18)
     wrapped=0
     if asset in _WRAPPED_GROUPS:
@@ -96,6 +98,10 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
             "state":"CROSS_CHAIN_POLICY_MIGRATION_REQUIRED",
             "approval_needed":bool(plan.get("manual_approval")),
             "estimated_source_gas_atomic":plan["estimated_gas_atomic"],
+            "gas_estimate_kind":plan["gas_estimate_kind"],
+            "native_bridge_fee_atomic":plan["native_bridge_fee_atomic"],
+            "minimum_output_atomic":persisted["minimum_output_atomic"],
+            "input_atomic":persisted["input_atomic"],
             "owner_budget_revision":budget_revision,
             "policy_migration_kind":review["migration_kind"],
             "direct_quote_rule_sha256":review["direct_quote_rule_sha256"],

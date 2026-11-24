@@ -572,3 +572,17 @@ def test_cross_evm_session_uses_ethereum_settlement_never_legacy_local_send(
     else:
         assert result["can_submit"] is False
         assert actions==["verified_market","strategy_coin_position","bridge_candidate"]
+
+
+def test_pending_bridge_buy_reports_pending_not_empty_funds(monkeypatch):
+    from backend import ethereum_settlement_auto_plan as bridge
+    use_tick_mocks(monkeypatch,asset="POL",action="BUY")
+    async def pending(**kw):
+        return {"input_atomic":"0","reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED"}
+    monkeypatch.setattr(bridge,"plan_cross_evm_buy",pending)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session("POL"),market=object(),client=client,now=10000)
+    assert asyncio.run(tick())=={"asset":"POL","state":"WAIT",
+                                "reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED"}

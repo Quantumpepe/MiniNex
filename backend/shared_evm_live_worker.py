@@ -292,7 +292,7 @@ async def execute_owner_evm_live_tick(
                 client=client,now=int(current))
             if int(funding["input_atomic"])==0:
                 return {"asset":asset,"state":"WAIT",
-                        "reason":"NO_VERIFIED_ETHEREUM_FUNDS_OR_BUDGET"}
+                        "reason":funding.get("reason","NO_VERIFIED_ETHEREUM_FUNDS_OR_BUDGET")}
         else:
             funding=await plan_cross_evm_sell(did=did,asset=asset,stable=row["stable"],client=client)
             if int(funding["input_atomic"])==0:

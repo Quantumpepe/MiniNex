@@ -144,6 +144,9 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
     assert state["original_blockchain_swaps_finalized"]==2
     assert state["new_transactions_sent"]==0
     assert "tx_hash IS NOT NULL" in cur.calls[1][0]
+    assert "mininex_ethereum_settlement_submissions" in cur.calls[1][0]
+    assert "mininex_ethereum_settlement_finality" in cur.calls[1][0]
+    assert "mininex_ethereum_settlement_manual_attempts" not in cur.calls[1][0]
     assert cur.calls[1][1]==(DID,"LINK")
 
 

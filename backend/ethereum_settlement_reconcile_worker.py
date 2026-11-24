@@ -46,18 +46,29 @@ def touch_checked(row):
 
 async def reconcile_bridge_receipts_once():
     rows=await asyncio.to_thread(pending_bridge_receipts)
+    groups={}
     for row in rows:
-        try:
-            with localcontext() as ctx:
-                ctx.prec=100
-                amount=format(Decimal(row["input_atomic"]).scaleb(-6 if row["side"]=="BUY" else -18),"f")
-            await check_ethereum_settlement(row["privy_did"],asset=row["asset"],
-                side=row["side"],stable=row["stable"],amount=amount,
-                tx_hash=row["source_tx_hash"],quote_id=str(row["quote_id"]))
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            LOG.warning("Original bridge receipt still requires reconciliation")
-        finally:
-            await asyncio.to_thread(touch_checked,row)
+        groups.setdefault(row["privy_did"],[]).append(row)
+
+    async def reconcile_owner(orders):
+        for row in orders:
+            try:
+                with localcontext() as ctx:
+                    ctx.prec=100
+                    amount=format(Decimal(row["input_atomic"]).scaleb(-6 if row["side"]=="BUY" else -18),"f")
+                await check_ethereum_settlement(row["privy_did"],asset=row["asset"],
+                    side=row["side"],stable=row["stable"],amount=amount,
+                    tx_hash=row["source_tx_hash"],quote_id=str(row["quote_id"]))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.warning("Original bridge receipt still requires reconciliation")
+            try:
+                await asyncio.to_thread(touch_checked,row)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.warning("Original bridge polling timestamp unavailable")
+
+    await asyncio.gather(*(reconcile_owner(orders) for orders in groups.values()))
     return {"checked":len(rows)}

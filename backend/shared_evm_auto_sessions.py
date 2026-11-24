@@ -176,16 +176,34 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                 worker_seen=False
                 if type(row) is dict:
                     cur.execute(
-                        """SELECT COUNT(*) AS sent,
-                                  COUNT(*) FILTER (
-                                      WHERE status='FINALIZED_SUCCESS'
-                                  ) AS finalized
-                           FROM mininex_live_evm_auto_broadcasts
-                           WHERE privy_did=%s AND asset=%s
-                             AND tx_hash IS NOT NULL
-                             AND status IN ('SUBMITTED','FINALIZED_SUCCESS',
-                                            'FINALIZED_REVERTED',
-                                            'RECONCILIATION_REQUIRED')""",
+                        """WITH selected AS (
+                               SELECT %s::text AS did,%s::text AS asset
+                           ), original_swaps AS (
+                               SELECT b.chain_id,b.tx_hash,
+                                   b.status='FINALIZED_SUCCESS' AS finalized
+                               FROM mininex_live_evm_auto_broadcasts b
+                               JOIN selected k ON k.did=b.privy_did AND k.asset=b.asset
+                               WHERE b.tx_hash IS NOT NULL
+                                 AND b.status IN ('SUBMITTED','FINALIZED_SUCCESS',
+                                                  'FINALIZED_REVERTED','RECONCILIATION_REQUIRED')
+                               UNION ALL
+                               SELECT s.source_chain_id,s.source_tx_hash,
+                                   COALESCE(f.outcome='FINALIZED',FALSE) AS finalized
+                               FROM mininex_ethereum_settlement_submissions s
+                               JOIN mininex_ethereum_settlement_quotes q
+                                 ON q.quote_id=s.quote_id AND q.privy_did=s.privy_did
+                               JOIN selected k ON k.did=q.privy_did AND k.asset=q.asset
+                               LEFT JOIN mininex_ethereum_settlement_finality f
+                                 ON f.quote_id=s.quote_id AND f.privy_did=s.privy_did
+                                  AND f.source_tx_hash=s.source_tx_hash
+                               WHERE s.state='SUBMITTED' AND s.source_tx_hash IS NOT NULL
+                           ), unique_swaps AS (
+                               SELECT chain_id,tx_hash,bool_or(finalized) AS finalized
+                               FROM original_swaps GROUP BY chain_id,tx_hash
+                           )
+                           SELECT COUNT(*) AS sent,
+                               COUNT(*) FILTER (WHERE finalized) AS finalized
+                           FROM unique_swaps""",
                         (did,asset))
                     counted=cur.fetchone()
                     if type(counted) is dict:

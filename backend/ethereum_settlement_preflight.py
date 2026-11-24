@@ -78,6 +78,10 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
             if gas<=0 or price<=0 or native<gas*price:
                 raise HTTPException(409,"Source gas funds insufficient")
             return {"manual_approval":approval,"estimated_gas_atomic":str(gas*price),
+                    "gas_estimate_kind":"APPROVAL_ONLY",
+                    "native_bridge_fee_atomic":str(inspected["native_bridge_fee_atomic"]),
+                    "verified_source_balance_atomic":str(balance),
+                    "verified_native_balance_atomic":str(native),
                     "execution_authorized":False}
     envelope={"from":tx["from"],"to":tx["to"],"data":tx["data"],"value":hex(int(tx["value"]))}
     # Estimate executes the exact transaction against current on-chain state
@@ -91,6 +95,8 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
                     "params":{"transaction":{"to":tx["to"],"data":tx["data"],"value":tx["value"]}}},
             "quote_id":str(quote["quote_id"]),"route_sha256":inspected["route_sha256"],
             "estimated_gas_atomic":str(gas*price),
+            "gas_estimate_kind":"SWAP",
             "native_bridge_fee_atomic":str(inspected["native_bridge_fee_atomic"]),
             "verified_source_balance_atomic":str(balance),
+            "verified_native_balance_atomic":str(native),
             "execution_authorized":False}
