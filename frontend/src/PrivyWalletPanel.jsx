@@ -10,6 +10,7 @@ import WalletBalances from './WalletBalances.jsx';
 import LiveEthControls from './LiveEthControls.jsx';
 import EvmFeeAutoOwnerConsent from './EvmFeeAutoOwnerConsent.jsx';
 import EvmLiveOwnerControls from './EvmLiveOwnerControls.jsx';
+import WrappedSpotOwnerControls from './WrappedSpotOwnerControls.jsx';
 import ManualSwapPreview from './ManualSwapPreview.jsx';
 import WalletSend from './WalletSend.jsx';
 import BtcSendEntry from './BtcSendEntry.jsx';
@@ -538,6 +539,9 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
             renderBudget={renderBudget} renderSessionControls={renderSessionControls}
             renderCoinAddress={renderCoinAddress} renderLiveControls={renderLiveControls}
             renderCoinActions={renderCoinActions} renderCoinBalance={renderCoinBalance}
+            renderWrappedControls={coin=><WrappedSpotOwnerControls key={user?.id+'-'+coin}
+              asset={coin} address={address} userId={user?.id} enabled={verifiedAccount}
+              getAccessToken={getAccessToken} t={t} lang={lang}/>}
             marketSnapshot={marketSnapshot} syncedAt={syncedAt} lang={lang}/>
 
         </>}
