@@ -88,7 +88,8 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
             return {"asset":asset,"state":"AVAX_STAGED_OWNER_GRANT_REQUIRED","can_submit":False}
         from .ethereum_stargate_staged_worker import start_avax_staged_order
         return await start_avax_staged_order(did=did,side=side,stable=stable,
-            budget_revision=budget_revision,amount=amount,client=client,budget_usd=budget_usd,record=record)
+            budget_revision=budget_revision,amount=amount,client=client,budget_usd=budget_usd,record=record,
+            session_started_at=session_started_at,signal_time=now)
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
     direct_scope=record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
     quote=await get_ethereum_cross_evm_quote(did,route["source_asset"],route["destination_asset"],amount,

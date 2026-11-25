@@ -104,3 +104,19 @@ def test_staged_claim_rejects_quote_amount_recipient_or_unapproved_allowance():
     approval={"from":WALLET,"to":CONFIG[1]["tokens"][stable],"chainId":1,"value":"0",
         "data":_call_data("approve(address,uint256)",["address","uint256"],[CONFIG[1]["pools"][stable],0])}
     assert check_stage_prepared(order,dict(prepared,source_allowance_atomic="1",approval=approval),101)==("APPROVAL",approval)
+
+
+
+def test_staged_order_identity_is_session_scoped_and_stable_across_requotes():
+    from datetime import datetime,timezone,timedelta
+    from backend.ethereum_stargate_staged_journal import staged_order_identity
+    did="did:privy:owner"
+    started=datetime(2026,11,25,14,0,tzinfo=timezone.utc)
+    first=staged_order_identity(did,started,120)
+    assert first==staged_order_identity(did,started,179)
+    assert first==staged_order_identity(did,started.astimezone(timezone(timedelta(hours=1))),120)
+    assert first!=staged_order_identity(did,started,180)
+    assert first!=staged_order_identity(did,started+timedelta(seconds=1),120)
+    assert first!=staged_order_identity("did:privy:other",started,120)
+    with pytest.raises(ValueError):
+        staged_order_identity(did,started.replace(tzinfo=None),120)

@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from decimal import Decimal,localcontext
-from datetime import datetime
+from datetime import datetime,timezone
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -25,6 +25,15 @@ from .shared_evm_central_runtime import _locked_original_evm_coin
 
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ACTIVE=("SENDING","SUBMITTED","SOURCE_FINALIZED","UNCERTAIN")
+
+
+def staged_order_identity(did,started,signal_time):
+    """One original AVAX market event per owner session, across requotes/restarts."""
+    if not isinstance(started,datetime) or started.tzinfo is None or type(signal_time) is not int or signal_time<=0:
+        raise ValueError("Original AVAX session and market event required")
+    identity=json.dumps([_safe_did(did),"AVAX",started.astimezone(timezone.utc).isoformat(),
+                         signal_time//60],separators=(",",":"))
+    return uuid.uuid5(uuid.NAMESPACE_URL,"mininex:avax:"+identity)
 
 
 def stage_kind(side,stage):
@@ -151,12 +160,13 @@ def _lock_chain(cur,did,chain):
             raise HTTPException(409,"Earlier native Ethereum send unresolved")
 
 
-def create_order(did,record,*,side,prepared,budget_usd,position_usd,stable_usd,cost_usd):
+def create_order(did,record,*,side,prepared,budget_usd,position_usd,stable_usd,cost_usd,
+                 session_started_at,signal_time):
     from .ethereum_settlement_journal import pending_bridge_order
     from .ethereum_settlement_funding import assert_ethereum_funds_locked
     from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
     did=_safe_did(did);db=_db_url();_ensure_schema(db)
-    order_id=uuid.uuid4()
+    order_id=staged_order_identity(did,session_started_at,signal_time)
     amount=int(prepared["input_atomic"])
     order={"order_id":order_id,"privy_did":did,"side":side,"stable":record["stable"],
            "wallet_id":record["wallet_id"],"wallet_address":record["wallet_address"],
@@ -167,6 +177,8 @@ def create_order(did,record,*,side,prepared,budget_usd,position_usd,stable_usd,c
         with conn.cursor(row_factory=dict_row) as cur:
             _owner_lock(cur,did)
             session=_current(cur,did,record)
+            if session["started_by_owner_at"]!=session_started_at:
+                raise HTTPException(409,"Original AVAX signal belongs to a replaced session")
             if side=="BUY" and session["status"]!="ACTIVE":
                 raise HTTPException(409,"No new BUY after Stop or Exit")
             if pending_bridge_order(cur,did,"AVAX"):
@@ -195,10 +207,14 @@ def create_order(did,record,*,side,prepared,budget_usd,position_usd,stable_usd,c
             cur.execute("""INSERT INTO mininex_avax_staged_orders
                 (order_id,privy_did,side,stable,wallet_address,wallet_id,budget_revision,
                  scope_json,started_by_owner_at,original_input_atomic)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (order_id) DO NOTHING RETURNING *""",
                 (order_id,did,side,order["stable"],order["wallet_address"],order["wallet_id"],
                  order["budget_revision"],Jsonb(order["scope_json"]),session["started_by_owner_at"],amount))
-            return cur.fetchone()
+            saved=cur.fetchone()
+            if saved is None:
+                raise HTTPException(409,"Original AVAX signal already processed")
+            return saved
 
 
 def read_open_order(did):
@@ -217,7 +233,7 @@ def read_pending_step(order_id):
             return cur.fetchone()
 
 
-def claim_step(did,order_id,record,prepared):
+def claim_step(did,order_id,record,prepared,*,expected_updated_at):
     did=_safe_did(did);db=_db_url();_ensure_schema(db)
     step_id=uuid.uuid4();key="avax_"+step_id.hex
     with psycopg.connect(db,connect_timeout=6) as conn:
@@ -227,12 +243,14 @@ def claim_step(did,order_id,record,prepared):
             order=cur.fetchone()
             if not order or order["state"]!="OPEN":
                 raise HTTPException(409,"Original AVAX order not pending")
+            if order["updated_at"]!=expected_updated_at:
+                raise HTTPException(409,"Original AVAX step snapshot changed; refresh quote")
             session=_current(cur,did,record,order)
+            cur.execute("""SELECT 1 FROM mininex_avax_staged_steps WHERE order_id=%s
+                AND state IN ('SENDING','SUBMITTED','SOURCE_FINALIZED','UNCERTAIN') LIMIT 1""",(order_id,))
+            if cur.fetchone():
+                raise HTTPException(409,"Prior AVAX step unresolved")
             if order["side"]=="BUY" and order["stage"]==1 and session["status"]=="EXIT_PENDING":
-                cur.execute("""SELECT 1 FROM mininex_avax_staged_steps WHERE order_id=%s
-                    AND state IN ('SENDING','SUBMITTED','SOURCE_FINALIZED','UNCERTAIN') LIMIT 1""",(order_id,))
-                if cur.fetchone():
-                    raise HTTPException(409,"Prior AVAX step unresolved")
                 cur.execute("UPDATE mininex_avax_staged_orders SET state='CANCELLED',updated_at=now() WHERE order_id=%s",(order_id,))
                 return None
             kind,tx=check_stage_prepared(order,prepared,int(time.time()))
@@ -248,6 +266,7 @@ def claim_step(did,order_id,record,prepared):
                  prepared.get("destination_start_block") if kind=="BRIDGE" else None))
             if not cur.fetchone():
                 raise HTTPException(409,"Original staged step not claimed")
+            cur.execute("UPDATE mininex_avax_staged_orders SET updated_at=now() WHERE order_id=%s",(order_id,))
     return {"step_id":step_id,"key":key,"digest":digest,"url":url,"body":body,"kind":kind}
 
 

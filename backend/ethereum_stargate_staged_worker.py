@@ -55,7 +55,8 @@ async def _prepare(client,order,record):
 
 
 async def _submit(did,order,record,prepared,client):
-    claim=await asyncio.to_thread(claim_step,did,order["order_id"],record,prepared)
+    claim=await asyncio.to_thread(claim_step,did,order["order_id"],record,prepared,
+                                  expected_updated_at=order["updated_at"])
     if claim is None:
         return {"asset":"AVAX","state":"CANCELLED","reason":"OWNER_REQUESTED_EXIT"}
     try:
@@ -92,7 +93,7 @@ async def advance_avax_order(did,*,row,client):
 
 
 async def start_avax_staged_order(*,did,side,stable,budget_revision,amount,client,
-                                  budget_usd,record=None):
+                                  budget_usd,session_started_at,signal_time,record=None):
     from .ethereum_settlement_auto_plan import read_cross_evm_funding
     from .ethereum_settlement_funding import read_pending_ethereum_funding
     from .ethereum_settlement_plan import ethereum_buy_amount
@@ -139,7 +140,8 @@ async def start_avax_staged_order(*,did,side,stable,budget_revision,amount,clien
             selected=resized;order["original_input_atomic"]=selected
             prepared=await _prepare(client,order,record)
     saved=await asyncio.to_thread(create_order,did,record,side=side,prepared=prepared,
-        budget_usd=budget_usd,position_usd=position,stable_usd=rate,cost_usd=cost)
+        budget_usd=budget_usd,position_usd=position,stable_usd=rate,cost_usd=cost,
+        session_started_at=session_started_at,signal_time=signal_time)
     return await _submit(did,saved,record,prepared,client)
 
 
