@@ -67,7 +67,9 @@ async def check_evm_source_allowance(
     source=pair["source_token"]
     destination=pair["output_token"]
     router=pair["router"]
-    if asset in _RPC:
+    if asset in ("BTC","XRP"):
+        chain,network,fallback,env=_RPC["ETH_TOKENS"]
+    elif asset in _RPC:
         chain,network,fallback,env=_RPC[asset]
     elif asset=="ARB":
         chain,network,fallback,env=_RPC["ARB_TOKENS"]

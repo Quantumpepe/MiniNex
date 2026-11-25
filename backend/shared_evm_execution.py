@@ -42,6 +42,9 @@ class EvmPair:
 
 def chain_for_asset(asset: str) -> tuple[int, str]:
     """Map one asset to its chain; never infer network from caller calldata."""
+    # Trading inventory is on Ethereum; the native wallet registry is unchanged.
+    if asset in ("BTC", "XRP"):
+        return 1, "ethereum-mainnet"
     info = get_asset(asset)
     network = info.blockchain
     if asset not in NETWORK_ASSETS.get(network, frozenset()):

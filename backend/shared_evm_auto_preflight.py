@@ -26,6 +26,20 @@ def inspect_evm_exact_swap(
     all those addresses are derived from the canonical on-chain route registry.
     """
     pair=_pair(asset,stable,side)
+    if asset in ("BTC","XRP"):
+        from .ethereum_wrapped_spot_policy import inspect_wrapped_spot_transaction
+        if (type(input_atomic) is not str or not _ATOMIC.fullmatch(input_atomic)
+                or type(minimum_output_atomic) is not str
+                or not _ATOMIC.fullmatch(minimum_output_atomic)):
+            raise ValueError("Unverified wrapped spot amounts")
+        inspect_wrapped_spot_transaction(tx,asset=asset,stable=stable,side=side,
+            wallet=wallet,amount_atomic=int(input_atomic),min_out_atomic=int(minimum_output_atomic))
+        return {"asset":asset,"network":pair["network"],"chain_id":1,"side":side,
+                "stable":stable,"router":pair["router"],"wallet":wallet.lower(),
+                "source_token":pair["source_token"],"output_token":pair["output_token"],
+                "input_atomic":input_atomic,"minimum_output_atomic":minimum_output_atomic,
+                "token_pair_verified":True,"recipient_verified":True,"quote_minimum_verified":True,
+                "server_broadcast_authorized":False}
     if (type(tx) is not dict or type(wallet) is not str
             or not _ADDRESS.fullmatch(wallet)
             or type(input_atomic) is not str or not _ATOMIC.fullmatch(input_atomic)

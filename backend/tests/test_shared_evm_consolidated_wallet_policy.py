@@ -238,3 +238,30 @@ def test_wrapped_btc_scope_reads_only_original_live_usd_budget():
     with pytest.raises(HTTPException):
         _locked_selected_budget(Cursor(),did="did:privy:btc",asset="BTC",
                     stable="USDC",expected_revision=3)
+
+
+@pytest.mark.parametrize("asset,precision",[("BTC",8),("XRP",18)])
+def test_wrapped_route_common_transport_and_exact_path_quote(asset,precision):
+    from eth_abi import encode
+    from backend.ethereum_wrapped_spot_quote import decode_exact_path_quote
+    from backend.ethereum_wrapped_spot_policy import wrapped_spot_transaction,decode_wrapped_spot_amounts
+    from backend.shared_evm_swap_receipts import _pair
+    from backend.shared_evm_privy_transport import bound_privy_evm_swap_request
+    pair=_pair(asset,"USDC","BUY")
+    assert pair["chain_id"]==1 and pair["output_decimals"]==precision
+    tx=wrapped_spot_transaction(asset=asset,stable="USDC",side="BUY",wallet=WALLET,
+                                amount_atomic=1000000,min_out_atomic=42)
+    assert decode_wrapped_spot_amounts(tx["data"],asset=asset,stable="USDC",side="BUY",
+                                      wallet=WALLET)==(1000000,42)
+    url,body=bound_privy_evm_swap_request(asset=asset,wallet_id="wallet_123456",wallet=WALLET,
+             tx=tx,side="BUY",stable="USDC",input_atomic="1000000",minimum_output_atomic="42")
+    assert body["caip2"]=="eip155:1"
+    assert body["params"]["transaction"]["data"]==tx["data"]
+    hops=1 if asset=="BTC" else 2
+    raw="0x"+encode(["uint256","uint160[]","uint32[]","uint256"],
+                   [500,[123]*hops,[0]*hops,200000]).hex()
+    assert decode_exact_path_quote(raw,hops)==(500,200000)
+    with pytest.raises(ValueError):
+        decode_exact_path_quote(raw,hops+1)
+    with pytest.raises(ValueError):
+        decode_wrapped_spot_amounts(tx["data"]+"00",asset=asset,stable="USDC",side="BUY",wallet=WALLET)

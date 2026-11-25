@@ -91,6 +91,24 @@ def inspect_wrapped_spot_transaction(tx, *, asset, stable, side, wallet,
     return expected
 
 
+def decode_wrapped_spot_amounts(data, *, asset, stable, side, wallet):
+    """Only the canonical complete ABI encoding, including the approved path."""
+    if type(data) is not str or not re.fullmatch(r"0x[0-9a-fA-F]+",data) or len(data)>2048:
+        raise ValueError("Unverified wrapped spot calldata")
+    try:
+        raw=bytes.fromhex(data[2:])
+        if raw[:4]!=_SELECTOR:
+            raise ValueError("Unexpected wrapped spot selector")
+        path,recipient,amount,minimum=decode([_TUPLE],raw[4:])[0]
+        expected=wrapped_spot_transaction(asset=asset,stable=stable,side=side,wallet=wallet,
+            amount_atomic=amount,min_out_atomic=minimum)
+        if expected["data"]!=data.lower():
+            raise ValueError("Wrapped spot ABI not canonical")
+        return amount,minimum
+    except Exception as exc:
+        raise ValueError("Wrapped spot calldata differs from owner route") from exc
+
+
 def build_wrapped_spot_policy(*, asset, stable, wallet, owner_id, executor_id,
                               buy_source_atomic_cap, sell_source_atomic_cap,
                               expires_at, now):

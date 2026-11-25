@@ -19,7 +19,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 
-_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
 
 
 def _approved_quote_pair(quote: object, allowance: object, *,
@@ -29,10 +29,11 @@ def _approved_quote_pair(quote: object, allowance: object, *,
     if type(quote) is not dict or type(allowance) is not dict:
         raise ValueError("Missing independent owner wallet proofs")
     tx=quote.get("transaction")
+    wrapped=asset in ("BTC","XRP")
     if (type(tx) is not dict
             or type(tx.get("data")) is not str
-            or not tx["data"].lower().startswith("0x04e45aaf")
-            or len(tx["data"])!=2+8+7*64
+            or (not wrapped and (not tx["data"].lower().startswith("0x04e45aaf")
+                or len(tx["data"])!=2+8+7*64))
             or type(tx.get("chainId")) is not int
             or tx["chainId"]!=pair["chain_id"]
             or type(tx.get("from")) is not str
@@ -62,17 +63,25 @@ def _approved_quote_pair(quote: object, allowance: object, *,
             or quote.get("execution_enabled") is not False
             or quote.get("can_submit") is not False):
         raise ValueError("Unmatched owner, quote and on-chain source proof")
-    words=[int(tx["data"][10+i*64:10+(i+1)*64],16) for i in range(7)]
-    token_in,token_out,fee,recipient,amount_in,min_out,price_limit=words
-    required=allowance.get("required_input_atomic")
-    if (token_in!=int(pair["source_token"],16)
-            or token_out!=int(pair["output_token"],16)
-            or fee not in pair["fee_levels"]
-            or recipient!=int(tx["from"],16)
-            or type(required) is not str or required!=str(amount_in)
-            or not 0<amount_in<10**45 or not 0<min_out<10**45
-            or price_limit!=0):
-        raise ValueError("Quoted EVM ABI differs from verified source balance")
+    if wrapped:
+        from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
+        amount_in,min_out=decode_wrapped_spot_amounts(tx["data"],asset=asset,stable=stable,
+                                                     side=side,wallet=tx["from"])
+        if (allowance.get("required_input_atomic")!=str(amount_in)
+                or not 0<amount_in<10**45 or not 0<min_out<10**45):
+            raise ValueError("Wrapped spot quote differs from source proof")
+    else:
+        words=[int(tx["data"][10+i*64:10+(i+1)*64],16) for i in range(7)]
+        token_in,token_out,fee,recipient,amount_in,min_out,price_limit=words
+        required=allowance.get("required_input_atomic")
+        if (token_in!=int(pair["source_token"],16)
+                or token_out!=int(pair["output_token"],16)
+                or fee not in pair["fee_levels"]
+                or recipient!=int(tx["from"],16)
+                or type(required) is not str or required!=str(amount_in)
+                or not 0<amount_in<10**45 or not 0<min_out<10**45
+                or price_limit!=0):
+            raise ValueError("Quoted EVM ABI differs from verified source balance")
     expires=quote.get("transaction_expires_at")
     if (type(expires) is not int or
             not int(time.time()) < expires <= int(time.time())+45):
@@ -126,7 +135,10 @@ async def prepare_owner_evm_swap(
         pair=_pair(asset,stable,side)
     except ValueError:
         raise HTTPException(422,"Unsupported EVM swap pair") from None
-    if asset=="ETH":
+    if asset in ("BTC","XRP"):
+        from .ethereum_wrapped_spot_quote import quote_owner_wrapped_spot
+        quote_fn=quote_owner_wrapped_spot(did,asset=asset,side=side,stable=stable,amount=amount)
+    elif asset=="ETH":
         quote_fn=make_policy_compatible_eth_quote(
             did,side=side,stable=stable,amount=amount,
             include_user_transaction=True)
