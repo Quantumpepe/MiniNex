@@ -47,7 +47,7 @@ def verify_fee_receipt(row,tx,receipt):
         matches=[log for log in logs if _eq(log.get("address"),token)
                  and isinstance(log.get("topics"),list)
                  and [str(t).lower() for t in log["topics"]]==topics
-                 and _num(log["data"])==amount and log.get("removed") is not True]
+                 and int(log["data"],16)==amount and log.get("removed") is not True]
         if len(matches)!=1:
             raise ValueError("No unique exact original fee Transfer")
         outcome="PAID_VERIFIED";paid=amount
