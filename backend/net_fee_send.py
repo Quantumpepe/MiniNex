@@ -55,7 +55,7 @@ def fee_rule(record,*,asset,stable,now):
     conditions=rules[0]["conditions"]
     expected={"chain_id":"1","to":ETHEREUM_STABLES[stable],"value":"0",
               "function_name":"transfer","transfer.to":scope["treasury"]}
-    if any(not any(c.get("field")==k and c.get("operator")=="eq" and str(c.get("value"))==v
+    if any(not any(c.get("field")==k and c.get("operator")=="eq" and str(c.get("value")).lower()==v.lower()
                    for c in conditions) for k,v in expected.items()):
         raise ValueError("Original Ethereum fee token or recipient differs")
     if not any(c.get("field")=="transfer.value" and c.get("operator")=="lte" and str(c.get("value"))==str(cap)
@@ -130,7 +130,9 @@ def claim_fee(did,asset,family,fill_key,record,identity,balance,*,now):
             # current stable reference to translate legacy USD reservations.
             rate=record["_fee_stable_usd"]
             pending=summarize_pending_funding(cur.fetchall(),asset=asset,stable=record["stable"],stable_usd=rate)
-            if balance<int(pending["pending_order_stable_atomic"])+int(pending["protected_fee_due_atomic"]):
+            if (int(pending["protected_fee_due_atomic"])<identity["amount"]
+                    or balance<int(pending["pending_wallet_stable_atomic"])):
+
                 raise HTTPException(409,"Original fee cannot consume reserved trading capital")
             cur.execute("""INSERT INTO mininex_net_fee_sends
                 (privy_did,asset,family,fill_key,stable,wallet_id,wallet_address,treasury_wallet,

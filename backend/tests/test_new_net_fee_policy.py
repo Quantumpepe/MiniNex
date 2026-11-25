@@ -18,5 +18,5 @@ def test_new_central_fee_rule_is_ethereum_and_explicit(monkeypatch):
     assert fee["name"]=="MiniNex LINK USDC realized net fee Ethereum"
     assert any(x["field"]=="chain_id" and str(x["value"])=="1" for x in fee["conditions"])
     assert any(x["field"]=="transfer.to" and x["value"]==treasury for x in fee["conditions"])
-    assert any(x["field"]=="to" and x["value"]==ETHEREUM_STABLES["USDC"] for x in fee["conditions"])
+    assert any(x["field"]=="to" and x["value"].lower()==ETHEREUM_STABLES["USDC"] for x in fee["conditions"])
     assert not valid_scope_fields({**upgraded,"net_fee_atomic_cap":"100000001"})

@@ -50,10 +50,10 @@ def durable_wallet_scope(scope):
 NET_FEE_POLICY="ETHEREUM_REALIZED_NET_V1"
 
 def with_net_fee_scope(scope):
-    from .shared_evm_fee_transfer_proof import owner_fee_treasury
+    # All new selected-wallet scopes already resolve the Ethereum Treasury
+    # through the verified server configuration before this pure upgrade.
     return {**scope,"net_fee_policy":NET_FEE_POLICY,
-        "net_fee_atomic_cap":scope["buy_source_atomic_cap"],
-        "treasury":owner_fee_treasury(asset="ETH",stable=scope["stable"])}
+        "net_fee_atomic_cap":scope["buy_source_atomic_cap"]}
 
 def valid_scope_fields(scope):
     if type(scope) is not dict:

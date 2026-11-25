@@ -134,14 +134,16 @@ def test_first_original_wallet_draft_one_signer_per_user_budget(
     assert insert[4]==SIGNER
     assert len(result["policy_sha256"])==64
     scope=insert[6].obj[asset]
+    assert scope["net_fee_policy"]=="ETHEREUM_REALIZED_NET_V1"
+    assert scope["net_fee_atomic_cap"]==scope["buy_source_atomic_cap"]
     if asset in ("BNB","POL","ARB"):
-        assert result["scope_rules_count"]==(11 if asset=="BNB" else 8)
+        assert result["scope_rules_count"]==(12 if asset=="BNB" else 9)
         assert scope["settlement_policy"]=="ETHEREUM_ACROSS_STAGED_V1"
         assert scope["transit_atomic_cap"]==str(1200*10**(18 if asset=="BNB" else 6))
         assert scope["native_wrap_atomic_cap"] is None
         assert scope["owner_max_fee_atomic"]=="0"
     elif asset=="AVAX":
-        assert result["scope_rules_count"]==8
+        assert result["scope_rules_count"]==9
         assert scope["settlement_policy"]=="ETHEREUM_STARGATE_STAGED_V1"
         assert scope["native_wrap_atomic_cap"] is None
         assert scope["bridge_fee_caps_atomic"]=={"1":"480000000000000000","43114":"24000000000000000000"}

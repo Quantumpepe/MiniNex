@@ -188,7 +188,7 @@ def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
     )
     scope={
         "asset":asset,"stable":stable,
-        "treasury":owner_fee_treasury(asset=asset,stable=stable),
+        "treasury":owner_fee_treasury(asset="ETH",stable=stable),
         "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
         "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
         "native_wrap_atomic_cap":caps["native_wrap_atomic_cap"],
