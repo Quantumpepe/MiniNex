@@ -186,6 +186,9 @@ async def reconcile_staged_net_valuations_once(client):
             raise
         except Exception:
             LOG.warning("Historical staged order costs not yet provable")
+    from .direct_net_valuation import reconcile_direct_net_valuations_once
+    await reconcile_direct_net_valuations_once(client)
+
 
 def read_owner_realized_net(did,asset):
     """Read-only actual FIFO net; all prior canonical fills, both stables.

@@ -47,10 +47,14 @@ def _legacy_fee_exists(cur,did,row):
           AND (e.source_tx_hash=%s OR EXISTS(
                 SELECT 1 FROM mininex_live_evm_verified_fills f
                 WHERE f.privy_did=e.privy_did AND f.asset=e.asset
-                  AND f.intent_key=e.execution_id AND f.tx_hash=%s))
+                  AND f.intent_key=e.execution_id AND f.tx_hash=%s)
+            OR EXISTS(SELECT 1 FROM mininex_ethereum_settlement_finality f
+                JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=f.quote_id AND q.privy_did=f.privy_did
+                WHERE f.privy_did=e.privy_did AND q.asset=e.asset
+                  AND f.quote_id::text=%s AND f.source_tx_hash=e.source_tx_hash))
         UNION ALL SELECT 1 FROM mininex_fee_events
         WHERE privy_did=%s AND asset=%s AND fee_assessed_usd>0
-        LIMIT 1""",(did,row["asset"],row["fill_key"],row["fill_key"],did,row["asset"]))
+        LIMIT 1""",(did,row["asset"],row["fill_key"],row["fill_key"],row["fill_key"],did,row["asset"]))
     return cur.fetchone() is not None
 
 def book_owner_net_fees(did,asset):
