@@ -18,9 +18,12 @@ import hashlib
 import json
 
 from .shared_evm_single_grant_policy import build_single_grant_evm_policy
+from .ethereum_wrapped_spot_policy import (
+    WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, build_wrapped_spot_policy,
+)
 
 # Canonical order; ETH and QNT share the existing exact EVM contract route factory.
-_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
+_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB", "BTC", "XRP")
 _REQUIRED_SCOPE_FIELDS = frozenset((
     "asset", "stable", "treasury", "buy_source_atomic_cap",
     "sell_source_atomic_cap", "native_wrap_atomic_cap",
@@ -36,7 +39,12 @@ def valid_scope_fields(scope):
     if type(scope) is not dict:
         return False
     if set(scope)==_REQUIRED_SCOPE_FIELDS:
-        return True
+        return scope.get("asset") not in WRAPPED_SPOT_TOKENS
+    if scope.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
+                and scope.get("asset") in WRAPPED_SPOT_TOKENS
+                and scope.get("native_wrap_atomic_cap") is None
+                and scope.get("owner_max_fee_atomic")=="0")
     return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
             and scope.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
             and scope.get("asset") in DIRECT_SETTLEMENT_ASSETS
@@ -106,7 +114,14 @@ def compose_scoped_evm_wallet_policy(
         if asset not in selected:
             continue
         args = selected[asset]
-        if args.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
+        if args.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+            per_coin=build_wrapped_spot_policy(
+                asset=asset,stable=args["stable"],wallet=wallet,
+                owner_id=owner_id,executor_id=executor_id,now=now,
+                buy_source_atomic_cap=args["buy_source_atomic_cap"],
+                sell_source_atomic_cap=args["sell_source_atomic_cap"],
+                expires_at=args["expires_at"])
+        elif args.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
             from .ethereum_settlement_policy_migration import build_recurring_direct_policy
             draft=build_recurring_direct_policy(asset=asset,stable=args["stable"],
                 wallet=wallet,owner_id=owner_id,executor_id=executor_id,

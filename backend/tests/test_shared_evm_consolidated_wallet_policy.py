@@ -117,3 +117,29 @@ def test_only_one_legacy_coin_can_migrate_without_changing_sibling_or_budget():
             changed_wallet_coin(original,bad,revisions,revisions)
     with pytest.raises(ValueError):
         changed_wallet_coin(original,target,revisions,{"LINK":2,"POL":4})
+
+@pytest.mark.parametrize("asset,decimals",[("BTC",8),("XRP",18)])
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+def test_wrapped_trade_scope_is_distinct_and_exact(asset,decimals,stable):
+    from backend.ethereum_wrapped_spot_policy import (
+        WRAPPED_SPOT_POLICY, wrapped_spot_route, wrapped_spot_transaction,
+        inspect_wrapped_spot_transaction,
+    )
+    selected=dict(scope(asset,stable),settlement_policy=WRAPPED_SPOT_POLICY,
+                  native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    data=kwargs([scope("LINK"),selected])
+    policy=compose_scoped_evm_wallet_policy(**data)
+    assert verified_wallet_policy_digest(policy,**data)
+    for side in ("BUY","SELL"):
+        route=wrapped_spot_route(asset,stable,side)
+        assert route["chain_id"]==1
+        assert route["source_decimals"]==(6 if side=="BUY" else decimals)
+        rule=next(r for r in policy["rules"] if r["name"]==f"MiniNex {asset} {side} {stable} wrapped exactInput")
+        assert any(c["field"]=="exactInput.params.path" and c["value"]==route["path"] for c in rule["conditions"])
+        tx=wrapped_spot_transaction(asset=asset,stable=stable,side=side,wallet=WALLET,
+                                   amount_atomic=100000,min_out_atomic=42)
+        assert inspect_wrapped_spot_transaction(tx,asset=asset,stable=stable,side=side,
+                                   wallet=WALLET,amount_atomic=100000,min_out_atomic=42)==tx
+        with pytest.raises(ValueError):
+            inspect_wrapped_spot_transaction(dict(tx,value="1"),asset=asset,stable=stable,
+                 side=side,wallet=WALLET,amount_atomic=100000,min_out_atomic=42)
