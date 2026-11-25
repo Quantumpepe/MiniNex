@@ -135,8 +135,9 @@ def test_first_original_wallet_draft_one_signer_per_user_budget(
     assert len(result["policy_sha256"])==64
     scope=insert[6].obj[asset]
     if asset in ("BNB","POL","ARB"):
-        assert result["scope_rules_count"]==4
-        assert scope["settlement_policy"]=="ETHEREUM_ACROSS_DIRECT_V1"
+        assert result["scope_rules_count"]==(11 if asset=="BNB" else 8)
+        assert scope["settlement_policy"]=="ETHEREUM_ACROSS_STAGED_V1"
+        assert scope["transit_atomic_cap"]==str(1200*10**(18 if asset=="BNB" else 6))
         assert scope["native_wrap_atomic_cap"] is None
         assert scope["owner_max_fee_atomic"]=="0"
     elif asset=="AVAX":

@@ -106,9 +106,14 @@ def changed_wallet_coin(original,target,original_revisions=None,target_revisions
     asset=changed[0]
     if asset in original:
         before,after=original[asset],target[asset]
-        migration=(is_direct_settlement_upgrade(asset,before)
-                   and after.get("settlement_policy")==(STARGATE_STAGED_POLICY if asset=="AVAX" else DIRECT_SETTLEMENT_POLICY)
-                   and after.get("stable")==before.get("stable"))
+        migration=((is_direct_settlement_upgrade(asset,before)
+                    and after.get("settlement_policy") in (
+                        (STARGATE_STAGED_POLICY,) if asset=="AVAX" else
+                        (DIRECT_SETTLEMENT_POLICY,STAGED_ACROSS_POLICY)))
+                   or (asset in STAGED_ACROSS_ASSETS and valid_scope_fields(before)
+                       and before.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+                       and after.get("settlement_policy")==STAGED_ACROSS_POLICY))
+        migration=migration and after.get("stable")==before.get("stable")
         renewal=(valid_scope_fields(before)
                  and before.get("settlement_policy")==after.get("settlement_policy")
                  and (before.get("stable")!=after.get("stable") or

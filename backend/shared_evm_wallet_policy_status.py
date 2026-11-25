@@ -176,6 +176,12 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
     stale=set(record.get("stale_budget_coins",[]))
     renewable=stale|{row["asset"] for row in scopes if
                      type(row.get("expires_at")) is not int or row["expires_at"]<=now}
+    # Existing direct scopes remain valid for their original route. Expose
+    # the explicit consent-required upgrade to the existing Start flow.
+    result["staged_settlement_upgrade_coins"]=sorted(
+        row["asset"] for row in scopes if row["asset"] in ("BNB","POL","ARB")
+        and row.get("settlement_policy") in (None,"ETHEREUM_ACROSS_DIRECT_V1"))
+    renewable.update(result["staged_settlement_upgrade_coins"])
     result["current_user_budgets_verified"]=not renewable
     expected_signer=os.getenv("MININEX_PRIVY_ETH_SIGNER_ID","").strip()
     if not expected_signer or expected_signer != record.get("signer_id"):

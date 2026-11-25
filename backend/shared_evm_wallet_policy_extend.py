@@ -152,6 +152,12 @@ def _stage_wallet_coin_extension_locked(
             raise HTTPException(409,"Legacy ETH signer requires reconciliation")
     proposed=build_selected_wallet_scope(asset=asset,stable=stable,amount=selected_budget,
         snapshot=snapshot,now=now)
+    if asset in current["scopes_json"] and (
+            proposed.get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"
+            or current["scopes_json"][asset].get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"):
+        from .ethereum_settlement_journal import pending_bridge_order
+        if pending_bridge_order(cur,did,asset):
+            raise HTTPException(409,"Finish the original bridge order before changing its permission")
     target=[s for s in original if s["asset"]!=asset]+[proposed]
     try:
         changed_wallet_coin(current["scopes_json"],{s["asset"]:s for s in target},

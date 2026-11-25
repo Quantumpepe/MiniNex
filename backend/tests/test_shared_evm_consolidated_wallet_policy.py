@@ -440,3 +440,27 @@ def test_avax_staged_policy_preserves_sibling_and_binds_both_legs(stable):
                 inspect_staged_bridge_transaction(bad,scope=staged,**args)
         with pytest.raises(ValueError):
             inspect_staged_bridge_transaction(tx,scope=staged,**dict(args,amount_atomic=100000001))
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","ARB"])
+def test_direct_to_staged_scope_requires_exact_single_coin_transition(asset):
+    from backend.shared_evm_consolidated_wallet_policy import (
+        changed_wallet_coin,DIRECT_SETTLEMENT_POLICY,STAGED_ACROSS_POLICY,durable_wallet_scope)
+    old=dict(scope(asset),settlement_policy=DIRECT_SETTLEMENT_POLICY,
+             native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    staged=dict(old,settlement_policy=STAGED_ACROSS_POLICY,transit_atomic_cap="1200000000")
+    sibling=scope("LINK")
+    before={"LINK":sibling,asset:old}
+    after={"LINK":sibling,asset:staged}
+    revisions={"LINK":2,asset:3}
+    assert changed_wallet_coin(before,after,revisions,revisions)==asset
+    with pytest.raises(ValueError):
+        changed_wallet_coin(before,after,revisions,dict(revisions,**{asset:4}))
+    with pytest.raises(ValueError):
+        changed_wallet_coin(after,before,revisions,revisions)
+    with pytest.raises(ValueError):
+        changed_wallet_coin(before,{**after,"LINK":dict(sibling,stable="USDT")})
+    durable=durable_wallet_scope(staged)
+    args=kwargs([sibling,durable])
+    candidate=compose_scoped_evm_wallet_policy(**args)
+    assert verified_wallet_policy_digest(candidate,**args)

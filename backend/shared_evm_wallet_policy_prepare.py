@@ -167,13 +167,21 @@ def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
     if asset in DIRECT_SETTLEMENT_ASSETS:
         caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
             budget_usd=amount,snapshot=snapshot,now=now)
+        from .ethereum_across_staged_plan import STAGED_ACROSS_POLICY,staged_route
+        route=staged_route(asset,"BUY",stable)
+        with localcontext() as ctx:
+            ctx.prec=100
+            transit=int((Decimal(str(amount))/_price(snapshot,route["transit_symbol"],now)
+                         *10**route["bridge_target"][2]).to_integral_value(rounding=ROUND_FLOOR))
+        if not 0<transit<2**256:
+            raise ValueError("Selected budget cannot represent transit token scope")
         return durable_wallet_scope({"asset":asset,"stable":stable,
             "treasury":owner_fee_treasury(asset="ETH",stable=stable),
             "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
             "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
             "native_wrap_atomic_cap":None,
             "owner_max_fee_atomic":"0",
-            "settlement_policy":DIRECT_SETTLEMENT_POLICY})
+            "settlement_policy":STAGED_ACROSS_POLICY,"transit_atomic_cap":str(transit)})
     caps=derive_user_budget_evm_atomic_caps(
         asset=asset,stable=stable,budget_usd=amount,
         snapshot=snapshot,now=now,

@@ -123,6 +123,12 @@ def _claim_locked(cur,*,did,nonce,observed,old_scopes,now):
         changed=changed_wallet_coin(old,target,g["revisions_json"],revised)
     except ValueError as exc:
         raise HTTPException(409,str(exc)) from None
+    if changed in old and (
+            target[changed].get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"
+            or old[changed].get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"):
+        from .ethereum_settlement_journal import pending_bridge_order
+        if pending_bridge_order(cur,did,changed):
+            raise HTTPException(409,"Original bridge order must settle before updating permission")
     for asset in sorted(target):
         scope=target[asset]
         rev=revised[asset]
