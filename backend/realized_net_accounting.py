@@ -136,7 +136,7 @@ def calculate_realized_net(rows):
                     if not cross_stable else ceil(destination*10**6))
         net_hold=ceil(max(Fraction(0),net)/rate*10**6) if verified else None
         retained=net_hold if verified else gross_hold
-        results.append({"asset":asset,"family":family,"fill_key":row["fill_key"],
+        result={"asset":asset,"family":family,"fill_key":row["fill_key"],
             "stable":stable,"net_verified":verified,"coin_wallet":wallet,
             "consumed_buy_lots":consumed,
             "net_usd_ratio":[str(net.numerator),str(net.denominator)] if verified else None,
@@ -149,5 +149,36 @@ def calculate_realized_net(rows):
             "retained_profit_atomic":str(retained),
             "unmatched_inventory":bool(remaining),
             "reason":None if verified else ("UNMATCHED_INVENTORY" if remaining else "HISTORICAL_COST_EVIDENCE_REQUIRED"),
-            "payment_authorized":False})
+            "payment_authorized":False}
+        apply_fee_payment(result,row.get("fee_payment"))
+        results.append(result)
     return results
+
+
+def apply_fee_payment(result,payment):
+    # This read-only status is never an instruction to send. Only the
+    # immutable, matching receipt can reduce the saved cash reservation.
+    result["fee_payment_status"]="NOT_BOOKED"
+    result["fee_paid_atomic"]="0"
+    result["fee_payment_tx_hash"]=None
+    if payment is None:
+        return
+    from .net_fee_obligations import obligation_evidence
+    expected=obligation_evidence(result)
+    if (expected is None or payment["evidence_sha256"]!=expected[1]
+            or payment["amount_atomic"]!=result["fee_due_stable_atomic"]):
+        raise ValueError("Original fee payment no longer matches FIFO valuation")
+    status=payment["status"]
+    if status not in ("BOOKED","SENDING","SUBMITTED","RECONCILIATION_REQUIRED","PAID_VERIFIED","FINALIZED_REVERTED"):
+        raise ValueError("Unknown original fee payment state")
+    if status in ("PAID_VERIFIED","FINALIZED_REVERTED"):
+        expected_amount=result["fee_due_stable_atomic"] if status=="PAID_VERIFIED" else "0"
+        if (payment["receipt_outcome"]!=status or payment["receipt_amount_atomic"]!=expected_amount
+                or not payment["tx_hash"] or payment["receipt_hash"]!=payment["tx_hash"]):
+            raise ValueError("Missing independently verified fee receipt")
+        result["fee_paid_atomic"]=expected_amount
+        result["retained_profit_atomic"]=str(int(result["retained_profit_atomic"])-int(expected_amount))
+    elif payment.get("receipt_outcome") is not None:
+        raise ValueError("Unexpected fee receipt state")
+    result["fee_payment_status"]=status
+    result["fee_payment_tx_hash"]=payment.get("tx_hash")

@@ -99,6 +99,14 @@ export function validNetValuation(value,fill){
   if(!value||value.asset!==fill.asset||value.stable!==fill.stable||fill.side!=='SELL'||
      value.fill_key!==(fill.ethereum_settlement_verified===true?fill.intent_key:fill.tx_hash)||
      value.payment_authorized!==false||typeof value.net_verified!=='boolean')return false;
+  if(value.fee_payment_status!==undefined){
+    if(!['NOT_BOOKED','BOOKED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED','PAID_VERIFIED','FINALIZED_REVERTED'].includes(value.fee_payment_status))return false;
+    if(value.fee_payment_status==='PAID_VERIFIED'){
+      if(value.net_verified!==true||value.fee_paid_atomic!==value.fee_due_stable_atomic||
+         value.fee_paid_atomic==='0'||!/^0x[0-9a-f]{64}$/.test(value.fee_payment_tx_hash||''))return false;
+    }else if(value.fee_paid_atomic!=='0')return false;
+    if(value.fee_payment_tx_hash!==null&&!/^0x[0-9a-f]{64}$/.test(value.fee_payment_tx_hash||''))return false;
+  }
   if(!value.net_verified)return value.realized_net_usd===null&&value.fee_due_stable_atomic===null;
   return typeof value.realized_net_usd==='string'&&value.realized_net_usd.length<=96&&
     /^-?[0-9]+\.[0-9]{12}$/.test(value.realized_net_usd)&&

@@ -1,7 +1,7 @@
 """Original booked net fees, Ethereum only, once-only Privy submission.
 
-Payment remains deliberately disabled until the independent receipt and paid
-reserve reconciliation path is complete. No existing HWM flag can enable it.
+Payments require the independently audited, explicit new fee scope.
+No existing HWM flag can enable it.
 No client endpoint takes a fee amount, recipient or transaction.
 """
 from __future__ import annotations
@@ -36,9 +36,9 @@ _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 
 def net_fee_worker_enabled():
-    # Final receipt and reserve settlement MUST be implemented before this
-    # switch may be changed. No automatic transaction can occur now.
-    return False
+    # The owner consent and live database are required; no separate per-coin
+    # operator setup. The receipt worker remains passive even if sending stops.
+    return bool(os.getenv("DATABASE_URL","").strip())
 
 def fee_rule(record,*,asset,stable,now):
     scope=record["scope"]
@@ -196,6 +196,8 @@ def pending_net_fee_sends():
             return cur.fetchall()
 
 async def reconcile_net_fee_sends_once(client):
+    from .net_fee_receipts import reconcile_net_fee_receipts_once
+    await reconcile_net_fee_receipts_once(client)
     if not net_fee_worker_enabled():
         return
     for obligation in await asyncio.to_thread(pending_net_fee_sends):

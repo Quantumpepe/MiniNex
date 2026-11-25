@@ -1,7 +1,11 @@
 import asyncio
 from backend import net_fee_send as m
 
-def test_net_fee_sender_disabled_until_receipt_reconciliation(monkeypatch):
+def test_net_fee_sender_disabled_without_live_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL",raising=False)
+    from backend import net_fee_receipts
+    async def passive(client):return None
+    monkeypatch.setattr(net_fee_receipts,"reconcile_net_fee_receipts_once",passive)
     assert m.net_fee_worker_enabled() is False
     def forbidden(*a,**k):raise AssertionError("Disabled worker must not query or sign")
     monkeypatch.setattr(m,"pending_net_fee_sends",forbidden)

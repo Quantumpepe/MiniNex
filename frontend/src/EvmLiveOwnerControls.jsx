@@ -379,8 +379,14 @@ export default function EvmLiveOwnerControls({
           <span key={fill.tx_hash+'-net'}>
             {lang==='de'?'Nettoergebnis':'Net result'}: {Number(fill.net_valuation.realized_net_usd).toLocaleString(
               lang==='de'?'de-CH':'en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})} USD
-            {' · '}{lang==='de'?'5%-Gebühr (offen)':'5% fee (due)'}: {formatAssetQuantity(
+            {' · '}{fill.net_valuation.fee_payment_status==='PAID_VERIFIED'?
+              (lang==='de'?'5%-Gebühr (bezahlt)':'5% fee (paid)'):
+              (lang==='de'?'5%-Gebühr (offen)':'5% fee (due)')}: {formatAssetQuantity(
               String(Number(fill.net_valuation.fee_due_stable_atomic)/1000000),fill.stable,lang)} {fill.stable}
+            {fill.net_valuation.fee_payment_tx_hash&&
+              <a href={EXPLORERS[1]+fill.net_valuation.fee_payment_tx_hash} target="_blank" rel="noreferrer">
+                {' · '}{lang==='de'?'Gebührentransaktion':'Fee transaction'}
+              </a>}
           </span>)}
         <span>{t.recorded}: {new Date(order.created_at).toLocaleString(
           lang==='de'?'de-CH':'en-GB')}</span>
@@ -399,7 +405,7 @@ export default function EvmLiveOwnerControls({
     </div>}
     {offeredFeeScope&&
       <p className="privy-wallet-description" role="status">
-        {lang==='de'?'Einmalige Handelsfreigabe: 5 % realisierter Nettogewinn über High-Water-Mark':'Single trading grant: 5% realized net gain above high-water mark'}
+        {lang==='de'?'Einmalige Handelsfreigabe: 5 % auf positiven realisierten Nettogewinn':'Single trading grant: 5% of positive realized net profit'}
         {' · '}{lang==='de'?'Empfänger':'Recipient'}: <code>{offeredFeeScope.treasury_wallet}</code>
         {' · '}{lang==='de'?'Maximaler Transfer in Token-Atomeinheiten':'Maximum transfer in token atomic units'}: {offeredFeeScope.fee_max_atomic}
       </p>}

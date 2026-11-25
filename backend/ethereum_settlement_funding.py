@@ -31,7 +31,7 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
         pending=[row for row in rows if row["unit"]!="FINALIZED_PROFIT_INPUT"]
         valuations=[v for v in calculate_realized_net(hydrate_net_rows(finalized)) if v["stable"]==stable]
         reserve_by_asset={};gross_by_asset={}
-        gross=net=fee=provisional=unmatched=0
+        gross=net=fee=paid=provisional=unmatched=0
         for v in valuations:
             original_gross=int(v["provisional_gross_hold_atomic"])
             gross+=original_gross
@@ -44,6 +44,7 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
             if v["net_verified"]:
                 net+=int(v["protected_net_stable_atomic"])
                 fee+=int(v["fee_due_stable_atomic"])
+                paid+=int(v["fee_paid_atomic"])
             else:
                 provisional+=held
         retained=sum(reserve_by_asset.values())
@@ -81,7 +82,8 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
                 "protected_profit_retained_by_asset_atomic":{a:str(v) for a,v in reserve_by_asset.items()},
                 "protected_profit_retained_atomic":str(retained),
                 "protected_profit_net_atomic":str(net),
-                "protected_fee_due_atomic":str(fee),
+                "protected_fee_due_atomic":str(fee-paid),
+                "verified_fee_paid_atomic":str(paid),
                 "protected_saved_net_atomic":str(net-fee),
                 "protected_profit_provisional_atomic":str(provisional),
                 "profit_reserve_net_verified":bool(valuations) and all(v["net_verified"] for v in valuations),
@@ -144,10 +146,11 @@ _PROTECTED_FUNDING_SQL="""WITH pending AS ("""+_PENDING_SQL+"""),
     SELECT asset,stable,amount,unit,NULL::text AS side,
       NULL::numeric AS source_amount,NULL::numeric AS destination_amount,
       NULL::text AS coin_wallet,NULL::text AS family,NULL::text AS fill_key,
-      NULL::boolean AS automatic,NULL::timestamptz AS settled_at,NULL::jsonb AS evidence FROM pending
+      NULL::boolean AS automatic,NULL::timestamptz AS settled_at,NULL::jsonb AS evidence,
+      NULL::jsonb AS fee_payment FROM pending
     UNION ALL
     SELECT asset,stable,0::numeric,'FINALIZED_PROFIT_INPUT',side,
-      source_amount,destination_amount,coin_wallet,family,fill_key,automatic,settled_at,evidence
+      source_amount,destination_amount,coin_wallet,family,fill_key,automatic,settled_at,evidence,fee_payment
     FROM finalized ORDER BY settled_at NULLS FIRST,fill_key NULLS FIRST"""
 
 

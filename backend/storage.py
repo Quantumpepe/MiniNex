@@ -1775,6 +1775,35 @@ SCHEMA += (
 )
 
 
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_net_fee_receipts (
+        privy_did TEXT NOT NULL, asset TEXT NOT NULL, family TEXT NOT NULL, fill_key TEXT NOT NULL,
+        tx_hash TEXT NOT NULL UNIQUE CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        evidence_sha256 TEXT NOT NULL CHECK(evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(amount_atomic>=0),
+        outcome TEXT NOT NULL CHECK(outcome IN ('PAID_VERIFIED','FINALIZED_REVERTED')),
+        proof JSONB NOT NULL CHECK(jsonb_typeof(proof)='object'),
+        verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,family,fill_key),
+        FOREIGN KEY(privy_did,asset,family,fill_key)
+          REFERENCES mininex_net_fee_sends(privy_did,asset,family,fill_key),
+        CHECK ((outcome='PAID_VERIFIED' AND amount_atomic>0)
+          OR (outcome='FINALIZED_REVERTED' AND amount_atomic=0))
+    )""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                          WHERE tgname='mininex_net_fee_receipt_write_once'
+                            AND tgrelid='mininex_net_fee_receipts'::regclass) THEN
+               CREATE TRIGGER mininex_net_fee_receipt_write_once
+               BEFORE UPDATE OR DELETE ON mininex_net_fee_receipts
+               FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
+)
+
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:
