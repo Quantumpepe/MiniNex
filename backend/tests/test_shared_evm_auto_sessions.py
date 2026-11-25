@@ -187,7 +187,7 @@ def test_bridge_exit_endpoint_is_owner_authenticated_and_no_start_during_exit():
     assert "verify_privy_bearer" in inspect.getsource(route.endpoint)
     assert "WHERE mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in inspect.getsource(m._start_locked)
     with pytest.raises(HTTPException):
-        m.request_owner_bridge_exit(DID,"BTC")
+        m.request_owner_bridge_exit(DID,"DOGE")
 
 
 def test_avax_exit_requests_sell_without_marking_position_closed(monkeypatch):
@@ -242,3 +242,32 @@ def test_resume_preserves_original_staged_session_identity():
     assert "status IN ('ACTIVE','PAUSED')" in source
     assert "THEN mininex_live_evm_auto_sessions.started_by_owner_at ELSE now() END" in source
     assert "mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in source
+
+
+@pytest.mark.parametrize("asset",["LINK","QNT","UNI","BTC","XRP","SOL","TRX"])
+def test_ethereum_token_exit_uses_canonical_inventory_only(monkeypatch,asset):
+    from backend import ethereum_settlement_journal as j
+    from backend import shared_evm_exit_inventory as inv
+    from decimal import Decimal
+    cur=Cursor([{"privy_did":DID},{"status":"EXIT_PENDING","started_by_owner_at":NOW,"wallet_address":WALLET},
+                None,None,None,None,None,{"status":"STOPPED"}])
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):
+            class CM:
+                def __enter__(self):return cur
+                def __exit__(self,*a):return False
+            return CM()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(j,"pending_bridge_order",lambda *a:False)
+    monkeypatch.setattr(inv,"token_exit_position_locked",lambda *a:Decimal("1"))
+    assert not m.complete_bridge_exit_if_flat(DID,asset,NOW)
+    assert not any("SET status='STOPPED'" in q for q,_ in cur.queries)
+    cur.rows=iter([{"privy_did":DID},{"status":"EXIT_PENDING","started_by_owner_at":NOW,"wallet_address":WALLET},
+                   None,None,None,None,None,{"status":"STOPPED"}])
+    monkeypatch.setattr(inv,"token_exit_position_locked",lambda *a:Decimal("0"))
+    assert m.complete_bridge_exit_if_flat(DID,asset,NOW)
+    assert any("SET status='STOPPED'" in q for q,_ in cur.queries)

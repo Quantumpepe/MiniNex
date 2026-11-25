@@ -123,7 +123,8 @@ def _current(cur,did,record,order=None):
         raise HTTPException(409,"Original AVAX session not active")
     if order and (order["scope_json"]!=current["scope"] or order["wallet_id"]!=current["wallet_id"]
                   or order["wallet_address"]!=current["wallet_address"]
-                  or order["budget_revision"]!=current["budget_revision"]):
+                  or order["budget_revision"]!=current["budget_revision"]
+                  or order["started_by_owner_at"]!=session["started_by_owner_at"]):
         raise HTTPException(409,"Original staged order consent changed")
     return session
 
@@ -235,7 +236,7 @@ def read_pending_step(order_id):
             return cur.fetchone()
 
 
-def claim_step(did,order_id,record,prepared,*,expected_updated_at):
+def claim_step(did,order_id,record,prepared,*,expected_updated_at,stable_usd=None):
     did=_safe_did(did);db=_db_url();_ensure_schema(db)
     step_id=uuid.uuid4();key="avax_"+step_id.hex
     with psycopg.connect(db,connect_timeout=6) as conn:
@@ -257,6 +258,16 @@ def claim_step(did,order_id,record,prepared,*,expected_updated_at):
                 return None
             kind,tx=check_stage_prepared(order,prepared,int(time.time()))
             _lock_chain(cur,did,tx["chainId"])
+            if order["stage"]==1:
+                if order["side"]=="BUY":
+                    from .ethereum_settlement_funding import assert_reserved_ethereum_funds_locked
+                    assert_reserved_ethereum_funds_locked(cur,did=did,asset="AVAX",
+                        stable=order["stable"],input_atomic=exact_stage_amount(order),
+                        balance_atomic=int(prepared["source_balance_atomic"]),stable_usd=stable_usd)
+                else:
+                    from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
+                    if strategy_bridge_position_locked(cur,did,"AVAX",order["wallet_address"])<exact_stage_amount(order):
+                        raise HTTPException(409,"Original AVAX strategy SELL position changed before claim")
             url="https://api.privy.io/v1/wallets/"+record["wallet_id"]+"/rpc"
             body={"method":"eth_sendTransaction","caip2":"eip155:"+str(tx["chainId"]),
                 "params":{"transaction":{"to":tx["to"],"data":tx["data"],"value":tx["value"]}}}

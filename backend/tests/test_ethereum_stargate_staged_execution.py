@@ -120,3 +120,29 @@ def test_staged_order_identity_is_session_scoped_and_stable_across_requotes():
     assert first!=staged_order_identity("did:privy:other",started,120)
     with pytest.raises(ValueError):
         staged_order_identity(did,started.replace(tzinfo=None),120)
+
+
+def test_avax_exit_and_pause_follow_original_session(monkeypatch):
+    import asyncio
+    from datetime import datetime,timezone
+    from backend import ethereum_stargate_staged_worker as m
+    now=datetime(2026,11,25,tzinfo=timezone.utc)
+    scope={"settlement_policy":"ETHEREUM_STARGATE_STAGED_V1"}
+    row={"stable":"USDC","budget_revision":2,"started_by_owner_at":now,"session_status":"EXIT_PENDING"}
+    order={**row,"order_id":"original","side":"BUY","stage":1,"scope_json":scope}
+    seen=[]
+    monkeypatch.setattr(m,"read_open_order",lambda *a:order)
+    monkeypatch.setattr(m,"read_pending_step",lambda *a:None)
+    monkeypatch.setattr(m,"cancel_unspent_buy_for_exit",lambda *a:seen.append("cancel") or True)
+    async def audit(*a):seen.append("audit");return {"scope":scope}
+    async def prepare(*a):seen.append("prepare");return {}
+    async def submit(*a):seen.append("submit");return {"state":"SUBMITTED"}
+    monkeypatch.setattr(m,"_audited",audit)
+    monkeypatch.setattr(m,"_prepare",prepare)
+    monkeypatch.setattr(m,"_submit",submit)
+    def run():return asyncio.run(m.advance_avax_order("did:privy:original",row=row,client=None))
+    assert run()["state"]=="CANCELLED" and seen==["cancel"]
+    seen.clear();order["stage"]=2
+    assert run()["state"]=="SUBMITTED" and seen==["audit","prepare","submit"]
+    seen.clear();row["session_status"]="PAUSED"
+    assert run()["reason"]=="ORIGINAL_SESSION_PAUSED" and seen==[]

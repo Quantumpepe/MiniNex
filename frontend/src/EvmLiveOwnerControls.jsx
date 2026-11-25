@@ -342,7 +342,7 @@ export default function EvmLiveOwnerControls({
           disabled={busy||permission===null||centralStatus===null} onClick={startTrade}>
           {t.open} · {asset}
         </button>}
-    {['ACTIVE','PAUSED'].includes(sessionStatus)&&['BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(asset)&&
+    {['ACTIVE','PAUSED'].includes(sessionStatus)&&LIVE_EVM_ASSETS.includes(asset)&&
       centralWalletCanExitCoin(centralStatus,asset)&&
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
         disabled={busy} onClick={exitTrade}>{t.exit}</button>}

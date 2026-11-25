@@ -247,17 +247,18 @@ def complete_bridge_exit_if_flat(did,asset,started):
                     ('RESERVED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,asset))
             if cur.fetchone() is not None:
                 return False
-            # Legacy local-chain buys require separate verified migration.
-            # Do not call a bridge-only inventory of zero a completed exit
-            # when the original local route may still own a position.
-            cur.execute("""SELECT COALESCE(SUM(CASE WHEN side='BUY' THEN destination_amount
-                    ELSE -source_amount END),0) AS position
-                FROM mininex_live_evm_verified_fills
-                WHERE privy_did=%s AND asset=%s AND wallet_address=%s""",
-                (did,asset,session["wallet_address"]))
-            legacy=cur.fetchone()
-            if not legacy or Decimal(legacy["position"])!=0:
-                return False
+            # Only remote-chain assets have a separate legacy local fill
+            # inventory. Ethereum-settled ERC20s are checked by the canonical
+            # token ledger below, never by an unscoped sum across chains.
+            if asset not in ETHEREUM_EXIT_ASSETS:
+                cur.execute("""SELECT COALESCE(SUM(CASE WHEN side='BUY' THEN destination_amount
+                        ELSE -source_amount END),0) AS position
+                    FROM mininex_live_evm_verified_fills
+                    WHERE privy_did=%s AND asset=%s AND wallet_address=%s""",
+                    (did,asset,session["wallet_address"]))
+                legacy=cur.fetchone()
+                if not legacy or Decimal(legacy["position"])!=0:
+                    return False
             if asset=="ETH":
                 assert_central_eth_exit_ready_locked(cur,did)
                 cur.execute("""SELECT 1 FROM mininex_live_evm_native_sell_intents n

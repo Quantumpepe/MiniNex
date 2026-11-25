@@ -55,8 +55,13 @@ async def _prepare(client,order,record):
 
 
 async def _submit(did,order,record,prepared,client):
+    stable_usd=None
+    if order["side"]=="BUY" and order["stage"]==1:
+        from .shared_evm_policy_reference_rates import fetch_evm_policy_reference_rates,_price
+        prices=await fetch_evm_policy_reference_rates("AVAX",order["stable"])
+        stable_usd=_price(prices,order["stable"],int(time.time()))
     claim=await asyncio.to_thread(claim_step,did,order["order_id"],record,prepared,
-                                  expected_updated_at=order["updated_at"])
+                                  expected_updated_at=order["updated_at"],stable_usd=stable_usd)
     if claim is None:
         return {"asset":"AVAX","state":"CANCELLED","reason":"OWNER_REQUESTED_EXIT"}
     try:
@@ -79,6 +84,8 @@ async def advance_avax_order(did,*,row,client):
     order=await asyncio.to_thread(read_open_order,did)
     if order is None:
         return None
+    if row.get("session_status") not in ("ACTIVE","EXIT_PENDING"):
+        return {"asset":"AVAX","state":"WAIT","reason":"ORIGINAL_SESSION_PAUSED"}
     if await asyncio.to_thread(read_pending_step,order["order_id"]):
         return {"asset":"AVAX","state":"WAIT","reason":"ORIGINAL_STAGED_STEP_PENDING"}
     if row.get("session_status")=="EXIT_PENDING" and order["side"]=="BUY" and order["stage"]==1:
@@ -86,6 +93,7 @@ async def advance_avax_order(did,*,row,client):
             return {"asset":"AVAX","state":"CANCELLED","reason":"OWNER_REQUESTED_EXIT"}
     record=await _audited(did,order["stable"],order["budget_revision"])
     if (row["stable"]!=order["stable"] or row["budget_revision"]!=order["budget_revision"]
+            or row["started_by_owner_at"]!=order["started_by_owner_at"]
             or record["scope"]!=order["scope_json"]):
         raise HTTPException(409,"Original staged order settings changed")
     prepared=await _prepare(client,order,record)
