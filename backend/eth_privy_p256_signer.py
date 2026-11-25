@@ -33,15 +33,26 @@ def _canonical_authorization_payload(*,url:str,body:dict,key:str) -> bytes:
             or type(body) is not dict
             or type(key) is not str or not _KEY_ID.fullmatch(key)):
         raise ValueError("Invalid Privy request signing context")
-    # Bitcoin Tier-2 signs BIP143 source-input hashes using POST /raw_sign,
-    # whereas ETH/SOL sign through /rpc. Refuse arbitrary raw sign payloads.
-    if url.endswith("/raw_sign") and (
-            set(body) != {"params"}
-            or type(body.get("params")) is not dict
-            or set(body["params"]) != {"hash"}
-            or type(body["params"]["hash"]) is not str
-            or not re.fullmatch(r"0x[0-9a-fA-F]{64}",body["params"]["hash"])):
-        raise ValueError("Unbound Bitcoin raw_sign source hash")
+    # BTC uses input hashes; TRON uses full protobuf bytes and SHA256.
+    # The caller must independently validate the original transaction and
+    # the remotely attached signTransactionBytes policy before authorizing.
+    if url.endswith("/raw_sign"):
+        params=body.get("params")
+        if set(body)!={"params"} or type(params) is not dict:
+            raise ValueError("Unbound raw_sign parameters")
+        valid_hash=(set(params)=={"hash"} and type(params["hash"]) is str
+                    and re.fullmatch(r"0x[0-9a-fA-F]{64}",params["hash"]))
+        valid_tron=False
+        if (set(params)=={"bytes","encoding","hash_function"}
+                and params["encoding"]=="base64" and params["hash_function"]=="sha256"
+                and type(params["bytes"]) is str and len(params["bytes"])<=2000):
+            try:
+                decoded=base64.b64decode(params["bytes"],validate=True)
+                valid_tron=bool(decoded and base64.b64encode(decoded).decode("ascii")==params["bytes"])
+            except (ValueError,binascii.Error):
+                pass
+        if not (valid_hash or valid_tron):
+            raise ValueError("Unbound raw_sign source")
     request={
         "version":1,"method":"POST","url":url,
         "body":body,

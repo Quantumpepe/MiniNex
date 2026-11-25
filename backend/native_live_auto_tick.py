@@ -132,7 +132,7 @@ async def execute_owner_native_live_tick(
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
     if decision.get("action")=="SELL":
-        supported=row["asset"] in ("BTC","SOL")
+        supported=row["asset"] in ("BTC","SOL","TRX")
         candidate=await prepare_native_sell_candidate(row["privy_did"],
             asset=row["asset"],stable=row["stable"],client=client,
             **({"_include_private_quote":True} if supported or exiting else {}))

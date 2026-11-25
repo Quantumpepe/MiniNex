@@ -1,7 +1,7 @@
-"""Connect original BTC/SOL source preparation, owner grant and one-shot SELL.
+"""Connect original BTC/SOL/TRX source preparation, owner grant and one-shot SELL.
 
 The production grant auditor still rejects missing remote permission; this
-coordinator cannot create one. No automatic XRP/TRX signing is inferred.
+coordinator cannot create one. No automatic XRP signing is inferred.
 Private quote/source bytes never appear in the worker result.
 """
 import asyncio
@@ -17,6 +17,8 @@ from .native_live_order_journal import immutable_native_order_identity,persist_i
 from .native_live_signed_dispatch import _original_quote_digest
 from .native_privy_btc_signer import sign_and_dispatch_original_btc_sell_once
 from .native_privy_sol_signer import sign_and_dispatch_original_sol_sell_once
+from .native_trx_owner_preflight import prepare_original_trx_unsigned_owner_transfer
+from .native_privy_trx_signer import sign_and_dispatch_original_trx_sell_once
 
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _FLAGS=("owner_wallet_current","exact_remote_policy_verified","backend_quorum_current",
@@ -26,19 +28,22 @@ _FLAGS=("owner_wallet_current","exact_remote_policy_verified","backend_quorum_cu
 async def coordinate_original_native_sell_once(did,*,asset,stable,amount,quote,
         strategy_run_id,signal_event_id,budget_revision,grant_auditor,client):
     did=_safe_did(did)
-    if asset not in ("BTC","SOL") or not callable(grant_auditor):
+    if asset not in ("BTC","SOL","TRX") or not callable(grant_auditor):
         raise ValueError("Original native SELL executor unavailable")
     if (quote.get("source_asset")!=asset or quote.get("destination_asset")!=stable
             or quote.get("amount")!=amount):
         raise ValueError("Original SELL quote changed")
-    prepare=(prepare_original_btc_unsigned_psbt if asset=="BTC" else
-             prepare_original_sol_unsigned_owner_transfer)
+    prepare={"BTC":prepare_original_btc_unsigned_psbt,
+             "SOL":prepare_original_sol_unsigned_owner_transfer,
+             "TRX":prepare_original_trx_unsigned_owner_transfer}[asset]
     preflight=await prepare(did,stable=stable,amount=amount,
         _private_quote=quote,_internal_bundle=True)
     if preflight.get("_private_quote")!=quote:
         raise ValueError("Original private native quote changed")
-    manifest=preflight["unsigned_psbt" if asset=="BTC" else "original_compiled_message"]
-    manifest_digest=manifest["psbt_sha256" if asset=="BTC" else "message_sha256"]
+    manifest=(preflight if asset=="TRX" else
+              preflight["unsigned_psbt" if asset=="BTC" else "original_compiled_message"])
+    manifest_digest=manifest[{"BTC":"psbt_sha256","SOL":"message_sha256",
+                              "TRX":"original_transaction_sha256"}[asset]]
     if (not _SHA.fullmatch(manifest_digest)
             or manifest["source_wallet"]!=quote["source_wallet"]
             or manifest["destination_wallet"]!=quote["destination_wallet"]):
@@ -89,5 +94,8 @@ async def coordinate_original_native_sell_once(did,*,asset,stable,amount,quote,
             psbt=manifest,original_utxos=preflight["_original_utxos"],
             fee_rate_sats_per_vbyte=preflight["fee_rate_sats_per_vbyte"],
             permission_audit=audit,client=client)
+    if asset=="TRX":
+        return await sign_and_dispatch_original_trx_sell_once(did,intent_key=intent,quote=quote,
+            manifest=manifest,permission_audit=audit,client=client)
     return await sign_and_dispatch_original_sol_sell_once(did,intent_key=intent,quote=quote,
         manifest=manifest,permission_audit=audit,client=client)
