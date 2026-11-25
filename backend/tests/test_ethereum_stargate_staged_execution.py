@@ -63,3 +63,44 @@ def test_local_swap_leg_is_exactly_bound_to_stargate_stable_and_owner(side,stabl
     assert tx["chainId"]==43114 and tx["to"]==router and tx["value"]=="0"
     assert decode(["address","address","uint24","address","uint256","uint256","uint160"],
                   bytes.fromhex(tx["data"][10:]))==(source,target,3000,WALLET,1000000,42,0)
+
+
+@pytest.mark.parametrize("side,first,second",[("BUY","BRIDGE","SWAP"),("SELL","SWAP","BRIDGE")])
+def test_staged_order_uses_exact_credit_and_can_return_all_proceeds(side,first,second):
+    from backend.ethereum_stargate_staged_journal import stage_kind,exact_stage_amount
+    assert stage_kind(side,1)==first
+    assert stage_kind(side,2)==second
+    order={"side":side,"stage":1,"original_input_atomic":1000000,
+           "remaining_atomic":0,"scope_json":{"buy_source_atomic_cap":"1000000"}}
+    assert exact_stage_amount(order)==1000000
+    order.update(stage=2,remaining_atomic=1200000)
+    assert exact_stage_amount(order)==1000000
+    order["remaining_atomic"]=200000
+    assert exact_stage_amount(order)==200000
+    order["remaining_atomic"]=0
+    with pytest.raises(ValueError):exact_stage_amount(order)
+
+def test_staged_claim_rejects_quote_amount_recipient_or_unapproved_allowance():
+    from backend.ethereum_stargate_staged_journal import check_stage_prepared
+    from backend.ethereum_stargate_staged_policy import bridge_transaction,STARGATE_STAGED_POLICY
+    from backend.ethereum_stargate_staged_execution import _call_data
+    stable="USDT";side="BUY";scope={"asset":"AVAX","stable":stable,
+        "settlement_policy":STARGATE_STAGED_POLICY,"buy_source_atomic_cap":"1000000",
+        "sell_source_atomic_cap":"1000000000000000000","bridge_fee_caps_atomic":{"1":"10000","43114":"10000"}}
+    order={"side":side,"stable":stable,"wallet_address":WALLET,"scope_json":scope,
+           "stage":1,"original_input_atomic":1000000,"remaining_atomic":0}
+    tx=bridge_transaction(side=side,stable=stable,wallet=WALLET,amount_atomic=1000000,
+                          min_out_atomic=990000,native_fee_atomic=1000)
+    prepared={"mode":"AVAX_DIRECT_STARGATE_TAXI_PREPARATION","asset":"AVAX","side":side,
+              "stable":stable,"wallet_address":WALLET,"input_atomic":"1000000",
+              "source_balance_atomic":"1000000","minimum_output_atomic":"990000",
+              "native_bridge_fee_atomic":"1000","source_chain_id":1,"destination_chain_id":43114,
+              "source_token":CONFIG[1]["tokens"][stable],"source_allowance_atomic":"1000000",
+              "issued_at":100,"transaction":tx,"approval":None}
+    assert check_stage_prepared(order,prepared,101)==("BRIDGE",tx)
+    for bad in (dict(prepared,input_atomic="1000001"),dict(prepared,transaction=dict(tx,**{"from":OTHER})),
+                dict(prepared,source_allowance_atomic="1"),dict(prepared,issued_at=50)):
+        with pytest.raises(ValueError):check_stage_prepared(order,bad,101)
+    approval={"from":WALLET,"to":CONFIG[1]["tokens"][stable],"chainId":1,"value":"0",
+        "data":_call_data("approve(address,uint256)",["address","uint256"],[CONFIG[1]["pools"][stable],0])}
+    assert check_stage_prepared(order,dict(prepared,source_allowance_atomic="1",approval=approval),101)==("APPROVAL",approval)

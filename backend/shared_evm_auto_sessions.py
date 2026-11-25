@@ -319,7 +319,7 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                                FROM mininex_avax_staged_steps t
                                JOIN mininex_avax_staged_orders o ON o.order_id=t.order_id
                                JOIN selected k ON k.did=o.privy_did AND k.asset='AVAX'
-                               WHERE o.state='OPEN' AND t.stage=1 AND t.kind!='APPROVAL'
+                               WHERE o.state IN ('OPEN','REVERTED') AND t.stage=1 AND t.kind!='APPROVAL'
                                  AND t.tx_hash IS NOT NULL
                            ), unique_swaps AS (
                                SELECT chain_id,tx_hash,bool_or(finalized) AS finalized

@@ -171,6 +171,17 @@ def create_order(did,record,*,side,prepared,budget_usd,position_usd,stable_usd,c
                 raise HTTPException(409,"No new BUY after Stop or Exit")
             if pending_bridge_order(cur,did,"AVAX"):
                 raise HTTPException(409,"Original AVAX order already pending")
+            cur.execute("""SELECT 1 FROM mininex_live_evm_budget_reservations
+                WHERE privy_did=%s AND asset='AVAX' AND state IN
+                ('RESERVED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                UNION ALL SELECT 1 FROM mininex_live_evm_native_sell_intents
+                WHERE privy_did=%s AND asset='AVAX' AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                UNION ALL SELECT 1 FROM mininex_live_evm_native_auto_steps
+                WHERE privy_did=%s AND asset='AVAX' AND status IN
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,did,did))
+            if cur.fetchone():
+                raise HTTPException(409,"Earlier AVAX local order unresolved")
             if side=="BUY":
                 pending=assert_ethereum_funds_locked(cur,did=did,asset="AVAX",stable=order["stable"],
                     input_atomic=amount,balance_atomic=int(prepared["source_balance_atomic"]),stable_usd=stable_usd)
