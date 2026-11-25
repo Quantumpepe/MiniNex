@@ -124,6 +124,19 @@ def get_owner_evm_fill_history(did:str,*,asset:str,limit:int=30)->dict:
         parsed.sort(key=lambda row:(row["created_at"],row["intent_key"]),reverse=True)
         truncated=len(parsed)>limit
         parsed=parsed[:limit]
+        # Attach a separate read-only valuation. Do not change the legacy
+        # fee-paid flags or infer custody/fee authorization from a quote.
+        if cross:
+            from .staged_net_valuation import read_owner_realized_net
+            try:
+                valuations={v["fill_key"]:v for v in read_owner_realized_net(did,asset)}
+                for fill in parsed:
+                    if fill.get("ethereum_settlement_verified") is True and fill["side"]=="SELL":
+                        value=valuations.get(fill["intent_key"])
+                        if value is not None:
+                            fill["net_valuation"]=value
+            except (psycopg.Error,HTTPException,ValueError,KeyError,TypeError):
+                LOG.warning("Original historical net valuation unavailable")
         return {
             "mode":"FINALIZED_EVM_REAL_FILLS_ONLY",
             "asset":asset,"network":_pair(

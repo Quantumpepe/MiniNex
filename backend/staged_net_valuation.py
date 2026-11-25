@@ -79,11 +79,15 @@ async def mined_evidence(client,chain,tx_hash):
     block_hash=receipt["blockHash"].lower()
     if not _HASH.fullmatch(block_hash):
         raise ValueError("Original execution block hash differs")
+    status=_num(receipt["status"])
+    timestamp=_num(block["timestamp"])
+    if status not in (0,1) or number<=0 or timestamp<=0:
+        raise ValueError("Invalid original mined execution facts")
     return {"chain_id":chain,"tx_hash":tx_hash,"block_number":number,
-        "block_hash":block_hash,"block_unix":_num(block["timestamp"]),
+        "block_hash":block_hash,"block_unix":timestamp,
         "from":tx["from"].lower(),"value_atomic":str(_num(tx["value"])),
         "gas_atomic":str(_num(receipt["gasUsed"])*_num(receipt["effectiveGasPrice"])),
-        "success":_num(receipt["status"])==1}
+        "success":status==1}
 
 def verified_rate(observation,*,asset,block):
     if (observation.get("asset")!=asset or observation.get("provider")!="COINGECKO_MARKET_CHART_RANGE"
@@ -201,6 +205,8 @@ def read_owner_realized_net(did,asset):
     unpriced histories remain pending; no partial cost estimate is charged.
     """
     did=_safe_did(did)
+    if asset not in ("BNB","POL","AVAX","ARB"):
+        raise ValueError("Staged realized net valuation not supported for coin")
     db=_db_url();_ensure_schema(db)
     sql=PROFIT_FILLS_SQL.replace("=%(stable)s"," IN ('USDC','USDT')")
     with psycopg.connect(db,connect_timeout=6) as conn:
