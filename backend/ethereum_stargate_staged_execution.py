@@ -231,3 +231,176 @@ async def reconcile_direct_taxi(client,*,prepared,source_hash,destination_hash=N
             side=side,stable=stable,wallet=wallet,amount=amount,minimum=minimum)
     return {**pending,**proof,"state":"BRIDGE_CREDIT_VERIFIED",
             "destination_hash":destination_hash.lower()}
+
+
+def staged_swap_transaction(*,side,stable,wallet,amount_atomic,min_out_atomic,fee):
+    from .ethereum_settlement_plan import CROSS_COIN_CONTRACTS
+    from .native_evm_v3_quote import CHAINS
+    from .shared_evm_execution import EvmPair,unsigned_exact_input_single
+    if side not in ("BUY","SELL") or stable not in ("USDC","USDT"):
+        raise ValueError("Invalid AVAX staged swap route")
+    local=CONFIG[43114]["tokens"][stable]
+    coin=CROSS_COIN_CONTRACTS["AVAX"]
+    source,target=(local,coin) if side=="BUY" else (coin,local)
+    return unsigned_exact_input_single(pair=EvmPair("AVAX",43114,"avalanche-c-mainnet",
+        source,target,CHAINS["AVAX"].router.lower(),fee),wallet=wallet.lower(),
+        amount_in=amount_atomic,min_out=min_out_atomic)
+
+
+def staged_swap_route(side,stable):
+    from .ethereum_settlement_plan import CROSS_COIN_CONTRACTS
+    from .native_evm_v3_quote import CHAINS
+    if side not in ("BUY","SELL") or stable not in ("USDC","USDT"):
+        raise ValueError("Invalid AVAX staged swap route")
+    local=CONFIG[43114]["tokens"][stable]
+    coin=CROSS_COIN_CONTRACTS["AVAX"]
+    source,target=(local,coin) if side=="BUY" else (coin,local)
+    return source,target,CHAINS["AVAX"].router.lower(),CHAINS["AVAX"].quoter.lower()
+
+
+async def prepare_staged_swap(client,*,side,stable,wallet,scope,amount_atomic):
+    """Exact V3 local leg. The caller must supply strategy-owned AVAX or
+    the amount independently credited by this BUY's original taxi.
+    This is not a general local-stablecoin trading route.
+    """
+    from .ethereum_stargate_staged_policy import STARGATE_STAGED_POLICY
+    from .eth_router02_live_quote import _decode_quote
+    if (type(wallet) is not str or not ADDR.fullmatch(wallet)
+            or scope.get("asset")!="AVAX" or scope.get("stable")!=stable
+            or scope.get("settlement_policy")!=STARGATE_STAGED_POLICY
+            or type(amount_atomic) is not int or not 0<amount_atomic<=int(
+                scope["buy_source_atomic_cap" if side=="BUY" else "sell_source_atomic_cap"])):
+        raise ValueError("Original AVAX staged swap scope differs")
+    wallet=wallet.lower()
+    source,target,router,quoter=staged_swap_route(side,stable)
+    url=_rpc_url(43114)
+    async def rpc(method,params,rid):
+        return await _receipt_rpc(client,url,method,params,rid)
+    if _num(await rpc("eth_chainId",[],1))!=43114:
+        raise ValueError("Wrong Avalanche RPC")
+    height=await rpc("eth_blockNumber",[],2)
+    async def call(contract,data,rid):
+        return await rpc("eth_call",[{"from":wallet,"to":contract,"data":data},height],rid)
+    results=await asyncio.gather(
+        call(source,_call_data("decimals()"),3),
+        call(target,_call_data("decimals()"),4),
+        call(source,_call_data("balanceOf(address)",["address"],[wallet]),5),
+        call(source,_call_data("allowance(address,address)",["address","address"],[wallet,router]),6),
+        rpc("eth_getBalance",[wallet,height],7),rpc("eth_gasPrice",[],8))
+    p1,p2,balance,allowance,native,price=results
+    if (_abi_result(p1,["uint8"])[0],_abi_result(p2,["uint8"])[0])!=(
+            (6,18) if side=="BUY" else (18,6)):
+        raise ValueError("Original AVAX swap precision changed")
+    balance=_abi_result(balance,["uint256"])[0]
+    allowance=_abi_result(allowance,["uint256"])[0]
+    if balance<amount_atomic:
+        raise ValueError("Exact staged swap balance unavailable")
+    quote_type="(address,address,uint256,uint24,uint160)"
+    fees=(100,500,3000,10000)
+    results=await asyncio.gather(*(call(quoter,_call_data(
+        "quoteExactInputSingle("+quote_type+")",[quote_type],
+        [(source,target,amount_atomic,fee,0)]),20+i)
+        for i,fee in enumerate(fees)),return_exceptions=True)
+    candidates=[]
+    for fee,raw in zip(fees,results):
+        if isinstance(raw,str):
+            try:
+                output,gas=_decode_quote(raw)
+                candidates.append((output,-gas,-fee))
+            except ValueError:
+                continue
+    if not candidates:
+        raise ValueError("No real Avalanche DEX liquidity")
+    expected,_,neg_fee=max(candidates); fee=-neg_fee
+    minimum=max(1,expected*9950//10000)
+    tx=staged_swap_transaction(side=side,stable=stable,wallet=wallet,
+        amount_atomic=amount_atomic,min_out_atomic=minimum,fee=fee)
+    approval=None
+    if allowance<amount_atomic:
+        value=0 if side=="BUY" and stable=="USDT" and allowance>0 else amount_atomic
+        approval={"from":wallet,"to":source,"chainId":43114,"value":"0",
+                  "data":_call_data("approve(address,uint256)",["address","uint256"],[router,value])}
+    candidate=approval or tx
+    envelope={k:v for k,v in candidate.items() if k!="chainId"}
+    envelope["value"]="0x0"
+    gas=_num(await rpc("eth_estimateGas",[envelope],30))
+    price=_num(price)
+    if gas<=0 or price<=0 or _num(native)<gas*price:
+        raise ValueError("AVAX staged swap gas funds unavailable")
+    return {"mode":"AVAX_STAGED_SWAP_PREPARATION","asset":"AVAX","side":side,
+            "stable":stable,"wallet_address":wallet,"source_chain_id":43114,
+            "destination_chain_id":43114,"source_token":source,"destination_token":target,
+            "input_atomic":str(amount_atomic),"expected_output_atomic":str(expected),
+            "minimum_output_atomic":str(minimum),"fee_tier":fee,
+            "estimated_gas_atomic":str(gas*price),"source_balance_atomic":str(balance),
+            "source_allowance_atomic":str(allowance),"transaction":tx,"approval":approval,
+            "issued_at":int(time.time()),"can_submit":False}
+
+
+async def reconcile_staged_swap(client,*,prepared,tx_hash):
+    if not isinstance(tx_hash,str) or not _HASH.fullmatch(tx_hash):
+        raise ValueError("Original staged swap hash required")
+    side,stable,wallet=(prepared[k] for k in ("side","stable","wallet_address"))
+    amount=int(prepared["input_atomic"]);minimum=int(prepared["minimum_output_atomic"])
+    source,target,router,_=staged_swap_route(side,stable)
+    expected=staged_swap_transaction(side=side,stable=stable,wallet=wallet,
+        amount_atomic=amount,min_out_atomic=minimum,fee=prepared["fee_tier"])
+    if (prepared["transaction"]!=expected or prepared["source_token"]!=source
+            or prepared["destination_token"]!=target):
+        raise ValueError("Original staged swap data changed")
+    proof=await _finalized_receipt(client,43114,tx_hash)
+    if proof is None:
+        return {"state":"SOURCE_PENDING"}
+    tx,receipt=proof
+    if (not _eq(tx.get("from"),wallet) or not _eq(tx.get("to"),router)
+            or not _eq(tx.get("input"),expected["data"]) or _num(tx.get("value"))!=0):
+        raise ValueError("Finalized staged swap differs from original")
+    gas=_num(receipt["gasUsed"])*_num(receipt["effectiveGasPrice"])
+    status=_num(receipt["status"])
+    if status==0:
+        return {"state":"SOURCE_REVERTED","source_gas_atomic":str(gas)}
+    if status!=1:
+        raise ValueError("Invalid staged swap receipt")
+    spent=-_net_token_credit(receipt["logs"],source,wallet)
+    received=_net_token_credit(receipt["logs"],target,wallet)
+    if spent!=amount or received<minimum:
+        raise ValueError("Staged swap debit or credit differs")
+    return {"state":"SWAP_CREDIT_VERIFIED","source_hash":tx_hash.lower(),
+            "source_gas_atomic":str(gas),"received_atomic":str(received),
+            "destination_credit_verified":True}
+
+
+async def find_direct_taxi_destination(client,*,prepared,guid,start_block,window=1000):
+    """One bounded finalized log range, exactly one GUID/recipient match.
+    Caller persists next_block on a miss; no new send or provider status.
+    """
+    if (not isinstance(guid,str) or not _HASH.fullmatch(guid)
+            or type(start_block) is not int or start_block<prepared["destination_start_block"]
+            or type(window) is not int or not 1<=window<=2000):
+        raise ValueError("Invalid original taxi scan cursor")
+    _,dst,_,_=_route(prepared["side"],prepared["stable"])
+    pool=CONFIG[dst]["pools"][prepared["stable"]]
+    url=_rpc_url(dst)
+    if _num(await _receipt_rpc(client,url,"eth_chainId",[],1))!=dst:
+        raise ValueError("Wrong taxi destination RPC")
+    finalized=await _receipt_rpc(client,url,"eth_getBlockByNumber",["finalized",False],2)
+    if not finalized or _num(finalized["number"])<start_block:
+        return {"destination_hash":None,"next_block":start_block}
+    end=min(_num(finalized["number"]),start_block+window-1)
+    topic="0x"+keccak(text="OFTReceived(bytes32,uint32,address,uint256)").hex()
+    recipient="0x"+address_word(prepared["wallet_address"]).hex()
+    logs=await _receipt_rpc(client,url,"eth_getLogs",[{
+        "fromBlock":hex(start_block),"toBlock":hex(end),"address":pool,
+        "topics":[topic,guid.lower(),recipient]}],3)
+    if type(logs) is not list or len(logs)>1:
+        raise ValueError("Ambiguous taxi destination event")
+    if not logs:
+        return {"destination_hash":None,"next_block":end+1}
+    event=logs[0]
+    if (event.get("removed") is True or not _eq(event.get("address"),pool)
+            or event.get("topics")!=[topic,guid.lower(),recipient]
+            or not start_block<=_num(event.get("blockNumber"))<=end
+            or not isinstance(event.get("transactionHash"),str)
+            or not _HASH.fullmatch(event["transactionHash"])):
+        raise ValueError("Unverified taxi destination event")
+    return {"destination_hash":event["transactionHash"].lower(),"next_block":start_block}
