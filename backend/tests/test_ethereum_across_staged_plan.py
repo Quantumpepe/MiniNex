@@ -65,3 +65,40 @@ def test_policy_proposal_has_separate_exact_caps_and_no_live_authorization(asset
                       ("SELL USDT staged direct bridge","3000000000000000000")):
         rule=next(r for r in rules if r["name"]==f"MiniNex {asset} {label}")
         assert any(c.get("operator")=="lte" and c.get("value")==cap for c in rule["conditions"])
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","ARB"])
+def test_staged_identity_and_transit_split_stay_bound_to_original_coin(asset):
+    from datetime import datetime,timezone,timedelta
+    from backend.ethereum_across_staged_journal import staged_order_identity,exact_stage_amount
+    start=datetime(2026,11,25,tzinfo=timezone.utc)
+    did="did:privy:original"
+    first=staged_order_identity(did,asset,start,120)
+    assert first==staged_order_identity(did,asset,start,179)
+    assert first!=staged_order_identity(did,asset,start+timedelta(seconds=1),120)
+    assert first!=staged_order_identity(did,"ARB" if asset!="ARB" else "POL",start,120)
+    order={"stage":2,"side":"SELL","remaining_atomic":130,"scope_json":{"transit_atomic_cap":"100"}}
+    assert exact_stage_amount(order)==100
+    assert exact_stage_amount(dict(order,remaining_atomic=30))==30
+
+def test_gas_is_counted_per_chain_not_across_incompatible_units():
+    from backend.ethereum_across_staged_journal import stage_gas_by_chain
+    rows=[{"chain_id":1,"proof":{"source_gas_atomic":"100"}},
+          {"chain_id":56,"proof":{"source_gas_atomic":"500"}},
+          {"chain_id":1,"proof":{"source_gas_atomic":"20"}}]
+    assert stage_gas_by_chain(rows)=={1:120,56:500}
+    with pytest.raises(ValueError):
+        stage_gas_by_chain([{"chain_id":1,"proof":{"source_gas_atomic":True}}])
+
+def test_final_stage_requires_original_hash_and_real_bridge_proof():
+    from backend.ethereum_across_staged_journal import validate_final_stage_proof
+    source="0x"+"1"*64;dest="0x"+"2"*64
+    current={"kind":"BRIDGE","chain_id":1,"tx_hash":source}
+    proof={"state":"BRIDGE_CREDIT_VERIFIED","source_hash":source,"destination_hash":dest,
+           "source_gas_atomic":"100","bridge_message_verified":True,"deposit_id":"4",
+           "destination_credit_verified":True,"received_atomic":"1000"}
+    assert validate_final_stage_proof(current,proof)=="BRIDGE_CREDIT_VERIFIED"
+    for change in ({"source_hash":dest},{"bridge_message_verified":False},{"destination_hash":None},
+                   {"deposit_id":"-1"},{"received_atomic":"0"},{"source_gas_atomic":"-1"}):
+        with pytest.raises(ValueError):
+            validate_final_stage_proof(current,{**proof,**change})

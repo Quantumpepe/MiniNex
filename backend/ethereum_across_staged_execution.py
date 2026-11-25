@@ -151,7 +151,8 @@ async def reconcile_staged_across_local_swap(client,*,prepared,tx_hash):
     expected=staged_local_transaction(asset,side,stable,wallet,amount,minimum,prepared["fee_tier"])
     if (prepared["transaction"]!=expected or prepared["source_token"]!=src[1]
             or prepared["destination_token"]!=dst[1] or prepared["source_chain_id"]!=src[0]
-            or prepared["destination_chain_id"]!=dst[0]):
+            or prepared["destination_chain_id"]!=dst[0]
+            or prepared["source_decimals"]!=src[2] or prepared["destination_decimals"]!=dst[2]):
         raise ValueError("Original local stage identity changed")
     result=await _finalized_receipt(client,src[0],tx_hash)
     if result is None:
@@ -161,7 +162,7 @@ async def reconcile_staged_across_local_swap(client,*,prepared,tx_hash):
     gas=_num(receipt["gasUsed"])*_num(receipt["effectiveGasPrice"])
     status=_num(receipt["status"])
     if status==0:
-        return {"state":"SOURCE_REVERTED","source_gas_atomic":str(gas)}
+        return {"state":"SOURCE_REVERTED","source_hash":tx_hash.lower(),"source_gas_atomic":str(gas)}
     if status!=1:
         raise ValueError("Invalid local swap receipt status")
     received=_net_token_credit(receipt["logs"],dst[1],wallet)
@@ -186,7 +187,7 @@ async def reconcile_staged_across_bridge(client,*,terms,source_hash,destination_
     gas=_num(receipt["gasUsed"])*_num(receipt["effectiveGasPrice"])
     status=_num(receipt["status"])
     if status==0:
-        return {"state":"SOURCE_REVERTED","source_gas_atomic":str(gas)}
+        return {"state":"SOURCE_REVERTED","source_hash":source_hash.lower(),"source_gas_atomic":str(gas)}
     wallet=terms["wallet_address"]
     if status!=1 or -_net_token_credit(receipt["logs"],terms["source_token"],wallet)!=int(terms["input_atomic"]):
         raise ValueError("Original direct bridge debit differs")

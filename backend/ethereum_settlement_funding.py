@@ -160,3 +160,20 @@ def assert_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_ato
     if input_atomic+int(pending["pending_wallet_stable_atomic"])>balance_atomic:
         raise HTTPException(409,"Ethereum cash reserved for another order or protected profit")
     return pending
+
+
+def assert_reserved_ethereum_funds_locked(cur,*,did,asset,stable,input_atomic,balance_atomic,stable_usd):
+    """Recheck an already OPEN original BUY, including its own reservation.
+
+    Do not add the original amount a second time. The caller locks the
+    account and the OPEN order before invoking this function.
+    """
+    if type(input_atomic) is not int or input_atomic<=0 or type(balance_atomic) is not int or balance_atomic<0:
+        raise ValueError("Exact reserved Ethereum funds required")
+    cur.execute(_PROTECTED_FUNDING_SQL,{"did":did,"stable":stable,
+        "excluded_native_asset":None,"excluded_native_key":None})
+    pending=summarize_pending_funding(cur.fetchall(),asset=asset,stable=stable,stable_usd=stable_usd)
+    if (int(pending["pending_order_stable_atomic"])<input_atomic
+            or int(pending["pending_wallet_stable_atomic"])>balance_atomic):
+        raise HTTPException(409,"Original reserved Ethereum funding changed")
+    return pending

@@ -87,3 +87,19 @@ def test_all_twelve_coins_share_the_same_protected_cash_rule():
     r=summarize_pending_funding(rows,asset="POL",stable="USDC",stable_usd="1")
     assert r["protected_profit_gross_atomic"]=="120000000"
     assert len(r["protected_profit_by_asset_atomic"])==12
+
+
+def test_existing_across_buy_reservation_is_rechecked_not_double_counted():
+    from backend.ethereum_settlement_funding import assert_reserved_ethereum_funds_locked
+    from fastapi import HTTPException
+    class Cursor:
+        def execute(self,sql,args): self.sql=sql
+        def fetchall(self):
+            return [dict(asset="POL",stable="USDC",unit="ATOMIC",amount="7000000"),
+                    dict(asset="LINK",stable="USDC",unit="ATOMIC",amount="3000000")]
+    cur=Cursor()
+    kw=dict(did="did:privy:owner",asset="POL",stable="USDC",input_atomic=7_000_000,stable_usd="1")
+    assert assert_reserved_ethereum_funds_locked(cur,**kw,balance_atomic=10_000_000)["pending_wallet_stable_atomic"]=="10000000"
+    assert "mininex_across_staged_orders" in cur.sql
+    with pytest.raises(HTTPException):
+        assert_reserved_ethereum_funds_locked(cur,**kw,balance_atomic=9_999_999)

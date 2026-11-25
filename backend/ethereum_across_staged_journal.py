@@ -269,7 +269,7 @@ def read_pending_step(order_id):
             return cur.fetchone()
 
 
-def claim_step(did,order_id,record,prepared,*,expected_updated_at):
+def claim_step(did,order_id,record,prepared,*,expected_updated_at,stable_usd=None):
     did=_safe_did(did);db=_db_url();_ensure_schema(db)
     step_id=uuid.uuid4();key="across_"+step_id.hex
     with psycopg.connect(db,connect_timeout=6) as conn:
@@ -293,6 +293,16 @@ def claim_step(did,order_id,record,prepared,*,expected_updated_at):
             if kind=="APPROVAL":
                 prepared={**prepared,"approval":tx}
             _lock_chain(cur,did,tx["chainId"])
+            if order["stage"]==1:
+                if order["side"]=="BUY":
+                    from .ethereum_settlement_funding import assert_reserved_ethereum_funds_locked
+                    assert_reserved_ethereum_funds_locked(cur,did=did,asset=order["asset"],
+                        stable=order["stable"],input_atomic=exact_stage_amount(order),
+                        balance_atomic=stage_source_balance(prepared),stable_usd=stable_usd)
+                else:
+                    from .ethereum_settlement_auto_plan import strategy_bridge_position_locked
+                    if strategy_bridge_position_locked(cur,did,order["asset"],order["wallet_address"])<exact_stage_amount(order):
+                        raise HTTPException(409,"Original strategy SELL position changed before claim")
             url="https://api.privy.io/v1/wallets/"+record["wallet_id"]+"/rpc"
             body={"method":"eth_sendTransaction","caip2":"eip155:"+str(tx["chainId"]),
                 "params":{"transaction":{"to":tx["to"],"data":tx["data"],"value":tx["value"]}}}
@@ -327,6 +337,49 @@ def pending_reconcile_steps():
             cur.execute("""SELECT * FROM mininex_across_staged_steps
                 WHERE state IN ('SUBMITTED','SOURCE_FINALIZED') ORDER BY updated_at LIMIT 50""")
             return list(cur.fetchall())
+
+
+def stage_gas_by_chain(rows):
+    """Exact gas totals per chain, including approvals and reverted attempts."""
+    result={}
+    for row in rows:
+        chain=row["chain_id"]
+        if type(chain) is not int or chain not in (1,56,137,42161):
+            raise ValueError("Unexpected original stage gas chain")
+        value=row["proof"]["source_gas_atomic"]
+        if isinstance(value,bool) or not isinstance(value,(str,int)):
+            raise ValueError("Exact stage gas required")
+        if isinstance(value,str) and (not value.isascii() or not value.isdecimal()):
+            raise ValueError("Exact stage gas required")
+        amount=int(value)
+        if not 0<=amount<2**256:
+            raise ValueError("Invalid stage gas")
+        result[chain]=result.get(chain,0)+amount
+    return result
+
+
+def validate_final_stage_proof(current,proof):
+    expected={"APPROVAL":"APPROVAL_FINALIZED","BRIDGE":"BRIDGE_CREDIT_VERIFIED","SWAP":"SWAP_CREDIT_VERIFIED"}[current["kind"]]
+    if proof.get("state") not in (expected,"SOURCE_REVERTED"):
+        raise ValueError("Unexpected Across stage receipt outcome")
+    if proof.get("source_hash")!=current["tx_hash"]:
+        raise ValueError("Original step source hash differs")
+    stage_gas_by_chain([{"chain_id":current["chain_id"],"proof":proof}])
+    if proof["state"]==expected and current["kind"]=="BRIDGE":
+        dest=proof.get("destination_hash")
+        if (type(dest) is not str or not _HASH.fullmatch(dest)
+                or proof.get("bridge_message_verified") is not True):
+            raise ValueError("Original bridge destination proof missing")
+        deposit=proof.get("deposit_id")
+        if type(deposit) is not str or not deposit.isascii() or not deposit.isdecimal() or int(deposit)>=2**256:
+            raise ValueError("Original bridge deposit identity missing")
+    if proof["state"]==expected and current["kind"]!="APPROVAL":
+        if proof.get("destination_credit_verified") is not True:
+            raise ValueError("Missing actual staged credit")
+        value=proof.get("received_atomic")
+        if type(value) is not str or not value.isascii() or not value.isdecimal() or not 0<int(value)<2**256:
+            raise ValueError("Original staged credit is not exact")
+    return expected
 
 
 def _complete_parent_locked(cur,order):
@@ -376,8 +429,7 @@ def _complete_parent_locked(cur,order):
     # Never sum ETH and Across gas atomics into a fictitious single fee.
     cur.execute("""SELECT chain_id,proof FROM mininex_across_staged_steps
         WHERE order_id=%s AND state IN ('FINALIZED','REVERTED') AND proof IS NOT NULL""",(order["order_id"],))
-    source_gas=sum(int(s["proof"]["source_gas_atomic"]) for s in cur.fetchall()
-                   if s["chain_id"]==route["source_chain_id"])
+    source_gas=stage_gas_by_chain(cur.fetchall()).get(route["source_chain_id"],0)
     cur.execute("""INSERT INTO mininex_ethereum_settlement_finality
         (quote_id,privy_did,source_chain_id,destination_chain_id,source_tx_hash,destination_tx_hash,
          bridge_deposit_id,received_atomic,source_gas_atomic,outcome)
@@ -397,24 +449,29 @@ def record_step_proof(step,proof,scan_block=None):
             cur.execute("SELECT * FROM mininex_across_staged_steps WHERE step_id=%s FOR UPDATE",(step["step_id"],))
             current=cur.fetchone()
             if (not order or order["state"]!="OPEN" or not current or current["state"] not in ("SUBMITTED","SOURCE_FINALIZED")
-                    or current["tx_hash"]!=step["tx_hash"] or order["stage"]!=current["stage"]):
+                    or current["tx_hash"]!=step["tx_hash"] or order["stage"]!=current["stage"]
+                    or current["privy_did"]!=did or order["privy_did"]!=did
+                    or current["order_id"]!=order["order_id"] or current["kind"]!=step["kind"]):
                 return False
             status=proof["state"]
             if status in ("SOURCE_PENDING","DESTINATION_PENDING"):
                 if status=="DESTINATION_PENDING" and current["kind"]=="BRIDGE":
+                    if proof.get("source_hash")!=current["tx_hash"]:
+                        raise ValueError("Pending bridge source identity changed")
+                    stage_gas_by_chain([{"chain_id":current["chain_id"],"proof":proof}])
                     cur.execute("""UPDATE mininex_across_staged_steps SET state='SOURCE_FINALIZED',
                         proof=%s,scan_block=COALESCE(%s,scan_block),updated_at=now() WHERE step_id=%s""",
                         (Jsonb(proof),scan_block,step["step_id"]))
                 else:
                     cur.execute("UPDATE mininex_across_staged_steps SET updated_at=now() WHERE step_id=%s",(step["step_id"],))
                 return True
+            expected=validate_final_stage_proof(current,proof)
             if status=="SOURCE_REVERTED":
                 cur.execute("UPDATE mininex_across_staged_steps SET state='REVERTED',proof=%s,updated_at=now() WHERE step_id=%s",
                             (Jsonb(proof),step["step_id"]))
                 if order["stage"]==1 and current["kind"]!="APPROVAL":
                     cur.execute("UPDATE mininex_across_staged_orders SET state='REVERTED',updated_at=now() WHERE order_id=%s",(order["order_id"],))
                 return True
-            expected={"APPROVAL":"APPROVAL_FINALIZED","BRIDGE":"BRIDGE_CREDIT_VERIFIED","SWAP":"SWAP_CREDIT_VERIFIED"}[current["kind"]]
             if status!=expected:
                 raise ValueError("Unexpected Across stage receipt outcome")
             cur.execute("UPDATE mininex_across_staged_steps SET state='FINALIZED',proof=%s,updated_at=now() WHERE step_id=%s",

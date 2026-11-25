@@ -55,8 +55,13 @@ async def _prepare(client,order,record):
 
 
 async def _submit(did,order,record,prepared,client):
+    stable_usd=None
+    if order["side"]=="BUY" and order["stage"]==1:
+        from .shared_evm_policy_reference_rates import fetch_evm_policy_reference_rates,_price
+        prices=await fetch_evm_policy_reference_rates(order["asset"],order["stable"])
+        stable_usd=_price(prices,order["stable"],int(time.time()))
     claim=await asyncio.to_thread(claim_step,did,order["order_id"],record,prepared,
-                                  expected_updated_at=order["updated_at"])
+                                  expected_updated_at=order["updated_at"],stable_usd=stable_usd)
     if claim is None:
         return {"asset":order["asset"],"state":"CANCELLED","reason":"OWNER_REQUESTED_EXIT"}
     try:
