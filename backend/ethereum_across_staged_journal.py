@@ -459,8 +459,11 @@ def record_step_proof(step,proof,scan_block=None):
                     if proof.get("source_hash")!=current["tx_hash"]:
                         raise ValueError("Pending bridge source identity changed")
                     stage_gas_by_chain([{"chain_id":current["chain_id"],"proof":proof}])
+                    previous=current.get("proof") or {}
+                    if previous.get("deposit_id") is not None and previous["deposit_id"]!=proof.get("deposit_id"):
+                        raise ValueError("Original bridge deposit changed during reconciliation")
                     cur.execute("""UPDATE mininex_across_staged_steps SET state='SOURCE_FINALIZED',
-                        proof=%s,scan_block=COALESCE(%s,scan_block),updated_at=now() WHERE step_id=%s""",
+                        proof=%s,scan_block=GREATEST(scan_block,%s),updated_at=now() WHERE step_id=%s""",
                         (Jsonb(proof),scan_block,step["step_id"]))
                 else:
                     cur.execute("UPDATE mininex_across_staged_steps SET updated_at=now() WHERE step_id=%s",(step["step_id"],))

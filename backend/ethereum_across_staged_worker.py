@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from .ethereum_across_staged_plan import STAGED_ACROSS_POLICY,STAGED_ACROSS_ASSETS,staged_route
 from .ethereum_across_staged_execution import (
     prepare_staged_across_bridge,prepare_staged_across_local_swap,
-    reconcile_staged_across_bridge,reconcile_staged_across_local_swap,
+    reconcile_staged_across_bridge,reconcile_staged_across_local_swap,find_staged_across_destination,
 )
 from .ethereum_across_staged_journal import (
     stage_kind,exact_stage_amount,create_order,read_open_order,read_pending_step,
@@ -20,7 +20,6 @@ from .ethereum_across_staged_journal import (
     cancel_unspent_buy_for_exit,
 )
 from .ethereum_stargate_staged_worker import _approval_proof
-from .ethereum_settlement_status import STATUS_URL,_status_terms
 from .live_eth_quotes import _quantity
 from .shared_evm_central_runtime import audit_original_evm_coin,original_evm_coin_record
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
@@ -84,6 +83,8 @@ async def advance_across_order(did,*,row,client):
     order=await asyncio.to_thread(read_open_order,did,asset)
     if order is None:
         return None
+    if row.get("session_status") not in ("ACTIVE","EXIT_PENDING"):
+        return {"asset":asset,"state":"WAIT","reason":"ORIGINAL_SESSION_PAUSED"}
     if await asyncio.to_thread(read_pending_step,order["order_id"]):
         return {"asset":asset,"state":"WAIT","reason":"ORIGINAL_STAGED_STEP_PENDING"}
     if row.get("session_status")=="EXIT_PENDING" and order["side"]=="BUY" and order["stage"]==1:
@@ -91,6 +92,7 @@ async def advance_across_order(did,*,row,client):
             return {"asset":asset,"state":"CANCELLED","reason":"OWNER_REQUESTED_EXIT"}
     record=await _audited(did,asset,order["stable"],order["budget_revision"])
     if (row["stable"]!=order["stable"] or row["budget_revision"]!=order["budget_revision"]
+            or row["started_by_owner_at"]!=order["started_by_owner_at"]
             or record["scope"]!=order["scope_json"]):
         raise HTTPException(409,"Original staged order settings changed")
     return await _submit(did,order,record,await _prepare(client,order,record),client)
@@ -147,27 +149,8 @@ async def start_across_staged_order(*,did,asset,side,stable,budget_revision,amou
     return await _submit(did,saved,record,prepared,client)
 
 
-async def _destination_hint(client,terms,source_hash):
-    """LI.FI only locates a candidate; canonical receipts prove the credit."""
-    route=staged_route(terms["asset"],terms["side"],terms["stable"])
-    src,dst=route["bridge_source"],route["bridge_target"]
-    headers={"Accept":"application/json"}
-    key=os.getenv("MININEX_LIFI_API_KEY","").strip()
-    if key:
-        headers["x-lifi-api-key"]=key
-    response=await client.get(STATUS_URL,headers=headers,params={
-        "txHash":source_hash,"fromChain":src[0],"toChain":dst[0]})
-    response.raise_for_status()
-    if len(response.content)>512000:
-        raise ValueError("Oversized bridge status")
-    status=_status_terms(response.json(),wallet=terms["wallet_address"],tx_hash=source_hash,
-        source_chain=src[0],dest_chain=dst[0],source_tokens=(src[1],),dest_token=dst[1],
-        source_decimals=src[2],dest_decimals=dst[2],units=terms["input_atomic"])
-    return status["hash"] if status and status["state"]=="PROVIDER_COMPLETED" else None
-
-
 async def reconcile_one_across_step(client,step):
-    prepared=step["prepared"];tx_hash=step["tx_hash"]
+    prepared=step["prepared"];tx_hash=step["tx_hash"];cursor=None
     if step["kind"]=="APPROVAL":
         proof=await _approval_proof(client,step)
     elif step["kind"]=="SWAP":
@@ -177,12 +160,15 @@ async def reconcile_one_across_step(client,step):
         proof=await reconcile_staged_across_bridge(client,terms=terms,source_hash=tx_hash)
         if proof["state"]=="DESTINATION_PENDING":
             await asyncio.to_thread(record_step_proof,step,proof)
-            destination=await _destination_hint(client,terms,tx_hash)
+            scan=await find_staged_across_destination(client,prepared=prepared,
+                deposit_id=proof["deposit_id"],start_block=step["scan_block"])
+            cursor=scan["next_block"]
+            destination=scan["destination_hash"]
             if destination:
                 proof=await reconcile_staged_across_bridge(client,terms=terms,source_hash=tx_hash,destination_hash=destination)
     else:
         raise ValueError("Unknown original staged step")
-    return await asyncio.to_thread(record_step_proof,step,proof)
+    return await asyncio.to_thread(record_step_proof,step,proof,cursor)
 
 
 async def reconcile_across_staged_steps_once(client):

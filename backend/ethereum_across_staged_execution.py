@@ -14,7 +14,9 @@ from .ethereum_across_staged_plan import (
 )
 from .ethereum_settlement_quote import QUOTE_URL, _read_quote
 from .ethereum_settlement_preflight import prepare_bridge_privy_request
-from .ethereum_settlement_bridge_proof import prove_across_pair
+from .ethereum_settlement_bridge_proof import (
+    prove_across_pair,POOLS,DEPOSIT_TOPIC,DEPOSIT_TYPES,FILL_TOPIC,single_event,address_word,
+)
 from .ethereum_settlement_status import _rpc_url, _finalized_receipt, _net_token_credit, _eq
 from .ethereum_stargate_staged_execution import _abi_result, _call_data, _HASH
 from .shared_evm_swap_receipts import _receipt_rpc
@@ -191,7 +193,19 @@ async def reconcile_staged_across_bridge(client,*,terms,source_hash,destination_
     wallet=terms["wallet_address"]
     if status!=1 or -_net_token_credit(receipt["logs"],terms["source_token"],wallet)!=int(terms["input_atomic"]):
         raise ValueError("Original direct bridge debit differs")
-    pending={"state":"DESTINATION_PENDING","source_hash":source_hash.lower(),"source_gas_atomic":str(gas)}
+    deposit=single_event(receipt["logs"],src,DEPOSIT_TOPIC,DEPOSIT_TYPES)
+    if deposit is None:
+        raise ValueError("Original source deposit event missing")
+    (dest_word,deposit_word,depositor),data=deposit
+    token_in,token_out,spent,output,quote_ts,deadline,_,recipient,_,message=data
+    owner=address_word(wallet)
+    if (int.from_bytes(dest_word,"big")!=dst or depositor!=owner or recipient!=owner
+            or token_in!=address_word(terms["source_token"]) or token_out!=address_word(terms["destination_token"])
+            or spent!=int(terms["input_atomic"]) or output!=review["direct_output_atomic"]
+            or quote_ts!=review["quote_timestamp"] or deadline!=review["fill_deadline"] or message!=b""):
+        raise ValueError("Original source deposit differs from inspected route")
+    pending={"state":"DESTINATION_PENDING","source_hash":source_hash.lower(),"source_gas_atomic":str(gas),
+             "deposit_id":str(int.from_bytes(deposit_word,"big"))}
     if destination_hash is None:
         return pending
     if type(destination_hash) is not str or not _HASH.fullmatch(destination_hash):
@@ -209,3 +223,44 @@ async def reconcile_staged_across_bridge(client,*,terms,source_hash,destination_
         raise ValueError("No original direct bridge fill proved")
     return {**pending,**proof,"state":"BRIDGE_CREDIT_VERIFIED","destination_hash":destination_hash.lower(),
             "received_atomic":str(received),"destination_credit_verified":True}
+
+
+async def find_staged_across_destination(client,*,prepared,deposit_id,start_block,window=1000):
+    """Scan finalized destination logs by original origin-chain/deposit ID.
+
+    A candidate hash is not settlement proof. The caller independently
+    checks both receipts before recording any credit or advancing a stage.
+    """
+    terms=prepared["terms"]
+    if (type(deposit_id) is not str or not deposit_id.isascii() or not deposit_id.isdecimal()
+            or not 0<=int(deposit_id)<2**256 or type(start_block) is not int
+            or start_block<prepared["destination_start_block"]
+            or type(window) is not int or not 1<=window<=2000):
+        raise ValueError("Invalid original Across scan cursor")
+    src,dst=terms["source_chain_id"],terms["destination_chain_id"]
+    if src not in POOLS or dst not in POOLS or src==dst:
+        raise ValueError("Unexpected original Across networks")
+    url=_rpc_url(dst)
+    if _num(await _receipt_rpc(client,url,"eth_chainId",[],1))!=dst:
+        raise ValueError("Wrong Across destination RPC")
+    finalized=await _receipt_rpc(client,url,"eth_getBlockByNumber",["finalized",False],2)
+    if not finalized or _num(finalized["number"])<start_block:
+        return {"destination_hash":None,"next_block":start_block}
+    end=min(_num(finalized["number"]),start_block+window-1)
+    topics=[FILL_TOPIC,"0x"+format(src,"064x"),"0x"+format(int(deposit_id),"064x")]
+    logs=await _receipt_rpc(client,url,"eth_getLogs",[{"fromBlock":hex(start_block),
+        "toBlock":hex(end),"address":POOLS[dst],"topics":topics}],3)
+    if type(logs) is not list or len(logs)>1:
+        raise ValueError("Ambiguous original Across destination event")
+    if not logs:
+        return {"destination_hash":None,"next_block":end+1}
+    event=logs[0]
+    event_topics=event.get("topics")
+    if (event.get("removed") is True or not _eq(event.get("address"),POOLS[dst])
+            or type(event_topics) is not list or len(event_topics)!=4
+            or any(not _eq(a,b) for a,b in zip(event_topics[:3],topics))
+            or not start_block<=_num(event.get("blockNumber"))<=end
+            or type(event.get("transactionHash")) is not str
+            or not _HASH.fullmatch(event["transactionHash"])):
+        raise ValueError("Unverified Across destination event")
+    return {"destination_hash":event["transactionHash"].lower(),"next_block":start_block}

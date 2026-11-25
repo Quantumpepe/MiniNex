@@ -102,3 +102,35 @@ def test_final_stage_requires_original_hash_and_real_bridge_proof():
                    {"deposit_id":"-1"},{"received_atomic":"0"},{"source_gas_atomic":"-1"}):
         with pytest.raises(ValueError):
             validate_final_stage_proof(current,{**proof,**change})
+
+
+@pytest.mark.parametrize("asset,chain",[("BNB",56),("POL",137),("ARB",42161)])
+def test_destination_scan_is_exact_finalized_and_resumable(monkeypatch,asset,chain):
+    import asyncio
+    from backend import ethereum_across_staged_execution as m
+    from backend.ethereum_settlement_bridge_proof import POOLS,FILL_TOPIC
+    prepared={"destination_start_block":100,"terms":{"source_chain_id":1,"destination_chain_id":chain}}
+    h="0x"+"1"*64
+    expected=[FILL_TOPIC,"0x"+format(1,"064x"),"0x"+format(7,"064x")]
+    event={"address":POOLS[chain],"topics":expected+["0x"+"2"*64],
+           "blockNumber":hex(150),"transactionHash":h}
+    calls=[]
+    logs=[]
+    async def rpc(client,url,method,args,rid):
+        calls.append((method,args))
+        if method=="eth_chainId":return hex(chain)
+        if method=="eth_getBlockByNumber":return {"number":hex(200)}
+        if method=="eth_getLogs":return list(logs)
+        raise AssertionError(method)
+    monkeypatch.setattr(m,"_receipt_rpc",rpc)
+    monkeypatch.setattr(m,"_rpc_url",lambda _: "https://example.invalid")
+    def scan(start=100):
+        return asyncio.run(m.find_staged_across_destination(None,prepared=prepared,deposit_id="7",start_block=start))
+    assert scan()=={"destination_hash":None,"next_block":201}
+    assert calls[-1][1][0]["topics"]==expected
+    assert calls[-1][1][0]["toBlock"]==hex(200)
+    logs.append(event)
+    assert scan()=={"destination_hash":h,"next_block":100}
+    logs.append(event)
+    with pytest.raises(ValueError):scan()
+    with pytest.raises(ValueError):scan(99)
