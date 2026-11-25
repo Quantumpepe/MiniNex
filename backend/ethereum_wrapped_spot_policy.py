@@ -1,4 +1,4 @@
-"""Ethereum-settled spot policy for BTC and XRP trading inventory.
+"""Ethereum-settled spot policy for BTC, XRP and SOL trading inventory.
 
 Native deposit/withdrawal wallets are deliberately NOT this inventory.
 Only the Ethereum wallet's actual wrapped token balance is eligible.
@@ -21,6 +21,8 @@ WRAPPED_SPOT_POLICY = "ETHEREUM_WRAPPED_SPOT_V1"
 WRAPPED_SPOT_TOKENS = {
     "BTC": ("0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", 8),
     "XRP": ("0x39fBBABf11738317a448031930706cd3e612e1B9", 18),
+    # Wormhole Ethereum SOL; verified V3 SOL/WETH 0.3% pool.
+    "SOL": ("0xD31a59c85aE9D8edEFeC411D448f90841571b89c", 9),
 }
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
@@ -43,7 +45,7 @@ def wrapped_spot_route(asset, stable, side):
         raise ValueError("Unsupported Ethereum wrapped spot route")
     token, decimals = WRAPPED_SPOT_TOKENS[asset]
     tokens = [STABLES[stable], token] if asset == "BTC" else [STABLES[stable], WETH_MAINNET, token]
-    fees = [500] if asset == "BTC" else [500, 10000]
+    fees = [500] if asset == "BTC" else [500, 3000 if asset == "SOL" else 10000]
     if side == "SELL":
         tokens.reverse()
         fees.reverse()

@@ -105,7 +105,7 @@ def bound_evm_wallet_rpc(*, asset: str, wallet_id: str, wallet: str,
     claim its durable once-only order before calling any broadcaster.
     """
     if wrapped_spot:
-        if asset not in ("BTC","XRP"):
+        if asset not in ("BTC","XRP","SOL"):
             raise ValueError("Wrapped trading transport is restricted to its original assets")
         chain_id=1
     else:

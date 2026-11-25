@@ -118,7 +118,7 @@ def test_only_one_legacy_coin_can_migrate_without_changing_sibling_or_budget():
     with pytest.raises(ValueError):
         changed_wallet_coin(original,target,revisions,{"LINK":2,"POL":4})
 
-@pytest.mark.parametrize("asset,decimals",[("BTC",8),("XRP",18)])
+@pytest.mark.parametrize("asset,decimals",[("BTC",8),("XRP",18),("SOL",9)])
 @pytest.mark.parametrize("stable",["USDC","USDT"])
 def test_wrapped_trade_scope_is_distinct_and_exact(asset,decimals,stable):
     from backend.ethereum_wrapped_spot_policy import (
@@ -163,7 +163,7 @@ def test_wrapped_scope_uses_btc_exact_saved_capital_and_distinct_token_precision
         prepare.build_selected_wallet_scope(asset="BTC",stable="USDC",amount=0,snapshot={},now=NOW)
 
 
-@pytest.mark.parametrize("asset",["BTC","XRP"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
 def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(asset,monkeypatch):
     from backend import shared_evm_central_runtime as runtime
     from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY
@@ -197,7 +197,7 @@ def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(as
                                     kind="native_withdraw",now=NOW)
 
 
-@pytest.mark.parametrize("asset",["BTC","XRP"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
 def test_wrapped_grant_gate_refuses_changed_recipient_path_and_owner_cap(asset):
     from fastapi import HTTPException
     from backend.shared_evm_policy_swap_gate import check_evm_policy_bound_swap
@@ -240,7 +240,7 @@ def test_wrapped_btc_scope_reads_only_original_live_usd_budget():
                     stable="USDC",expected_revision=3)
 
 
-@pytest.mark.parametrize("asset,precision",[("BTC",8),("XRP",18)])
+@pytest.mark.parametrize("asset,precision",[("BTC",8),("XRP",18),("SOL",9)])
 def test_wrapped_route_common_transport_and_exact_path_quote(asset,precision):
     from eth_abi import encode
     from backend.ethereum_wrapped_spot_quote import decode_exact_path_quote
@@ -267,7 +267,7 @@ def test_wrapped_route_common_transport_and_exact_path_quote(asset,precision):
         decode_wrapped_spot_amounts(tx["data"]+"00",asset=asset,stable="USDC",side="BUY",wallet=WALLET)
 
 
-@pytest.mark.parametrize("asset",["BTC","XRP"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
 def test_wrapped_usdt_reset_is_exact_and_distinct_from_native_allowance(asset):
     from backend.shared_evm_allowance import inspect_combined_grant_router_approval,bound_owner_router_approval_rpc
     from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY

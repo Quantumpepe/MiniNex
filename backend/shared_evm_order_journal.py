@@ -36,7 +36,7 @@ def immutable_evm_send_identity(
     central:bool=False,
 )->dict:
     """Canonical identity based on actual Privy CAIP2 RPC, not UI values."""
-    if asset in ("ETH","BTC","XRP") and not central:
+    if asset in ("ETH","BTC","XRP","SOL") and not central:
         raise ValueError("Legacy ETH keeps its existing durable send journal")
     pair=_pair(asset,stable,side)
     url,body=bound_privy_evm_swap_request(
@@ -64,14 +64,14 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
     the same Privy account nonce. Different chains need not block each other.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP")
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL")
             or type(identity.get("wallet_address")) is not str
             or not _ADDR.fullmatch(identity["wallet_address"])
             or type(identity.get("request_digest")) is not str
             or not _SHA.fullmatch(identity["request_digest"])):
         raise ValueError("Invalid durable EVM order identity")
     asset=identity["asset"]
-    if asset in ("ETH","BTC","XRP") and not central:
+    if asset in ("ETH","BTC","XRP","SOL") and not central:
         raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if (identity.get("chain_id")!=pair["chain_id"]
@@ -234,14 +234,14 @@ def _claim_authorized_evm_order_locked(
     been freshly verified by the caller before entering this transaction.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP")
-            or (identity.get("asset") in ("ETH","BTC","XRP") and not central)
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL")
+            or (identity.get("asset") in ("ETH","BTC","XRP","SOL") and not central)
             or type(quote_sha256) is not str
             or not _SHA.fullmatch(quote_sha256)
             or type(budget_revision) is not int or budget_revision<1):
         raise ValueError("Unverified executable coin order")
     asset=identity["asset"]
-    if asset in ("ETH","BTC","XRP") and not central:
+    if asset in ("ETH","BTC","XRP","SOL") and not central:
         raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if central:
@@ -355,14 +355,14 @@ def _claim_authorized_evm_order_locked(
     if (type(session) is not dict
             or not (session.get("status")=="ACTIVE" or
                 (session.get("status")=="EXIT_PENDING" and identity["side"]=="SELL"
-                 and (asset in ("LINK","QNT","UNI","BTC","XRP") or (asset=="ETH" and central))))
+                 and (asset in ("LINK","QNT","UNI","BTC","XRP","SOL") or (asset=="ETH" and central))))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=identity["stable"]
             or session.get("wallet_address")!=identity["wallet_address"]
             or session.get("budget_revision")!=budget_revision
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Owner has not started this coin's LIVE session")
-    if asset in ("BTC","XRP") and identity["side"]=="SELL":
+    if asset in ("BTC","XRP","SOL") and identity["side"]=="SELL":
         from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
         assert_token_exit_quantity_locked(cur,did,asset,identity["wallet_address"],identity.get("input_atomic"))
     if session["status"]=="EXIT_PENDING":
@@ -458,7 +458,7 @@ def record_internal_authorized_evm_send_result(
     """Internal approved executor only, never a public HTTP writer."""
     did=_safe_did(did)
     key=valid_order_key(intent_key)
-    if (asset not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP")
+    if (asset not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL")
             or type(digest) is not str or not _SHA.fullmatch(digest)
             or tx_hash is not None and (
                 type(tx_hash) is not str or not _HASH.fullmatch(tx_hash))):

@@ -19,7 +19,7 @@ from .shared_evm_swap_receipts import _pair
 from .ethereum_settlement_plan import settlement_route
 
 LOG=logging.getLogger("mininex.evm_real_fill_history")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
 
 
 def _verified_fill_row(row: object,asset:str) -> dict:

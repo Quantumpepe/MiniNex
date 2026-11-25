@@ -39,7 +39,7 @@ test('BTC Start Trade saves the exact USD capital and stable before any grant',a
   assert.equal(calls.filter(c=>c[1]==='PUT').length,2);
 });
 test('BTC and XRP reject zero and nonnumeric trading capital',()=>{
-  for(const asset of ['BTC','XRP']){
+  for(const asset of ['BTC','XRP','SOL']){
     const settings={stable:'USDC',mode:'LONG',horizon:'15m'};
     assert.equal(validWrappedSettings(asset,{...settings,budget:'0'}),false);
     assert.equal(validWrappedSettings(asset,{...settings,budget:'100'}),true);
@@ -59,7 +59,7 @@ test('grant audit cannot be mistaken for a live session',()=>{
 });
 
 test('BTC and XRP use real Ethereum session status, never native status or a grant as a session',()=>{
-  for(const asset of ['BTC','XRP']){
+  for(const asset of ['BTC','XRP','SOL']){
     const session={asset,mode:'OWNER_EVM_LIVE_SESSION_CONTROL',chain_id:1,status:'ACTIVE',
       worker_attached:true,original_blockchain_swaps_sent:2,original_blockchain_swaps_finalized:1};
     assert.equal(validWrappedLiveSession(session,asset),true);

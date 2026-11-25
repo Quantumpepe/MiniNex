@@ -67,7 +67,7 @@ async def check_evm_source_allowance(
     source=pair["source_token"]
     destination=pair["output_token"]
     router=pair["router"]
-    if asset in ("BTC","XRP"):
+    if asset in ("BTC","XRP","SOL"):
         chain,network,fallback,env=_RPC["ETH_TOKENS"]
     elif asset in _RPC:
         chain,network,fallback,env=_RPC[asset]
@@ -189,7 +189,7 @@ def bound_owner_router_approval_rpc(
     remote owner grant and durable once-only nonce claim before signing/sending.
     """
     from .shared_evm_execution import bound_evm_wallet_rpc
-    if (asset in ("BTC","XRP")) != wrapped_spot:
+    if (asset in ("BTC","XRP","SOL")) != wrapped_spot:
         raise ValueError("Explicit wrapped spot approval scope required")
     if reset and (not wrapped_spot or side!="BUY" or stable!="USDT"):
         raise ValueError("Only original wrapped USDT BUY allowance may reset")
@@ -237,10 +237,10 @@ def inspect_combined_grant_router_approval(
             record.get("stable") != stable or
             type(amount_atomic) is not int or amount_atomic <= 0):
         raise ValueError("No valid one-signature Privy router approval scope")
-    if asset in ("BTC","XRP") and (not central
+    if asset in ("BTC","XRP","SOL") and (not central
             or record.get("scope",{}).get("settlement_policy")!="ETHEREUM_WRAPPED_SPOT_V1"):
         raise ValueError("Original wrapped trading grant required")
-    if reset and (not central or asset not in ("BTC","XRP") or side!="BUY" or stable!="USDT"):
+    if reset and (not central or asset not in ("BTC","XRP","SOL") or side!="BUY" or stable!="USDT"):
         raise ValueError("No original wrapped USDT allowance reset scope")
     pair=_pair(asset,stable,side)
     if central:

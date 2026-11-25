@@ -1426,18 +1426,18 @@ SCHEMA += (
            DROP CONSTRAINT IF EXISTS mininex_live_evm_router_approval_sends_approval_mode_check;
          IF NOT EXISTS(SELECT 1 FROM pg_constraint
            WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
-             AND conname='mininex_approval_route_v4' AND pg_get_constraintdef(oid) LIKE '%WRAPPED_USDT_ZERO%') THEN
+             AND conname='mininex_approval_route_v4' AND pg_get_constraintdef(oid) LIKE '%WRAPPED_USDT_ZERO%' AND pg_get_constraintdef(oid) LIKE '%SOL%') THEN
            ALTER TABLE mininex_live_evm_router_approval_sends
              DROP CONSTRAINT IF EXISTS mininex_approval_route_v4;
            ALTER TABLE mininex_live_evm_router_approval_sends
              ADD CONSTRAINT mininex_approval_route_v4 CHECK(
                 (approval_mode='ROUTER02_FINITE' AND
-                   ((asset IN ('ETH','LINK','QNT','UNI','BTC','XRP') AND chain_id=1)
+                   ((asset IN ('ETH','LINK','QNT','UNI','BTC','XRP','SOL') AND chain_id=1)
                     OR (asset='BNB' AND chain_id=56)
                     OR (asset='POL' AND chain_id=137)
                     OR (asset='AVAX' AND chain_id=43114)
                     OR (asset='ARB' AND chain_id=42161)))
-                OR (approval_mode='WRAPPED_USDT_ZERO' AND asset IN ('BTC','XRP')
+                OR (approval_mode='WRAPPED_USDT_ZERO' AND asset IN ('BTC','XRP','SOL')
                     AND side='BUY' AND stable='USDT' AND chain_id=1)
                 OR (approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO')
                     AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
@@ -1460,14 +1460,14 @@ SCHEMA += (
        BEGIN
          IF NOT EXISTS(SELECT 1 FROM pg_constraint
              WHERE conrelid='mininex_live_evm_auto_sessions'::regclass
-               AND conname='mininex_evm_session_exit_status_v1' AND pg_get_constraintdef(oid) LIKE '%BTC%') THEN
+               AND conname='mininex_evm_session_exit_status_v1' AND pg_get_constraintdef(oid) LIKE '%SOL%') THEN
            ALTER TABLE mininex_live_evm_auto_sessions
              DROP CONSTRAINT IF EXISTS mininex_live_evm_auto_sessions_status_check,
              DROP CONSTRAINT IF EXISTS mininex_evm_session_exit_status_v1;
            ALTER TABLE mininex_live_evm_auto_sessions
              ADD CONSTRAINT mininex_evm_session_exit_status_v1 CHECK(
                status IN ('ACTIVE','PAUSED','STOPPED') OR
-               (status='EXIT_PENDING' AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP') AND started_by_owner_at IS NOT NULL));
+               (status='EXIT_PENDING' AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL') AND started_by_owner_at IS NOT NULL));
          END IF;
        END $bridge_exit$""",
 )

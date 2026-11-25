@@ -50,7 +50,7 @@ from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.shared_evm_auto_live")
 _INTERVAL_SECONDS=30
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
 _NATIVE=frozenset(("ETH","BNB","POL","AVAX"))
 _CROSS_EVM=frozenset(("BNB","POL","AVAX","ARB"))
 
@@ -132,8 +132,8 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                      ON g.privy_did=s.privy_did AND g.asset=s.asset
                    LEFT JOIN mininex_live_evm_wallet_policy_grants c
                      ON c.privy_did=s.privy_did
-                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI','BTC','XRP')))
-                     AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP')
+                   WHERE (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND s.asset IN ('ETH','BNB','POL','AVAX','ARB','LINK','QNT','UNI','BTC','XRP','SOL')))
+                     AND s.asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL')
                      AND s.started_by_owner_at IS NOT NULL
                      AND (
                           (s.asset='ETH'
@@ -148,7 +148,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                            AND p.stable=s.stable)
                      )
                      AND (
-                       (s.asset NOT IN ('BTC','XRP') AND g.status='GRANT_VERIFIED' AND g.revoked_at IS NULL
+                       (s.asset NOT IN ('BTC','XRP','SOL') AND g.status='GRANT_VERIFIED' AND g.revoked_at IS NULL
                         AND g.expires_at>now()
                         AND g.budget_revision=s.budget_revision)
                        OR
@@ -282,11 +282,11 @@ async def execute_owner_evm_live_tick(
     current=time.time() if now is None else now
     exiting=row.get("session_status")=="EXIT_PENDING"
     if exiting:
-        if asset not in ("ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP"):
+        if asset not in ("ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP","SOL"):
             raise ValueError("No automatic exit route for this coin")
         decision={"action":"SELL","reason":"OWNER_REQUESTED_EXIT"}
     else:
-        signal=(verified_live_native_momentum if asset in ("BTC","XRP") else verified_live_evm_momentum)
+        signal=(verified_live_native_momentum if asset in ("BTC","XRP","SOL") else verified_live_evm_momentum)
         decision=signal(market,asset=asset,now=current,horizon=row["horizon"])
     if decision["action"]=="WAIT":
         return {"asset":asset,"state":"WAIT","reason":decision["reason"]}
@@ -324,7 +324,8 @@ async def execute_owner_evm_live_tick(
                 "reason":"NATIVE_CHAIN_SETTLEMENT_NOT_ACTIVE"}
     stable=row["stable"]
     _pair(asset,stable,side)
-    probe="0.000001" if side=="BUY" else ("0.00000001" if asset=="BTC" else "0.000000000000000001")
+    pair=_pair(asset,stable,side)
+    probe=format(Decimal(1).scaleb(-pair["source_decimals"]),"f")
     evidence=await check_evm_source_allowance(
         did,asset=asset,side=side,stable=stable,amount=probe)
     run="owner_"+row["started_by_owner_at"].astimezone(
@@ -375,7 +376,7 @@ async def execute_owner_evm_live_tick(
         except (ValueError,KeyError,ArithmeticError):
             return {"asset":asset,"state":"WAIT",
                     "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}
-    if exiting or (asset in ("BTC","XRP") and side=="SELL"):
+    if exiting or (asset in ("BTC","XRP","SOL") and side=="SELL"):
         from .shared_evm_exit_inventory import read_token_exit_position
         from .shared_evm_auto_sessions import complete_bridge_exit_if_flat
         if evidence.get("wallet_identity_verified") is not True:
@@ -417,7 +418,7 @@ async def execute_owner_evm_live_tick(
     # additional user-facing signature. Never reserve/spend a swap before
     # its real allowance exists onchain.
     pair=_pair(asset,stable,side)
-    if asset in ("BTC","XRP"):
+    if asset in ("BTC","XRP","SOL"):
         from .shared_evm_central_runtime import original_evm_coin_record
         if row.get("central") is not True:
             return {"asset":asset,"state":"WAIT","reason":"CENTRAL_WRAPPED_GRANT_REQUIRED"}

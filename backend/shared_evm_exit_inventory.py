@@ -5,7 +5,7 @@ import psycopg
 from psycopg.rows import dict_row
 from .storage import _db_url,_ensure_schema,_safe_did
 
-TOKEN_EXIT_ASSETS=frozenset(("LINK","QNT","UNI","BTC","XRP"))
+TOKEN_EXIT_ASSETS=frozenset(("LINK","QNT","UNI","BTC","XRP","SOL"))
 ETHEREUM_EXIT_ASSETS=TOKEN_EXIT_ASSETS | {"ETH"}
 
 
@@ -38,7 +38,9 @@ def assert_token_exit_quantity_locked(cur,did,asset,wallet,amount_atomic):
         raise HTTPException(409,"Exact original exit amount required")
     with localcontext() as ctx:
         ctx.prec=100
-        quantity=Decimal(amount_atomic).scaleb(-8 if asset=="BTC" else -18)
+        from .ethereum_wrapped_spot_policy import WRAPPED_SPOT_TOKENS
+        decimals=WRAPPED_SPOT_TOKENS[asset][1] if asset in WRAPPED_SPOT_TOKENS else 18
+        quantity=Decimal(amount_atomic).scaleb(-decimals)
         held=token_exit_position_locked(cur,did,asset,wallet)
         if not 0<quantity<=held:
             raise HTTPException(409,"Exit exceeds verified strategy position")

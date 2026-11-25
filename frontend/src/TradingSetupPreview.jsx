@@ -232,7 +232,7 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </div>
       {renderCoinAddress?.(opened)}
       {renderCoinActions?.(opened)}
-      {!paperAvailable&&['BTC','XRP'].includes(opened)&&renderWrappedControls ?
+      {!paperAvailable&&['BTC','XRP','SOL'].includes(opened)&&renderWrappedControls ?
         renderWrappedControls(opened) : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : selectedCoin && !selectedCoin.inProgress ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled} liveMode={!paperAvailable}

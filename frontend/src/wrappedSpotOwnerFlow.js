@@ -8,7 +8,7 @@ import {validSavedExtraCoinPreferences} from './extraCoinPreferenceRules.js';
 
 const STABLES=['USDC','USDT'], MODES=['LONG','SPOT_SHORT','AUTO'];
 const HORIZONS=['5m','15m','1h','24h'];
-const coins=['BTC','XRP'];
+const coins=['BTC','XRP','SOL'];
 const validSettings=x=>x&&STABLES.includes(x.stable)&&MODES.includes(x.mode)&&
   HORIZONS.includes(x.horizon)&&Number.isSafeInteger(x.revision)&&x.revision>=0;
 
@@ -35,10 +35,10 @@ export async function readWrappedOwnerSettings(asset,request){
       mode:coin.mode,horizon:coin.horizon},budgetRevision:limits.revision,
       preferenceRevision:coin.revision};
   }
-  if(asset!=='XRP')throw Error('Unsupported coin');
+  if(!['XRP','SOL'].includes(asset))throw Error('Unsupported coin');
   const prefs=await request('/api/coin-preferences');
-  if(!validSavedExtraCoinPreferences(prefs))throw Error('XRP saved settings unavailable');
-  const coin=prefs.settings.XRP;
+  if(!validSavedExtraCoinPreferences(prefs))throw Error(asset+' saved settings unavailable');
+  const coin=prefs.settings[asset];
   return {settings:{budget:String(coin.budget_usd),stable:coin.stable,
     mode:coin.mode,horizon:coin.horizon},budgetRevision:coin.revision,
     preferenceRevision:coin.revision};
@@ -71,13 +71,13 @@ export async function saveWrappedOwnerSettings(asset,settings,original,request){
     }
   }else if(original.preferenceRevision===0||
      ['budget','stable','mode','horizon'].some(k=>settings[k]!==original.settings[k])){
-    const result=await request('/api/coin-preferences/XRP','PUT',{
+    const result=await request('/api/coin-preferences/'+asset,'PUT',{
       budget_usd:Number(settings.budget),stable:settings.stable,mode:settings.mode,
       horizon:settings.horizon,expected_revision:original.preferenceRevision,
     });
     if(!validSavedExtraCoinPreferences(result)||
-       result.settings.XRP.revision<=original.preferenceRevision)
-      throw Error('XRP capital was not saved');
+       result.settings[asset].revision<=original.preferenceRevision)
+      throw Error(asset+' capital was not saved');
   }
   // Read back the exact version used by the server-side policy constructor.
   const current=await readWrappedOwnerSettings(asset,request);
@@ -114,7 +114,7 @@ export async function authorizeWrappedOwnerTrade({asset,address,settings,origina
 }
 
 export function validWrappedLiveSession(data,asset){
-  return ['BTC','XRP'].includes(asset)&&!!data&&data.asset===asset&&
+  return ['BTC','XRP','SOL'].includes(asset)&&!!data&&data.asset===asset&&
     data.mode==='OWNER_EVM_LIVE_SESSION_CONTROL'&&
     ['NOT_STARTED','ACTIVE','PAUSED','EXIT_PENDING','STOPPED'].includes(data.status)&&
     (data.chain_id===1||data.chain_id===null)&&typeof data.worker_attached==='boolean'&&

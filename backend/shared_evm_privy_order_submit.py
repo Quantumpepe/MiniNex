@@ -40,7 +40,7 @@ from .shared_evm_privy_transport import (
 from .shared_evm_privy_signer import sign_privy_evm_swap_request
 
 LOG=logging.getLogger("mininex.evm_privy_order_submit")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
 
 
 def _fingerprint_prepared_quote(prepared:dict)->str:
@@ -95,7 +95,7 @@ def _check_exact_live_order(
     digest=_fingerprint_prepared_quote(prepared)
     tx=prepared["unsigned_transaction"]
     data=tx.get("data")
-    if asset in ("BTC","XRP"):
+    if asset in ("BTC","XRP","SOL"):
         from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
         try:
             units,minimum=decode_wrapped_spot_amounts(data,asset=asset,stable=stable,
@@ -131,7 +131,7 @@ async def submit_internal_privy_evm_order(
     did=_safe_did(did)
     key=valid_order_key(intent_key)
     if (type(asset) is not str or asset not in _ASSETS
-            or (asset in ("BTC","XRP") and not central)
+            or (asset in ("BTC","XRP","SOL") and not central)
             or type(budget_revision) is not int or budget_revision<1
             or type(client) is not httpx.AsyncClient):
         raise ValueError("Untrusted internal EVM execution context")

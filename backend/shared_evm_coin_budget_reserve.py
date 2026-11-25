@@ -24,7 +24,7 @@ from .ethereum_settlement_funding import assert_ethereum_funds_locked
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
 
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
@@ -36,7 +36,7 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
     Other coins are entirely independent; their selected budgets never
     become spendable by this one. Missing live per-coin permission fails.
     """
-    if asset not in _ASSETS or side not in ("BUY","SELL") or (asset in ("BTC","XRP") and not central):
+    if asset not in _ASSETS or side not in ("BUY","SELL") or (asset in ("BTC","XRP","SOL") and not central):
         raise ValueError("Unverified EVM coin or trade direction")
     _pair(asset,stable,side)
     key=valid_order_key(key)
@@ -46,7 +46,7 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
         raise ValueError("User budget revision required")
     amount=valid_notional(amount_usd)
     if ethereum_funding is not None:
-        if side!="BUY" or asset not in ("ETH","LINK","QNT","UNI","BTC","XRP"):
+        if side!="BUY" or asset not in ("ETH","LINK","QNT","UNI","BTC","XRP","SOL"):
             raise ValueError("Unexpected Ethereum funding evidence")
         cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
         if cur.fetchone()!={"privy_did":did}:

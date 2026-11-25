@@ -54,7 +54,7 @@ export default function useLiveHomeTrades(liveVisible,homeVisible,refreshNonce,a
           return data.fills.map(row=>entry(row,coin)).filter(Boolean);
         };
         const read=async coin=>{
-          if(!['BTC','XRP'].includes(coin))return readRoute(coin,NATIVE_ASSETS.includes(coin));
+          if(!['BTC','XRP','SOL'].includes(coin))return readRoute(coin,NATIVE_ASSETS.includes(coin));
           // Preserve native historical transactions and also show the exact
           // newly finalized Ethereum trading inventory, without duplication.
           const both=await Promise.allSettled([readRoute(coin,true),readRoute(coin,false)]);

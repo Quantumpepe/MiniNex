@@ -36,7 +36,7 @@ _CALL = re.compile(r"^0x[0-9a-fA-F]+$")
 
 
 def _pair(asset: str, stable: str, side: str) -> dict:
-    if asset in ("BTC","XRP"):
+    if asset in ("BTC","XRP","SOL"):
         from .ethereum_wrapped_spot_policy import wrapped_spot_route
         r=wrapped_spot_route(asset,stable,side)
         return {**r,"output_token":r["destination_token"],
@@ -128,7 +128,7 @@ def inspect_finalized_evm_swap(
             or _num(transaction.get("value"))!=0):
         raise ValueError("EVM swap sender, chain, router or native value mismatch")
     raw=transaction.get("input")
-    if asset in ("BTC","XRP"):
+    if asset in ("BTC","XRP","SOL"):
         from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
         quantity,minimum=decode_wrapped_spot_amounts(raw,asset=asset,stable=stable,
                                                     side=side,wallet=wallet)
