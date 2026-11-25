@@ -12,12 +12,18 @@ from .ethereum_settlement_plan import COIN_NETWORKS,ETHEREUM_STABLES
 NATIVE_GAS={1:"ETH",56:"BNB",137:"POL",43114:"AVAX",42161:"ETH"}
 
 def exact(value,*,positive=False):
-    if isinstance(value,bool) or not isinstance(value,(str,int,Decimal)):
+    if isinstance(value,bool) or not isinstance(value,(str,int,Decimal,Fraction)):
         raise ValueError("Exact ledger decimal required")
-    result=Decimal(value)
-    if not result.is_finite() or result<0 or (positive and not result):
+    if isinstance(value,Fraction):
+        result=value
+    else:
+        decimal=Decimal(value)
+        if not decimal.is_finite():
+            raise ValueError("Invalid ledger decimal")
+        result=Fraction(decimal)
+    if result<0 or (positive and not result):
         raise ValueError("Invalid ledger decimal")
-    return Fraction(result)
+    return result
 
 def decimal_text(value,places=12):
     # Round toward zero at display precision, never round a fee upwards.

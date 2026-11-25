@@ -1647,6 +1647,30 @@ SCHEMA += (
 )
 
 
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_staged_net_valuations (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','ARB')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        evidence JSONB NOT NULL CHECK(jsonb_typeof(evidence)='object'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_staged_net_valuations_owner
+       ON mininex_staged_net_valuations(privy_did,asset)""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                          WHERE tgname='mininex_staged_net_valuation_write_once'
+                            AND tgrelid='mininex_staged_net_valuations'::regclass) THEN
+               CREATE TRIGGER mininex_staged_net_valuation_write_once
+               BEFORE UPDATE OR DELETE ON mininex_staged_net_valuations
+               FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
+)
+
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

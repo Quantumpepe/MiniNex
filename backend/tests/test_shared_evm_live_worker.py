@@ -398,7 +398,7 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
     async def swaps():calls.append("swaps")
     async def native_buy(*,client):calls.append("native_buy")
     async def native_sell(*,client):calls.append("native_sell")
-    async def historical(*,client):calls.append("historical")
+    async def historical(*,client,capture_only=False):calls.append("historical")
     async def treasury_finality():calls.append("treasury_finality")
     async def fee_batch(*,client):calls.append("fee_batch")
     monkeypatch.setattr(worker,"reconcile_original_router_approvals_once",approvals)

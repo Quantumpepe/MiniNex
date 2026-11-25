@@ -524,6 +524,7 @@ class SharedEvmLiveWorker:
         self.market=market
         self._task=None
         self._bridge_task=None
+        self._net_accounting_task=None
 
     async def start(self)->None:
         if evm_auto_worker_enabled() and self._task is None:
@@ -532,15 +533,33 @@ class SharedEvmLiveWorker:
         if evm_auto_worker_enabled() and self._bridge_task is None:
             self._bridge_task=asyncio.create_task(
                 self._run_bridge_receipts(),name="mininex-ethereum-bridge-receipts")
+        if evm_auto_worker_enabled() and self._net_accounting_task is None:
+            self._net_accounting_task=asyncio.create_task(
+                self._run_net_accounting(),name="mininex-staged-net-accounting")
 
     async def stop(self)->None:
-        tasks=[t for t in (self._task,self._bridge_task) if t is not None]
+        tasks=[t for t in (self._task,self._bridge_task,self._net_accounting_task) if t is not None]
         self._task=None
         self._bridge_task=None
+        self._net_accounting_task=None
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks,return_exceptions=True)
+
+    async def _run_net_accounting(self):
+        from .staged_net_valuation import reconcile_staged_net_valuations_once
+        while True:
+            await asyncio.sleep(60)
+            if not evm_auto_worker_enabled():
+                continue
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                    await reconcile_staged_net_valuations_once(client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("Original staged historical valuation unavailable")
 
     async def _run_bridge_receipts(self):
         # Separate passive polling task: a slow bridge cannot delay new
@@ -632,7 +651,7 @@ class SharedEvmLiveWorker:
                 # individual coin's current ACTIVE vs PAUSED trading state.
                 # Never send a fee wallet transfer or block new trade signals.
                 try:
-                    await reconcile_verified_erc20_fees_once(client=client)
+                    await reconcile_verified_erc20_fees_once(client=client,capture_only=True)
                 except asyncio.CancelledError:
                     raise
                 except Exception:

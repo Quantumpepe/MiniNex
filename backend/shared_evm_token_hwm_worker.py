@@ -124,7 +124,7 @@ def _read_unaccounted_token_sell_owners(limit:int=20)->list[dict]:
 
 
 async def reconcile_verified_erc20_fees_once(
-    *,client:httpx.AsyncClient,
+    *,client:httpx.AsyncClient,capture_only:bool=False,
 )->dict:
     """Reconcile independently owned ERC20 histories without serial RPC delay.
 
@@ -182,6 +182,10 @@ async def reconcile_verified_erc20_fees_once(
     result["prices_recorded"]+=sum(good for good,_ in prices)
     result["accounts_needing_manual_evidence"]+=sum(bad for _,bad in prices)
 
+    # The live caller only retains historical observations. The retired
+    # HWM assessment must not create new obligations in the new runtime.
+    if capture_only:
+        return result
     try:
         owners=await asyncio.to_thread(_read_unaccounted_token_sell_owners)
     except psycopg.Error:

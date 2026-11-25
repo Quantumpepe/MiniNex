@@ -48,7 +48,7 @@ def staged_cost_evidence(rows,*,asset,order_id,did):
                       "native_bridge_fee_atomic":str(int(fee))})
     return costs
 
-def read_staged_cost_evidence(did,*,asset,order_id):
+def read_staged_accounting_order(did,*,asset,order_id):
     from .storage import _db_url,_ensure_schema,_safe_did
     import psycopg
     from psycopg.rows import dict_row
@@ -61,10 +61,11 @@ def read_staged_cost_evidence(did,*,asset,order_id):
     db=_db_url();_ensure_schema(db)
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(f"""SELECT order_id FROM {table}_orders
+            cur.execute(f"""SELECT * FROM {table}_orders
                 WHERE privy_did=%s AND order_id=%s AND {condition} AND state='FINALIZED'""",
                 (did,order_id,asset))
-            if not cur.fetchone():
+            order=cur.fetchone()
+            if not order:
                 return None
             cur.execute(f"""SELECT * FROM {table}_steps
                 WHERE privy_did=%s AND order_id=%s
@@ -74,4 +75,10 @@ def read_staged_cost_evidence(did,*,asset,order_id):
             or not all(any(r["stage"]==stage and r["kind"]!="APPROVAL" and r["state"]=="FINALIZED"
                            for r in rows) for stage in (1,2))):
         return None
-    return staged_cost_evidence(rows,asset=asset,order_id=order_id,did=did)
+    costs=staged_cost_evidence(rows,asset=asset,order_id=order_id,did=did)
+    return {"order":dict(order,asset=asset),"steps":rows,"costs":costs}
+
+
+def read_staged_cost_evidence(did,*,asset,order_id):
+    original=read_staged_accounting_order(did,asset=asset,order_id=order_id)
+    return original["costs"] if original is not None else None
