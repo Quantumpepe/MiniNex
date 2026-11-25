@@ -181,7 +181,6 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
     result["staged_settlement_upgrade_coins"]=sorted(
         row["asset"] for row in scopes if row["asset"] in ("BNB","POL","ARB")
         and row.get("settlement_policy") in (None,"ETHEREUM_ACROSS_DIRECT_V1"))
-    renewable.update(result["staged_settlement_upgrade_coins"])
     result["current_user_budgets_verified"]=not renewable
     expected_signer=os.getenv("MININEX_PRIVY_ETH_SIGNER_ID","").strip()
     if not expected_signer or expected_signer != record.get("signer_id"):

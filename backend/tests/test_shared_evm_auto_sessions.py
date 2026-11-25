@@ -234,3 +234,11 @@ def test_wrapped_trade_never_uses_legacy_coin_grant(asset):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(m.start_owner_evm_auto(DID,asset,central=False))
     assert exc.value.status_code==409
+
+
+def test_resume_preserves_original_staged_session_identity():
+    import inspect
+    source=inspect.getsource(m._start_locked)
+    assert "status IN ('ACTIVE','PAUSED')" in source
+    assert "THEN mininex_live_evm_auto_sessions.started_by_owner_at ELSE now() END" in source
+    assert "mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in source

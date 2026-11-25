@@ -95,7 +95,12 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
              chain_id=EXCLUDED.chain_id,stable=EXCLUDED.stable,
              wallet_address=EXCLUDED.wallet_address,
              budget_revision=EXCLUDED.budget_revision,
-             status='ACTIVE',started_by_owner_at=now(),
+             status='ACTIVE',
+             started_by_owner_at=CASE WHEN mininex_live_evm_auto_sessions.status IN ('ACTIVE','PAUSED')
+                 AND mininex_live_evm_auto_sessions.wallet_address=EXCLUDED.wallet_address
+                 AND mininex_live_evm_auto_sessions.stable=EXCLUDED.stable
+                 AND mininex_live_evm_auto_sessions.budget_revision=EXCLUDED.budget_revision
+                 THEN mininex_live_evm_auto_sessions.started_by_owner_at ELSE now() END,
              updated_at=now()
            WHERE mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'
            RETURNING status""",
@@ -319,6 +324,13 @@ def get_owner_evm_auto(did:str,asset:str)->dict:
                                FROM mininex_avax_staged_steps t
                                JOIN mininex_avax_staged_orders o ON o.order_id=t.order_id
                                JOIN selected k ON k.did=o.privy_did AND k.asset='AVAX'
+                               WHERE o.state IN ('OPEN','REVERTED') AND t.stage=1 AND t.kind!='APPROVAL'
+                                 AND t.tx_hash IS NOT NULL
+                               UNION ALL
+                               SELECT t.chain_id,t.tx_hash,FALSE AS finalized
+                               FROM mininex_across_staged_steps t
+                               JOIN mininex_across_staged_orders o ON o.order_id=t.order_id
+                               JOIN selected k ON k.did=o.privy_did AND k.asset=o.asset
                                WHERE o.state IN ('OPEN','REVERTED') AND t.stage=1 AND t.kind!='APPROVAL'
                                  AND t.tx_hash IS NOT NULL
                            ), unique_swaps AS (

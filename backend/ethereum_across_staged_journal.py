@@ -155,7 +155,8 @@ def _current(cur,did,record,order=None):
         raise HTTPException(409,"Original Across session not active")
     if order and (order["asset"]!=record["asset"] or order["scope_json"]!=current["scope"] or order["wallet_id"]!=current["wallet_id"]
                   or order["wallet_address"]!=current["wallet_address"]
-                  or order["budget_revision"]!=current["budget_revision"]):
+                  or order["budget_revision"]!=current["budget_revision"]
+                  or order["started_by_owner_at"]!=session["started_by_owner_at"]):
         raise HTTPException(409,"Original staged order consent changed")
     return session
 
