@@ -181,7 +181,7 @@ def verify_router_approval_transaction(
 
 def bound_owner_router_approval_rpc(
     *, asset: str, side: str, stable: str, wallet_id: str,
-    wallet: str, amount_atomic: int,
+    wallet: str, amount_atomic: int, wrapped_spot: bool = False,
 ) -> tuple[str, dict]:
     """Exact registry-derived Privy RPC for a finite, user-authorized approve.
 
@@ -189,6 +189,8 @@ def bound_owner_router_approval_rpc(
     remote owner grant and durable once-only nonce claim before signing/sending.
     """
     from .shared_evm_execution import bound_evm_wallet_rpc
+    if (asset in ("BTC","XRP")) != wrapped_spot:
+        raise ValueError("Explicit wrapped spot approval scope required")
     pair = _pair(asset, stable, side)
     approved = owner_approval_draft(
         token=pair["source_token"], router=pair["router"],
@@ -204,6 +206,7 @@ def bound_owner_router_approval_rpc(
     return bound_evm_wallet_rpc(
         asset=asset, wallet_id=wallet_id, wallet=wallet,
         tx={**approved, "value": "0"},
+        **({"wrapped_spot":True} if wrapped_spot else {}),
     )
 
 

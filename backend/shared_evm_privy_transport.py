@@ -35,6 +35,7 @@ def bound_privy_evm_swap_request(
     )
     return bound_evm_wallet_rpc(
         asset=asset,wallet_id=wallet_id,wallet=wallet,
+        **({"wrapped_spot":True} if asset in ("BTC","XRP") else {}),
         tx={
             "from":wallet,"chainId":result["chain_id"],
             "to":result["router"],"data":tx["data"],"value":"0",
