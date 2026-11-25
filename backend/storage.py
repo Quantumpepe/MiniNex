@@ -1713,6 +1713,35 @@ SCHEMA += (
 )
 
 
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_net_fee_obligations (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB')),
+        family TEXT NOT NULL CHECK(family IN ('ETHEREUM','WRAPPED_SPOT','CROSS_EVM')),
+        fill_key TEXT NOT NULL,
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        chain_id INTEGER NOT NULL DEFAULT 1 CHECK(chain_id=1),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(amount_atomic>0),
+        evidence_sha256 TEXT NOT NULL CHECK(evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        evidence JSONB NOT NULL CHECK(jsonb_typeof(evidence)='object'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,family,fill_key)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_net_fee_obligations_owner
+        ON mininex_net_fee_obligations(privy_did,stable,created_at)""",
+    """DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                WHERE tgname='mininex_net_fee_obligation_write_once'
+                  AND tgrelid='mininex_net_fee_obligations'::regclass) THEN
+                CREATE TRIGGER mininex_net_fee_obligation_write_once
+                  BEFORE UPDATE OR DELETE ON mininex_net_fee_obligations
+                  FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+            END IF;
+        END $$""",
+)
+
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

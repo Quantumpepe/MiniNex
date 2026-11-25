@@ -93,6 +93,13 @@ def read_original_cost_steps(fill):
                     (did,wallet,stable,at,previous,previous))
                 if cur.fetchone():
                     raise ValueError("Unassigned native conversion costs")
+                cur.execute("""SELECT 1 FROM mininex_live_evm_native_auto_steps
+                    WHERE privy_did=%s AND asset='ETH' AND wallet_address=%s
+                      AND stable=%s AND status='FINALIZED_REVERTED' AND created_at<=%s
+                      AND (%s::timestamptz IS NULL OR created_at>%s) LIMIT 1""",
+                    (did,wallet,stable,at,previous,previous))
+                if cur.fetchone():
+                    raise ValueError("Unassigned native withdrawal costs")
     return approvals+failures+conversions
 
 def check_swap_amounts(fill,proof):

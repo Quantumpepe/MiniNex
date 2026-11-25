@@ -100,11 +100,14 @@ def calculate_realized_net(rows):
         q=lots[(asset,family,wallet)]
         if side=="BUY":
             if row["automatic"]:
-                q.append([destination,None if rate is None or cost is None else source*rate+cost,source,stable])
+                q.append([destination,None if rate is None or cost is None else source*rate+cost,source,stable,row["fill_key"]])
             continue
         remaining=source;basis=Fraction(0);gross_basis=Fraction(0);priced=True;cross_stable=False
+        consumed=[]
         while remaining and q:
             lot=q[0];take=min(remaining,lot[0])
+            consumed.append({"fill_key":lot[4],"quantity_ratio":[str(take.numerator),str(take.denominator)],
+                "stable":lot[3]})
             used_gross=lot[2]*take/lot[0]
             gross_basis+=used_gross;lot[2]-=used_gross
             cross_stable=cross_stable or lot[3]!=stable
@@ -134,7 +137,9 @@ def calculate_realized_net(rows):
         net_hold=ceil(max(Fraction(0),net)/rate*10**6) if verified else None
         retained=net_hold if verified else gross_hold
         results.append({"asset":asset,"family":family,"fill_key":row["fill_key"],
-            "stable":stable,"net_verified":verified,
+            "stable":stable,"net_verified":verified,"coin_wallet":wallet,
+            "consumed_buy_lots":consumed,
+            "net_usd_ratio":[str(net.numerator),str(net.denominator)] if verified else None,
             "realized_net_usd":decimal_text(net) if verified else None,
             "fee_due_usd":decimal_text(fee) if verified else None,
             "fee_due_stable_atomic":str(fee_atomic) if verified else None,
