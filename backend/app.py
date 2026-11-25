@@ -1230,6 +1230,18 @@ async def owner_prepare_first_shared_evm_wallet_policy(
     })
 
 
+@app.get("/api/live/evm/wallet-policy/wrapped/{asset}/audit")
+async def owner_wrapped_spot_grant_audit(
+    asset: Literal["BTC","XRP"],
+    authorization: str | None = Header(default=None),
+):
+    """Verify the actual owner-approved, Ethereum-bound grant without a send."""
+    from .shared_evm_central_runtime import audit_original_evm_coin
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await audit_original_evm_coin(did,asset)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
+
+
 @app.get("/api/live/evm/wallet-policy/status")
 async def original_owner_one_signer_wallet_policy_status(
     authorization: str | None = Header(default=None),

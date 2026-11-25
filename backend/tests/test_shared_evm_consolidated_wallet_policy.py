@@ -161,3 +161,37 @@ def test_wrapped_scope_uses_btc_owner_percent_and_distinct_token_precision(monke
     assert xrp["sell_source_atomic_cap"]=="500000000000000000000"
     with pytest.raises(ValueError):
         prepare.build_selected_wallet_scope(asset="BTC",stable="USDC",amount=50,snapshot={},now=NOW)
+
+
+@pytest.mark.parametrize("asset",["BTC","XRP"])
+def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(asset,monkeypatch):
+    from backend import shared_evm_central_runtime as runtime
+    from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY
+    selected=dict(scope(asset,"USDT"),settlement_policy=WRAPPED_SPOT_POLICY,
+                  native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    args=kwargs([selected])
+    policy=compose_scoped_evm_wallet_policy(**args)
+    record={"wallet_id":"wallet_123456","wallet_address":WALLET,
+            "owner_id":OWNER,"signer_id":SIGNER,"policy_id":"policy_123456",
+            "policy_sha256":verified_wallet_policy_digest(policy,**args),
+            "status":"GRANT_VERIFIED","scopes_json":{asset:selected},
+            "revisions_json":{asset:3},"legacy_reconciliation_required":False,
+            "original_owner_granted_at":NOW,"remote_verified_at":NOW,"revoked_at":None}
+    class Cursor:
+        def execute(self,*args): pass
+        def fetchone(self): return record
+    monkeypatch.setattr(runtime,"_locked_selected_budget",lambda *args,**kw:(100,3))
+    current=runtime._locked_original_evm_coin(Cursor(),did="did:privy:wrappedtest",
+                                            asset=asset,now=NOW)
+    assert current["chain_id"]==1
+    for side in ("BUY","SELL"):
+        rule=runtime.central_policy_rule(current,asset=asset,stable="USDT",
+                                        kind="swap",side=side,now=NOW)
+        assert rule["name"]==f"MiniNex {asset} {side} USDT wrapped exactInput"
+        assert runtime.central_policy_rule(current,asset=asset,stable="USDT",
+                                        kind="approval",side=side,now=NOW)["action"]=="ALLOW"
+    assert runtime.central_policy_rule(current,asset=asset,stable="USDT",
+             kind="approval_reset",side="BUY",now=NOW)["action"]=="ALLOW"
+    with pytest.raises(ValueError):
+        runtime.central_policy_rule(current,asset=asset,stable="USDT",
+                                    kind="native_withdraw",now=NOW)

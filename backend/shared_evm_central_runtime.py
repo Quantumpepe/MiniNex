@@ -23,9 +23,10 @@ from .shared_evm_consolidated_wallet_policy import (
     valid_scope_fields,DIRECT_SETTLEMENT_POLICY,
 )
 from .shared_evm_swap_receipts import _pair
+from .ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, wrapped_spot_route
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")) | frozenset(WRAPPED_SPOT_TOKENS)
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
@@ -94,7 +95,9 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
             or type(selected.get("expires_at")) is not int
             or selected["expires_at"]<=now):
         raise HTTPException(409,"Selected original wallet coin scope changed")
-    if selected.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
+    if selected.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        pair=wrapped_spot_route(asset,selected["stable"],"BUY")
+    elif selected.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
         from .ethereum_settlement_plan import settlement_route
         pair={"chain_id":settlement_route(asset,"BUY",selected["stable"])["destination_chain_id"]}
     else:
@@ -222,7 +225,16 @@ def central_policy_rule(record:dict,*,asset:str,kind:str,
             or type(now) is not int or now<=0
             or record["scope"].get("expires_at",0)<=now):
         raise ValueError("Original combined wallet policy not current")
-    if kind=="swap" and side in ("BUY","SELL"):
+    if record["scope"].get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        if kind=="swap" and side in ("BUY","SELL"):
+            name=f"MiniNex {asset} {side} {stable} wrapped exactInput"
+        elif kind=="approval" and side in ("BUY","SELL"):
+            name=f"MiniNex {asset} {side} {stable} wrapped allowance"
+        elif kind=="approval_reset" and side=="BUY" and stable=="USDT":
+            name=f"MiniNex {asset} BUY USDT allowance reset"
+        else:
+            raise ValueError("No such wrapped spot owner permission")
+    elif kind=="swap" and side in ("BUY","SELL"):
         name=f"MiniNex {asset} {side} {stable} exactInputSingle"
     elif kind=="approval" and side in ("BUY","SELL"):
         name=f"MiniNex {asset} {side} finite Router02 allowance"
