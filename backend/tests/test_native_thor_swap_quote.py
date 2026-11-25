@@ -228,3 +228,38 @@ def test_eth_buy_unexpected_router_address_never_claims_prepared_transaction():
             asset="SOL",side="BUY",stable="USDC",amount="1",
             native_owner=native,eth_owner=ETH,
             quote=quote,inbounds=inbounds,now=now)
+
+
+def test_case_sensitive_native_vault_must_match_original_quote():
+    now=1803000000
+    quote,inbounds,native,target=route("SOL",now=now)
+    quote["inbound_address"]="a"+"7"*43
+    inbounds[0]["address"]="A"+"7"*43
+    with pytest.raises(ValueError):
+        m.validate_thornode_route_terms(asset="SOL",side="SELL",stable="USDC",
+            amount="1",native_owner=native,eth_owner=ETH,
+            quote=quote,inbounds=inbounds,now=now)
+
+
+def test_tron_sell_route_binds_original_wallet_and_active_tron_vault():
+    from backend.native_trx_user_signed_send import _tron_address_from_public_key
+    from eth_keys import keys
+    native=_tron_address_from_public_key(keys.PrivateKey(bytes([1])*32).public_key.to_bytes())
+    vault=_tron_address_from_public_key(keys.PrivateKey(bytes([2])*32).public_key.to_bytes())
+    now=1803000000
+    q,ins,_,_=route("SOL",stable="USDT",now=now)
+    q["inbound_address"]=vault
+    q["memo"]="=:"+THOR_ASSETS["USDT"][0]+":"+ETH+"/"+native+":0/1/0"
+    ins[0].update(chain="TRON",address=vault)
+    args=dict(asset="TRX",side="SELL",stable="USDT",amount="1",
+              native_owner=native,eth_owner=ETH,quote=q,inbounds=ins,now=now)
+    result=m.validate_thornode_route_terms(**args)
+    assert result["from_network"]=="tron-mainnet"
+    assert result["to_network"]=="ethereum-mainnet"
+    assert result["source_wallet"]==native
+    assert result["inbound_vault"]==vault
+    assert result["inbound_router"] is None
+    assert result["can_submit"] is False
+    ins[0]["router"]=vault
+    with pytest.raises(ValueError):
+        m.validate_thornode_route_terms(**args)

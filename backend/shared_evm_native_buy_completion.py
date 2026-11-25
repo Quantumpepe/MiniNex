@@ -118,7 +118,8 @@ def _post_buy_claim_locked(
            FROM mininex_live_evm_auto_sessions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
-    if (type(session) is not dict or session.get("status")!="ACTIVE"
+    if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
+            (session.get("status")=="EXIT_PENDING" and central and asset=="ETH"))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=stable
             or session.get("wallet_address")!=record["wallet_address"]
@@ -163,11 +164,27 @@ def _post_buy_claim_locked(
         """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
                WHERE privy_did=%s AND chain_id=%s AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
-             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends_all
+               WHERE privy_did=%s AND chain_id=%s AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
+               WHERE privy_did=%s AND chain_id=%s AND status IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_avax_staged_steps
+               WHERE privy_did=%s AND chain_id=%s AND state IN
+                 ('SENDING','SUBMITTED','UNCERTAIN'))
+             + (SELECT COUNT(*) FROM mininex_across_staged_steps
+               WHERE privy_did=%s AND chain_id=%s AND state IN
+                 ('SENDING','SUBMITTED','UNCERTAIN'))
+             + (SELECT COUNT(*) FROM mininex_ethereum_settlement_submissions s
+               WHERE s.privy_did=%s AND s.source_chain_id=%s AND s.state IN
+                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+               AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=s.quote_id))
+             + (SELECT COUNT(*) FROM mininex_live_evm_native_sell_intents
                WHERE privy_did=%s AND chain_id=%s AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
-        (did,pair["chain_id"],did,pair["chain_id"]))
+        (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
     other=cur.fetchone()
     if type(other) is not dict or other.get("pending")!=0:
         raise HTTPException(409,"Same-network wallet transaction unresolved")

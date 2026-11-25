@@ -161,13 +161,13 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
         role={hasMoreTrades?'region':undefined}
         aria-label={hasMoreTrades?t.recentTrades+' · '+(showAllTrades?t.homeAllCoins:asset):undefined}>
         {recentTrades.map((trade,index)=>{
-          const buy=trade.kind==='PAPER_BUY';
+          const buy=trade.kind==='PAPER_BUY'||trade.kind==='LIVE_BUY';
           const amount=trade.amount_usd;
           const pnl=!buy&&trade.realized_net_profit!=null?Number(trade.realized_net_profit):null;
           return <div className="compact-trade-row" key={trade.id}>
             <span className={'compact-trade-icon '+(buy?'is-buy':'is-sell')}>{buy?<ArrowDownLeft size={16}/>:<ArrowUpRight size={16}/>}</span>
-            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{t.homeTradePrice}: {formatAssetMoney(trade.price_reference,trade.asset,lang)} · {formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
-            <div className="compact-trade-value"><strong>{formatMoney(amount,lang)}</strong>{pnl!=null&&<small className={pnl>=0?'text-positive':'text-negative'}>{formatSigned(pnl,lang)}</small>}</div>
+            <div className="compact-trade-detail"><strong>{buy?t.buy:t.sell} · {trade.asset}</strong><small>{trade.price_reference!=null&&<>{t.homeTradePrice}: {formatAssetMoney(trade.price_reference,trade.asset,lang)} · </>}{formatTimestamp(trade.at,lang,{day:'2-digit',month:'short'})}</small></div>
+            <div className="compact-trade-value"><strong>{trade.settlement_asset?formatAssetQuantity(trade.settlement_amount,trade.settlement_asset,lang)+' '+trade.settlement_asset:formatMoney(amount,lang)}</strong>{pnl!=null&&<small className={pnl>=0?'text-positive':'text-negative'}>{formatSigned(pnl,lang)}</small>}</div>
           </div>;
         })}
       </div> : <p className="compact-trade-empty">{t.noRecentTrades}</p>}

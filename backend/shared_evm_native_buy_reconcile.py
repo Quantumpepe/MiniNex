@@ -190,7 +190,9 @@ def original_native_buys_without_step(limit:int=20)->list[dict]:
                    WHERE b.asset IN ('ETH','BNB','POL','AVAX')
                      AND b.status='FINALIZED_SUCCESS' AND b.side='BUY'
                      AND f.side='BUY'
-                     AND s.status='ACTIVE' AND s.started_by_owner_at IS NOT NULL
+                     AND (s.status='ACTIVE' OR (s.status='EXIT_PENDING' AND b.asset='ETH'
+                          AND b.grant_source='PRIVY_CENTRAL_ONE_SIGNER'))
+                     AND s.started_by_owner_at IS NOT NULL
                      AND r.state='RECONCILIATION_REQUIRED'
                      AND n.intent_key IS NULL
                    ORDER BY b.created_at ASC,b.privy_did,b.asset,b.intent_key LIMIT %s OFFSET %s"""

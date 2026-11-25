@@ -8,7 +8,7 @@ A spot price can NEVER authorize an actual swap or represent realized PnL.
 from __future__ import annotations
 
 import asyncio
-from decimal import Decimal,ROUND_FLOOR,InvalidOperation
+from decimal import Decimal,ROUND_FLOOR,InvalidOperation,localcontext
 import logging
 import time
 
@@ -20,7 +20,7 @@ from .coingecko_provider import coingecko_request_settings, COIN_IDS
 
 LOG=logging.getLogger("mininex.evm_policy_market_caps")
 _IDS={asset:COIN_IDS[asset] for asset in (
-    "ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","USDC","USDT"
+    "BTC","ETH","BNB","SOL","XRP","TRX","POL","AVAX","LINK","QNT","UNI","ARB","USDC","USDT"
 )}
 # All active EVM coins share ONE bounded reference quote, not one API request
 # for every user/coin on each strategy tick. It is not a trading throttle:
@@ -105,7 +105,10 @@ async def fetch_evm_policy_reference_rates(asset:str,stable:str)->dict:
     usable only while BOTH asset/stable provider timestamps remain fresh;
     a changed public-vs-paid endpoint immediately invalidates the cache.
     """
-    _pair(asset,stable,"BUY")
+    # Prices are chain-independent. The cross-EVM settlement routes allow
+    # both Ethereum stables even where the legacy local router supports one.
+    if asset not in _IDS or asset in ("USDC","USDT") or stable not in ("USDC","USDT"):
+        raise ValueError("Unknown settlement reference pair")
     endpoint,auth_headers,interval=coingecko_request_settings("/simple/price")
     global _REFERENCE_CACHE
     async with _REFERENCE_LOCK:
@@ -144,3 +147,20 @@ async def fetch_evm_policy_reference_rates(asset:str,stable:str)->dict:
         except (httpx.HTTPError,TypeError,ValueError):
             LOG.warning("EVM user policy market reference unavailable")
             raise HTTPException(503,"Fresh token USD references unavailable") from None
+
+
+def derive_ethereum_settlement_atomic_caps(*,asset,stable,budget_usd,snapshot,now):
+    """New Ethereum-settled policy amounts; legacy policy digests stay unchanged."""
+    from .ethereum_settlement_plan import settlement_route,_decimal
+    route=settlement_route(asset,"BUY",stable)
+    with localcontext() as ctx:
+        ctx.prec=100
+        budget=_decimal(budget_usd,positive=True)
+        buy=int((budget/_price(snapshot,stable,now)*10**route["source_decimals"])
+                .to_integral_value(rounding=ROUND_FLOOR))
+        sell=int((budget/_price(snapshot,asset,now)*10**route["destination_decimals"])
+                 .to_integral_value(rounding=ROUND_FLOOR))
+    if not 0<buy<2**256 or not 0<sell<2**256:
+        raise ValueError("Owner budget is not representable in token atomics")
+    return {"buy_source_atomic_cap":str(buy),"sell_source_atomic_cap":str(sell),
+            "settlement_chain_id":1,"settlement_decimals":6}

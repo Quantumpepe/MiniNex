@@ -6,9 +6,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, Bitcoin,
   Check, ChevronDown, CircleAlert, Clock3, Globe2,
-  History, Info, LayoutDashboard, LockKeyhole, RefreshCcw,
+  History, Info, LayoutDashboard, RefreshCcw,
   Settings2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Wallet,
-  Wifi, WifiOff, Zap,
+  Zap,
 } from 'lucide-react';
 import {DICTIONARY, getLanguage} from './i18n.js';
 import CompactOverview from './CompactOverview.jsx';
@@ -423,7 +423,7 @@ export default function App() {
   const {market,paper,history,connected,paperError,syncedAt}=useMiniNexData(asset,refreshNonce,paperVisible);
   const homePaperScope=showAllPaperHistory?'ALL':asset;
   const homePaperTrades=useAllPaperHomeTrades(paperVisible,page==='overview',refreshNonce,homePaperScope);
-  const homeLiveTrades=useLiveHomeTrades(!paperVisible,page==='overview',refreshNonce,asset);
+  const homeLiveTrades=useLiveHomeTrades(!paperVisible,page==='overview',refreshNonce,asset,showAllPaperHistory);
   // The capital card is ALWAYS the total across started PAPER coins.
   // Only the trade HISTORY follows the selected coin / optional ALL toggle.
   const paperHome=usePaperPortfolioHome(paperVisible,refreshNonce,'ALL',page==='overview');
@@ -557,9 +557,6 @@ export default function App() {
                 t.displayCurrencyReference+': '+fx.reference?.dates?.[fx.currency]}
             </p>}
           </section>
-          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><Wifi size={21}/></span><div><h2>{t.apiStatus}</h2></div></div>
-            <div className="settings-state"><Pill tone={syncedAt&&Date.now()-syncedAt<FRESH_MS?'teal':'orange'} icon={syncedAt?Check:WifiOff}>{syncedAt&&Date.now()-syncedAt<FRESH_MS?t.apiConnected:t.apiDisconnected}</Pill></div>
-          </section>
           <section className="panel settings-panel">
             <div className="settings-row">
               <span className="settings-icon"><History size={21}/></span>
@@ -570,7 +567,6 @@ export default function App() {
             </button>
           </section>
           <UpdateStatus lang={language}/>
-          <section className="panel settings-panel"><div className="settings-row"><span className="settings-icon"><LockKeyhole size={21}/></span><div><h2>{t.tradingUnavailable}</h2></div></div></section>
         </>}
       </main>
       

@@ -69,7 +69,7 @@ def test_live_worker_executes_receipt_finality_before_native_completion():
     assert source.index("reconcile_submitted_evm_swaps_once()")<source.index(
         "reconcile_native_buy_cycle_once(client=client)")
     assert source.index("reconcile_native_sell_once(client=client)")<source.index(
-        "reconcile_verified_erc20_fees_once(client=client)")
+        "reconcile_verified_erc20_fees_once(client=client,capture_only=True)")
 
 
 def test_original_db_receipt_scan_includes_arbitrum_submissions(monkeypatch):

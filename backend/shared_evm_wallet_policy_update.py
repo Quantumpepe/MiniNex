@@ -30,7 +30,7 @@ from .privy_live_signer import (
 from .shared_evm_wallet_policy_extend import _verified_previous_grant
 from .shared_evm_wallet_policy_prepare import _locked_selected_budget
 from .shared_evm_consolidated_wallet_policy import (
-    compose_scoped_evm_wallet_policy, verified_wallet_policy_digest,
+    compose_scoped_evm_wallet_policy, verified_wallet_policy_digest, changed_wallet_coin,
 )
 from .shared_evm_wallet_policy_owner_signature import sign_exact_privy_owner_patch
 from .shared_evm_wallet_policy_remote_review import verify_remote_combined_policy
@@ -70,12 +70,10 @@ def _load_consented_coin(did,nonce):
             or type(row.get("scopes_json")) is not dict
             or type(row.get("target_scopes_json")) is not dict):
         raise HTTPException(409,"Original signed wallet extension unavailable")
-    existing=set(row["scopes_json"])
-    desired=set(row["target_scopes_json"])
-    added=desired-existing
-    if len(added)!=1 or not existing.issubset(desired):
-        raise HTTPException(409,"Only a single new wallet coin may be added")
-    return next(iter(added))
+    try:
+        return changed_wallet_coin(row["scopes_json"],row["target_scopes_json"])
+    except ValueError as exc:
+        raise HTTPException(409,str(exc)) from None
 
 
 def _claim_locked(cur,*,did,nonce,observed,old_scopes,now):
@@ -121,25 +119,28 @@ def _claim_locked(cur,*,did,nonce,observed,old_scopes,now):
     target=intent["target_scopes_json"]
     revised=intent["target_revisions_json"]
     old=g["scopes_json"]
-    if (set(target)-set(old) and len(set(target)-set(old))==1
-            and set(old).issubset(target)
-            and set(target)==set(revised)
-            and all(target[a]==v for a,v in old.items())
-            and all(revised.get(a)==v for a,v in g["revisions_json"].items())):
-        pass
-    else:
-        raise HTTPException(409,"Update would discard another approved coin")
+    try:
+        changed=changed_wallet_coin(old,target,g["revisions_json"],revised)
+    except ValueError as exc:
+        raise HTTPException(409,str(exc)) from None
+    if changed in old and (
+            target[changed].get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"
+            or old[changed].get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"):
+        from .ethereum_settlement_journal import pending_bridge_order
+        if pending_bridge_order(cur,did,changed):
+            raise HTTPException(409,"Original bridge order must settle before updating permission")
     for asset in sorted(target):
         scope=target[asset]
         rev=revised[asset]
         if type(scope) is not dict or type(rev) is not int or rev<=0:
             raise HTTPException(409,"Requested coin budget revision invalid")
-        _locked_selected_budget(
-            cur,did=did,asset=asset,stable=scope["stable"],
-            expected_revision=rev,
-        )
+        if asset==changed:
+            _locked_selected_budget(
+                cur,did=did,asset=asset,stable=scope["stable"],
+                expected_revision=rev,
+            )
     args=dict(wallet=g["wallet_address"],owner_id=g["owner_id"],
-              executor_id=g["signer_id"],scopes=list(target.values()),now=now)
+              executor_id=g["signer_id"],scopes=list(target.values()),now=now,allow_expired=True)
     policy=compose_scoped_evm_wallet_policy(**args)
     digest=verified_wallet_policy_digest(policy,**args)
     if digest!=intent.get("target_policy_sha256"):
@@ -175,7 +176,7 @@ def _claim_locked(cur,*,did,nonce,observed,old_scopes,now):
         "old_digest":g["policy_sha256"],"old_revision":g["revision"],
         "target_digest":digest,"target_scopes_json":target,
         "target_revisions_json":revised,"idempotency_key":key,
-        "candidate":policy,"new_coin":next(iter(set(target)-set(old))),
+        "candidate":policy,"new_coin":changed,
     }
 
 
@@ -265,10 +266,11 @@ def _finish_locked(cur,*,did,claim,remote):
         try:
             for asset in sorted(claim["target_scopes_json"]):
                 scope=claim["target_scopes_json"][asset]
-                _locked_selected_budget(
-                    cur,did=did,asset=asset,stable=scope["stable"],
-                    expected_revision=claim["target_revisions_json"][asset],
-                )
+                if asset==claim["new_coin"]:
+                    _locked_selected_budget(
+                        cur,did=did,asset=asset,stable=scope["stable"],
+                        expected_revision=claim["target_revisions_json"][asset],
+                    )
         except (HTTPException,ValueError,KeyError,TypeError):
             verified=False
     if not verified and grant["status"]=="UPDATE_UNCERTAIN":
@@ -388,6 +390,7 @@ def _load_reconcilable_claim(did,nonce):
             cur.execute(
                 """SELECT g.wallet_id,g.wallet_address,g.owner_id,g.signer_id,
                           g.policy_id,g.policy_sha256,g.scopes_json AS original_scopes_json,
+                          g.revisions_json AS original_revisions_json,
                           g.revision AS original_revision,
                           g.status AS grant_status,
                           i.status AS intent_status,i.source_grant_revision,
@@ -408,7 +411,7 @@ def _load_reconcilable_claim(did,nonce):
             or type(saved.get("original_scopes_json")) is not dict
             or type(saved.get("target_scopes_json")) is not dict
             or type(saved.get("target_revisions_json")) is not dict
-            or len(saved["target_scopes_json"])<2
+            or not saved["target_scopes_json"]
             or set(saved["target_scopes_json"])!=set(saved["target_revisions_json"])
             or type(saved.get("update_idempotency_key")) is not str
             or not re.fullmatch(r"[0-9a-f]{64}",saved["update_idempotency_key"])):
@@ -416,7 +419,7 @@ def _load_reconcilable_claim(did,nonce):
     args=dict(
         wallet=saved["wallet_address"],owner_id=saved["owner_id"],
         executor_id=saved["signer_id"],
-        scopes=list(saved["target_scopes_json"].values()),now=int(time.time()),
+        scopes=list(saved["target_scopes_json"].values()),now=int(time.time()),allow_expired=True,
     )
     try:
         policy=compose_scoped_evm_wallet_policy(**args)
@@ -427,10 +430,10 @@ def _load_reconcilable_claim(did,nonce):
         raise HTTPException(409,"Saved remote update digest mismatch")
     source=saved["original_scopes_json"]
     target=saved["target_scopes_json"]
-    added=set(target)-set(source)
-    if (len(added)!=1 or not set(source).issubset(target)
-            or any(target.get(a)!=v for a,v in source.items())):
-        raise HTTPException(409,"Original user-approved coin scope was replaced")
+    try:
+        changed=changed_wallet_coin(source,target,saved["original_revisions_json"],saved["target_revisions_json"])
+    except (ValueError,KeyError) as exc:
+        raise HTTPException(409,"Original user-approved coin scope was replaced") from None
     return {
         "did":did,"nonce":nonce,"policy_id":saved["policy_id"],
         "wallet_id":saved["wallet_id"],
@@ -444,7 +447,7 @@ def _load_reconcilable_claim(did,nonce):
         "target_revisions_json":saved["target_revisions_json"],
         "idempotency_key":saved["update_idempotency_key"],
         "candidate":policy,
-        "new_coin":next(iter(added)),
+        "new_coin":changed,
     }
 
 

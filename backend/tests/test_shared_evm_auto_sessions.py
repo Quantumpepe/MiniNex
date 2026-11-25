@@ -43,15 +43,32 @@ def rows(asset):
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
-def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset):
-    cur=Cursor(rows(asset))
-    result=m._start_locked(cur,did=DID,asset=asset)
+def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset,monkeypatch):
+    if asset=="AVAX":
+        from backend import shared_evm_central_runtime as central
+        original=rows(asset)
+        legacy=Cursor(original)
+        with pytest.raises(HTTPException) as exc:
+            m._start_locked(legacy,did=DID,asset=asset)
+        assert exc.value.status_code==409
+        assert not any("INSERT INTO mininex_live_evm_auto_sessions" in q for q,_ in legacy.queries)
+        record={**original[0],"scope":{"settlement_policy":"ETHEREUM_STARGATE_STAGED_V1"}}
+        def verified_grant(cur,*,did,asset):
+            assert did==DID and asset=="AVAX"
+            cur.execute("SELECT original grant FOR UPDATE",(did,))
+            return cur.fetchone()
+        monkeypatch.setattr(central,"_locked_original_evm_coin",verified_grant)
+        cur=Cursor([record,*original[2:]])
+        result=m._start_locked(cur,did=DID,asset=asset,central=True)
+    else:
+        cur=Cursor(rows(asset))
+        result=m._start_locked(cur,did=DID,asset=asset)
     assert result["asset"]==asset
     assert result["status"]=="ACTIVE"
     assert result["started_by_owner"] is True
     assert result["worker_attached"] is False
     assert result["new_transactions_sent"]==0
-    assert len(cur.queries)==4
+    assert len(cur.queries)==(3 if asset=="AVAX" else 4)
     assert "mininex_live_evm_auto_sessions" in cur.queries[-1][0]
 
 
@@ -64,11 +81,11 @@ def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset):
     lambda r:r[2].update(budget_usd=0),
 ])
 def test_no_owner_start_without_signed_current_budget_consent(change):
-    data=rows("AVAX")
+    data=rows("BNB")
     change(data)
     cur=Cursor(data)
     with pytest.raises(HTTPException):
-        m._start_locked(cur,did=DID,asset="AVAX")
+        m._start_locked(cur,did=DID,asset="BNB")
     assert not any("INSERT INTO mininex_live_evm_auto_sessions" in q
                    for q,args in cur.queries)
 
@@ -91,7 +108,7 @@ def test_one_coin_pause_not_other_coin_and_no_unknown_send_retry():
     assert out["already_submitted_transactions_not_retried_or_cancelled"]
     assert len(cur.queries)==1
     sql,args=cur.queries[0]
-    assert "WHERE privy_did=%s AND asset=%s AND status='ACTIVE'" in sql
+    assert "WHERE privy_did=%s AND asset=%s AND (status='ACTIVE' OR status='EXIT_PENDING')" in sql
     assert args==(DID,"UNI")
 
 
@@ -109,7 +126,7 @@ def test_user_endpoints_required_and_no_implicit_auto_start():
     assert "mininex_live_evm_auto_sessions" in "\n".join(SCHEMA)
 
 
-@pytest.mark.parametrize("asset",["DOGE","BTC","ADA"])
+@pytest.mark.parametrize("asset",["DOGE","ADA"])
 def test_unscheduled_assets_never_inherit_other_coin_live_grant(asset):
     with pytest.raises(HTTPException) as e:
         m._require_asset(asset)
@@ -144,6 +161,9 @@ def test_session_status_counts_only_original_chain_submissions(monkeypatch):
     assert state["original_blockchain_swaps_finalized"]==2
     assert state["new_transactions_sent"]==0
     assert "tx_hash IS NOT NULL" in cur.calls[1][0]
+    assert "mininex_ethereum_settlement_submissions" in cur.calls[1][0]
+    assert "mininex_ethereum_settlement_finality" in cur.calls[1][0]
+    assert "mininex_ethereum_settlement_manual_attempts" not in cur.calls[1][0]
     assert cur.calls[1][1]==(DID,"LINK")
 
 
@@ -158,3 +178,96 @@ def test_worker_heartbeat_comes_from_live_loop_not_owner_session_label():
     status_source=inspect.getsource(m.get_owner_evm_auto)
     assert "INTERVAL '90 seconds'" in status_source
     assert "last_poll_at" in status_source
+
+
+def test_bridge_exit_endpoint_is_owner_authenticated_and_no_start_during_exit():
+    from backend.app import app
+    route=next(x for x in app.routes if x.path=="/api/live/evm/auto-session/{asset}/exit")
+    assert route.methods=={"POST"}
+    assert "verify_privy_bearer" in inspect.getsource(route.endpoint)
+    assert "WHERE mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in inspect.getsource(m._start_locked)
+    with pytest.raises(HTTPException):
+        m.request_owner_bridge_exit(DID,"DOGE")
+
+
+def test_avax_exit_requests_sell_without_marking_position_closed(monkeypatch):
+    cur=Cursor([{"privy_did":DID},{"chain_id":43114,"stable":"USDC","status":"EXIT_PENDING"}])
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):
+            class CM:
+                def __enter__(self):return cur
+                def __exit__(self,*a):return False
+            return CM()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:DB())
+    result=m.request_owner_bridge_exit(DID,"AVAX")
+    assert result["status"]=="EXIT_PENDING"
+    assert result["new_transactions_sent"]==0
+    assert any("SET status=\x27EXIT_PENDING\x27" in sql and args==(DID,"AVAX") for sql,args in cur.queries)
+
+
+def test_exit_completion_waits_for_original_unresolved_bridge(monkeypatch):
+    from backend import ethereum_settlement_journal as j
+    cur=Cursor([{"privy_did":DID},
+                {"status":"EXIT_PENDING","started_by_owner_at":NOW,"wallet_address":WALLET}])
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):
+            class CM:
+                def __enter__(self):return cur
+                def __exit__(self,*a):return False
+            return CM()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(j,"pending_bridge_order",lambda *a:True)
+    assert not m.complete_bridge_exit_if_flat(DID,"POL",NOW)
+    assert not any("SET status='STOPPED'" in sql for sql,args in cur.queries)
+
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL","TRX"])
+def test_wrapped_trade_never_uses_legacy_coin_grant(asset):
+    assert m._require_asset(asset)==asset
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(m.start_owner_evm_auto(DID,asset,central=False))
+    assert exc.value.status_code==409
+
+
+def test_resume_preserves_original_staged_session_identity():
+    import inspect
+    source=inspect.getsource(m._start_locked)
+    assert "status IN ('ACTIVE','PAUSED')" in source
+    assert "THEN mininex_live_evm_auto_sessions.started_by_owner_at ELSE now() END" in source
+    assert "mininex_live_evm_auto_sessions.status<>'EXIT_PENDING'" in source
+
+
+@pytest.mark.parametrize("asset",["LINK","QNT","UNI","BTC","XRP","SOL","TRX"])
+def test_ethereum_token_exit_uses_canonical_inventory_only(monkeypatch,asset):
+    from backend import ethereum_settlement_journal as j
+    from backend import shared_evm_exit_inventory as inv
+    from decimal import Decimal
+    cur=Cursor([{"privy_did":DID},{"status":"EXIT_PENDING","started_by_owner_at":NOW,"wallet_address":WALLET},
+                None,None,None,None,None,{"status":"STOPPED"}])
+    class DB:
+        def __enter__(self):return self
+        def __exit__(self,*a):return False
+        def cursor(self,**kw):
+            class CM:
+                def __enter__(self):return cur
+                def __exit__(self,*a):return False
+            return CM()
+    monkeypatch.setattr(m,"_db_url",lambda:"postgres://unused")
+    monkeypatch.setattr(m,"_ensure_schema",lambda _:None)
+    monkeypatch.setattr(m.psycopg,"connect",lambda *a,**kw:DB())
+    monkeypatch.setattr(j,"pending_bridge_order",lambda *a:False)
+    monkeypatch.setattr(inv,"token_exit_position_locked",lambda *a:Decimal("1"))
+    assert not m.complete_bridge_exit_if_flat(DID,asset,NOW)
+    assert not any("SET status='STOPPED'" in q for q,_ in cur.queries)
+    cur.rows=iter([{"privy_did":DID},{"status":"EXIT_PENDING","started_by_owner_at":NOW,"wallet_address":WALLET},
+                   None,None,None,None,None,{"status":"STOPPED"}])
+    monkeypatch.setattr(inv,"token_exit_position_locked",lambda *a:Decimal("0"))
+    assert m.complete_bridge_exit_if_flat(DID,asset,NOW)
+    assert any("SET status='STOPPED'" in q for q,_ in cur.queries)

@@ -42,7 +42,8 @@ test('native XRP shows compact quote and Swap control without pretending executi
   assert.match(quote,/maximumFractionDigits:8/);
   assert.match(quote,/walletSwapFrom/);
   assert.match(quote,/walletSwapTo/);
-  assert.match(quote,/quote.request.coin==='MULTICHAIN'&&<>/);
+  assert.match(quote,/quote.request.coin==='MULTICHAIN'&&quote.data.mode!=='ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE'&&<>/);
+  assert.match(quote,/<CrossChainOwnerSwap/);
   assert.match(quote,/disabled aria-disabled="true">\{t.walletSwapAction\}/);
   assert.match(quote,/walletSwapPendingShort/);
   assert.doesNotMatch(quote,/\{t.walletSwapNativeLiquidityNotice\}/);

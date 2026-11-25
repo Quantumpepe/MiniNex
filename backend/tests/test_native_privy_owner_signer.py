@@ -9,13 +9,17 @@ from backend import native_privy_owner_signer as auth
 from backend.tests.test_native_btc_thor_outputs import SOURCE
 from backend.tests.test_native_xrp_thor_payment_tx import OWNER as XRP
 from backend.tests.test_native_sol_compiled_message import b58
+from backend.native_trx_user_signed_send import _tron_address_from_public_key
+from eth_keys import keys
 
 DID = "did:privy:native_readback_user"
 SOL = b58(bytes([5])*32)
+TRX = _tron_address_from_public_key(keys.PrivateKey(bytes([1])*32).public_key.to_bytes())
 _WALLETS = {
     "BTC": (SOURCE, "bitcoin-segwit", "btc_wallet_owner_0001"),
     "SOL": (SOL, "solana", "sol_wallet_owner_0001"),
     "XRP": (XRP, "xrpl", "xrp_wallet_owner_0001"),
+    "TRX": (TRX, "tron", "trx_wallet_owner_0001"),
 }
 
 
@@ -45,7 +49,7 @@ def remote(asset):
     }
 
 
-@pytest.mark.parametrize("asset", ["BTC", "SOL", "XRP"])
+@pytest.mark.parametrize("asset", ["BTC", "SOL", "XRP", "TRX"])
 def test_original_privy_native_wallet_and_remote_owner_ref_verified_only(asset):
     u = user(asset)
     original = auth._original_privy_native_wallet(u, DID, asset)
@@ -72,7 +76,7 @@ def test_original_privy_native_wallet_and_remote_owner_ref_verified_only(asset):
     assert _WALLETS[asset][2] not in str(status)
 
 
-@pytest.mark.parametrize("asset", ["BTC", "SOL", "XRP"])
+@pytest.mark.parametrize("asset", ["BTC", "SOL", "XRP", "TRX"])
 def test_native_wallet_must_have_exact_unique_privy_identity(asset):
     u = user(asset)
     assert auth._original_privy_native_wallet(u, DID, asset)
@@ -92,7 +96,7 @@ def test_native_wallet_must_have_exact_unique_privy_identity(asset):
             auth._original_privy_native_wallet(bad, DID, asset)
 
 
-@pytest.mark.parametrize("asset", ["BTC", "SOL", "XRP"])
+@pytest.mark.parametrize("asset", ["BTC", "SOL", "XRP", "TRX"])
 def test_wrong_wallet_owner_or_unrestricted_remote_signer_fails_closed(asset):
     u = user(asset)
     valid = remote(asset)
@@ -193,7 +197,7 @@ def test_native_privy_wrong_owner_or_failed_api_still_has_no_approval(monkeypatc
 def test_native_privy_unknown_asset_rejected_without_lookup():
     with pytest.raises(HTTPException) as exc:
         asyncio.run(auth.get_original_native_privy_signer_status(
-            DID, asset="TRX"))
+            DID, asset="ADA"))
     assert exc.value.status_code == 422
 
 
@@ -218,7 +222,7 @@ def test_native_authorization_readback_route_is_authenticated_and_read_only(monk
     monkeypatch.setattr(
         api, "get_original_native_privy_signer_status", status)
     client = TestClient(api.app)
-    for coin in ("BTC", "SOL", "XRP"):
+    for coin in ("BTC", "SOL", "XRP", "TRX"):
         path = "/api/live/native/authorization/" + coin
         assert client.get(path).status_code == 401
         assert client.get(path, headers={
@@ -231,7 +235,7 @@ def test_native_authorization_readback_route_is_authenticated_and_read_only(monk
         assert response.headers["cache-control"] == "private, no-store"
         assert client.post(path, headers={
             "Authorization": "Bearer native_test"}).status_code == 405
-    assert seen == [(DID, asset) for asset in ("BTC", "SOL", "XRP")]
+    assert seen == [(DID, asset) for asset in ("BTC", "SOL", "XRP", "TRX")]
     assert client.get("/api/live/native/authorization/ADA",
         headers={"Authorization": "Bearer native_test"}).status_code == 422
 

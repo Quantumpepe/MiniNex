@@ -12,7 +12,7 @@ from backend.shared_evm_swap_receipts import _pair
 
 DID="did:privy:owner"
 START=datetime(2026,11,17,16,10,23,34210,tzinfo=timezone.utc)
-ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
+ASSETS={"ETH":"USDC","BNB":"USDT","POL":"USDC","AVAX":"USDC",
         "LINK":"USDC","UNI":"USDC","ARB":"USDC"}
 
 
@@ -129,29 +129,36 @@ def use_tick_mocks(monkeypatch,asset="LINK",action="BUY"):
     monkeypatch.setattr(worker,"verified_live_evm_momentum",market_decision)
     monkeypatch.setattr(worker,"check_evm_source_allowance",allowance)
     monkeypatch.setattr(worker,"fetch_evm_policy_reference_rates",price)
+    monkeypatch.setattr(worker,"read_pending_ethereum_funding",lambda *a,**kw:{
+        "pending_wallet_stable_atomic":"0","pending_coin_usd":"0"})
     monkeypatch.setattr(worker,"execute_internal_evm_strategy_signal",execute)
     return actions
 
 
-@pytest.mark.parametrize("asset",["LINK","UNI","ARB"])
+@pytest.mark.parametrize("asset",["LINK","UNI"])
 @pytest.mark.parametrize("action",["BUY","SELL"])
 def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
     monkeypatch,asset,action
 ):
     actions=use_tick_mocks(monkeypatch,asset=asset,action=action)
+    from backend import shared_evm_exit_inventory as inventory
+    if action=="SELL":
+        monkeypatch.setattr(inventory,"read_token_exit_position",lambda *args:Decimal("2"))
     async def tick():
         async with httpx.AsyncClient() as client:
             return await worker.execute_owner_evm_live_tick(
                 session(asset),market=object(),client=client,now=10000)
     assert asyncio.run(tick())["state"]=="SUBMITTED"
     assert actions[0]=="verified_market"
-    assert len([a for a in actions if isinstance(a,tuple) and
-                a[0]=="original_single_execution"])==1
+    sends=[a for a in actions if isinstance(a,tuple) and a[0]=="original_single_execution"]
+    assert len(sends)==1
+    if action=="SELL":
+        assert Decimal(sends[0][1])==2
     assert len([a for a in actions if isinstance(a,tuple) and
                 a[0]=="onchain_source"])==1
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+@pytest.mark.parametrize("asset",["ETH"])
 def test_native_evm_sell_never_runs_without_native_receipt_worker(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
@@ -275,7 +282,7 @@ def test_5min_horizon_is_owner_supported_setting():
     assert worker._trusted_live_session(r)["horizon"]=="5m"
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+@pytest.mark.parametrize("asset",["ETH"])
 def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset):
     monkeypatch.delenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED",raising=False)
     monkeypatch.delenv("MININEX_EVM_AUTO_WORKER_ENABLED",raising=False)
@@ -291,7 +298,7 @@ def test_native_buy_requires_active_passive_unwrap_reconciler(monkeypatch,asset)
     assert actions==["verified_market"]
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+@pytest.mark.parametrize("asset",["ETH"])
 @pytest.mark.parametrize("activation",["read-only","explicit-live"])
 def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(
     monkeypatch,asset,activation
@@ -316,13 +323,15 @@ def test_native_buy_submits_real_swap_only_with_unwrap_worker_enabled(
                 and x[0]=="original_single_execution"])==1
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+@pytest.mark.parametrize("asset",["ETH"])
 def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
     monkeypatch,asset
 ):
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
+    from backend import shared_evm_exit_inventory as inventory
+    monkeypatch.setattr(inventory,"read_token_exit_position",lambda *args:Decimal("0.5"))
     async def zero_wrapped(did,**kw):
         actions.append("native_wallet_probe")
         return evidence(asset,"SELL",source="0",allowance="0")
@@ -334,8 +343,9 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
         actions.append("single_native_deposit")
         assert kw["strategy_run_id"].startswith("owner_20261117")
         assert kw["signal_event_id"]=="market_166"
-        assert kw["native_amount_wei"]==10**18
+        assert kw["native_amount_wei"]==5*10**17
         assert kw["budget_revision"]==7
+        assert kw["central"] is True
         return {"state":"SUBMITTED","operation":"DEPOSIT"}
     monkeypatch.setattr(worker,"check_evm_source_allowance",zero_wrapped)
     monkeypatch.setattr(worker,"prepare_original_native_sell_amount",amount)
@@ -343,14 +353,14 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
     async def tick():
         async with httpx.AsyncClient() as client:
             return await worker.execute_owner_evm_live_tick(
-                session(asset),market=object(),client=client,now=10000)
+                dict(session(asset),central=True),market=object(),client=client,now=10000)
     result=asyncio.run(tick())
     assert result["state"]=="SUBMITTED"
     assert actions==["verified_market","native_wallet_probe",
                      "native_gas_and_policy","single_native_deposit"]
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX"])
+@pytest.mark.parametrize("asset",["ETH"])
 def test_native_sell_existing_wrapped_balance_requires_original_deposit_proof(
     monkeypatch,asset
 ):
@@ -388,7 +398,9 @@ def test_session_query_failure_does_not_strand_prior_onchain_settlements(monkeyp
     async def swaps():calls.append("swaps")
     async def native_buy(*,client):calls.append("native_buy")
     async def native_sell(*,client):calls.append("native_sell")
-    async def historical(*,client):calls.append("historical")
+    async def historical(*,client,capture_only=False):
+        assert capture_only is True
+        calls.append("historical")
     async def treasury_finality():calls.append("treasury_finality")
     async def fee_batch(*,client):calls.append("fee_batch")
     monkeypatch.setattr(worker,"reconcile_original_router_approvals_once",approvals)
@@ -438,7 +450,7 @@ def test_shared_live_session_scan_rotates_across_all_six_evm_assets(monkeypatch)
 
 
 
-@pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
+@pytest.mark.parametrize("asset",["LINK","UNI"])
 def test_new_owner_wallet_automatically_sends_scoped_approval_before_swap(
     monkeypatch,asset,
 ):
@@ -523,3 +535,105 @@ def test_evm_live_batch_isolates_a_failed_coin_without_rebroadcast(
     assert result["attempted"]==1
     assert result["failed"]==1
     assert tried==["LINK","UNI"]
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","ARB"])
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+@pytest.mark.parametrize("action",["BUY","SELL"])
+def test_cross_evm_session_uses_ethereum_settlement_never_legacy_local_send(
+    monkeypatch,asset,stable,action
+):
+    from backend import ethereum_settlement_auto_plan as bridge
+    from backend.ethereum_settlement_plan import settlement_route
+    row=session(asset)
+    row["stable"]=stable
+    actions=use_tick_mocks(monkeypatch,asset=asset,action=action)
+    if asset=="AVAX":
+        from backend import ethereum_stargate_staged_worker as staged
+        async def no_existing_order(did,*,row,client):
+            assert did==row["privy_did"]
+            actions.append("staged_order_checked")
+            return None
+        monkeypatch.setattr(staged,"advance_avax_order",no_existing_order)
+    async def forbidden(*args,**kwargs):
+        pytest.fail("Legacy local allowance, swap, or wrap must not run")
+    monkeypatch.setattr(worker,"check_evm_source_allowance",forbidden)
+    monkeypatch.setattr(worker,"execute_internal_evm_strategy_signal",forbidden)
+    monkeypatch.setattr(worker,"submit_scoped_router_approval_once",forbidden)
+    monkeypatch.setattr(worker,"submit_internal_native_evm_sell_deposit",forbidden)
+    async def funding(**kw):
+        actions.append("ethereum_funding")
+        assert kw["stable"]==stable and kw["asset"]==asset
+        assert kw["budget_usd"]==2000
+        return {"input_atomic":"12000000","input_amount":"12.000000"}
+    async def candidate(**kw):
+        actions.append("bridge_candidate")
+        assert kw["stable"]==stable and kw["amount"]=="12.000000"
+        assert kw["budget_revision"]==7 and kw["side"]==action
+        route=settlement_route(asset,action,stable)
+        assert route["source_chain_id" if action=="BUY" else "destination_chain_id"]==1
+        return {"state":"CROSS_CHAIN_POLICY_MIGRATION_REQUIRED","can_submit":False}
+    async def sell(**kw):
+        actions.append("strategy_coin_position")
+        assert kw["stable"]==stable and kw["asset"]==asset
+        return {"input_atomic":"12000000000000000000","input_amount":"12.000000"}
+    monkeypatch.setattr(bridge,"plan_cross_evm_buy",funding)
+    monkeypatch.setattr(bridge,"plan_cross_evm_sell",sell)
+    monkeypatch.setattr(bridge,"prepare_cross_evm_auto_candidate",candidate)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                row,market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    expected=["staged_order_checked"] if asset=="AVAX" else []
+    assert result["can_submit"] is False
+    assert actions==expected+["verified_market",
+        "ethereum_funding" if action=="BUY" else "strategy_coin_position",
+        "bridge_candidate"]
+
+
+def test_pending_bridge_buy_reports_pending_not_empty_funds(monkeypatch):
+    from backend import ethereum_settlement_auto_plan as bridge
+    use_tick_mocks(monkeypatch,asset="POL",action="BUY")
+    async def pending(**kw):
+        return {"input_atomic":"0","reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED"}
+    monkeypatch.setattr(bridge,"plan_cross_evm_buy",pending)
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session("POL"),market=object(),client=client,now=10000)
+    assert asyncio.run(tick())=={"asset":"POL","state":"WAIT",
+                                "reason":"PREVIOUS_BRIDGE_ORDER_UNRESOLVED"}
+
+
+@pytest.mark.parametrize("withheld,expected",[("4000000000","1000"),("5000000000",None)])
+def test_next_buy_is_resized_to_cash_after_profit_protection(monkeypatch,withheld,expected):
+    actions=use_tick_mocks(monkeypatch,asset="LINK",action="BUY")
+    monkeypatch.setattr(worker,"read_pending_ethereum_funding",lambda *a,**kw:{
+        "pending_wallet_stable_atomic":withheld,"pending_coin_usd":"0"})
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(
+                session("LINK"),market=object(),client=client,now=10000)
+    result=asyncio.run(tick())
+    sends=[a for a in actions if isinstance(a,tuple) and a[0]=="original_single_execution"]
+    if expected is None:
+        assert result["state"]=="WAIT" and not sends
+    else:
+        assert result["state"]=="SUBMITTED"
+        assert len(sends)==1 and Decimal(sends[0][1])==Decimal(expected)
+
+
+def test_token_exit_overrides_market_and_caps_wallet_sale(monkeypatch):
+    from backend import shared_evm_exit_inventory as inventory
+    actions=use_tick_mocks(monkeypatch,asset="LINK",action="BUY")
+    monkeypatch.setattr(inventory,"read_token_exit_position",lambda *args:Decimal("2"))
+    row=session("LINK")
+    row["session_status"]="EXIT_PENDING"
+    async def tick():
+        async with httpx.AsyncClient() as client:
+            return await worker.execute_owner_evm_live_tick(row,market=object(),client=client,now=10000)
+    assert asyncio.run(tick())["state"]=="SUBMITTED"
+    assert "verified_market" not in actions
+    assert any(isinstance(a,tuple) and a[0]=="original_single_execution"
+               and Decimal(a[1])==2 for a in actions)

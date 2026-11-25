@@ -90,7 +90,12 @@ def _claim_once_locked(
             or not isinstance(permission.get("expires_at"),datetime)
             or permission["expires_at"]<=datetime.fromtimestamp(now,timezone.utc)):
         raise HTTPException(409,"Original owner Privy grant changed")
-    if central and asset=="ETH":
+    if central and asset=="BTC":
+        from .shared_evm_wallet_policy_prepare import _locked_selected_budget
+        amount,version=_locked_selected_budget(cur,did=did,asset=asset,stable=stable,
+                                               expected_revision=revision)
+        settings={"budget_usd":amount,"revision":version,"stable":stable}
+    elif central and asset=="ETH":
         from .shared_evm_central_eth_settings import locked_original_eth_settings
         settings=locked_original_eth_settings(
             cur,did=did,stable=stable,revision=revision)
@@ -108,7 +113,8 @@ def _claim_once_locked(
         raise HTTPException(409,"Original wallet owner grant does not cover this budget")
     current=inspect_combined_grant_router_approval(
         record=permission,asset=asset,side=side,stable=stable,
-        amount_atomic=amount_atomic,now=now)
+        amount_atomic=amount_atomic,now=now,
+        **({"reset":True} if reviewed.get("approval_mode")=="WRAPPED_USDT_ZERO" else {}))
     if current!=reviewed:
         raise HTTPException(409,"Approved router amount or policy changed")
     cur.execute(
@@ -117,25 +123,42 @@ def _claim_once_locked(
            FROM mininex_live_evm_auto_sessions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
-    if (type(session) is not dict or session.get("status")!="ACTIVE"
+    if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
+            (session.get("status")=="EXIT_PENDING" and side=="SELL" and
+             (asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") or (asset=="ETH" and central))))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=stable
             or session.get("wallet_address")!=record["wallet_address"]
             or session.get("budget_revision")!=revision
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Coin trading is not owner-started and active")
+    if asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") and side=="SELL":
+        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
+        assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
+    if central and asset=="ETH" and side=="SELL":
+        from .shared_evm_exit_inventory import assert_eth_exit_deposit_locked
+        assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_atomic)
     # Same-wallet, same-chain nonce conflicts. Every participating sender
     # must also check this approval journal before claiming a new nonce.
     for table in (
         "mininex_live_evm_router_approval_sends",
         "mininex_live_evm_auto_broadcasts",
-        "mininex_evm_auto_fee_sends",
+        "mininex_evm_auto_fee_sends_all",
     ):
+        staged=(" + (SELECT COUNT(*) FROM mininex_avax_staged_steps"
+                " WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))"
+                " + (SELECT COUNT(*) FROM mininex_across_staged_steps"
+                " WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))"
+                " + (SELECT COUNT(*) FROM mininex_ethereum_settlement_submissions s"
+                " WHERE s.privy_did=%s AND s.source_chain_id=%s"
+                " AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')"
+                " AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=s.quote_id))"
+                if table=="mininex_live_evm_router_approval_sends" else "")
         cur.execute(
-            f"""SELECT COUNT(*) AS pending FROM {table}
+            f"""SELECT (SELECT COUNT(*) FROM {table}
                 WHERE privy_did=%s AND chain_id=%s AND status IN
-                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')""",
-            (did,pair["chain_id"]))
+                ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))"""+staged+" AS pending",
+            (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]) if staged else (did,pair["chain_id"]))
         pending=cur.fetchone()
         if type(pending) is not dict or pending.get("pending")!=0:
             raise HTTPException(409,"Earlier same-chain wallet send unresolved")
@@ -166,16 +189,28 @@ def _claim_once_locked(
         pending=cur.fetchone()
         if type(pending) is not dict or pending.get("pending")!=0:
             raise HTTPException(409,"Earlier native/Ethereum send unresolved")
-    cur.execute(
-        """INSERT INTO mininex_live_evm_router_approval_sends
-           (privy_did,asset,side,stable,chain_id,wallet_id,wallet_address,
-            token_address,router_address,amount_atomic,policy_sha256,
-            budget_revision,idempotency_key,request_digest,status)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
-        (did,asset,side,stable,pair["chain_id"],record["wallet_id"],
-         record["wallet_address"],pair["source_token"].lower(),
-         pair["router"].lower(),amount_atomic,record["policy_sha256"],
-         revision,key,request_digest))
+    if reviewed.get("approval_mode")=="WRAPPED_USDT_ZERO":
+        cur.execute(
+            """INSERT INTO mininex_live_evm_router_approval_sends
+               (privy_did,asset,side,stable,chain_id,wallet_id,wallet_address,
+                token_address,router_address,amount_atomic,policy_sha256,
+                budget_revision,idempotency_key,request_digest,status,approval_mode)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING','WRAPPED_USDT_ZERO')""",
+            (did,asset,side,stable,pair["chain_id"],record["wallet_id"],
+             record["wallet_address"],pair["source_token"].lower(),
+             pair["router"].lower(),amount_atomic,record["policy_sha256"],
+             revision,key,request_digest))
+    else:
+        cur.execute(
+            """INSERT INTO mininex_live_evm_router_approval_sends
+               (privy_did,asset,side,stable,chain_id,wallet_id,wallet_address,
+                token_address,router_address,amount_atomic,policy_sha256,
+                budget_revision,idempotency_key,request_digest,status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'SENDING')""",
+            (did,asset,side,stable,pair["chain_id"],record["wallet_id"],
+             record["wallet_address"],pair["source_token"].lower(),
+             pair["router"].lower(),amount_atomic,record["policy_sha256"],
+             revision,key,request_digest))
 
 
 def _claim(*,did:str,asset:str,side:str,stable:str,record:dict,
@@ -264,11 +299,21 @@ async def submit_scoped_router_approval_once(
         raise HTTPException(409,"Actual source tokens insufficient for approval")
     if balance.get("router_allowance_sufficient"):
         return {"asset":asset,"state":"ALREADY_APPROVED","sent":False}
+    reset=False
+    if asset in ("BTC","XRP","SOL","TRX"):
+        if not central or balance.get("wallet_address")!=record["wallet_address"]:
+            raise HTTPException(409,"Original wrapped wallet allowance proof changed")
+        if side=="BUY" and stable=="USDT":
+            reset=int(balance["router_allowance_atomic"])>0
+        if reset:
+            reviewed=inspect_combined_grant_router_approval(record=record,asset=asset,
+                side=side,stable=stable,amount_atomic=amount_atomic,now=now,reset=True)
     wallet=record["wallet_address"]
     url,body=bound_owner_router_approval_rpc(
         asset=asset,side=side,stable=stable,
         wallet_id=record["wallet_id"],wallet=wallet,
-        amount_atomic=amount_atomic)
+        amount_atomic=amount_atomic,
+        **({"wrapped_spot":True,"reset":reset} if asset in ("BTC","XRP","SOL","TRX") else {}))
     if (reviewed["transaction"]["to"].lower()
             !=body["params"]["transaction"]["to"].lower()
             or reviewed["transaction"]["data"]
@@ -277,7 +322,7 @@ async def submit_scoped_router_approval_once(
     key=_original_approval_id(
         did=did,asset=asset,side=side,stable=stable,wallet=wallet,
         amount=amount_atomic,revision=budget_revision,
-        signal_event_id=signal_event_id)
+        signal_event_id=signal_event_id+("_reset" if reset else ""))
     key=valid_order_key(key)
     digest=hashlib.sha256(json.dumps(
         [url,body,record["policy_sha256"],budget_revision],

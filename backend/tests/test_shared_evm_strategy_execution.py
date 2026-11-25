@@ -22,7 +22,7 @@ ASSETS={"BNB":"USDT","POL":"USDC","AVAX":"USDC",
 
 def use_mocks(monkeypatch,*,asset="LINK",fail=False):
     actions=[]
-    quote={"asset":asset,"verified":True}
+    quote={"asset":asset,"verified":True,"source_balance_atomic":"100000000"}
     async def prepare(*args,**kwargs):
         actions.append("onchain_quote")
         return quote
@@ -35,6 +35,9 @@ def use_mocks(monkeypatch,*,asset="LINK",fail=False):
         assert kw["amount_usd"]=="100.000000"
         assert kw["quote_sha256"]==SHA
         assert kw["asset"]==asset
+        if asset in ("ETH","LINK","QNT","UNI"):
+            assert kw["ethereum_funding"]["input_atomic"]==10_000_000
+            assert kw["ethereum_funding"]["balance_atomic"]==100_000_000
         assert kw["intent_key"]==run.derive_evm_strategy_signal_key(
             did=DID,asset=asset,side="BUY",stable=ASSETS[asset],
             strategy_run_id=RUN,signal_event_id=EVENT)
@@ -57,6 +60,7 @@ def use_mocks(monkeypatch,*,asset="LINK",fail=False):
         assert kw["prepared"] is quote
         assert kw["prices"]=={"fresh":True}
         return "100.000000"
+    monkeypatch.setattr(run,"_price",lambda *args: __import__("decimal").Decimal("1"))
     monkeypatch.setattr(run,"fetch_evm_policy_reference_rates",prices)
     monkeypatch.setattr(run,"verified_evm_quote_usd_notional",usd)
     monkeypatch.setattr(run,"prepare_owner_evm_swap",prepare)

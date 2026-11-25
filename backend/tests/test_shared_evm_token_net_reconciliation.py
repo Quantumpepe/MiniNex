@@ -69,6 +69,9 @@ def test_full_minined_token_history_real_net_without_auto_fee(monkeypatch,asset)
         assert [x["tx_hash"] for x in kw["fills"]]==[TX_BUY,TX_SELL]
         return audit()
     monkeypatch.setattr(token_net,"audit_owner_erc20_token_inventory",check_audit)
+    async def no_approvals(**kw):
+        return {"allocated_approvals":0,"pending_approvals":0}
+    monkeypatch.setattr(token_net,"attach_original_approval_costs",no_approvals)
     async def run():
         async with httpx.AsyncClient() as client:
             return await token_net.read_owner_erc20_verified_realized_net(

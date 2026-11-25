@@ -66,7 +66,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   // Only a selected, already ACTIVE (or pending-exit) account is polled.
   // No market API calls, no app-driven trading and no timer for other coins.
   useEffect(()=>{
-    if(!enabled||!data||!(data.status==='ACTIVE'||data.pause_exit_pending))return;
+    if(!enabled||!data||!(['ACTIVE','EXIT_PENDING'].includes(data.status)||data.pause_exit_pending))return;
     let alive=true;
     let inFlight=false;
     const poll=async()=>{
@@ -89,10 +89,12 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
   const command=async action=>{
     // LIVE is controlled by the original Privy-signed per-coin session.
     // The paper start/resume API can never authorize a real transaction.
-    if(liveMode&&action!=='pause')return;
+    if(liveMode&&!['pause','exit'].includes(action))return;
+    if(action==='exit'&&(!liveMode||!['BTC','SOL','XRP','TRX'].includes(asset)||
+       !['ACTIVE','PAUSED'].includes(data?.status)))return;
     if(busyRef.current||!enabled||!getAccessToken||!data||
        (action==='start' && (data.status!=='NOT_STARTED'||!extraPaperCanStart(options)))||
-       (action==='pause' && data.status!=='ACTIVE')||
+       (action==='pause' && !(liveMode?['ACTIVE','EXIT_PENDING'].includes(data.status):data.status==='ACTIVE'))||
        (action==='resume' && (data.status!=='PAUSED'||data.pause_exit_pending)))return;
     const request=activeRef.current;
     mutationRef.current++;
@@ -106,7 +108,7 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
         mode:options.mode,horizon:options.horizon,stable:options.stable,
       }:null;
       const endpoint=liveMode
-        ? API_BASE+liveOwnerSessionPath(asset)+'/pause'
+        ? API_BASE+liveOwnerSessionPath(asset)+'/'+action
         : API_BASE+'/api/extra-paper/'+asset+'/'+action;
       const response=await fetch(endpoint,{
         method:'POST',cache:'no-store',
@@ -119,10 +121,12 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       if(liveMode){
         // A pause response does not establish the current owner session.
         // Re-read the authoritative chain-specific status after the command.
-        if(result?.asset!==asset||result?.status!=='PAUSED')
+        const expected=action==='exit'?'EXIT_PENDING':'PAUSED';
+        if(result?.asset!==asset||result?.status!==expected)
           throw Error('LIVE pause response does not match coin');
         const latest=await fetchOne();
-        if(latest.status!=='PAUSED')throw Error('LIVE session not confirmed paused');
+        if(latest.status!==expected&&!(action==='exit'&&latest.status==='STOPPED'))
+          throw Error('LIVE session state not confirmed');
         if(request===activeRef.current)setData(latest);
       }else{
         if(!['BTC','ETH'].includes(asset) && !validExtraPaperState(result,asset))
@@ -156,19 +160,26 @@ export default function ExtraCoinPaperControl({asset,t,enabled,getAccessToken,
       <strong>{liveMode?t.extraPaperTitleLive:t.extraPaperTitle}</strong>
       <small>{state==='ACTIVE'?t.extraPaperActive:
         state==='PAUSED'?t.extraPaperPaused:
+        state==='STOPPED'?(document.documentElement.lang==='de'?'Gestoppt':'Stopped'):
+        state==='EXIT_PENDING'?(document.documentElement.lang==='de'?'Ausstieg läuft':'Exit pending'):
         state==='NOT_STARTED'?t.extraPaperIdle:(liveMode?t.extraPaperLoadingLive:t.extraPaperLoading)}</small>
     </div>
     {liveMode&&data&&liveCounters&&<>
       <p className="privy-wallet-description">
         {t.extraPaperTitleLive}: {state==='ACTIVE'?t.extraPaperActive:
-          state==='PAUSED'?t.extraPaperPaused:t.extraPaperIdle}
+          state==='PAUSED'?t.extraPaperPaused:
+          state==='EXIT_PENDING'?(document.documentElement.lang==='de'?'Ausstieg läuft':'Exit pending'):
+          state==='STOPPED'?(document.documentElement.lang==='de'?'Gestoppt':'Stopped'):t.extraPaperIdle}
         {' · '}{data.worker_attached?'Worker: ACTIVE':'Worker: INACTIVE'}
       </p>
       <p className="privy-wallet-description" role="status">
         {t.extraPaperHistory}: {liveCounters.sent} / {liveCounters.finalized}
         {' '}(sent / finalized)
       </p>
-      {state==='ACTIVE'&&<button type="button" className="privy-wallet-action"
+      {['BTC','SOL','XRP','TRX'].includes(asset)&&['ACTIVE','PAUSED'].includes(state)&&
+        <button type="button" className="privy-wallet-action" disabled={busy}
+          onClick={()=>command('exit')}>Stop / Exit · {asset}</button>}
+      {['ACTIVE','EXIT_PENDING'].includes(state)&&<button type="button" className="privy-wallet-action"
         disabled={busy} onClick={()=>command('pause')}>
         {t.extraPaperPause} · {asset}
       </button>}

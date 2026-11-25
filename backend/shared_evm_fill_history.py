@@ -7,7 +7,7 @@ fee-payment claim may be inferred from this history.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import logging
 
 import psycopg
@@ -16,9 +16,10 @@ from psycopg.rows import dict_row
 
 from .storage import _db_url,_ensure_schema,_safe_did
 from .shared_evm_swap_receipts import _pair
+from .ethereum_settlement_plan import settlement_route
 
 LOG=logging.getLogger("mininex.evm_real_fill_history")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _verified_fill_row(row: object,asset:str) -> dict:
@@ -62,6 +63,30 @@ def _verified_fill_row(row: object,asset:str) -> dict:
     }
 
 
+def _cross_fill_row(row,asset):
+    if row["asset"]!=asset or row["outcome"]!="FINALIZED":
+        raise ValueError("Unverified cross-chain fill")
+    route=settlement_route(asset,row["side"],row["stable"])
+    if (route["family"]!="CROSS_EVM" or row["source_chain_id"]!=route["source_chain_id"]
+        or row["destination_chain_id"]!=route["destination_chain_id"]
+        or row["input_atomic"]<=0 or row["received_atomic"]<=0 or row["source_gas_atomic"]<0):
+        raise ValueError("Original Ethereum settlement differs")
+    with localcontext() as ctx:
+        ctx.prec=100
+        spent=format(Decimal(row["input_atomic"]).scaleb(-route["source_decimals"]),"f")
+        received=format(Decimal(row["received_atomic"]).scaleb(-route["destination_decimals"]),"f")
+        gas=format(Decimal(row["source_gas_atomic"]).scaleb(-18),"f")
+    return {"asset":asset,"chain_id":row["source_chain_id"],"network":route["source_network"],
+        "destination_chain_id":row["destination_chain_id"],"destination_network":route["destination_network"],
+        "intent_key":str(row["quote_id"]),"tx_hash":row["source_tx_hash"],
+        "destination_tx_hash":row["destination_tx_hash"],"side":row["side"],"stable":row["stable"],
+        "spent_asset":route["source_asset"],"received_asset":route["destination_asset"],
+        "spent_amount":spent,"received_amount":received,"network_fee_native":gas,
+        "created_at":row["verified_at"].astimezone(timezone.utc).isoformat(),
+        "onchain_finalized":True,"ethereum_settlement_verified":True,
+        "native_coin_cycle_complete":False,"realized_net_usd":None,"performance_fee_paid":False}
+
+
 def get_owner_evm_fill_history(did:str,*,asset:str,limit:int=30)->dict:
     did=_safe_did(did)
     if type(asset) is not str or asset not in _ASSETS:
@@ -82,13 +107,43 @@ def get_owner_evm_fill_history(did:str,*,asset:str,limit:int=30)->dict:
                        ORDER BY created_at DESC,intent_key DESC LIMIT %s""",
                     (did,asset,limit+1))
                 rows=list(cur.fetchall())
-        parsed=[_verified_fill_row(row,asset) for row in rows[:limit]]
+                cross=[]
+                if asset in ("BNB","POL","AVAX","ARB"):
+                    cur.execute("""SELECT q.quote_id,q.asset,q.side,q.stable,q.input_atomic,
+                         f.source_chain_id,f.destination_chain_id,f.source_tx_hash,
+                         f.destination_tx_hash,f.received_atomic,f.source_gas_atomic,
+                         f.outcome,f.verified_at
+                         FROM mininex_ethereum_settlement_finality f
+                         JOIN mininex_ethereum_settlement_quotes q
+                           ON q.quote_id=f.quote_id AND q.privy_did=f.privy_did
+                         WHERE f.privy_did=%s AND q.asset=%s AND f.outcome='FINALIZED'
+                         ORDER BY f.verified_at DESC,f.quote_id DESC LIMIT %s""",
+                         (did,asset,limit+1))
+                    cross=list(cur.fetchall())
+        parsed=[_verified_fill_row(row,asset) for row in rows]+[_cross_fill_row(row,asset) for row in cross]
+        parsed.sort(key=lambda row:(row["created_at"],row["intent_key"]),reverse=True)
+        truncated=len(parsed)>limit
+        parsed=parsed[:limit]
+        # Attach a separate read-only valuation. Do not change the legacy
+        # fee-paid flags or infer custody/fee authorization from a quote.
+        if any(fill["side"]=="SELL" for fill in parsed):
+            from .staged_net_valuation import read_owner_realized_net
+            try:
+                valuations={v["fill_key"]:v for v in read_owner_realized_net(did,asset)}
+                for fill in parsed:
+                    if fill["side"]=="SELL":
+                        key=fill["intent_key"] if fill.get("ethereum_settlement_verified") is True else fill["tx_hash"]
+                        value=valuations.get(key)
+                        if value is not None:
+                            fill["net_valuation"]=value
+            except (psycopg.Error,HTTPException,ValueError,KeyError,TypeError):
+                LOG.warning("Original historical net valuation unavailable")
         return {
             "mode":"FINALIZED_EVM_REAL_FILLS_ONLY",
             "asset":asset,"network":_pair(
                 asset,"USDT" if asset=="BNB" else "USDC","BUY")["network"],
             "fills":parsed,
-            "history_truncated":len(rows)>limit,
+            "history_truncated":truncated,
             "includes_simulation":False,
             "wallet_signing_authorized":False,
             "full_native_order_settlement_verified":False,

@@ -91,7 +91,8 @@ def test_evm_paid_rates_reuse_one_server_only_batch_for_multiple_coins(monkeypat
     url,params,headers=calls[0]
     assert url==PRO_BASE+"/simple/price"
     assert headers.get("x-cg-pro-api-key")=="test-server-only"
-    assert len(params["ids"].split(","))==10
+    assert len(params["ids"].split(","))==14
+    assert {"bitcoin","solana","ripple","tron"}<=set(params["ids"].split(","))
     assert "arbitrum" in params["ids"]
     assert "ethereum" in params["ids"]
     assert "quant-network" in params["ids"]
@@ -184,3 +185,15 @@ def test_original_wallet_policy_caps_support_eth_decimal_and_qnt(
     assert cap["budget_usd_user_selected"]==format(budget,"f")
     assert int(cap["buy_source_atomic_cap"])>0
 
+
+
+@pytest.mark.parametrize("asset,stable,expected_sell",[
+    ("BNB","USDC",2*10**18),("BNB","USDT",2*10**18),
+    ("POL","USDT",2000*10**18),("AVAX","USDT",20*10**18)])
+def test_new_ethereum_policy_caps_do_not_inherit_legacy_local_stable_decimals(asset,stable,expected_sell):
+    from backend.shared_evm_policy_reference_rates import derive_ethereum_settlement_atomic_caps
+    out=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
+        budget_usd=1000,snapshot=prices(),now=NOW)
+    assert out["buy_source_atomic_cap"]=="1000000000"
+    assert int(out["sell_source_atomic_cap"])==expected_sell
+    assert out["settlement_chain_id"]==1

@@ -4,8 +4,18 @@
 const ADDR=/^0x[0-9a-fA-F]{40}$/;
 const ID=/^[A-Za-z0-9_-]{6,160}$/;
 const SHA=/^[a-f0-9]{64}$/;
-const COINS=Object.freeze(['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB']);
+const COINS=Object.freeze(['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL','TRX']);
 const MODE='MININEX_ORIGINAL_EVM_WALLET_POLICY_READONLY_STATUS';
+const DIRECT_POLICY='ETHEREUM_ACROSS_STAGED_V1';
+const PREVIOUS_DIRECT_POLICY='ETHEREUM_ACROSS_DIRECT_V1';
+const DIRECT_COINS=['BNB','POL','ARB','AVAX'];
+const directPolicyFor=asset=>asset==='AVAX'?'ETHEREUM_STARGATE_STAGED_V1':DIRECT_POLICY;
+const WRAPPED_POLICY='ETHEREUM_WRAPPED_SPOT_V1';
+const WRAPPED_COINS=['BTC','XRP','SOL','TRX'];
+const needsWrapped=asset=>WRAPPED_COINS.includes(asset);
+const hasWrapped=(report,asset)=>report.settlement_policy_by_asset?.[asset]===WRAPPED_POLICY;
+const needsDirect=asset=>DIRECT_COINS.includes(asset);
+const hasDirect=(report,asset)=>report.settlement_policy_by_asset?.[asset]===directPolicyFor(asset);
 
 const eqAddress=(a,b)=>ADDR.test(a||'')&&
   typeof b==='string'&&a.toLowerCase()===b.toLowerCase();
@@ -28,15 +38,28 @@ export function validCentralWalletStatus(report){
     report.new_policy_created===false;
 }
 
-export function centralWalletHasCoin(report,asset){
+function verifiedCoinGrant(report,asset){
   return validCentralWalletStatus(report)&&
     report.status==='REMOTE_VERIFIED_READONLY'&&
     report.scope_coins.includes(asset)&&
+    (!needsWrapped(asset)||hasWrapped(report,asset))&&
     report.one_scoped_signer_verified===true&&
     report.remote_policy_exactly_verified===true&&
-    report.current_user_budgets_verified===true&&
+    (Array.isArray(report.current_scope_coins)?report.current_scope_coins.includes(asset):
+      report.current_user_budgets_verified===true)&&
     report.backend_quorum_current===true&&
     report.legacy_reconciliation_required===false;
+}
+
+// Starting a new session requires the current route. An independently
+// verified previous direct scope may still finish its original exit.
+export function centralWalletHasCoin(report,asset){
+  return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset))&&
+    (!Array.isArray(report.net_fee_scope_coins)||report.net_fee_scope_coins.includes(asset));
+}
+export function centralWalletCanExitCoin(report,asset){
+  return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset)||
+    (asset!=='AVAX'&&report.settlement_policy_by_asset?.[asset]===PREVIOUS_DIRECT_POLICY));
 }
 
 const requireStatus=status=>{
@@ -81,12 +104,19 @@ function validateOffer(offer,{address,asset,stable}){
     !eqAddress(address,offer.wallet_address)||offer.asset!==asset||
     offer.stable!==stable||!isId(offer.execution_signer_id)||
     !isId(offer.policy_id)||!SHA.test(offer.policy_sha256||'')||
-    offer.owner_add_signer_required!==true||
-    offer.original_wallet_approved!==false||
+    !((offer.owner_add_signer_required===true&&offer.original_wallet_approved===false)||
+      (offer.owner_add_signer_required===false&&offer.original_wallet_approved===true))||
     offer.live_trading_enabled!==false||offer.can_submit!==false||
-    offer.fee_scope?.performance_fee_percent!==5||
-    offer.fee_scope?.fee_basis!=='REALIZED_NET_GAIN_ABOVE_HWM'||
-    !ADDR.test(offer.fee_scope?.treasury_wallet||'')){
+    (needsWrapped(asset)&&offer.settlement_policy!==WRAPPED_POLICY)||
+    (needsDirect(asset)&&offer.settlement_policy!==directPolicyFor(asset))||
+    (offer.fee_scope?.fee_basis==='POSITIVE_REALIZED_NET_PER_SELL'?
+      (offer.fee_scope.performance_fee_percent!==5||offer.fee_scope.chain_id!==1||
+        !ADDR.test(offer.fee_scope.treasury_wallet||'')||
+        !/^[1-9][0-9]*$/.test(offer.fee_scope.fee_max_atomic||'')):
+      (needsWrapped(asset)||needsDirect(asset))?offer.fee_scope!==null:
+      (offer.fee_scope?.performance_fee_percent!==5||
+       offer.fee_scope?.fee_basis!=='REALIZED_NET_GAIN_ABOVE_HWM'||
+       !ADDR.test(offer.fee_scope?.treasury_wallet||'')))){
       throw Error('Privy original wallet signing offer changed');
   }
 }
@@ -105,6 +135,7 @@ function validateChallenge(stage,{asset,address}){
      stage.policy_updated_in_privy!==false||
      typeof challenge!=='string'||challenge.length>3500||
      !challenge.includes('New or changed coins: '+asset)||
+     (needsWrapped(asset)&&!challenge.includes('BTC/XRP trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.')&&!challenge.includes('BTC/XRP/SOL trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.')&&!challenge.includes('BTC/XRP/SOL/TRX trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.'))||
      !challenge.includes('Wallet: '+address.toLowerCase())||
      !challenge.includes('Requested policy SHA256: '+stage.target_policy_sha256)||
      !challenge.includes('Previous policy SHA256: '+stage.previous_policy_sha256)||
@@ -154,13 +185,15 @@ export async function authorizeCentralEvmWalletCoin({
     }
     const offer=await request(root+'/grant-offer');
     validateOffer(offer,{asset,address,stable});
-    await addSigners({
-      address,
-      signers:[{
-        signerId:offer.execution_signer_id,
-        policyIds:[offer.policy_id],
-      }],
-    });
+    if(offer.owner_add_signer_required){
+      await addSigners({
+        address,
+        signers:[{
+          signerId:offer.execution_signer_id,
+          policyIds:[offer.policy_id],
+        }],
+      });
+    }
     const verified=await request(root+'/confirm-grant','POST');
     if(verified?.state!=='GRANT_VERIFIED'||
        verified.owner_signer_grant_verified!==true||
@@ -174,16 +207,21 @@ export async function authorizeCentralEvmWalletCoin({
   }
   if(report.status==='REMOTE_VERIFIED_READONLY'){
     if(centralWalletHasCoin(report,asset))return report;
-    if(report.scope_coins.includes(asset)){
+    const migrating=report.scope_coins.includes(asset)&&(
+      (needsDirect(asset)&&!hasDirect(report,asset))||
+      (Array.isArray(report.renewable_scope_coins)&&report.renewable_scope_coins.includes(asset))||
+      (Array.isArray(report.net_fee_scope_coins)&&!report.net_fee_scope_coins.includes(asset)));
+    if(report.scope_coins.includes(asset)&&!migrating){
       throw Error('Wallet grant requires independent re-verification');
     }
     if(typeof signMessage!=='function'){
       throw Error('Wallet scope extension requires a signature');
     }
     const originalCoins=[...report.scope_coins];
+    const expectedLength=originalCoins.length+(migrating?0:1);
     const stage=await request(root+'/extend/'+asset+'/prepare','POST');
     validateChallenge(stage,{asset,address});
-    if(stage.scope_coins.length!==originalCoins.length+1||
+    if(stage.scope_coins.length!==expectedLength||
        !originalCoins.every(coin=>stage.scope_coins.includes(coin))){
       throw Error('Previously approved EVM coin was removed from wallet scope');
     }
@@ -212,13 +250,13 @@ export async function authorizeCentralEvmWalletCoin({
        result.remote_policy_verified!==true||
        result.can_submit!==false||
        !Array.isArray(result.scope_coins)||
-       result.scope_coins.length!==originalCoins.length+1||
+       result.scope_coins.length!==expectedLength||
        !originalCoins.every(coin=>result.scope_coins.includes(coin))){
       throw Error('Original Privy policy PATCH requires remote reconciliation');
     }
     report=requireStatus(await request(root+'/status'));
     requireCurrent(report,asset);
-    if(report.scope_coins.length!==originalCoins.length+1||
+    if(report.scope_coins.length!==expectedLength||
        !originalCoins.every(coin=>report.scope_coins.includes(coin))){
       throw Error('Previously approved wallet signer or coin policy changed');
     }

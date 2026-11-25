@@ -40,7 +40,7 @@ from .shared_evm_privy_transport import (
 from .shared_evm_privy_signer import sign_privy_evm_swap_request
 
 LOG=logging.getLogger("mininex.evm_privy_order_submit")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _fingerprint_prepared_quote(prepared:dict)->str:
@@ -95,12 +95,19 @@ def _check_exact_live_order(
     digest=_fingerprint_prepared_quote(prepared)
     tx=prepared["unsigned_transaction"]
     data=tx.get("data")
-    if type(data) is not str or len(data)!=458:
-        raise HTTPException(409,"Unverified exact V3 transaction")
-    # Decode the exact atomic values from the source DEX calldata. Never
-    # substitute a human decimal, asset market estimate or client minOut.
-    atomic_input=str(int(data[10+4*64:10+5*64],16))
-    atomic_output_min=str(int(data[10+5*64:10+6*64],16))
+    if asset in ("BTC","XRP","SOL","TRX"):
+        from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
+        try:
+            units,minimum=decode_wrapped_spot_amounts(data,asset=asset,stable=stable,
+                                    side=side,wallet=owned_record["wallet_address"])
+        except ValueError:
+            raise HTTPException(409,"Unverified exact wrapped spot transaction") from None
+        atomic_input,atomic_output_min=str(units),str(minimum)
+    else:
+        if type(data) is not str or len(data)!=458:
+            raise HTTPException(409,"Unverified exact V3 transaction")
+        atomic_input=str(int(data[10+4*64:10+5*64],16))
+        atomic_output_min=str(int(data[10+5*64:10+6*64],16))
     check_evm_policy_bound_swap(
         record=owned_record,asset=asset,side=side,stable=stable,
         wallet=owned_record["wallet_address"],tx=tx,
@@ -124,6 +131,7 @@ async def submit_internal_privy_evm_order(
     did=_safe_did(did)
     key=valid_order_key(intent_key)
     if (type(asset) is not str or asset not in _ASSETS
+            or (asset in ("BTC","XRP","SOL","TRX") and not central)
             or type(budget_revision) is not int or budget_revision<1
             or type(client) is not httpx.AsyncClient):
         raise ValueError("Untrusted internal EVM execution context")

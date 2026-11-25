@@ -187,3 +187,35 @@ def test_native_thor_receipt_scan_is_owner_only_and_separate_from_evm(monkeypatc
     assert m._pending_approvals(limit=1,native_only=True)==[records[1]]
     assert m._pending_approvals(limit=1,native_only=True)==[records[0]]
     assert len(sqls)==4
+
+
+@pytest.mark.parametrize("asset,side,stable,mode",[
+    ("BNB","BUY","USDC","BRIDGE_FINITE"),("POL","BUY","USDT","BRIDGE_USDT_ZERO"),
+    ("POL","SELL","USDC","BRIDGE_FINITE"),("ARB","SELL","USDT","BRIDGE_FINITE")])
+def test_bridge_allowance_finality_uses_source_chain_and_exact_spender(asset,side,stable,mode):
+    from backend.ethereum_settlement_plan import settlement_route,CROSS_COIN_CONTRACTS
+    from backend.ethereum_settlement_calldata import DIAMOND
+    route=settlement_route(asset,side,stable); chain=route["source_chain_id"]
+    token=route["settlement_contract"] if side=="BUY" else CROSS_COIN_CONTRACTS[asset]
+    row=dict(asset=asset,side=side,stable=stable,approval_mode=mode,chain_id=chain,
+        wallet_address=WALLET,token_address=token,router_address=DIAMOND,amount_atomic=12345,tx_hash=HASH)
+    value=0 if mode=="BRIDGE_USDT_ZERO" else 12345
+    tx=dict(hash=HASH,**{"from":WALLET,"to":token},chainId=hex(chain),value="0x0",
+        input="0x095ea7b3"+f"{int(DIAMOND,16):064x}"+f"{value:064x}",blockNumber="0x64",blockHash=BLOCK)
+    receipt=dict(transactionHash=HASH,**{"from":WALLET,"to":token},blockNumber="0x64",blockHash=BLOCK,status="0x1")
+    kw=dict(chain_id=hex(chain),tx=tx,receipt=receipt,finalized={"number":"0x64"},canonical={"number":"0x64","hash":BLOCK})
+    assert _verify_approval_finality(row,**kw)=="FINALIZED_SUCCESS"
+    with pytest.raises(ValueError):
+        _verify_approval_finality({**row,"router_address":"0x"+"de"*20},**kw)
+    with pytest.raises(ValueError):
+        _verify_approval_finality(row,**{**kw,"tx":{**tx,"input":"0x095ea7b3"+"f"*128}})
+
+
+def test_approval_cost_uses_actual_gas_and_canonical_block_time():
+    from backend.shared_evm_router_approval_finality import _canonical_approval_cost
+    receipt={"gasUsed":hex(45000),"effectiveGasPrice":hex(2000000000)}
+    block={"number":"0x64","hash":BLOCK,"timestamp":hex(1795500000)}
+    assert _canonical_approval_cost(receipt,block)==(90000000000000,100,BLOCK,1795500000)
+    assert _canonical_approval_cost({"gasUsed":"0x1"},block) is None
+    assert _canonical_approval_cost({**receipt,"gasUsed":"0x0"},block) is None
+    assert _canonical_approval_cost(receipt,{**block,"hash":"bad"}) is None

@@ -101,8 +101,16 @@ async def get_original_one_signer_grant_offer(did:str)->dict:
     owner,signer=_require_policy_roles()
     if record["owner_id"]!=owner or record["signer_id"]!=signer:
         raise HTTPException(409,"Original Privy owner or signer configuration changed")
-    if (proof["owned"]["delegated"] is True
-            or wallet.get("additional_signers")!=[]):
+    # A successful SDK grant can outlive a failed HTTP confirmation. Read
+    # the actual existing attachment rather than requiring another prompt.
+    owned=proof["owned"]
+    attached=(owned["delegated"] is True
+        and type(wallet.get("additional_signers")) is list
+        and len(wallet["additional_signers"])==1
+        and _scoped_signer(wallet,did=did,address=owned["address"],
+            config={"signer_id":record["signer_id"],"policy_id":record["policy_id"]}))
+    if not attached and (owned["delegated"] is not False
+                         or wallet.get("additional_signers")!=[]):
         raise HTTPException(409,"Original wallet has existing signer; reconcile first")
     quorum=await check_privy_backend_quorum(
         expected_quorum_id=signer,
@@ -122,14 +130,19 @@ async def get_original_one_signer_grant_offer(did:str)->dict:
         "policy_id":record["policy_id"],
         "policy_sha256":proof["digest"],
         "scope_coins":[scope["asset"]],
-        "fee_scope":{
+        "settlement_policy":scope.get("settlement_policy"),
+        "authorization_lifetime":scope.get("authorization_lifetime"),
+        "fee_scope":({
+            "treasury_wallet":scope["treasury"],"fee_max_atomic":scope["net_fee_atomic_cap"],
+            "performance_fee_percent":5,"fee_basis":"POSITIVE_REALIZED_NET_PER_SELL","chain_id":1,
+        } if scope.get("net_fee_policy")=="ETHEREUM_REALIZED_NET_V1" else None if scope.get("settlement_policy") else {
             "treasury_wallet":scope["treasury"],
             "fee_max_atomic":scope["owner_max_fee_atomic"],
             "performance_fee_percent":5,
             "fee_basis":"REALIZED_NET_GAIN_ABOVE_HWM",
-        },
-        "owner_add_signer_required":True,
-        "original_wallet_approved":False,
+        }),
+        "owner_add_signer_required":not attached,
+        "original_wallet_approved":bool(attached),
         "live_trading_enabled":False,"can_submit":False,
     }
 

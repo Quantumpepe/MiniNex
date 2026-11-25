@@ -29,7 +29,7 @@ function validResponse(data) {
     });
 }
 
-export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,renderLiveControls,renderCoinActions,renderCoinBalance,marketSnapshot,syncedAt,lang='de',paperAvailable=true}) {
+export default function TradingSetupPreview({t,getAccessToken,enabled,userId,renderBudget,renderSessionControls,renderCoinAddress,renderLiveControls,renderCoinActions,renderCoinBalance,marketSnapshot,syncedAt,renderWrappedControls,lang='de',paperAvailable=true}) {
   const [settings,setSettings]=useState(INITIAL);
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState('loading');
@@ -232,7 +232,8 @@ export default function TradingSetupPreview({t,getAccessToken,enabled,userId,ren
       </div>
       {renderCoinAddress?.(opened)}
       {renderCoinActions?.(opened)}
-      {selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
+      {!paperAvailable&&['BTC','XRP','SOL','TRX'].includes(opened)&&renderWrappedControls ?
+        renderWrappedControls(opened) : selectedCoin.inProgress ? <p className="privy-wallet-description" role="status">
         {t.coinPendingTradeSettings}
       </p> : selectedCoin && !selectedCoin.inProgress ? <ExtraCoinStrategyReplay asset={opened} enabled={enabled} liveMode={!paperAvailable}
         t={t} getAccessToken={getAccessToken} options={replayOptions[opened]||defaultReplayOption()}

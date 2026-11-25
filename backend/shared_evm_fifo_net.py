@@ -167,9 +167,10 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
             amount_native = destination if side == "BUY" else source
             conversion_cost = _conversion_fee(
                 item, asset, side, block, amount_native, seen)
+            approval_cost = _decimal(item.get("allocated_approval_gas_usd","0"),allow_zero=True)
             if side == "BUY":
                 lots.append([destination, source * stable_usd,
-                             gas * native_usd, conversion_cost])
+                             gas * native_usd + approval_cost, conversion_cost])
                 continue
             if source > sum((lot[0] for lot in lots), Decimal(0)):
                 raise ValueError("Cannot charge performance fee on unmatched SELL")
@@ -207,7 +208,7 @@ def reconcile_verified_evm_fifo_net(evidence: object) -> dict:
                 "confirmed_sell_proceeds_usd": _quantized(proceeds),
                 "fifo_acquisition_cost_usd": _quantized(acquire, cost=True),
                 "allocated_buy_network_gas_usd": _quantized(buy_gas, cost=True),
-                "sell_network_gas_usd": _quantized(gas*native_usd, cost=True),
+                "sell_network_gas_usd": _quantized(gas*native_usd + approval_cost, cost=True),
                 "native_conversion_gas_usd": _quantized(
                     buy_conversions + conversion_cost, cost=True),
                 "other_confirmed_execution_cost_usd": "0",

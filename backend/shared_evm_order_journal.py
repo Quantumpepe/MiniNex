@@ -36,7 +36,7 @@ def immutable_evm_send_identity(
     central:bool=False,
 )->dict:
     """Canonical identity based on actual Privy CAIP2 RPC, not UI values."""
-    if asset=="ETH" and not central:
+    if asset in ("ETH","BTC","XRP","SOL","TRX") and not central:
         raise ValueError("Legacy ETH keeps its existing durable send journal")
     pair=_pair(asset,stable,side)
     url,body=bound_privy_evm_swap_request(
@@ -51,6 +51,7 @@ def immutable_evm_send_identity(
         "network":pair["network"],"side":side,"stable":stable,
         "wallet_address":wallet.lower(),"wallet_id":wallet_id,
         "request_digest":hashlib.sha256(request_bytes).hexdigest(),
+        "input_atomic":input_atomic,
         "signed_or_sent":False,
     }
 
@@ -63,14 +64,14 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
     the same Privy account nonce. Different chains need not block each other.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX")
             or type(identity.get("wallet_address")) is not str
             or not _ADDR.fullmatch(identity["wallet_address"])
             or type(identity.get("request_digest")) is not str
             or not _SHA.fullmatch(identity["request_digest"])):
         raise ValueError("Invalid durable EVM order identity")
     asset=identity["asset"]
-    if asset=="ETH" and not central:
+    if asset in ("ETH","BTC","XRP","SOL","TRX") and not central:
         raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if (identity.get("chain_id")!=pair["chain_id"]
@@ -89,7 +90,7 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
         """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
               WHERE privy_did=%s AND chain_id=%s
                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
-             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends_all
               WHERE privy_did=%s AND chain_id=%s
                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
@@ -99,9 +100,20 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
                 WHERE privy_did=%s AND chain='ethereum-mainnet'
                   AND side='BUY' AND %s=1 AND status IN
                   ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
+             + (SELECT COUNT(*) FROM mininex_avax_staged_steps
+                WHERE privy_did=%s AND chain_id=%s
+                  AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))
+             + (SELECT COUNT(*) FROM mininex_across_staged_steps
+                WHERE privy_did=%s AND chain_id=%s
+                  AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))
+             + (SELECT COUNT(*) FROM mininex_ethereum_settlement_submissions s
+                WHERE s.privy_did=%s AND s.source_chain_id=%s
+                  AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                  AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f
+                                  WHERE f.quote_id=s.quote_id))
              AS pending""",
         (did,pair["chain_id"],did,pair["chain_id"],
-         did,pair["chain_id"],did,pair["chain_id"]))
+         did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
     row=cur.fetchone()
     if type(row) is not dict or type(row.get("pending")) is not int:
         raise HTTPException(503,"Cannot verify pending EVM submissions")
@@ -233,14 +245,14 @@ def _claim_authorized_evm_order_locked(
     been freshly verified by the caller before entering this transaction.
     """
     if (type(identity) is not dict
-            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")
-            or (identity.get("asset")=="ETH" and not central)
+            or identity.get("asset") not in ("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX")
+            or (identity.get("asset") in ("ETH","BTC","XRP","SOL","TRX") and not central)
             or type(quote_sha256) is not str
             or not _SHA.fullmatch(quote_sha256)
             or type(budget_revision) is not int or budget_revision<1):
         raise ValueError("Unverified executable coin order")
     asset=identity["asset"]
-    if asset=="ETH" and not central:
+    if asset in ("ETH","BTC","XRP","SOL","TRX") and not central:
         raise ValueError("Legacy ETH cannot use this original-wallet journal")
     pair=_pair(asset,identity.get("stable"),identity.get("side"))
     if central:
@@ -297,7 +309,12 @@ def _claim_authorized_evm_order_locked(
                 or consent.get("budget_revision")!=budget_revision
                 or consent.get("message_sha256")!=policy["consent_sha256"]):
             raise HTTPException(409,"Matching signed coin consent required")
-    if central and asset=="ETH":
+    if central and asset=="BTC":
+        from .shared_evm_wallet_policy_prepare import _locked_selected_budget
+        amount,revision=_locked_selected_budget(cur,did=did,asset=asset,
+                            stable=identity["stable"],expected_revision=budget_revision)
+        settings={"budget_usd":amount,"revision":revision,"stable":identity["stable"]}
+    elif central and asset=="ETH":
         from .shared_evm_central_eth_settings import locked_original_eth_settings
         settings=locked_original_eth_settings(
             cur,did=did,stable=identity["stable"],revision=budget_revision)
@@ -347,13 +364,21 @@ def _claim_authorized_evm_order_locked(
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
     if (type(session) is not dict
-            or session.get("status")!="ACTIVE"
+            or not (session.get("status")=="ACTIVE" or
+                (session.get("status")=="EXIT_PENDING" and identity["side"]=="SELL"
+                 and (asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") or (asset=="ETH" and central))))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=identity["stable"]
             or session.get("wallet_address")!=identity["wallet_address"]
             or session.get("budget_revision")!=budget_revision
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Owner has not started this coin's LIVE session")
+    if asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") and identity["side"]=="SELL":
+        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
+        assert_token_exit_quantity_locked(cur,did,asset,identity["wallet_address"],identity.get("input_atomic"))
+    if central and asset=="ETH" and identity["side"]=="SELL":
+        from .shared_evm_exit_inventory import assert_eth_exit_swap_locked
+        assert_eth_exit_swap_locked(cur,did,identity["wallet_address"],key,identity.get("input_atomic"))
     # This helper also atomically guards all unresolved same-wallet network
     # transactions, including ETH native conversions for LINK and UNI.
     _claim_locked(
@@ -441,7 +466,7 @@ def record_internal_authorized_evm_send_result(
     """Internal approved executor only, never a public HTTP writer."""
     did=_safe_did(did)
     key=valid_order_key(intent_key)
-    if (asset not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB")
+    if (asset not in ("BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX")
             or type(digest) is not str or not _SHA.fullmatch(digest)
             or tx_hash is not None and (
                 type(tx_hash) is not str or not _HASH.fullmatch(tx_hash))):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
 import json
 import logging
@@ -69,9 +70,7 @@ def _native_source_receipt_work_page(
     return rows
 _CHAIN={"BTC":"bitcoin-mainnet","SOL":"solana-mainnet","XRP":"xrpl-mainnet",
         "TRX":"tron-mainnet","DOGE":"dogecoin-mainnet"}
-# TRX/DOGE are Ethereum-funded BUY only until their native SELL signers
-# and independent destination-chain receipts are implemented.
-_BUY_ONLY=frozenset(("TRX","DOGE"))
+_BUY_ONLY=frozenset(("DOGE",))
 
 
 def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
@@ -104,10 +103,39 @@ def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
                 or proof.get("wallet_signed") is not False
                 or proof.get("can_submit") is not False):
             raise ValueError("Bitcoin source transaction is not finalized")
+        raw_fee=proof.get("transaction_fee_btc")
+        if type(raw_fee) is not str or len(raw_fee)>40:
+            raise ValueError("Original Bitcoin network fee unavailable")
+        try:
+            with localcontext() as ctx:
+                ctx.prec=100
+                atomic_fee=Decimal(raw_fee)*10**8
+                if (not atomic_fee.is_finite() or atomic_fee<0
+                        or atomic_fee!=atomic_fee.to_integral_value()
+                        or atomic_fee>=2**63):
+                    raise ValueError("Original Bitcoin fee not exact satoshis")
+                atomic_fee=str(int(atomic_fee))
+        except (InvalidOperation,ValueError):
+            raise ValueError("Original Bitcoin network fee unavailable") from None
         checkpoint={"confirmations":proof["confirmations_observed"],
+                    "network_fee_atomic":atomic_fee,
                     "wallet_input_sats":proof.get("wallet_input_sats"),
                     "wallet_output_sats":proof.get("wallet_output_sats"),
                     "network_fee_btc":proof.get("transaction_fee_btc")}
+    elif asset=="TRX":
+        if (proof.get("mode")!="ORIGINAL_TRX_JOURNAL_SOURCE_RECEIPT"
+                or proof.get("asset")!="TRX" or proof.get("source_tx_hash")!=tx
+                or proof.get("source_chain_finalized") is not True
+                or proof.get("source_wallet")!=owner_wallet
+                or proof.get("original_order_sha256")!=record.get("payload_sha256")
+                or record.get("source_signed_tx_hash")!=tx
+                or type(proof.get("source_block_number")) is not int
+                or proof["source_block_number"]<=0
+                or type(proof.get("actual_source_fee_sun")) is not str
+                or not proof["actual_source_fee_sun"].isdigit()):
+            raise ValueError("Original TRX source receipt not bound to journal")
+        checkpoint={"chain_height":proof["source_block_number"],
+                    "network_fee_atomic":proof["actual_source_fee_sun"]}
     else:
         correct=(proof.get("source_wallet_signature_verified") is True if asset=="SOL"
                  else proof.get("source_wallet_transaction_verified") is True)
@@ -156,13 +184,94 @@ def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
     return {"source_proof_sha256":commitment,**record_fields}
 
 
+def inspect_original_trx_journal_source(record, receipt):
+    """Reconstruct the exact signed native transfer from the SOLIDIFIED node.
+
+    The stored pre-broadcast signed hash commits to the complete raw bytes.
+    No quote is regenerated and no signer or network write is involved.
+    """
+    from .native_trx_owner_preflight import verify_tron_swap_wire
+    from .native_trx_user_signed_send import recover_tron_signature,solid_tron_receipt_confirmed
+    from .native_trx_manual_send import trx_to_sun
+    from .native_coin_balances import _checksum
+    from .native_live_broadcast_transport import _b58
+    from .manual_swap_live_quotes import THOR_ASSETS
+    from .native_thor_transaction_status import _valid_memo_destination
+    import re
+    if (type(record) is not dict or type(receipt) is not dict
+            or record.get("asset")!="TRX" or record.get("side")!="SELL"
+            or record.get("chain")!="tron-mainnet" or record.get("stable")!="USDT"
+            or not _valid_source_hash("TRX","SELL",record.get("source_tx_hash"))
+            or record.get("source_signed_tx_hash")!=record["source_tx_hash"]):
+        raise ValueError("Original TRX signed claim unavailable")
+    txid=record["source_tx_hash"]
+    tx,info=receipt.get("transaction"),receipt.get("info")
+    if (type(tx) is not dict or type(info) is not dict
+            or str(info.get("id","")).lower()!=txid
+            or type(info.get("blockNumber")) is not int or info["blockNumber"]<=0
+            or not solid_tron_receipt_confirmed(txid,record["source_wallet"],tx,info)
+            or info.get("result") not in (None,"SUCCESS")
+            or type(info.get("receipt")) is not dict
+            or info["receipt"].get("result") not in (None,"SUCCESS")):
+        raise ValueError("Original TRX source not solidified")
+    raw=tx["raw_data"]
+    value=raw["contract"][0]["parameter"]["value"]
+    vault_raw=bytes.fromhex(value["to_address"])
+    if len(vault_raw)!=21 or vault_raw[0]!=0x41:
+        raise ValueError("Original TRON destination invalid")
+    vault=_b58(vault_raw+_checksum(vault_raw))
+    if vault==record["source_wallet"]:
+        raise ValueError("Original TRON source cannot pay itself")
+    memo=bytes.fromhex(raw["data"]).decode("utf-8")
+    if not _valid_memo_destination(memo,THOR_ASSETS["USDT"][0],
+            record["destination_wallet"],record["source_wallet"],
+            source_chain="TRON",target_chain="ETH"):
+        raise ValueError("Original TRON settlement memo changed")
+    if (type(info.get("blockTimeStamp")) is not int
+            or not raw["timestamp"]<=info["blockTimeStamp"]<=raw["expiration"]):
+        raise ValueError("Original TRON block time invalid")
+    checked,_=verify_tron_swap_wire(tx,source=record["source_wallet"],destination=vault,
+        sun=trx_to_sun(str(record["input_amount"])),memo=memo,reference_ms=raw["timestamp"])
+    signatures=tx.get("signature")
+    if (checked.lower()!=txid or type(signatures) is not list or len(signatures)!=1
+            or type(signatures[0]) is not str or not re.fullmatch(r"[0-9a-fA-F]{130}",signatures[0])):
+        raise ValueError("Original TRON signature unavailable")
+    recovered=recover_tron_signature(txid,"0x"+signatures[0][:128],record["source_wallet"])
+    if recovered.lower()!=signatures[0].lower():
+        raise ValueError("Original TRON signature mismatch")
+    fee=info.get("fee",0)
+    if type(fee) is not int or not 0<=fee<2**63:
+        raise ValueError("Original TRON network fee unavailable")
+    return {"mode":"ORIGINAL_TRX_JOURNAL_SOURCE_RECEIPT","asset":"TRX",
+            "source_tx_hash":txid,"source_wallet":record["source_wallet"],
+            "original_order_sha256":record["payload_sha256"],
+            "source_block_number":info["blockNumber"],"source_chain_finalized":True,
+            "actual_source_fee_sun":str(fee)}
+
+
+async def _read_original_sell_source(original,did,owned,eth):
+    asset=original["asset"]
+    hash_=original["source_tx_hash"]
+    if asset=="TRX":
+        from .native_trx_doge_buy_receipts import get_original_trx_doge_receipt
+        if (type(eth) is not str or
+                original["destination_wallet"].lower()!=eth.lower()):
+            raise ValueError("Original TRX receiving wallet changed")
+        receipt=await get_original_trx_doge_receipt(asset,hash_)
+        return inspect_original_trx_journal_source(original,receipt)
+    if asset=="BTC":
+        return await check_native_btc_transaction(did,hash_)
+    return await get_owner_native_sender_receipt(did,asset=asset,transaction_hash=hash_)
+
+
 def _pending_original_source_submissions(limit:int=32)->list[dict]:
     """Original submitted native SELL source receipts, fair under mutations."""
     query="""SELECT privy_did,asset,intent_key,payload_sha256,side,
-                    chain,source_wallet,source_tx_hash,status,created_at
+                    chain,source_wallet,destination_wallet,stable,input_amount,
+                    source_tx_hash,source_signed_tx_hash,status,created_at
              FROM mininex_live_native_order_intents
              WHERE status='SUBMITTED' AND side='SELL'
-               AND asset IN ('BTC','SOL','XRP')
+               AND asset IN ('BTC','SOL','XRP','TRX')
                AND source_tx_hash IS NOT NULL"""
     return _native_source_receipt_work_page(
         where_sql=query,kind="sell",limit=limit,lock=_FINALITY_PAGE_LOCK)
@@ -234,6 +343,19 @@ def _persist_source_finality_locked(
     result=cur.fetchone()
     if type(result) is not dict or result.get("status")!="SOURCE_FINALIZED":
         raise HTTPException(409,"Native original receipt persistence conflict")
+    if side=="SELL" and asset in ("BTC","SOL","XRP","TRX"):
+        fee=verified.get("checkpoint",{}).get("network_fee_atomic")
+        if (type(fee) is not str or not fee.isascii() or not fee.isdigit()
+                or len(fee)>19 or int(fee)>=2**63):
+            raise ValueError("Original native actual source fee unavailable")
+        cur.execute("""UPDATE mininex_live_native_order_intents
+            SET source_network_fee_atomic=%s
+            WHERE privy_did=%s AND asset=%s AND intent_key=%s
+              AND status='SOURCE_FINALIZED' AND source_proof_sha256=%s
+            RETURNING source_network_fee_atomic""",(fee,did,asset,key,digest))
+        saved=cur.fetchone()
+        if type(saved) is not dict or str(saved.get("source_network_fee_atomic"))!=fee:
+            raise HTTPException(409,"Original native actual fee persistence conflict")
     return "SOURCE_FINALIZED"
 
 
@@ -292,13 +414,10 @@ async def reconcile_original_native_source_once(limit:int=32)->dict:
         did=_safe_did(original["privy_did"])
         asset=original["asset"]
         user=await fetch_privy_user(did)
-        owned,_eth=_exact_owner_wallets(user,did,asset)
+        owned,eth=_exact_owner_wallets(user,did,asset)
         if owned!=original["source_wallet"]:
             raise ValueError("Original Privy wallet changed")
-        hash_=original["source_tx_hash"]
-        proof=(await check_native_btc_transaction(did,hash_) if asset=="BTC"
-               else await get_owner_native_sender_receipt(
-                   did,asset=asset,transaction_hash=hash_))
+        proof=await _read_original_sell_source(original,did,owned,eth)
         evidence=_confirmed_original_source(original,proof,owned)
         await asyncio.to_thread(_persist_independent_source_evidence,
                                 original,evidence)
@@ -323,13 +442,13 @@ def _pending_unknown_signed_sources(limit:int=32)->list[dict]:
     # Avoid racing an active source broadcaster (HTTP timeout 12 seconds):
     # only SENDING rows stranded for 60 seconds may enter passive recovery.
     query="""SELECT privy_did,asset,intent_key,payload_sha256,side,
-                    chain,source_wallet,source_tx_hash,
+                    chain,source_wallet,destination_wallet,stable,input_amount,source_tx_hash,
                     source_signed_tx_hash,status,created_at
              FROM mininex_live_native_order_intents
              WHERE (status='RECONCILIATION_REQUIRED'
                     OR (status='SENDING'
                         AND updated_at < now() - interval '60 seconds'))
-               AND side='SELL' AND asset IN ('BTC','SOL','XRP')
+               AND side='SELL' AND asset IN ('BTC','SOL','XRP','TRX')
                AND source_tx_hash IS NULL
                AND source_signed_tx_hash IS NOT NULL"""
     return _native_source_receipt_work_page(
@@ -388,15 +507,12 @@ async def reconcile_unknown_original_native_signed_sources_once(limit:int=32)->d
         if not _valid_source_hash(asset,"SELL",signed_hash):
             raise ValueError("Original signed hash invalid")
         user=await fetch_privy_user(did)
-        owned,_eth=_exact_owner_wallets(user,did,asset)
+        owned,eth=_exact_owner_wallets(user,did,asset)
         if owned!=original["source_wallet"]:
             raise ValueError("Original native owner was changed")
-        proof=(await check_native_btc_transaction(did,signed_hash)
-               if asset=="BTC" else
-               await get_owner_native_sender_receipt(
-                   did,asset=asset,transaction_hash=signed_hash))
         provisional={**original,"status":"SUBMITTED",
                      "source_tx_hash":signed_hash}
+        proof=await _read_original_sell_source(provisional,did,owned,eth)
         verified=_confirmed_original_source(provisional,proof,owned)
         await asyncio.to_thread(_persist_independent_source_evidence,
                                 original,verified,unknown=True)

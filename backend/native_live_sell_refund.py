@@ -25,10 +25,11 @@ from .native_thor_transaction_status import (
     _VALID_INTENT, get_private_original_protocol_status,
 )
 from .native_trade_receipts import _valid_native_hash
+from .native_trx_doge_buy_receipts import get_original_trx_doge_receipt
 from .privy_wallet_verification import fetch_privy_user
 from .storage import _db_url, _ensure_schema, _safe_did
 
-_ASSETS=frozenset(("BTC","SOL","XRP"))
+_ASSETS=frozenset(("BTC","SOL","XRP","TRX"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _BTC_HASH=re.compile(r"^[0-9a-f]{64}$")
 _AMOUNT=re.compile(r"^[1-9][0-9]{0,35}$")
@@ -64,7 +65,7 @@ def inspect_original_native_sell_refund(
             or protocol.get("destination_owner_bound") is not True
             or protocol.get("protocol_inbound_observed") is not True
             or protocol.get("protocol_inbound_finalized") is not True
-            or protocol.get("refund_original_source_chain")!=asset
+            or protocol.get("refund_original_source_chain")!=("TRON" if asset=="TRX" else asset)
             or protocol.get("refund_independently_finalized") is not False
             or protocol.get("destination_chain_receipts_verified") is not False
             or protocol.get("realized_pnl_verified") is not False
@@ -82,7 +83,7 @@ def inspect_original_native_sell_refund(
         # Mixed partial payouts/refunds require a separate multi-leg accounting.
         raise ValueError("Cannot infer complete refund from partial protocol outbounds")
     hash_=hashes[0]
-    if not (_BTC_HASH.fullmatch(hash_) if asset=="BTC"
+    if not (_BTC_HASH.fullmatch(hash_) if asset in ("BTC","TRX")
             else _valid_native_hash(asset,hash_)):
         raise ValueError("Invalid native original refund hash")
     units=int(amounts[0])
@@ -92,7 +93,7 @@ def inspect_original_native_sell_refund(
         atomic=units*10
     else:
         if units%100:
-            raise ValueError("THORChain XRP refund has fractional drop")
+            raise ValueError("THORChain XRP/TRX refund has fractional native units")
         atomic=units//100
     if not 0<atomic<10**30:
         raise ValueError("Impossible native refund amount")
@@ -171,6 +172,11 @@ async def get_private_original_native_sell_refund(
     hash_=hashes[0]
     if asset=="BTC":
         receipt=await check_native_btc_transaction(did,hash_)
+    elif asset=="TRX":
+        try:
+            receipt=await get_original_trx_doge_receipt(asset,hash_)
+        except (ValueError,TypeError,KeyError,httpx.HTTPError):
+            raise HTTPException(503,"TRON refund chain proof unavailable") from None
     else:
         if asset=="SOL":
             payload={
@@ -233,7 +239,7 @@ def _persist_original_native_sell_refund_locked(
     amount=verified.get("refund_amount_atomic")
     if (type(digest) is not str or not _SHA.fullmatch(digest)
             or type(tx) is not str
-            or not (_BTC_HASH.fullmatch(tx) if asset=="BTC"
+            or not (_BTC_HASH.fullmatch(tx) if asset in ("BTC","TRX")
                     else _valid_native_hash(asset,tx))
             or type(amount) is not str or not _AMOUNT.fullmatch(amount)):
         raise ValueError("Invalid immutable original refund proof")

@@ -134,7 +134,7 @@ async def _owned_wallet(did:str,source:object)->str:
     return wallet_id
 
 
-def _check_unsigned_transaction(tx:object,source:str,destination:str,sun:int)->tuple[str,dict]:
+def _check_unsigned_transaction(tx:object,source:str,destination:str,sun:int,*,reference_ms:int|None=None)->tuple[str,dict]:
     if type(tx) is not dict or type(tx.get("raw_data")) is not dict:
         raise HTTPException(503,"TRON node did not prepare a transaction")
     txid=tx.get("txID")
@@ -159,8 +159,8 @@ def _check_unsigned_transaction(tx:object,source:str,destination:str,sun:int)->t
             or str(value.get("to_address","")).upper()!=to
             or value.get("amount")!=sun):
         raise HTTPException(503,"TRON transaction terms differ from your request")
-    now_ms=int(time.time()*1000)
-    if (type(raw.get("timestamp")) is not int or type(raw.get("expiration")) is not int
+    now_ms=int(time.time()*1000) if reference_ms is None else reference_ms
+    if (type(now_ms) is not int or now_ms<=0 or type(raw.get("timestamp")) is not int or type(raw.get("expiration")) is not int
             or not now_ms-180000<=raw["timestamp"]<=now_ms+30000
             or not now_ms+5000<=raw["expiration"]<=now_ms+3600000):
         raise HTTPException(503,"TRON transaction timestamp or expiry unavailable")

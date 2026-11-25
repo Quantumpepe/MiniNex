@@ -40,20 +40,13 @@ _ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
 
 
 def automatic_fee_transfer_worker_enabled()->bool:
-    """Honor a single owner-granted LIVE worker; preserve an explicit fee stop.
+    """Retired HWM fee model must never create another monetary transfer.
 
-    The verified one-wallet policy already includes the exact Treasury fee
-    rules. Do not require the operator to remember a second activation flag
-    for existing owner-authorized HWM obligations. An explicitly nonempty
-    off/invalid fee flag must still disable all automatic fee sends.
+    Historical sent fees remain independently reconciled. The replacement
+    realized net-profit fee will require its own verified accounting and
+    owner-authorized settlement path. No old environment flag overrides this.
     """
-    override=os.getenv("MININEX_EVM_AUTO_FEES_ENABLED","").strip()
-    if override and override!="explicit-owner-privy-grant":
-        return False
-    # No additional owner/operator ENV setup per coin: each real HWM
-    # liability is checked against the original exact user-granted wallet
-    # policy, immutable fee journal and finality before a sender can act.
-    return bool(os.getenv("DATABASE_URL","").strip())
+    return False
 
 
 async def submit_original_owner_auto_fee_once(

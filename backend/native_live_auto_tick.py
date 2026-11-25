@@ -18,8 +18,8 @@ import httpx
 
 from .eth_live_strategy_tick import verified_live_native_momentum
 from .native_buy_strategy_execution import coordinate_original_native_buy_once
-from .native_privy_btc_signer import sign_and_dispatch_original_btc_sell_once
-from .native_live_source_evidence import verified_owner_native_buy_amount
+from .native_live_source_evidence import verified_owner_native_buy_amount,prepare_native_sell_candidate
+from fastapi import HTTPException
 from .storage import _safe_did
 
 LOG=logging.getLogger("mininex.native_live_tick")
@@ -59,7 +59,8 @@ def _original_owner_native_session(row:object)->dict:
     stable=row.get("stable")
     started=row.get("started_by_owner_at")
     if (asset not in _NATIVE or stable not in _STABLES[asset]
-            or row.get("status")!="ACTIVE"
+            or not (row.get("status")=="ACTIVE" or
+                (row.get("status")=="EXIT_PENDING" and asset in ("BTC","SOL","XRP","TRX")))
             or type(started) is not datetime or started.tzinfo is None
             or type(row.get("budget_revision")) is not int
             or row["budget_revision"]<=0
@@ -123,60 +124,36 @@ async def execute_owner_native_live_tick(
             or not callable(grant_auditor)):
         raise ValueError("Internal native execution context not configured")
     current=time.time() if now is None else now
-    decision=verified_live_native_momentum(
-        market,asset=row["asset"],horizon=row["horizon"],now=current)
+    exiting=row["status"]=="EXIT_PENDING"
+    decision=({"action":"SELL","reason":"OWNER_EXIT_REQUESTED"} if exiting else
+              verified_live_native_momentum(
+                  market,asset=row["asset"],horizon=row["horizon"],now=current))
     if decision.get("action")=="WAIT":
         return {"asset":row["asset"],"state":"WAIT",
                 "reason":decision["reason"]}
     if decision.get("action")=="SELL":
-        # SELL is no longer hard-blocked. The same independent grant auditor
-        # is required. Actual signed native source settlement still depends
-        # on a prepared and signed source; if that is missing the call fails
-        # closed with a clear reason instead of a permanent block.
-        amount=await verified_owner_native_buy_amount(
-            row["privy_did"],asset=row["asset"],stable=row["stable"],
-            budget_usd=(row["budget_usd"] if row["asset"]!="BTC" else None),
-            budget_percent=(row["budget_percent"] if row["asset"]=="BTC" else None),
-            client=client)
-        if amount is None:
-            return {"asset":row["asset"],"state":"WAIT",
-                    "reason":"NO_VERIFIED_NATIVE_OWNER_AVAILABLE_CAPITAL"}
+        supported=row["asset"] in ("BTC","SOL","TRX")
+        candidate=await prepare_native_sell_candidate(row["privy_did"],
+            asset=row["asset"],stable=row["stable"],client=client,
+            **({"_include_private_quote":True} if supported or exiting else {}))
+        quote=candidate.pop("_private_quote",None)
+        exit_wallet=candidate.pop("_exit_wallet",None)
+        exit_eth_wallet=candidate.pop("_exit_eth_wallet",None)
+        if exiting and candidate.get("reason")=="NO_FINALIZED_NATIVE_POSITION" and exit_wallet and exit_eth_wallet:
+            from .native_live_auto_sessions import complete_native_exit_if_flat
+            stopped=await asyncio.to_thread(complete_native_exit_if_flat,row["privy_did"],
+                row["asset"],row["started_by_owner_at"],exit_wallet,exit_eth_wallet)
+            return {"asset":row["asset"],"state":"STOPPED" if stopped else "WAIT",
+                    "reason":"VERIFIED_POSITION_FLAT" if stopped else "EXIT_SETTLEMENT_PENDING"}
+        if not supported or candidate.get("state")!="NATIVE_SELL_QUOTE_PREPARED" or quote is None:
+            return candidate
+        from .native_sell_strategy_execution import coordinate_original_native_sell_once
         run="owner_"+row["started_by_owner_at"].astimezone(
             timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-        event="market_"+str(int(current//60))
-        audit=await grant_auditor(
-            row["privy_did"],asset=row["asset"],stable=row["stable"],
-            amount=amount,budget_revision=row["budget_revision"],
-            signal_event_id=event)
-        evidence=_independent_native_owner_permission(
-            audit,row=row,amount=amount)
-        # Grant is verified. For BTC we require an explicit Privy signature
-        # before any broadcast. Other native assets stay fail-closed until
-        # their signed source path is fully connected.
-        if row["asset"]=="BTC":
-            # The actual PSBT/UTXO preparation lives in the existing
-            # sign-and-dispatch path. We only call it when the grant is good.
-            # If the prepared source is missing the call fails closed.
-            try:
-                result=await sign_and_dispatch_original_btc_sell_once(
-                    row["privy_did"],
-                    intent_key="native_"+event,  # placeholder; real key comes from journal
-                    quote={},  # real quote must be supplied by coordinator
-                    psbt={},
-                    original_utxos=[],
-                    fee_rate_sats_per_vbyte=1,
-                    permission_audit=evidence,
-                    client=client,
-                )
-                return {"asset":row["asset"],"state":result.get("journal_state","SUBMITTED"),
-                        "reason":"BTC_SELL_SIGNED_AND_DISPATCHED",
-                        "signed":True}
-            except Exception:
-                return {"asset":row["asset"],"state":"WAIT",
-                        "reason":"BTC_SELL_REQUIRES_PREPARED_SIGNED_SOURCE"}
-        return {"asset":row["asset"],"state":"SELL_GRANT_VERIFIED",
-                "reason":"NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE",
-                "audit_mode":evidence.get("audit_mode")}
+        return await coordinate_original_native_sell_once(row["privy_did"],
+            asset=row["asset"],stable=row["stable"],amount=candidate["input_amount"],
+            quote=quote,strategy_run_id=run,signal_event_id="market_"+str(int(current//60)),
+            budget_revision=row["budget_revision"],grant_auditor=grant_auditor,client=client)
     if decision.get("action")!="BUY":
         raise ValueError("Invalid actual live market signal")
     amount=await verified_owner_native_buy_amount(
@@ -192,10 +169,15 @@ async def execute_owner_native_live_tick(
     run="owner_"+row["started_by_owner_at"].astimezone(
         timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     event="market_"+str(int(current//60))
-    audit=await grant_auditor(
-        row["privy_did"],asset=row["asset"],stable=row["stable"],
-        amount=amount,budget_revision=row["budget_revision"],
-        signal_event_id=event)
+    try:
+        audit=await grant_auditor(
+            row["privy_did"],asset=row["asset"],stable=row["stable"],
+            amount=amount,budget_revision=row["budget_revision"],
+            signal_event_id=event)
+    except HTTPException as exc:
+        if isinstance(exc.detail,dict) and exc.detail.get("code")=="NATIVE_PRIVY_GRANT_NOT_VERIFIED":
+            return {"asset":row["asset"],"state":"WAIT","reason":"NATIVE_PRIVY_GRANT_NOT_VERIFIED"}
+        raise
     evidence=_independent_native_owner_permission(
         audit,row=row,amount=amount)
     return await coordinate_original_native_buy_once(

@@ -89,11 +89,18 @@ async def _xrp_rpc(client: httpx.AsyncClient, method: str, params: list) -> dict
 
 
 async def prepare_original_xrp_unsigned_owner_payment(
-    did: str, *, amount: str,
+    did: str, *, amount: str, _private_quote: dict | None = None,
+    _internal_bundle: bool = False,
 ) -> dict:
-    """Source XRP original payment; not real Privy signing permission."""
+    """Use the same verified internal quote for signing and the order journal.
+
+    The public preview still obtains its own authenticated quote; no HTTP
+    caller supplies private terms. This function never grants authority.
+    """
     did = _safe_did(did)
-    quote = await get_private_native_thornode_terms(
+    if _private_quote is not None and not _internal_bundle:
+        raise HTTPException(422, "Private quote is internal only")
+    quote = _private_quote if _private_quote is not None else await get_private_native_thornode_terms(
         did, asset="XRP", side="SELL", stable="USDC", amount=amount,
     )
     owner = quote.get("source_wallet")
@@ -142,4 +149,5 @@ async def prepare_original_xrp_unsigned_owner_payment(
         "wallet_signed": False,
         "source_transaction_sent": False,
         "execution_enabled": False, "can_submit": False,
+        **({"_private_quote": quote} if _internal_bundle else {}),
     }

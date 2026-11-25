@@ -24,12 +24,16 @@ def b58(raw,alphabet):
 SOL=b58(bytes([7])*32,SOL_CHARS)
 xrp_payload=b"\x00"+bytes([3])*20
 XRP=b58(xrp_payload+_checksum(xrp_payload),_RIPPLE)
+trx_payload=b"\x41"+bytes([4])*20
+TRX=b58(trx_payload+_checksum(trx_payload),B58)
+trx_vault_payload=b"\x41"+bytes([9])*20
+TRX_VAULT=b58(trx_vault_payload+_checksum(trx_vault_payload),B58)
 FUTURE=datetime.now(timezone.utc)+timedelta(minutes=3)
 
 
 def identity(asset="BTC",side="SELL",amount="0.001",signal="signal001",
              stable="USDC",change=None,expires_at=None):
-    native={"BTC":BTC,"SOL":SOL,"XRP":XRP}[asset]
+    native={"BTC":BTC,"SOL":SOL,"XRP":XRP,"TRX":TRX}[asset]
     source=ETH if side=="BUY" else native
     destination=native if side=="BUY" else ETH
     chain="ethereum-mainnet" if side=="BUY" else journal._NATIVE_NETWORK[asset]
@@ -39,6 +43,7 @@ def identity(asset="BTC",side="SELL",amount="0.001",signal="signal001",
         "SOL":b58(bytes([8])*32,SOL_CHARS),
         "XRP":b58(bytes([0])+bytes([8])*20+
             _checksum(bytes([0])+bytes([8])*20),_RIPPLE),
+        "TRX":TRX_VAULT,
     }[asset] if side=="SELL" else "0x"+"c"*40
     quote={
         "mode":"THORCHAIN_DESTINATION_BOUND_READ_ONLY",
@@ -194,7 +199,7 @@ def test_atomic_one_shot_claim_requires_privy_and_stable_owner_intent():
               "side":"SELL","stable":"USDC"}
     cur=Cursor([{"privy_did":DID},original,
                 {"revision":3,"stable":"USDC","percent":100},
-                {"pending":0},{"status":"SENDING"}])
+                {"status":"ACTIVE"},{"pending":0},{"status":"SENDING"}])
     result=journal._claim_once_locked(
         cur,did=DID,asset="BTC",key=row["intent_key"],
         digest=row["payload_sha256"],permission_audit=audit(row))
@@ -235,7 +240,7 @@ def test_existing_unresolved_wallet_send_serializes_next_source_nonce():
          "budget_revision":row["budget_revision"],
          "side":"SELL","stable":"USDC"},
         {"revision":3,"stable":"USDC","percent":100},
-        {"pending":1},
+        {"status":"ACTIVE"},{"pending":1},
     ])
     with pytest.raises(HTTPException):
         journal._claim_once_locked(cur,did=DID,asset=row["asset"],
@@ -374,7 +379,7 @@ def test_real_native_signed_hash_is_reserved_with_atomic_original_claim():
     }
     cur=Cursor([
         {"privy_did":DID},original,
-        {"revision":3,"stable":"USDC","percent":100},{"pending":0},
+        {"revision":3,"stable":"USDC","percent":100},{"status":"ACTIVE"},{"pending":0},
         {"status":"SENDING"},{"source_signed_tx_hash":expected},
     ])
     state=journal._claim_signed_native_source_once_locked(
@@ -383,7 +388,7 @@ def test_real_native_signed_hash_is_reserved_with_atomic_original_claim():
         permission_audit=audit(row),
     )
     assert state=="SENDING"
-    assert len(cur.queries)==6
+    assert len(cur.queries)==7
     assert "source_signed_tx_hash=%s" in cur.queries[-1][0]
     assert "status='SENDING'" in cur.queries[-1][0]
     assert cur.queries[-1][1][0]==expected
@@ -459,7 +464,7 @@ def test_native_eth_buy_checks_existing_owner_ethereum_nonce():
             "side":"BUY","stable":"USDC"}
     cur=Cursor([{"privy_did":DID},stored,
                 {"revision":3,"stable":"USDC","percent":100},
-                {"pending":0},{"pending":1}])
+                {"status":"ACTIVE"},{"pending":0},{"pending":1}])
     with pytest.raises(HTTPException):
         journal._claim_once_locked(cur,did=DID,asset="BTC",
             key=row["intent_key"],digest=row["payload_sha256"],
@@ -495,7 +500,7 @@ def test_finalized_source_waiting_for_other_chain_is_not_a_wallet_nonce_block(as
         prefs["percent"]=100
     else:
         prefs["budget_usd"]=500
-    query_results=[{"privy_did":DID},original,prefs,{"pending":0}]
+    query_results=[{"privy_did":DID},original,prefs,{"status":"ACTIVE"},{"pending":0}]
     if side=="BUY":
         query_results.append({"pending":0})
     query_results.append({"status":"SENDING"})
@@ -504,7 +509,7 @@ def test_finalized_source_waiting_for_other_chain_is_not_a_wallet_nonce_block(as
         key=row["intent_key"],digest=row["payload_sha256"],
         permission_audit=audit(row))
     assert status=="SENDING"
-    nonce_sql=cur.queries[3][0]
+    nonce_sql=cur.queries[4][0]
     assert "SENDING" in nonce_sql
     assert "SUBMITTED" in nonce_sql
     assert "RECONCILIATION_REQUIRED" in nonce_sql
@@ -525,7 +530,7 @@ def test_uncertain_original_source_send_still_blocks_second_claim():
     }
     cur=Cursor([{"privy_did":DID},original,
                 {"revision":3,"stable":"USDC","budget_usd":500},
-                {"pending":1}])
+                {"status":"ACTIVE"},{"pending":1}])
     with pytest.raises(HTTPException) as exc:
         journal._claim_once_locked(cur,did=DID,asset="SOL",
             key=row["intent_key"],digest=row["payload_sha256"],
@@ -561,3 +566,40 @@ def test_native_source_refuses_stale_owner_budget_or_settlement(asset,prefs):
     assert err.value.status_code==409
     assert not any("SET status='SENDING'" in q for q,args in cur.queries)
     assert "FOR UPDATE" in cur.queries[-1][0]
+
+
+@pytest.mark.parametrize("side",["BUY","SELL"])
+@pytest.mark.parametrize("session",[None,{"status":"PAUSED"},{"status":"STOPPED"}])
+def test_paused_native_session_prevents_prepared_order_claim(side,session):
+    row=identity(asset="BTC",side=side)
+    original={**row,"status":"PREPARED"}
+    cur=Cursor([{"privy_did":DID},original,
+        {"revision":3,"stable":"USDC","percent":100},session])
+    with pytest.raises(HTTPException) as exc:
+        journal._claim_once_locked(cur,did=DID,asset="BTC",key=row["intent_key"],
+            digest=row["payload_sha256"],permission_audit=audit(row))
+    assert exc.value.status_code==409
+    assert "mininex_live_native_auto_sessions" in cur.queries[-1][0]
+    assert "FOR UPDATE" in cur.queries[-1][0]
+    assert not any("SET status='SENDING'" in sql for sql,_ in cur.queries)
+
+
+def test_tron_sell_journal_binds_native_source_and_ethereum_usdt():
+    row=identity("TRX","SELL","12.123456",stable="USDT")
+    assert row["chain"]=="tron-mainnet"
+    assert row["destination_chain"]=="ethereum-mainnet"
+    assert row["source_wallet"]==TRX and row["destination_wallet"]==ETH
+    assert row["input_amount"]=="12.123456"
+    assert journal._valid_source_hash("TRX","SELL","a"*64)
+    assert not journal._valid_source_hash("TRX","SELL","0x"+"a"*64)
+    with pytest.raises(ValueError):
+        identity("TRX","SELL","12.1234567",stable="USDT")
+    with pytest.raises(ValueError):
+        identity("TRX","SELL","12",stable="USDC")
+    assert "mininex_native_sell_network_v3" in "\n".join(SCHEMA)
+    # Prepared terms are still not a grant; no chain send is possible.
+    cur=Cursor([])
+    with pytest.raises(HTTPException):
+        journal._claim_once_locked(cur,did=DID,asset="TRX",key=row["intent_key"],
+            digest=row["payload_sha256"],permission_audit={})
+    assert cur.queries==[]

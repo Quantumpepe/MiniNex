@@ -36,6 +36,11 @@ _CALL = re.compile(r"^0x[0-9a-fA-F]+$")
 
 
 def _pair(asset: str, stable: str, side: str) -> dict:
+    if asset in ("BTC","XRP","SOL","TRX"):
+        from .ethereum_wrapped_spot_policy import wrapped_spot_route
+        r=wrapped_spot_route(asset,stable,side)
+        return {**r,"output_token":r["destination_token"],
+                "output_decimals":r["destination_decimals"],"fee_levels":()}
     try:
         chain, network = chain_for_asset(asset)
     except HTTPException as exc:
@@ -123,19 +128,26 @@ def inspect_finalized_evm_swap(
             or _num(transaction.get("value"))!=0):
         raise ValueError("EVM swap sender, chain, router or native value mismatch")
     raw=transaction.get("input")
-    if (type(raw) is not str or not _CALL.fullmatch(raw)
-            or len(raw)!=2+(4+7*32)*2
-            or not raw.lower().startswith(EXACT_INPUT_SINGLE_SELECTOR)):
-        raise ValueError("Not a single-hop V3 swap")
-    words=[int(raw[10+i*64:10+(i+1)*64],16) for i in range(7)]
-    ti,to,fee,recipient,quantity,minimum,limit=words
-    if (ti!=int(pair["source_token"],16)
-            or to!=int(pair["output_token"],16)
-            or recipient!=int(wallet,16)
-            or fee not in pair["fee_levels"]
-            or limit!=0 or not 0<quantity<10**45
-            or not 0<minimum<10**45):
-        raise ValueError("Transaction calldata does not bind verified route")
+    if asset in ("BTC","XRP","SOL","TRX"):
+        from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
+        quantity,minimum=decode_wrapped_spot_amounts(raw,asset=asset,stable=stable,
+                                                    side=side,wallet=wallet)
+        if not 0<quantity<10**45 or not 0<minimum<10**45:
+            raise ValueError("Unverified wrapped spot amounts")
+    else:
+        if (type(raw) is not str or not _CALL.fullmatch(raw)
+                or len(raw)!=2+(4+7*32)*2
+                or not raw.lower().startswith(EXACT_INPUT_SINGLE_SELECTOR)):
+            raise ValueError("Not a single-hop V3 swap")
+        words=[int(raw[10+i*64:10+(i+1)*64],16) for i in range(7)]
+        ti,to,fee,recipient,quantity,minimum,limit=words
+        if (ti!=int(pair["source_token"],16)
+                or to!=int(pair["output_token"],16)
+                or recipient!=int(wallet,16)
+                or fee not in pair["fee_levels"]
+                or limit!=0 or not 0<quantity<10**45
+                or not 0<minimum<10**45):
+            raise ValueError("Transaction calldata does not bind verified route")
     result["transaction_seen"]=True
     result["state"]="PENDING"
     if receipt is None:

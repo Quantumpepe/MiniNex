@@ -211,3 +211,14 @@ def test_authenticated_status_route_cannot_change_wallet(monkeypatch):
     with pytest.raises(HTTPException) as err:
         asyncio.run(route.endpoint(authorization="Bearer other"))
     assert err.value.status_code==401
+
+
+def test_stale_coin_does_not_invalidate_other_current_remote_grants(monkeypatch):
+    record,scopes,user,metadata,remote=setup_policy()
+    record["stale_budget_coins"]=["LINK"]
+    wire(monkeypatch,record,scopes,user,metadata,remote)
+    out=asyncio.run(mod.read_owner_central_wallet_policy_status(DID))
+    assert out["status"]=="REMOTE_VERIFIED_READONLY"
+    assert out["current_user_budgets_verified"] is False
+    assert out["current_scope_coins"]==["QNT"]
+    assert out["renewable_scope_coins"]==["LINK"]

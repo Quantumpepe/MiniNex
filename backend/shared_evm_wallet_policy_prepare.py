@@ -9,7 +9,7 @@ signers/consents are NOT silently overwritten; they need explicit migration.
 """
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR, localcontext
 import logging
 import os
 import time
@@ -20,6 +20,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .extra_coin_preferences import get_coin_preferences
+from .live_btc_controls import get_live_btc_limits
+from .ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, wrapped_spot_route
 from .trade_preferences import get_trade_preferences
 from .eth_user_consent import _require_policy_roles
 from .privy_wallet_verification import fetch_privy_user
@@ -28,15 +30,17 @@ from .privy_live_signer import (
 )
 from .shared_evm_policy_reference_rates import (
     fetch_evm_policy_reference_rates, derive_user_budget_evm_atomic_caps,
+    derive_ethereum_settlement_atomic_caps, _price,
 )
 from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy, verified_wallet_policy_digest,
+    DIRECT_SETTLEMENT_ASSETS,DIRECT_SETTLEMENT_POLICY,durable_wallet_scope,STARGATE_STAGED_POLICY,
 )
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
 LOG=logging.getLogger("mininex.one_signer_policy_prepare")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _require_unattached_original_wallet(user:dict, did:str, metadata:dict)->dict:
@@ -64,6 +68,23 @@ def _require_unattached_original_wallet(user:dict, did:str, metadata:dict)->dict
 def _locked_selected_budget(cur,*,did:str,asset:str,stable:str,
                             expected_revision:int)->tuple[object,int]:
     """Read the exact saved settings under the original database row lock."""
+    if asset=="BTC":
+        cur.execute("""SELECT b.planned_capital_usd,b.revision,t.stable
+            FROM mininex_live_btc_limits b
+            JOIN mininex_trade_preferences t ON t.privy_did=b.privy_did
+            WHERE b.privy_did=%s AND t.asset='BTC' FOR UPDATE OF b,t""",(did,))
+        row=cur.fetchone()
+        if (type(row) is not dict or row.get("stable")!=stable
+                or type(row.get("revision")) is not int
+                or row["revision"]!=expected_revision or expected_revision<=0):
+            raise HTTPException(409,"Original BTC capital or settlement changed")
+        try:
+            amount=Decimal(str(row["planned_capital_usd"]))
+        except (ValueError,TypeError,ArithmeticError,KeyError):
+            raise HTTPException(409,"Original BTC capital unavailable") from None
+        if not amount.is_finite() or amount<=0:
+            raise HTTPException(409,"Save selected BTC trading capital before Start Trade")
+        return amount,row["revision"]
     if asset=="ETH":
         cur.execute(
             """SELECT planned_capital_usd,revision FROM mininex_live_eth_limits
@@ -105,6 +126,80 @@ def _locked_selected_budget(cur,*,did:str,asset:str,stable:str,
     return row["budget_usd"],row["revision"]
 
 
+def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
+    """Persist the route version inside owner-consented scope JSON."""
+    if asset in WRAPPED_SPOT_TOKENS:
+        route=wrapped_spot_route(asset,stable,"BUY")
+        with localcontext() as ctx:
+            ctx.prec=100
+            if type(amount) not in (int,str,Decimal):
+                raise ValueError("Original exact selected trading capital required")
+            budget=Decimal(str(amount))
+            if not budget.is_finite() or budget<=0:
+                raise ValueError("Original exact selected trading capital required")
+            buy=int((budget/_price(snapshot,stable,now)*10**route["source_decimals"])
+                    .to_integral_value(rounding=ROUND_FLOOR))
+            sell=int((budget/_price(snapshot,asset,now)*10**route["destination_decimals"])
+                     .to_integral_value(rounding=ROUND_FLOOR))
+            if not 0<buy<10**45 or not 0<sell<10**45:
+                raise ValueError("Selected wrapped spot budget not representable")
+        return durable_wallet_scope({"asset":asset,"stable":stable,
+                "treasury":owner_fee_treasury(asset="ETH",stable=stable),
+                "buy_source_atomic_cap":str(buy),"sell_source_atomic_cap":str(sell),
+                "native_wrap_atomic_cap":None,"owner_max_fee_atomic":"0",
+                "settlement_policy":WRAPPED_SPOT_POLICY})
+    if asset=="AVAX":
+        caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
+            budget_usd=amount,snapshot=snapshot,now=now)
+        with localcontext() as ctx:
+            ctx.prec=100
+            budget=Decimal(str(amount))
+            fees={chain:str(int((budget/_price(snapshot,coin,now)*10**18)
+                 .to_integral_value(rounding=ROUND_FLOOR))) for chain,coin in (("1","ETH"),("43114","AVAX"))}
+            if any(not 0<int(v)<10**45 for v in fees.values()):
+                raise ValueError("Selected AVAX budget cannot cover bridge fee scope")
+        return durable_wallet_scope({"asset":asset,"stable":stable,
+            "treasury":owner_fee_treasury(asset="ETH",stable=stable),
+            "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
+            "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
+            "native_wrap_atomic_cap":None,"owner_max_fee_atomic":"0",
+            "settlement_policy":STARGATE_STAGED_POLICY,"bridge_fee_caps_atomic":fees})
+    if asset in DIRECT_SETTLEMENT_ASSETS:
+        caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
+            budget_usd=amount,snapshot=snapshot,now=now)
+        from .ethereum_across_staged_plan import STAGED_ACROSS_POLICY,staged_route
+        route=staged_route(asset,"BUY",stable)
+        with localcontext() as ctx:
+            ctx.prec=100
+            transit=int((Decimal(str(amount))/_price(snapshot,route["transit_symbol"],now)
+                         *10**route["bridge_target"][2]).to_integral_value(rounding=ROUND_FLOOR))
+        if not 0<transit<2**256:
+            raise ValueError("Selected budget cannot represent transit token scope")
+        return durable_wallet_scope({"asset":asset,"stable":stable,
+            "treasury":owner_fee_treasury(asset="ETH",stable=stable),
+            "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
+            "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
+            "native_wrap_atomic_cap":None,
+            "owner_max_fee_atomic":"0",
+            "settlement_policy":STAGED_ACROSS_POLICY,"transit_atomic_cap":str(transit)})
+    caps=derive_user_budget_evm_atomic_caps(
+        asset=asset,stable=stable,budget_usd=amount,
+        snapshot=snapshot,now=now,
+    )
+    scope={
+        "asset":asset,"stable":stable,
+        "treasury":owner_fee_treasury(asset="ETH",stable=stable),
+        "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
+        "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
+        "native_wrap_atomic_cap":caps["native_wrap_atomic_cap"],
+        # This is NOT an actual fee debt. Chain-confirmed 5% HWM debt
+        # must be verified again before any eventual fee transfer.
+        "owner_max_fee_atomic":caps["buy_source_atomic_cap"],
+        "expires_at":now+24*3600,
+    }
+    return durable_wallet_scope(scope)
+
+
 def _stage_one_original_wallet_locked(
     cur,*,did:str,asset:str,stable:str,expected_revision:int,
     snapshot:dict,owned:dict,owner_id:str,signer_id:str,now:int,
@@ -134,21 +229,10 @@ def _stage_one_original_wallet_locked(
     )
     if cur.fetchone():
         raise HTTPException(409,"Legacy ETH signer grants require reconciliation")
-    caps=derive_user_budget_evm_atomic_caps(
-        asset=asset,stable=stable,budget_usd=amount,
-        snapshot=snapshot,now=now,
-    )
-    scope={
-        "asset":asset,"stable":stable,
-        "treasury":owner_fee_treasury(asset=asset,stable=stable),
-        "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
-        "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
-        "native_wrap_atomic_cap":caps["native_wrap_atomic_cap"],
-        # This is NOT an actual fee debt. Chain-confirmed 5% HWM debt
-        # must be verified again before any eventual fee transfer.
-        "owner_max_fee_atomic":caps["buy_source_atomic_cap"],
-        "expires_at":now+24*3600,
-    }
+    scope=build_selected_wallet_scope(asset=asset,stable=stable,amount=amount,
+        snapshot=snapshot,now=now)
+    from .shared_evm_consolidated_wallet_policy import with_net_fee_scope
+    scope=with_net_fee_scope(scope)
     kwargs=dict(
         wallet=owned["address"],owner_id=owner_id,executor_id=signer_id,
         scopes=[scope],now=now,
@@ -174,6 +258,7 @@ def _stage_one_original_wallet_locked(
         "budget_revision":revision,
         "scope_coins":[asset],
         "scope_rules_count":len(policy["rules"]),
+        "authorization_lifetime":scope.get("authorization_lifetime"),
         "policy_sha256":digest,
         "wallet_address":owned["address"],
         "shared_signer_id":signer_id,
@@ -201,6 +286,9 @@ async def prepare_owner_central_evm_wallet_policy(did:str,asset:str)->dict:
         from .live_eth_controls import get_live_eth_limits
         limits=get_live_eth_limits(did)
         revision=limits["revision"]
+    elif asset=="BTC":
+        settings=get_trade_preferences(did)["settings"]["BTC"]
+        revision=get_live_btc_limits(did)["revision"]
     else:
         settings=get_coin_preferences(did)["settings"][asset]
         revision=settings["revision"]

@@ -36,6 +36,8 @@ from .shared_evm_execution import bound_evm_wallet_rpc
 from .native_eth_nonce_binding import pin_original_privy_eth_nonce
 from .shared_evm_privy_transport import post_claimed_privy_evm_rpc
 from .storage import _db_url, _ensure_schema, _safe_did
+from .ethereum_settlement_funding import assert_ethereum_funds_locked
+from .shared_evm_policy_reference_rates import _price,fetch_evm_policy_reference_rates
 
 _ASSETS=frozenset(("BTC","SOL","XRP","TRX","DOGE"))
 _SHA=re.compile(r"^[0-9a-f]{64}$")
@@ -158,7 +160,7 @@ def bound_original_native_buy_rpc(
 def _claim_eth_buy_once(
     *,did:str,asset:str,key:str,digest:str,
     permission_audit:dict,nonce:int,request_digest:str,
-    observed_block_number:int,
+    observed_block_number:int,stable:str,input_atomic:int,balance_atomic:int,stable_usd,
 )->None:
     """Owner lock and source ETH nonce are committed before any Privy POST."""
     if (type(nonce) is not int or nonce<0 or nonce>=2**256
@@ -173,6 +175,9 @@ def _claim_eth_buy_once(
             _claim_once_locked(
                 cur,did=did,asset=asset,key=key,digest=digest,
                 permission_audit=permission_audit)
+            assert_ethereum_funds_locked(cur,did=did,asset=asset,stable=stable,
+                input_atomic=input_atomic,balance_atomic=balance_atomic,stable_usd=stable_usd,
+                excluded_native_key=key)
             cur.execute(
                 """UPDATE mininex_live_native_order_intents
                    SET source_eth_pending_nonce=%s,
@@ -275,11 +280,15 @@ async def submit_original_eth_native_buy_once(
     secret=os.environ.get("MININEX_PRIVY_APP_SECRET","").strip()
     if len(secret)<12:
         raise HTTPException(503,"Privy ETH funding secret unavailable")
+    rates=await fetch_evm_policy_reference_rates("ETH",order["stable"])
+    stable_usd=_price(rates,order["stable"],int(time.time()))
     await asyncio.to_thread(
         _claim_eth_buy_once,did=did,asset=asset,key=intent_key,
         digest=order["payload_sha256"],permission_audit=permission_audit,
         nonce=nonce,request_digest=request_digest,
-        observed_block_number=observed_block_number)
+        observed_block_number=observed_block_number,stable=order["stable"],
+        input_atomic=int(preflight["source_amount_atomic"]),
+        balance_atomic=int(preflight["verified_stable_balance_atomic"]),stable_usd=stable_usd)
     tx_hash=None
     try:
         signature=sign_privy_rpc_payload(

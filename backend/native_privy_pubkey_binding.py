@@ -16,6 +16,8 @@ import hashlib
 import re
 
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
+from eth_utils import keccak
 from xrpl.core.addresscodec import encode_classic_address
 
 from .native_btc_thor_outputs import _mainnet_p2wpkh_script
@@ -37,7 +39,7 @@ def verify_native_public_key_owner(
     *, asset: str, owner: str, public_key: object,
 ) -> dict:
     """Return only non-authorizing cryptographic ownership verification."""
-    if asset not in ("BTC", "SOL", "XRP") or type(owner) is not str:
+    if asset not in ("BTC", "SOL", "XRP", "TRX") or type(owner) is not str:
         raise ValueError("Unrecognized original native wallet asset")
     if asset == "SOL":
         key = _raw_key(public_key, 32)
@@ -65,6 +67,16 @@ def verify_native_public_key_owner(
             if _mainnet_p2wpkh_script(owner) != bytes((0, 20)) + program:
                 raise ValueError("Bitcoin SegWit owner key does not match address")
             curve = "secp256k1"
+        elif asset == "TRX":
+            if key[0] not in (2, 3) or not _valid_address("TRX", owner):
+                raise ValueError("Malformed TRON secp256k1 owner key or address")
+            point = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), key)
+            uncompressed = point.public_bytes(serialization.Encoding.X962,
+                serialization.PublicFormat.UncompressedPoint)
+            decoded = _decode_b58(owner, _BASE58)
+            if decoded[:21] != b"\x41" + keccak(uncompressed[1:])[-20:]:
+                raise ValueError("Original TRON account key differs from address")
+            curve = "secp256k1"
         else:
             if not _valid_address("XRP", owner):
                 raise ValueError("Malformed original XRP classic address")
@@ -80,7 +92,7 @@ def verify_native_public_key_owner(
         "public_key_curve": curve,
         "original_public_key_matches_wallet": True,
         "public_key_sha256": hashlib.sha256(key).hexdigest(),
-        "privy_native_wallet_api_supported": asset in ("BTC", "SOL"),
+        "privy_native_wallet_api_supported": asset in ("BTC", "SOL", "TRX"),
         "privy_remote_policy_verified": False,
         "privy_raw_signing_capability_verified": False,
         "user_trade_consent_verified": False,

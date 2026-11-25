@@ -26,7 +26,7 @@ from .shared_evm_wallet_policy_remote_review import (
 from .storage import _db_url, _ensure_schema, _safe_did
 
 LOG = logging.getLogger("mininex.evm_wallet_one_signer_status")
-_EVM_ASSETS = frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_EVM_ASSETS = frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 _VALID_STATES = frozenset((
     "DRAFT","SUBMITTING","UNCERTAIN","REMOTE_VERIFIED_UNATTACHED",
     "GRANT_VERIFIED","UPDATE_PENDING","UPDATING","UPDATE_UNCERTAIN","REVOKED",
@@ -38,6 +38,9 @@ def _inert_response(status: str = "NOT_CONFIGURED") -> dict:
         "mode": "MININEX_ORIGINAL_EVM_WALLET_POLICY_READONLY_STATUS",
         "status": status,
         "scope_coins": [],
+        "current_scope_coins": [],
+        "renewable_scope_coins": [],
+        "settlement_policy_by_asset": {},
         "current_user_budgets_verified": False,
         "one_scoped_signer_verified": False,
         "remote_policy_exactly_verified": False,
@@ -91,7 +94,7 @@ def _read_saved_and_current_preferences(did: str):
             # Every stored revision must still match actual user configuration.
             # ETH has a separate original LIVE-capital table; it cannot be
             # inferred from generic per-coin preferences.
-            coins = [row["asset"] for row in ordered if row["asset"] != "ETH"]
+            coins = [row["asset"] for row in ordered if row["asset"] not in ("ETH","BTC")]
             if coins:
                 cur.execute(
                     """SELECT asset,stable,budget_usd,revision
@@ -103,9 +106,10 @@ def _read_saved_and_current_preferences(did: str):
             else:
                 rows = []
             actual = {row["asset"]:row for row in rows}
-            if set(actual) != set(coins):
-                raise ValueError("Original coin preferences missing")
+            stale=set(coins)-set(actual)
             for asset in coins:
+                if asset in stale:
+                    continue
                 saved = scopes[asset]
                 current = actual[asset]
                 if (type(current.get("revision")) is not int
@@ -113,20 +117,34 @@ def _read_saved_and_current_preferences(did: str):
                         or current.get("stable") != saved.get("stable")
                         or type(current.get("budget_usd")) is not int
                         or current["budget_usd"] <= 0):
-                    raise ValueError("Original user coin budget changed")
+                    stale.add(asset)
+            if "BTC" in scopes:
+                cur.execute("""SELECT b.planned_capital_usd,b.revision,t.stable
+                    FROM mininex_live_btc_limits b JOIN mininex_trade_preferences t
+                      ON t.privy_did=b.privy_did
+                    WHERE b.privy_did=%s AND t.asset='BTC'""",(did,))
+                btc=cur.fetchone()
+                if (type(btc) is not dict or btc.get("planned_capital_usd") is None
+                        or btc["planned_capital_usd"]<=0
+                        or btc.get("revision")!=revisions["BTC"]
+                        or btc.get("stable")!=scopes["BTC"].get("stable")):
+                    stale.add("BTC")
             if "ETH" in scopes:
                 cur.execute(
-                    """SELECT planned_capital_usd,revision
-                       FROM mininex_live_eth_limits
-                       WHERE privy_did=%s""", (did,),
+                    """SELECT b.planned_capital_usd,b.revision,t.stable
+                       FROM mininex_live_eth_limits b JOIN mininex_trade_preferences t
+                         ON b.privy_did=t.privy_did
+                       WHERE b.privy_did=%s AND t.asset='ETH'""", (did,),
                 )
                 eth = cur.fetchone()
                 if (type(eth) is not dict
                         or type(eth.get("revision")) is not int
                         or eth["revision"] != revisions["ETH"]
                         or eth.get("planned_capital_usd") is None
-                        or eth["planned_capital_usd"] <= 0):
-                    raise ValueError("Original ETH user budget changed")
+                        or eth["planned_capital_usd"] <= 0
+                        or eth.get("stable")!=scopes["ETH"].get("stable")):
+                    stale.add("ETH")
+            record["stale_budget_coins"]=sorted(stale)
             return record,ordered
 
 
@@ -148,12 +166,24 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         return {**result,"status":"REQUIRES_RECONCILIATION"}
     result["status"]=status
     result["scope_coins"]=sorted(row["asset"] for row in scopes)
+    result["settlement_policy_by_asset"]={row["asset"]:row.get("settlement_policy") for row in scopes}
+    result["net_fee_scope_coins"]=sorted(row["asset"] for row in scopes
+        if row.get("net_fee_policy")=="ETHEREUM_REALIZED_NET_V1")
     result["legacy_reconciliation_required"]=(
         record.get("legacy_reconciliation_required") is not False
     )
     if status != "GRANT_VERIFIED" or result["legacy_reconciliation_required"]:
         return result
-    result["current_user_budgets_verified"]=True
+    now=int(datetime.now(timezone.utc).timestamp())
+    stale=set(record.get("stale_budget_coins",[]))
+    renewable=stale|{row["asset"] for row in scopes if
+                     type(row.get("expires_at")) is not int or row["expires_at"]<=now}
+    # Existing direct scopes remain valid for their original route. Expose
+    # the explicit consent-required upgrade to the existing Start flow.
+    result["staged_settlement_upgrade_coins"]=sorted(
+        row["asset"] for row in scopes if row["asset"] in ("BNB","POL","ARB")
+        and row.get("settlement_policy") in (None,"ETHEREUM_ACROSS_DIRECT_V1"))
+    result["current_user_budgets_verified"]=not renewable
     expected_signer=os.getenv("MININEX_PRIVY_ETH_SIGNER_ID","").strip()
     if not expected_signer or expected_signer != record.get("signer_id"):
         return {**result,"status":"REQUIRES_RECONCILIATION"}
@@ -187,6 +217,8 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
         owner_quorum={}
     result.update({
         "status":"REMOTE_VERIFIED_READONLY",
+        "current_scope_coins":sorted(set(result["scope_coins"])-renewable),
+        "renewable_scope_coins":sorted(renewable),
         "one_scoped_signer_verified":verified["one_scoped_signer_verified"],
         "remote_policy_exactly_verified":verified["remote_policy_exactly_verified"],
         "backend_quorum_current":True,

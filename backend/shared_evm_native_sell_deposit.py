@@ -215,7 +215,8 @@ def _claim_native_sell_locked(
            FROM mininex_live_evm_auto_sessions
            WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
     session=cur.fetchone()
-    if (type(session) is not dict or session.get("status")!="ACTIVE"
+    if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
+            (session.get("status")=="EXIT_PENDING" and central and asset=="ETH"))
             or session.get("stable")!=stable
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("wallet_address")!=record["wallet_address"]
@@ -227,6 +228,9 @@ def _claim_native_sell_locked(
     owner=cur.fetchone()
     if type(owner) is not dict or owner.get("privy_did")!=did:
         raise HTTPException(409,"Native owner wallet account lock missing")
+    if central and asset=="ETH":
+        from .shared_evm_exit_inventory import assert_eth_exit_deposit_locked
+        assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_wei)
     for table in ("mininex_live_evm_auto_broadcasts",
                   "mininex_live_evm_native_auto_steps",
                   "mininex_live_evm_native_sell_intents"):
@@ -238,11 +242,28 @@ def _claim_native_sell_locked(
                       WHERE privy_did=%s AND chain_id=%s AND status IN
                        ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
                      UNION ALL
-                     SELECT 1 FROM mininex_evm_auto_fee_sends
+                     SELECT 1 FROM mininex_evm_auto_fee_sends_all
                       WHERE privy_did=%s AND chain_id=%s AND status IN
                        ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     UNION ALL
+                     SELECT 1 FROM mininex_live_evm_router_approval_sends
+                      WHERE privy_did=%s AND chain_id=%s AND status IN
+                       ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     UNION ALL
+                     SELECT 1 FROM mininex_avax_staged_steps
+                      WHERE privy_did=%s AND chain_id=%s AND state IN
+                       ('SENDING','SUBMITTED','UNCERTAIN')
+                     UNION ALL
+                     SELECT 1 FROM mininex_across_staged_steps
+                      WHERE privy_did=%s AND chain_id=%s AND state IN
+                       ('SENDING','SUBMITTED','UNCERTAIN')
+                     UNION ALL
+                     SELECT 1 FROM mininex_ethereum_settlement_submissions s
+                      WHERE s.privy_did=%s AND s.source_chain_id=%s AND s.state IN
+                       ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                      AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=s.quote_id)
                    ) AS shared_wallet_nonce""",
-                (did,pair["chain_id"],did,pair["chain_id"]))
+                (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
         else:
             cur.execute(
                 f"""SELECT COUNT(*) AS pending FROM {table}
@@ -262,9 +283,9 @@ def _claim_native_sell_locked(
              ON c.privy_did=b.privy_did AND c.asset=b.asset
             AND c.intent_key=b.intent_key
            WHERE b.privy_did=%s AND b.chain_id=%s
-             AND b.side='BUY' AND b.status='FINALIZED_SUCCESS'
+             AND b.asset=%s AND b.side='BUY' AND b.status='FINALIZED_SUCCESS'
              AND c.intent_key IS NULL""",
-        (did,pair["chain_id"]))
+        (did,pair["chain_id"],asset))
     unsettled=cur.fetchone()
     if (type(unsettled) is not dict
             or type(unsettled.get("pending")) is not int

@@ -51,9 +51,15 @@ export function validEvmTradePermission(data,asset) {
 export function validEvmAutoSession(data,asset) {
   return !!data&&data.mode==='OWNER_EVM_LIVE_SESSION_CONTROL'&&
     data.asset===asset&&
-    ['NOT_STARTED','ACTIVE','PAUSED'].includes(data.status)&&
+    ['NOT_STARTED','ACTIVE','PAUSED','EXIT_PENDING','STOPPED'].includes(data.status)&&
     (data.chain_id===null||data.chain_id===NETWORKS[asset])&&
     data.new_transactions_sent===0;
+}
+
+function validTradeSourceChain(row,asset,cross){
+  if(!cross)return row.chain_id===NETWORKS[asset];
+  return ['BNB','POL','AVAX','ARB'].includes(asset)&&
+    row.chain_id===(row.side==='BUY'?1:NETWORKS[asset]);
 }
 
 export function validEvmOrderHistory(data,asset){
@@ -66,7 +72,7 @@ export function validEvmOrderHistory(data,asset){
      typeof data.history_truncated!=='boolean')return false;
   const seen=new Set();
   for(const order of data.orders){
-    if(!order||order.asset!==asset||order.chain_id!==NETWORKS[asset]||
+    if(!order||order.asset!==asset||!validTradeSourceChain(order,asset,order.ethereum_settlement_order===true)||
        !['BUY','SELL'].includes(order.side)||
        !['SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
          'FINALIZED_SUCCESS','FINALIZED_REVERTED'].includes(order.status)||
@@ -89,6 +95,26 @@ export function validEvmOrderHistory(data,asset){
   return true;
 }
 
+export function validNetValuation(value,fill){
+  if(!value||value.asset!==fill.asset||value.stable!==fill.stable||fill.side!=='SELL'||
+     value.fill_key!==(fill.ethereum_settlement_verified===true?fill.intent_key:fill.tx_hash)||
+     value.payment_authorized!==false||typeof value.net_verified!=='boolean')return false;
+  if(value.fee_payment_status!==undefined){
+    if(!['NOT_BOOKED','BOOKED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED','PAID_VERIFIED','FINALIZED_REVERTED'].includes(value.fee_payment_status))return false;
+    if(value.fee_payment_status==='PAID_VERIFIED'){
+      if(value.net_verified!==true||value.fee_paid_atomic!==value.fee_due_stable_atomic||
+         value.fee_paid_atomic==='0'||!/^0x[0-9a-f]{64}$/.test(value.fee_payment_tx_hash||''))return false;
+    }else if(value.fee_paid_atomic!=='0')return false;
+    if(value.fee_payment_tx_hash!==null&&!/^0x[0-9a-f]{64}$/.test(value.fee_payment_tx_hash||''))return false;
+  }
+  if(!value.net_verified)return value.realized_net_usd===null&&value.fee_due_stable_atomic===null;
+  return typeof value.realized_net_usd==='string'&&value.realized_net_usd.length<=96&&
+    /^-?[0-9]+\.[0-9]{12}$/.test(value.realized_net_usd)&&
+    typeof value.fee_due_stable_atomic==='string'&&value.fee_due_stable_atomic.length<=78&&
+    /^(?:0|[1-9][0-9]*)$/.test(value.fee_due_stable_atomic)&&
+    (!value.realized_net_usd.startsWith('-')||value.fee_due_stable_atomic==='0');
+}
+
 export function validEvmFinalizedFills(data,asset){
   if(!data||data.mode!=='FINALIZED_EVM_REAL_FILLS_ONLY'||
      data.asset!==asset||!LIVE_EVM_ASSETS.includes(asset)||
@@ -101,7 +127,10 @@ export function validEvmFinalizedFills(data,asset){
      !Array.isArray(data.fills)||data.fills.length>20)return false;
   const seen=new Set();
   for(const fill of data.fills){
-    if(!fill||fill.asset!==asset||fill.chain_id!==NETWORKS[asset]||
+    if(!fill||fill.asset!==asset||!validTradeSourceChain(fill,asset,fill.ethereum_settlement_verified===true)||
+       (fill.ethereum_settlement_verified===true&&
+        (fill.destination_chain_id!==(fill.side==='BUY'?NETWORKS[asset]:1)||
+         !/^0x[0-9a-f]{64}$/.test(fill.destination_tx_hash||'')))||
        !['BUY','SELL'].includes(fill.side)||
        !['USDC','USDT'].includes(fill.stable)||
        !/^[A-Za-z0-9_.:-]{8,128}$/.test(fill.intent_key||'')||
@@ -111,6 +140,7 @@ export function validEvmFinalizedFills(data,asset){
        fill.native_coin_cycle_complete!==false||
        fill.realized_net_usd!==null||
        fill.performance_fee_paid!==false||
+       (fill.net_valuation!==undefined&&!validNetValuation(fill.net_valuation,fill))||
        fill.spent_asset!==(fill.side==='BUY'?fill.stable:asset)||
        fill.received_asset!==(fill.side==='BUY'?asset:fill.stable)||
        ![fill.spent_amount,fill.received_amount].every(v=>

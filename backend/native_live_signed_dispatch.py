@@ -183,7 +183,7 @@ def _get_original_prepared_source(did:str,asset:str,intent_key:str)->dict:
             row=cur.fetchone()
     if (type(row) is not dict or row.get("privy_did")!=did
             or row.get("asset")!=asset or row.get("status")!="PREPARED"
-            or (asset in ("TRX","DOGE") and row.get("side")!="BUY")):
+            or (asset=="DOGE" and row.get("side")!="BUY")):
         raise HTTPException(409,"No authorized original native source to submit")
     return row
 

@@ -97,6 +97,7 @@ def _start_locked(cur,*,did:str,asset:str,grant:dict)->dict:
                wallet_address=EXCLUDED.wallet_address,
                status='ACTIVE',started_by_owner_at=now(),
                updated_at=now()
+           WHERE mininex_live_native_auto_sessions.status<>'EXIT_PENDING'
            RETURNING status""",
         (did,asset,grant["stable"],coin["revision"],
          grant["source_wallet"]))
@@ -141,7 +142,7 @@ def pause_owner_native_auto(did:str,asset:str)->dict:
                 cur.execute(
                     """UPDATE mininex_live_native_auto_sessions
                        SET status='PAUSED',updated_at=now()
-                       WHERE privy_did=%s AND asset=%s AND status='ACTIVE'
+                       WHERE privy_did=%s AND asset=%s AND status IN ('ACTIVE','EXIT_PENDING')
                        RETURNING status""",(did,asset))
                 value=cur.fetchone()
     except psycopg.Error:
@@ -171,7 +172,7 @@ def get_owner_native_auto(did:str,asset:str)->dict:
                               ) AS finalized
                        FROM mininex_live_native_order_intents
                        WHERE privy_did=%s AND asset=%s
-                         AND side='BUY' AND source_tx_hash IS NOT NULL""",
+                         AND side IN ('BUY','SELL') AND source_tx_hash IS NOT NULL""",
                     (did,asset))
                 sends=cur.fetchone()
                 cur.execute(
@@ -195,3 +196,64 @@ def get_owner_native_auto(did:str,asset:str)->dict:
             if type(sends) is dict else 0,
         "new_transactions_sent":0,
     }
+
+
+NATIVE_EXIT_ASSETS=frozenset(("BTC","SOL","XRP","TRX"))
+
+
+def _request_native_exit_locked(cur,did,asset):
+    cur.execute("""SELECT privy_did FROM mininex_accounts
+        WHERE privy_did=%s FOR UPDATE""",(did,))
+    if cur.fetchone()!={"privy_did":did}:
+        raise HTTPException(409,"Original owner account unavailable")
+    cur.execute("""UPDATE mininex_live_native_auto_sessions
+        SET status='EXIT_PENDING',updated_at=now()
+        WHERE privy_did=%s AND asset=%s AND started_by_owner_at IS NOT NULL
+          AND status IN ('ACTIVE','PAUSED','EXIT_PENDING')
+        RETURNING status""",(did,asset))
+    row=cur.fetchone()
+    if type(row) is not dict or row.get("status")!="EXIT_PENDING":
+        raise HTTPException(409,"No owner-started native session to exit")
+    return {"mode":"OWNER_NATIVE_LIVE_SESSION_CONTROL","asset":asset,
+            "status":"EXIT_PENDING","new_transactions_sent":0}
+
+
+def request_owner_native_exit(did,asset):
+    did=_safe_did(did);asset=_asset(asset)
+    if asset not in NATIVE_EXIT_ASSETS:
+        raise HTTPException(409,"Automatic native exit route unavailable")
+    db=_db_url();_ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            return _request_native_exit_locked(cur,did,asset)
+
+
+def complete_native_exit_if_flat(did,asset,started,wallet,eth_wallet):
+    """Called only by worker after verifying original Privy wallet addresses."""
+    from .native_live_source_evidence import native_position_locked
+    did=_safe_did(did)
+    if asset not in NATIVE_EXIT_ASSETS:
+        return False
+    db=_db_url();_ensure_schema(db)
+    with psycopg.connect(db,connect_timeout=6) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""SELECT privy_did FROM mininex_accounts
+                WHERE privy_did=%s FOR UPDATE""",(did,))
+            if cur.fetchone()!={"privy_did":did}:
+                return False
+            cur.execute("""SELECT status,wallet_address,started_by_owner_at
+                FROM mininex_live_native_auto_sessions
+                WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
+            row=cur.fetchone()
+            if (not row or row["status"]!="EXIT_PENDING"
+                    or row["started_by_owner_at"]!=started
+                    or row["wallet_address"].lower()!=eth_wallet.lower()):
+                return False
+            if native_position_locked(cur,did,asset,wallet,require_single_wallet=True)!=0:
+                return False
+            cur.execute("""UPDATE mininex_live_native_auto_sessions
+                SET status='STOPPED',updated_at=now()
+                WHERE privy_did=%s AND asset=%s AND status='EXIT_PENDING'
+                RETURNING status""",(did,asset))
+            saved=cur.fetchone()
+            return bool(saved and saved["status"]=="STOPPED")

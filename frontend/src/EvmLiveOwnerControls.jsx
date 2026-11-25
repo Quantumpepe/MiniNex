@@ -2,7 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import {
   authorizeCentralEvmWalletCoin,validCentralWalletStatus,
-  centralWalletHasCoin,
+  centralWalletHasCoin,centralWalletCanExitCoin,
 } from './centralEvmWalletFlow.js';
 import {API_BASE,formatAssetQuantity} from './data.js';
 import {
@@ -11,13 +11,15 @@ import {
   validEvmFinalizedFills,
 } from './evmLiveOwnerRules.js';
 
+const EXPLORERS={1:'https://etherscan.io/tx/',56:'https://bscscan.com/tx/',
+  137:'https://polygonscan.com/tx/',43114:'https://snowtrace.io/tx/',42161:'https://arbiscan.io/tx/'};
 const WORDS={
   de:{
     title:'LIVE Handel',open:'Start Trade',
-    desc:'Coin und Kapital einstellen, dann Start Trade drücken. MiniNex erledigt die technischen Schritte im Hintergrund. Die Wallet-Freigabe ist an dein Coin-Budget gebunden.',
+    desc:'Coin und Kapital einstellen, dann Start Trade drücken. MiniNex erledigt die technischen Schritte im Hintergrund. Die Wallet-Freigabe ist an dein Coin-Budget gebunden und gilt bis zum Widerruf. Pause/Stop stoppt neue Aufträge, nicht die Wallet-Freigabe.',
     status:'LIVE-Sitzung',setup:'Handel mit Privy verbinden',
     grant:'Privy-Handelsberechtigung freigeben',
-    start:'LIVE starten',pause:'Handel pausieren',
+    start:'LIVE starten',pause:'Handel pausieren',exit:'Stop & Exit',exiting:'Position wird geschlossen',stopped:'Beendet',
     warn:'Eine Privy-Freigabe umfasst den Handel für diesen Coin und das gewählte Kapital, die nötigen begrenzten Router-Freigaben sowie 5 % Gebühr auf realisierte Nettogewinne oberhalb des High-Water-Marks an die angezeigte MiniNex-Treasury. Keine Gewinngebühr bei Verlust. Netzwerkgebühren und Verluste sind möglich.',
     needBudget:'Zuerst Kapital und Stablecoin in den Handelseinstellungen speichern.',
     ready:'Freigabe verifiziert',unattached:'Wallet-Freigabe in Privy erforderlich',
@@ -43,10 +45,10 @@ const WORDS={
   },
   en:{
     title:'LIVE trading',open:'Start Trade',
-    desc:'Set your coin and capital, then tap Start Trade. MiniNex handles the technical setup. Wallet authority is scoped to the selected coin budget.',
+    desc:'Set your coin and capital, then tap Start Trade. MiniNex handles the technical setup. Wallet authority is scoped to the selected coin budget until revoked. Pause/Stop prevents new orders; it does not revoke the wallet signer.',
     status:'LIVE session',setup:'Connect trading with Privy',
     grant:'Approve Privy trading signer',
-    start:'Start LIVE',pause:'Pause trading',
+    start:'Start LIVE',pause:'Pause trading',exit:'Stop & Exit',exiting:'Closing position',stopped:'Stopped',
     warn:'One Privy approval covers trading for this coin and chosen capital, finite router allowances and a 5% performance fee on realized net gains above the high-water mark paid to the disclosed MiniNex treasury. No profit fee on losses. Network fees and losses are possible.',
     needBudget:'Save your coin capital and stablecoin in trading settings first.',
     ready:'Grant verified',unattached:'Wallet grant required in Privy',
@@ -106,8 +108,8 @@ export default function EvmLiveOwnerControls({
   };
   const refresh=async()=>{
     const [p,s,c]=await Promise.all([
-      request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+      request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
       request(path+'/wallet-policy/status'),
@@ -134,8 +136,8 @@ export default function EvmLiveOwnerControls({
     const poll=async()=>{
       try{
         const [p,s,c]=await Promise.all([
-          request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+          request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset),
           request(path+'/auto-session/'+asset),
           request(path+'/wallet-policy/status'),
@@ -176,8 +178,8 @@ export default function EvmLiveOwnerControls({
   // Never run on login, render, retry, or a background effect.
   const startTrade=()=>command(async()=>{
     const [freshPermission,freshSession,central]=await Promise.all([
-      request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+      request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
       request(path+'/wallet-policy/status'),
@@ -187,6 +189,7 @@ export default function EvmLiveOwnerControls({
        !validCentralWalletStatus(central))
       throw Error('Original wallet and trade session unavailable');
     if(freshSession.status==='ACTIVE')return;
+    if(freshSession.status==='EXIT_PENDING')throw Error(t.exiting);
     // A new owner's first grant and every subsequent new EVM coin share
     // the SAME existing Privy signer and ONE policy. Existing legacy
     // grant records are never silently migrated or overwritten.
@@ -265,8 +268,8 @@ export default function EvmLiveOwnerControls({
     if(state!=='GRANT_VERIFIED')
       throw Error('Trading authorization is not yet available');
     // An old UI state, stale budget or unrelated signer can never start.
-    const beforeStart=await request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+    const beforeStart=await request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset);
     if(!validEvmTradePermission(beforeStart,asset)||
        beforeStart.status!=='GRANT_VERIFIED'||
@@ -299,6 +302,11 @@ export default function EvmLiveOwnerControls({
     if(!validEvmAutoSession(result,asset)||result.status!=='PAUSED')
       throw Error('Cannot confirm per-coin pause');
   });
+  const exitTrade=()=>command(async()=>{
+    const result=await request(path+'/auto-session/'+asset+'/exit','POST');
+    if(!validEvmAutoSession(result,asset)||result.status!=='EXIT_PENDING')
+      throw Error('Cannot confirm per-coin exit request');
+  });
   if(!allowed)return null;
   const current=permission?.status;
   const sessionStatus=session?.status;
@@ -315,6 +323,8 @@ export default function EvmLiveOwnerControls({
       {t.status}: {sessionStatus==='ACTIVE'?
         (session?.worker_attached===true?t.running:t.off):
         sessionStatus==='PAUSED'?t.paused:
+        sessionStatus==='EXIT_PENDING'?t.exiting:
+        sessionStatus==='STOPPED'?t.stopped:
         current==='CONSENT_VERIFIED'?t.unattached:
         current==='GRANT_VERIFIED'?t.ready:
         current==='DRAFT'?t.draft:
@@ -326,7 +336,7 @@ export default function EvmLiveOwnerControls({
         session.original_blockchain_swaps_finalized>0&&
         <span> · {session.original_blockchain_swaps_finalized} {lang==='de'?'erfolgreich finalisiert':'successfully finalized'}</span>}
     </p>
-    {sessionStatus==='ACTIVE'
+    {['ACTIVE','EXIT_PENDING'].includes(sessionStatus)
       ? <button type="button" className="privy-wallet-action"
           disabled={busy} onClick={pause}>{t.pause}</button>
       : current!=='REVOKED' &&
@@ -334,7 +344,11 @@ export default function EvmLiveOwnerControls({
           disabled={busy||permission===null||centralStatus===null} onClick={startTrade}>
           {t.open} · {asset}
         </button>}
-    {sessionStatus!=='ACTIVE'&&
+    {['ACTIVE','PAUSED'].includes(sessionStatus)&&LIVE_EVM_ASSETS.includes(asset)&&
+      centralWalletCanExitCoin(centralStatus,asset)&&
+      <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+        disabled={busy} onClick={exitTrade}>{t.exit}</button>}
+    {!['ACTIVE','EXIT_PENDING'].includes(sessionStatus)&&
       <p className="privy-wallet-description">{t.needBudget}</p>}
     {sessionStatus!=='ACTIVE'&&current!=='GRANT_VERIFIED'&&
       <p className="privy-wallet-description">{t.warn}</p>}
@@ -360,16 +374,38 @@ export default function EvmLiveOwnerControls({
             {' · '}{t.received}: {formatAssetQuantity(fill.received_amount,fill.received_asset,lang)} {fill.received_asset}
           </span>)(fills.fills.find(fill=>fill.intent_key===order.intent_key&&
           fill.tx_hash===order.tx_hash))}
+        {fills?.fills?.filter(fill=>fill.intent_key===order.intent_key&&fill.tx_hash===order.tx_hash&&
+          fill.net_valuation?.net_verified===true).map(fill=>
+          <span key={fill.tx_hash+'-net'}>
+            {lang==='de'?'Nettoergebnis':'Net result'}: {Number(fill.net_valuation.realized_net_usd).toLocaleString(
+              lang==='de'?'de-CH':'en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})} USD
+            {' · '}{fill.net_valuation.fee_payment_status==='PAID_VERIFIED'?
+              (lang==='de'?'5%-Gebühr (bezahlt)':'5% fee (paid)'):
+              (lang==='de'?'5%-Gebühr (offen)':'5% fee (due)')}: {formatAssetQuantity(
+              String(Number(fill.net_valuation.fee_due_stable_atomic)/1000000),fill.stable,lang)} {fill.stable}
+            {fill.net_valuation.fee_payment_tx_hash&&
+              <a href={EXPLORERS[1]+fill.net_valuation.fee_payment_tx_hash} target="_blank" rel="noreferrer">
+                {' · '}{lang==='de'?'Gebührentransaktion':'Fee transaction'}
+              </a>}
+          </span>)}
         <span>{t.recorded}: {new Date(order.created_at).toLocaleString(
           lang==='de'?'de-CH':'en-GB')}</span>
-        {order.tx_hash&&<code style={{overflowWrap:'anywhere'}}>
-          {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
-        </code>}
+        {order.tx_hash&&EXPLORERS[order.chain_id]&&
+          <a href={EXPLORERS[order.chain_id]+order.tx_hash} target="_blank" rel="noreferrer"
+             style={{overflowWrap:'anywhere'}}>
+            {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
+          </a>}
+        {fills?.fills?.filter(fill=>fill.intent_key===order.intent_key&&
+          fill.ethereum_settlement_verified===true&&EXPLORERS[fill.destination_chain_id]).map(fill=>
+          <a key={fill.destination_tx_hash} href={EXPLORERS[fill.destination_chain_id]+fill.destination_tx_hash}
+             target="_blank" rel="noreferrer">
+            {lang==='de'?'Zieltransaktion':'Destination transaction'} · {fill.destination_tx_hash.slice(0,10)}…
+          </a>)}
       </div>)}
     </div>}
     {offeredFeeScope&&
       <p className="privy-wallet-description" role="status">
-        {lang==='de'?'Einmalige Handelsfreigabe: 5 % realisierter Nettogewinn über High-Water-Mark':'Single trading grant: 5% realized net gain above high-water mark'}
+        {lang==='de'?'Einmalige Handelsfreigabe: 5 % auf positiven realisierten Nettogewinn':'Single trading grant: 5% of positive realized net profit'}
         {' · '}{lang==='de'?'Empfänger':'Recipient'}: <code>{offeredFeeScope.treasury_wallet}</code>
         {' · '}{lang==='de'?'Maximaler Transfer in Token-Atomeinheiten':'Maximum transfer in token atomic units'}: {offeredFeeScope.fee_max_atomic}
       </p>}

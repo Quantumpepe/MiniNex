@@ -38,7 +38,7 @@ from .shared_evm_coin_budget_reserve import (
 from .storage import _safe_did
 
 LOG=logging.getLogger("mininex.evm_approved_signal")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 _SIGNAL_REF=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 
 
@@ -95,12 +95,17 @@ def verified_evm_quote_usd_notional(
     if type(tx) is not dict or type(tx.get("data")) is not str:
         raise ValueError("Missing verified EVM calldata")
     data=tx["data"]
-    if (not data.startswith("0x04e45aaf")
-            or len(data)!=2+8+7*64):
-        raise ValueError("Invalid original V3 Router02 calldata")
     try:
-        input_atomic=str(int(data[10+4*64:10+5*64],16))
-        min_out_atomic=str(int(data[10+5*64:10+6*64],16))
+        if asset in ("BTC","XRP","SOL","TRX"):
+            from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
+            units,minimum=decode_wrapped_spot_amounts(data,asset=asset,stable=stable,
+                                      side=side,wallet=prepared["wallet_address"])
+            input_atomic,min_out_atomic=str(units),str(minimum)
+        else:
+            if not data.startswith("0x04e45aaf") or len(data)!=2+8+7*64:
+                raise ValueError("Invalid original V3 Router02 calldata")
+            input_atomic=str(int(data[10+4*64:10+5*64],16))
+            min_out_atomic=str(int(data[10+5*64:10+6*64],16))
         _,requested_atomic=_quantity(amount,pair["source_decimals"])
         if input_atomic!=str(requested_atomic):
             raise ValueError("Signal quantity differs from actual DEX swap")
@@ -133,6 +138,7 @@ async def execute_internal_evm_strategy_signal(
     """
     did=_safe_did(did)
     if (asset not in _ASSETS
+            or (asset in ("BTC","XRP","SOL","TRX") and not central)
             or side not in ("BUY","SELL")
             or type(amount) is not str
             or type(budget_revision) is not int or budget_revision<1
@@ -149,13 +155,25 @@ async def execute_internal_evm_strategy_signal(
     amount_usd=verified_evm_quote_usd_notional(
         prepared=prepared,asset=asset,side=side,stable=stable,
         amount=amount,prices=rates,now=int(time.time()))
+    funding={}
+    if side=="BUY" and asset in ("ETH","LINK","QNT","UNI","BTC","XRP","SOL","TRX"):
+        try:
+            balance=prepared["source_balance_atomic"]
+            if type(balance) is not str or not balance.isascii() or not balance.isdecimal():
+                raise ValueError("Original Ethereum token balance missing")
+            _,atomic=_quantity(amount,6)
+            funding={"ethereum_funding":{
+                "input_atomic":int(atomic),"balance_atomic":int(balance),
+                "stable_usd":_price(rates,stable,int(time.time()))}}
+        except (ValueError,TypeError,KeyError,ArithmeticError):
+            raise HTTPException(409,"Verified Ethereum funding unavailable") from None
     # Reserve ONLY the owner's chosen per-coin budget, using the amount
     # derived from this exact DEX calldata and current USD market reference.
     reserve_internal_evm_coin_budget(
         did=did,asset=asset,intent_key=key,side=side,stable=stable,
         amount_usd=amount_usd,quote_sha256=quote_sha,
         expected_revision=budget_revision,
-        **({"central":True} if central else {}))
+        **funding,**({"central":True} if central else {}))
     try:
         return await submit_internal_privy_evm_order(
             did=did,asset=asset,intent_key=key,side=side,

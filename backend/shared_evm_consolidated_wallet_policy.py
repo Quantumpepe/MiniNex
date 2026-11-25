@@ -18,9 +18,14 @@ import hashlib
 import json
 
 from .shared_evm_single_grant_policy import build_single_grant_evm_policy
+from .ethereum_stargate_staged_policy import STARGATE_STAGED_POLICY,build_stargate_staged_policy
+from .ethereum_across_staged_plan import STAGED_ACROSS_POLICY,STAGED_ACROSS_ASSETS,build_staged_across_policy
+from .ethereum_wrapped_spot_policy import (
+    WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, build_wrapped_spot_policy,
+)
 
 # Canonical order; ETH and QNT share the existing exact EVM contract route factory.
-_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB")
+_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB", "BTC", "XRP", "SOL", "TRX")
 _REQUIRED_SCOPE_FIELDS = frozenset((
     "asset", "stable", "treasury", "buy_source_atomic_cap",
     "sell_source_atomic_cap", "native_wrap_atomic_cap",
@@ -28,9 +33,122 @@ _REQUIRED_SCOPE_FIELDS = frozenset((
 ))
 
 
+DIRECT_SETTLEMENT_POLICY="ETHEREUM_ACROSS_DIRECT_V1"
+DIRECT_SETTLEMENT_ASSETS=frozenset(("BNB","POL","ARB"))
+# A marker for a non-expiring owner-consented permission. The sentinel keeps
+# existing local session/DB timestamp checks compatible; no expiry predicate
+# is published for these explicit scopes. Existing timed grants are unchanged.
+DURABLE_LIFETIME="UNTIL_REVOKED"
+DURABLE_EXPIRY_SENTINEL=253402300799
+
+
+def durable_wallet_scope(scope):
+    return {**scope,"authorization_lifetime":DURABLE_LIFETIME,
+            "expires_at":DURABLE_EXPIRY_SENTINEL}
+
+
+NET_FEE_POLICY="ETHEREUM_REALIZED_NET_V1"
+
+def with_net_fee_scope(scope):
+    # All new selected-wallet scopes already resolve the Ethereum Treasury
+    # through the verified server configuration before this pure upgrade.
+    return {**scope,"net_fee_policy":NET_FEE_POLICY,
+        "net_fee_atomic_cap":scope["buy_source_atomic_cap"]}
+
+def valid_scope_fields(scope):
+    if type(scope) is not dict:
+        return False
+    if "net_fee_policy" in scope or "net_fee_atomic_cap" in scope:
+        cap=scope.get("net_fee_atomic_cap")
+        if (scope.get("net_fee_policy")!=NET_FEE_POLICY or type(cap) is not str
+                or not cap.isascii() or not cap.isdecimal() or not 0<int(cap)<2**256
+                or cap!=scope.get("buy_source_atomic_cap")):
+            return False
+        scope={k:v for k,v in scope.items() if k not in ("net_fee_policy","net_fee_atomic_cap")}
+    if "authorization_lifetime" in scope:
+        if (scope.get("authorization_lifetime")!=DURABLE_LIFETIME
+                or type(scope.get("expires_at")) is not int
+                or scope["expires_at"]!=DURABLE_EXPIRY_SENTINEL):
+            return False
+        scope={k:v for k,v in scope.items() if k!="authorization_lifetime"}
+    elif scope.get("expires_at")==DURABLE_EXPIRY_SENTINEL:
+        return False
+    if set(scope)==_REQUIRED_SCOPE_FIELDS:
+        return scope.get("asset") not in WRAPPED_SPOT_TOKENS
+    if scope.get("settlement_policy")==STAGED_ACROSS_POLICY:
+        cap=scope.get("transit_atomic_cap")
+        return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy","transit_atomic_cap"}
+                and scope.get("asset") in STAGED_ACROSS_ASSETS
+                and scope.get("native_wrap_atomic_cap") is None
+                and scope.get("owner_max_fee_atomic")=="0"
+                and type(cap) is str and cap.isascii() and cap.isdecimal() and 0<int(cap)<2**256)
+    if scope.get("settlement_policy")==STARGATE_STAGED_POLICY:
+        caps=scope.get("bridge_fee_caps_atomic")
+        return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy","bridge_fee_caps_atomic"}
+                and scope.get("asset")=="AVAX" and scope.get("native_wrap_atomic_cap") is None
+                and scope.get("owner_max_fee_atomic")=="0" and type(caps) is dict
+                and set(caps)=={"1","43114"})
+    if scope.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
+                and scope.get("asset") in WRAPPED_SPOT_TOKENS
+                and scope.get("native_wrap_atomic_cap") is None
+                and scope.get("owner_max_fee_atomic")=="0")
+    return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
+            and scope.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+            and scope.get("asset") in DIRECT_SETTLEMENT_ASSETS
+            and scope.get("native_wrap_atomic_cap") is None
+            and scope.get("owner_max_fee_atomic")=="0")
+
+
+def is_direct_settlement_upgrade(asset,old):
+    return (asset in DIRECT_SETTLEMENT_ASSETS|{"AVAX"} and valid_scope_fields(old)
+            and old.get("asset")==asset and "settlement_policy" not in old)
+
+
+def changed_wallet_coin(original,target,original_revisions=None,target_revisions=None):
+    """Only add one coin or migrate one legacy scope to Ethereum direct settlement.
+
+    No sibling changes/removals or stablecoin/budget revision changes are
+    allowed by the migration path. The exact target still requires the
+    original wallet's signed policy digest and independent Privy readback.
+    """
+    if (type(original) is not dict or type(target) is not dict or not original
+            or not set(original).issubset(target)):
+        raise ValueError("Original approved coin scope removed")
+    changed=[a for a in target if a not in original or target[a]!=original[a]]
+    if len(changed)!=1:
+        raise ValueError("Exactly one approved coin scope may change")
+    asset=changed[0]
+    if asset in original:
+        before,after=original[asset],target[asset]
+        migration=((is_direct_settlement_upgrade(asset,before)
+                    and after.get("settlement_policy") in (
+                        (STARGATE_STAGED_POLICY,) if asset=="AVAX" else
+                        (DIRECT_SETTLEMENT_POLICY,STAGED_ACROSS_POLICY)))
+                   or (asset in STAGED_ACROSS_ASSETS and valid_scope_fields(before)
+                       and before.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+                       and after.get("settlement_policy")==STAGED_ACROSS_POLICY))
+        migration=migration and after.get("stable")==before.get("stable")
+        renewal=(valid_scope_fields(before)
+                 and before.get("settlement_policy")==after.get("settlement_policy")
+                 and (before.get("stable")!=after.get("stable") or
+                      before.get("treasury")==after.get("treasury")))
+        if (not valid_scope_fields(after) or after.get("asset")!=asset
+                or not (migration or renewal)):
+            raise ValueError("Only a signed original coin scope update is allowed")
+    if original_revisions is not None or target_revisions is not None:
+        if (type(original_revisions) is not dict or type(target_revisions) is not dict
+                or set(original_revisions)!=set(original)
+                or set(target_revisions)!=set(target)
+                or any(target_revisions.get(a)!=v for a,v in original_revisions.items()
+                       if a!=asset or asset not in original or migration)):
+            raise ValueError("Original approved budget revision changed")
+    return asset
+
+
 def compose_scoped_evm_wallet_policy(
     *, wallet: str, owner_id: str, executor_id: str,
-    scopes: list[dict], now: int,
+    scopes: list[dict], now: int, allow_expired: bool = False,
 ) -> dict:
     """Create one DENY-by-default wallet policy from explicit coin budgets.
 
@@ -43,7 +161,7 @@ def compose_scoped_evm_wallet_policy(
         raise ValueError("One or more explicit, verified EVM coin scopes required")
     selected = {}
     for scope in scopes:
-        if type(scope) is not dict or set(scope) != _REQUIRED_SCOPE_FIELDS:
+        if not valid_scope_fields(scope):
             raise ValueError("Only exact verified coin policy fields are accepted")
         asset = scope["asset"]
         if type(asset) is not str or asset not in _EVM_ASSETS or asset in selected:
@@ -54,11 +172,64 @@ def compose_scoped_evm_wallet_policy(
     for asset in _EVM_ASSETS:
         if asset not in selected:
             continue
-        args = selected[asset]
-        per_coin = build_single_grant_evm_policy(
-            wallet=wallet, owner_id=owner_id, executor_id=executor_id,
-            now=now, **args,
-        )
+        args = dict(selected[asset])
+        net_fee=args.pop("net_fee_policy",None)==NET_FEE_POLICY
+        net_fee_cap=args.pop("net_fee_atomic_cap",None)
+        durable=args.pop("authorization_lifetime",None)==DURABLE_LIFETIME
+        if durable:
+            # Compile the existing strict, bounded rule templates; only the
+            # time predicate is omitted from the explicitly durable version.
+            # No token, cap, recipient, method or chain predicate changes.
+            args["expires_at"]=now+86400
+        # Read back historical rules without renewing their actual timestamp.
+        # Runtime still rejects an expired SELECTED coin before any send.
+        rule_now=now
+        if allow_expired and type(args.get("expires_at")) is int:
+            rule_now=min(now,args["expires_at"]-1)
+        if args.get("settlement_policy")==STAGED_ACROSS_POLICY:
+            per_coin=build_staged_across_policy(asset=asset,stable=args["stable"],wallet=wallet,
+                owner_id=owner_id,executor_id=executor_id,now=rule_now,
+                eth_buy_atomic_cap=args["buy_source_atomic_cap"],
+                coin_sell_atomic_cap=args["sell_source_atomic_cap"],
+                transit_atomic_cap=args["transit_atomic_cap"],expires_at=args["expires_at"])["policy"]
+        elif args.get("settlement_policy")==STARGATE_STAGED_POLICY:
+            per_coin=build_stargate_staged_policy(stable=args["stable"],wallet=wallet,
+                owner_id=owner_id,executor_id=executor_id,now=rule_now,
+                buy_source_atomic_cap=args["buy_source_atomic_cap"],
+                sell_source_atomic_cap=args["sell_source_atomic_cap"],
+                bridge_fee_caps_atomic=args["bridge_fee_caps_atomic"],expires_at=args["expires_at"])
+        elif args.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+            per_coin=build_wrapped_spot_policy(
+                asset=asset,stable=args["stable"],wallet=wallet,
+                owner_id=owner_id,executor_id=executor_id,now=rule_now,
+                buy_source_atomic_cap=args["buy_source_atomic_cap"],
+                sell_source_atomic_cap=args["sell_source_atomic_cap"],
+                expires_at=args["expires_at"])
+        elif args.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY:
+            from .ethereum_settlement_policy_migration import build_recurring_direct_policy
+            draft=build_recurring_direct_policy(asset=asset,stable=args["stable"],
+                wallet=wallet,owner_id=owner_id,executor_id=executor_id,
+                buy_cap_micro=args["buy_source_atomic_cap"],
+                sell_cap_atomic=args["sell_source_atomic_cap"],
+                expires_at=args["expires_at"],now=rule_now)
+            per_coin=draft["policy"]
+            # This version authorizes only existing ERC20/wrapped inventory,
+            # never unrelated native gas holdings, arbitrary nested calls
+            # or any fee collection. Old scopes retain their original digest.
+            per_coin["rules"]=[r for r in per_coin["rules"]
+                               if not r["name"].endswith(" native")]
+        else:
+            per_coin = build_single_grant_evm_policy(
+                wallet=wallet, owner_id=owner_id, executor_id=executor_id,
+                now=rule_now, **args,
+            )
+        if net_fee:
+            from .shared_evm_fee_privy_policy_draft import build_owner_evm_fee_policy_draft
+            fee=build_owner_evm_fee_policy_draft(asset="ETH",stable=args["stable"],wallet=wallet,
+                treasury=args["treasury"],owner_id=owner_id,executor_id=executor_id,
+                owner_max_fee_atomic=net_fee_cap,expires_at=args["expires_at"],now=rule_now)["rules"][0]
+            fee["name"]=f"MiniNex {asset} {args['stable']} realized net fee Ethereum"
+            per_coin["rules"]=[r for r in per_coin["rules"] if not r["name"].endswith("owner-approved net-profit fee")]+[fee]
         if (per_coin.get("version") != "1.0"
                 or per_coin.get("chain_type") != "ethereum"
                 or per_coin.get("owner_id") != owner_id
@@ -71,7 +242,14 @@ def compose_scoped_evm_wallet_policy(
                     or type(rule.get("conditions")) is not list
                     or not rule["conditions"]):
                 raise ValueError("Unscoped or malformed Privy permission")
-            rules.append(deepcopy(rule))
+            copied=deepcopy(rule)
+            if durable:
+                conditions=copied["conditions"]
+                copied["conditions"]=[x for x in conditions if not (
+                    x.get("field_source")=="system" and x.get("field")=="current_unix_timestamp")]
+                if len(copied["conditions"])!=len(conditions)-1 or not copied["conditions"]:
+                    raise ValueError("Unexpected durable policy time condition")
+            rules.append(copied)
     if len({rule["name"] for rule in rules}) != len(rules):
         raise ValueError("Duplicate wallet policy rule")
     return {

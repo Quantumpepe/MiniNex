@@ -20,11 +20,13 @@ from .shared_evm_wallet_policy_prepare import _locked_selected_budget
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy,verified_wallet_policy_digest,
+    valid_scope_fields,DIRECT_SETTLEMENT_POLICY,STARGATE_STAGED_POLICY,STAGED_ACROSS_POLICY,
 )
 from .shared_evm_swap_receipts import _pair
+from .ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, wrapped_spot_route
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB")) | frozenset(WRAPPED_SPOT_TOKENS)
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
 _ID=re.compile(r"^[A-Za-z0-9_-]{6,160}$")
@@ -84,7 +86,7 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
         raise HTTPException(409,"Original one-signer Privy wallet not authorized")
     selected=grant["scopes_json"][asset]
     ver=grant["revisions_json"][asset]
-    if (type(selected) is not dict or set(selected)!=_SCOPE_FIELDS
+    if (not valid_scope_fields(selected)
             or selected.get("asset")!=asset
             or selected.get("stable") not in ("USDC","USDT")
             or (stable is not None and selected["stable"]!=stable)
@@ -93,30 +95,35 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
             or type(selected.get("expires_at")) is not int
             or selected["expires_at"]<=now):
         raise HTTPException(409,"Selected original wallet coin scope changed")
-    pair=_pair(asset,selected["stable"],"BUY")
+    if selected.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        pair=wrapped_spot_route(asset,selected["stable"],"BUY")
+    elif selected.get("settlement_policy") in (DIRECT_SETTLEMENT_POLICY,STARGATE_STAGED_POLICY,STAGED_ACROSS_POLICY):
+        from .ethereum_settlement_plan import settlement_route
+        pair={"chain_id":settlement_route(asset,"BUY",selected["stable"])["destination_chain_id"]}
+    else:
+        pair=_pair(asset,selected["stable"],"BUY")
     # The bank of all sibling scopes is preserved by this one wallet policy;
     # the current asset is never allowed to mutate or spend sibling budgets.
     ordered=[]
     for coin in sorted(grant["scopes_json"]):
         scope=grant["scopes_json"][coin]
         v=grant["revisions_json"][coin]
-        if (coin not in _ASSETS or type(scope) is not dict
-                or set(scope)!=_SCOPE_FIELDS
+        if (coin not in _ASSETS or not valid_scope_fields(scope)
                 or scope.get("asset")!=coin
                 or scope.get("stable") not in ("USDC","USDT")
                 or type(v) is not int or v<=0
-                or type(scope.get("expires_at")) is not int
-                or scope["expires_at"]<=now):
+                or type(scope.get("expires_at")) is not int):
             raise HTTPException(409,"Sibling original wallet scope changed")
         # Exact original selected capital and revision, never a platform cap.
-        _locked_selected_budget(
-            cur,did=did,asset=coin,stable=scope["stable"],
-            expected_revision=v,
-        )
+        if coin==asset:
+            _locked_selected_budget(
+                cur,did=did,asset=coin,stable=scope["stable"],
+                expected_revision=v,
+            )
         ordered.append(scope)
     kwargs=dict(
         wallet=grant["wallet_address"],owner_id=grant["owner_id"],
-        executor_id=grant["signer_id"],scopes=ordered,now=now,
+        executor_id=grant["signer_id"],scopes=ordered,now=now,allow_expired=True,
     )
     try:
         policy=compose_scoped_evm_wallet_policy(**kwargs)
@@ -165,13 +172,13 @@ async def audit_original_evm_coin(did:str,asset:str)->dict:
         raise HTTPException(404,"Unsupported central EVM coin")
     status=await read_owner_central_wallet_policy_status(did)
     if (status.get("status")!="REMOTE_VERIFIED_READONLY"
-            or asset not in status.get("scope_coins",[])
+            or asset not in status.get("current_scope_coins",
+                 status.get("scope_coins",[]) if status.get("current_user_budgets_verified") is True else [])
             or status.get("legacy_reconciliation_required") is not False
             or any(status.get(k) is not True for k in (
                 "one_scoped_signer_verified",
                 "remote_policy_exactly_verified",
-                "current_user_budgets_verified",
-                # The distinct policy OWNER must sign any future scope PATCH;
+                 # The distinct policy OWNER must sign any future scope PATCH;
                 # it is not the already user-approved transaction signer.
                 "backend_quorum_current",
             ))):
@@ -218,7 +225,17 @@ def central_policy_rule(record:dict,*,asset:str,kind:str,
             or type(now) is not int or now<=0
             or record["scope"].get("expires_at",0)<=now):
         raise ValueError("Original combined wallet policy not current")
-    if kind=="swap" and side in ("BUY","SELL"):
+    if record["scope"].get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        if kind=="swap" and side in ("BUY","SELL"):
+            from .ethereum_wrapped_spot_policy import wrapped_swap_rule_name
+            name=wrapped_swap_rule_name(asset,side,stable)
+        elif kind=="approval" and side in ("BUY","SELL"):
+            name=f"MiniNex {asset} {side} {stable} wrapped allowance"
+        elif kind=="approval_reset" and side=="BUY" and stable=="USDT":
+            name=f"MiniNex {asset} BUY USDT allowance reset"
+        else:
+            raise ValueError("No such wrapped spot owner permission")
+    elif kind=="swap" and side in ("BUY","SELL"):
         name=f"MiniNex {asset} {side} {stable} exactInputSingle"
     elif kind=="approval" and side in ("BUY","SELL"):
         name=f"MiniNex {asset} {side} finite Router02 allowance"

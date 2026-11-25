@@ -81,10 +81,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
       request('/api/live/evm/auto-session/ETH'),
     ]);
     if(shared?.mode!=='OWNER_EVM_LIVE_SESSION_CONTROL'||
-       shared.asset!=='ETH'||!['NOT_STARTED','PAUSED','ACTIVE'].includes(shared.status))
+       shared.asset!=='ETH'||!['NOT_STARTED','PAUSED','ACTIVE','EXIT_PENDING','STOPPED'].includes(shared.status))
       throw Error('Original wallet ETH LIVE session not verified');
-    return shared.status==='ACTIVE'
-      ? {...legacy,status:'ACTIVE',stable:shared.stable,
+    return shared.status!=='NOT_STARTED'
+      ? {...legacy,status:shared.status,stable:shared.stable,
          central:true,worker_deployed:shared.worker_attached===true,
          shared_submitted:shared.original_blockchain_swaps_sent||0}
       : {...legacy,central:false};
@@ -448,7 +448,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
   };
 
   const pauseEthAuto=async()=>{
-    if(busy||ethAuto?.status!=='ACTIVE')return;
+    if(busy||!['ACTIVE','EXIT_PENDING'].includes(ethAuto?.status))return;
     setBusy(true);setMessage('');
     try{
       const result=await request(
@@ -461,6 +461,17 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
       setMessage(t.liveEthAutoPaused);
       await refresh();
     }catch{setMessage(t.liveEthAutoPauseFailed);}
+    finally{setBusy(false);}
+  };
+
+  const exitEthAuto=async()=>{
+    if(busy||ethAuto?.central!==true||!['ACTIVE','PAUSED'].includes(ethAuto?.status))return;
+    setBusy(true);setMessage('');
+    try{
+      const result=await request('/api/live/evm/auto-session/ETH/exit','POST');
+      if(result?.asset!=='ETH'||result.status!=='EXIT_PENDING')throw Error('exit');
+      await refresh();
+    }catch{setMessage(lang==='de'?'Ausstieg nicht bestätigt':'Exit not confirmed');}
     finally{setBusy(false);}
   };
 
@@ -507,7 +518,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
             planned_capital_usd:e.target.value}))}
           aria-label={t.liveEthCapital}/>
       </label>}
-      {ethAuto?.status==='ACTIVE'
+      {['ACTIVE','EXIT_PENDING'].includes(ethAuto?.status)
         ?<button type="button" className="privy-wallet-action"
             disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
         :<button type="button" className="privy-wallet-action"
@@ -516,6 +527,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
               !validatedLiveEthDraft(draft)||
               usdUnits(draft?.planned_capital_usd)<=0n}
             onClick={startTradeOnce}>Start Trade · ETH</button>}
+      {!["ACTIVE","EXIT_PENDING"].includes(ethAuto?.status)&&<p className="privy-wallet-description">{lang==='de'?'Wallet-Freigabe gilt bis Widerruf. Pause/Stop stoppt neue Aufträge.':'Wallet authorization lasts until revoked. Pause/Stop prevents new orders.'}</p>}
+      {ethAuto?.central===true&&['ACTIVE','PAUSED'].includes(ethAuto?.status)&&
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          disabled={busy} onClick={exitEthAuto}>Stop / Exit</button>}
       {!ethAuto?.worker_deployed&&
         <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
       {message&&<p role="status" className="privy-wallet-description">{message}</p>}
@@ -528,7 +543,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
       <p className="privy-wallet-description">
         {t.liveEthAutoStatus}: {ethAuto?.status||'OFF'}
       </p>
-      {ethAuto?.status==='ACTIVE'
+      {['ACTIVE','EXIT_PENDING'].includes(ethAuto?.status)
         ? <button className="privy-wallet-action" type="button"
             disabled={busy} onClick={pauseEthAuto}>{t.liveEthAutoPause}</button>
         : <button className="privy-wallet-action" type="button"
@@ -536,6 +551,10 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
               changes||!ownAddress||
               !limits.trading_paused}
             onClick={startTradeOnce}>Start Trade · ETH</button>}
+      {!["ACTIVE","EXIT_PENDING"].includes(ethAuto?.status)&&<p className="privy-wallet-description">{lang==='de'?'Wallet-Freigabe gilt bis Widerruf. Pause/Stop stoppt neue Aufträge.':'Wallet authorization lasts until revoked. Pause/Stop prevents new orders.'}</p>}
+      {ethAuto?.central===true&&['ACTIVE','PAUSED'].includes(ethAuto?.status)&&
+        <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
+          disabled={busy} onClick={exitEthAuto}>Stop / Exit</button>}
       {!ethAuto?.worker_deployed&&
         <p className="privy-wallet-description">{t.liveEthAutoNotDeployed}</p>}
     </div>}

@@ -1,0 +1,225 @@
+"""Exact Ethereum-settled EVM cross-chain quote, not a transaction authorizer."""
+from __future__ import annotations
+
+import asyncio
+from decimal import Decimal, localcontext
+import os
+import time
+
+import httpx
+from fastapi import HTTPException
+
+from .ethereum_settlement_journal import store_quote
+from .ethereum_settlement_plan import settlement_route, check_evm_quote_route, CROSS_COIN_CONTRACTS
+from .ethereum_settlement_calldata import inspect_settlement_route
+from .live_eth_quotes import ETH_NATIVE, STABLES, _quantity, _valid_units
+from .multicoin_evm_balances import _read_chain, _WRAPPED_GROUPS
+from .manual_swap_routes import _asset_network
+from .privy_wallet_verification import fetch_privy_user
+from .wallet_balances import verified_addresses, _eth_rpc_call
+
+CROSS_EVM = {
+    "BNB": (56, ETH_NATIVE),
+    "POL": (137, ETH_NATIVE),
+    "AVAX": (43114, ETH_NATIVE),
+    "ARB": (42161, "0x912CE59144191C1204E64559FE8253a0e49E6548"),
+}
+QUOTE_URL = "https://li.quest/v1/quote"
+
+
+def is_ethereum_cross_evm_pair(source: str, target: str) -> bool:
+    return ((source in CROSS_EVM and target in STABLES)
+            or (target in CROSS_EVM and source in STABLES))
+
+
+def _source_token(asset: str, amount: Decimal, balances: dict, *, wrapped_only=False) -> str:
+    """Prefer existing wrapped inventory; never wrap the same coins twice."""
+    native = balances.get(asset, {})
+    if asset in _WRAPPED_GROUPS:
+        symbol, contract, _ = _WRAPPED_GROUPS[asset]
+        wrapped = balances.get(symbol, {})
+        if (wrapped.get("status") == "verified"
+                and Decimal(wrapped["balance"]) >= amount):
+            return contract
+        if wrapped_only:
+            raise HTTPException(409, "Verified strategy token balance insufficient")
+    if (native.get("status") == "verified"
+            and Decimal(native["balance"]) >= amount):
+        return CROSS_EVM[asset][1]
+    raise HTTPException(409, "Verified source balance insufficient")
+
+
+def _token_matches(token, chain_id, address, decimals):
+    return (isinstance(token, dict)
+            and token.get("chainId") == chain_id
+            and token.get("decimals") == decimals
+            and isinstance(token.get("address"), str)
+            and token["address"].lower() == address.lower())
+
+
+def _read_quote(payload, *, wallet, source_chain, dest_chain, token_in,
+                token_out, source_decimals, dest_decimals, units):
+    """Verify the exact owner, source asset/amount and Ethereum destination.
+
+    Never expose or execute opaque provider calldata from a price quote.
+    """
+    action, estimate = payload["action"], payload["estimate"]
+    if (action.get("fromChainId") != source_chain
+            or action.get("toChainId") != dest_chain
+            or str(action.get("fromAddress", "")).lower() != wallet.lower()
+            or str(action.get("toAddress", "")).lower() != wallet.lower()
+            or action.get("fromAmount") != units
+            or not _token_matches(action.get("fromToken"), source_chain,
+                                  token_in, source_decimals)
+            or not _token_matches(action.get("toToken"), dest_chain,
+                                  token_out, dest_decimals)
+            or estimate.get("fromAmount") != units):
+        raise ValueError("Cross-chain quote does not match owner or settlement")
+    output = _valid_units(estimate["toAmount"])
+    minimum = _valid_units(estimate["toAmountMin"])
+    if minimum > output:
+        raise ValueError("Invalid minimum cross-chain output")
+    with localcontext() as context:
+        context.prec=80
+        return (format(Decimal(output).scaleb(-dest_decimals), "f"),
+                format(Decimal(minimum).scaleb(-dest_decimals), "f"))
+
+
+async def _select_quote(client,*,headers,wallet,asset,buy,stable,source_chain,dest_chain,
+                        token_in,token_out,source_decimals,dest_decimals,units,prefer_direct=False):
+    """Prefer a reviewed executable route over the provider's unsupported cheapest one.
+    Query a restricted Across alternative only if the first quote cannot be used.
+    Do not invent availability or promote an uninspected transaction to execution.
+    """
+    params={"fromChain":source_chain,"toChain":dest_chain,"fromToken":token_in,
+            "toToken":token_out,"fromAddress":wallet,"toAddress":wallet,
+            "fromAmount":units,"slippage":"0.005","allowDestinationCall":"true"}
+    indicative=None
+    last_error=None
+    alternatives=[params]
+    reviewed_combined=None
+    if prefer_direct and asset!="AVAX":
+        # Request a policy-compatible quote before considering nested routes.
+        alternatives=[{**params,"allowBridges":"across","allowDestinationCall":"false"},params]
+    if asset=="AVAX":
+        alternatives.append({**params,"allowBridges":"stargateV2"})
+    else:
+        alternatives.append({**params,"allowBridges":"across"})
+    for choice in alternatives:
+        try:
+            response=await client.get(QUOTE_URL,headers=headers,params=choice)
+            response.raise_for_status()
+            if len(response.content)>512_000:
+                raise ValueError("Oversized cross-chain quote")
+            payload=response.json()
+            expected,minimum=_read_quote(payload,wallet=wallet,
+                source_chain=source_chain,dest_chain=dest_chain,token_in=token_in,
+                token_out=token_out,source_decimals=source_decimals,
+                dest_decimals=dest_decimals,units=units)
+            now=int(time.time())
+            with localcontext() as context:
+                context.prec=80
+                _,minimum_atomic=_quantity(minimum,dest_decimals)
+            terms={"wallet_address":wallet.lower(),"asset":asset,
+                "side":"BUY" if buy else "SELL","stable":stable,
+                "source_chain_id":source_chain,"destination_chain_id":dest_chain,
+                "source_token":token_in.lower(),"destination_token":token_out.lower(),
+                "input_atomic":units,"minimum_output_atomic":minimum_atomic,
+                "issued_at":now,"expires_at":now+30}
+            check_evm_quote_route(terms)
+            try:
+                inspected=inspect_settlement_route(payload["transactionRequest"],terms=terms,now=now)
+            except Exception:
+                inspected=None
+            if inspected is not None:
+                if not prefer_direct or asset=="AVAX" or (inspected["provider"]=="ACROSS_V4"
+                        and not inspected["source_swap"] and not inspected.get("destination_swap")):
+                    return expected,minimum,terms,inspected
+                if reviewed_combined is None:
+                    reviewed_combined=(expected,minimum,terms,inspected)
+                continue
+            if indicative is None:
+                indicative=(expected,minimum,terms,None)
+        except (httpx.HTTPError,ValueError,TypeError,KeyError,ArithmeticError) as exc:
+            last_error=exc
+    if reviewed_combined is not None and reviewed_combined[2]["expires_at"]>int(time.time()):
+        return reviewed_combined
+    if indicative is not None and indicative[2]["expires_at"]>int(time.time()):
+        return indicative
+    raise ValueError("No current Ethereum settlement quote") from last_error
+
+
+async def get_ethereum_cross_evm_quote(did: str, source: str, target: str,
+                                      amount: str, *, strategy_sell=False, prefer_direct=False) -> dict:
+    if not is_ethereum_cross_evm_pair(source, target):
+        raise HTTPException(422, "Unsupported Ethereum settlement pair")
+    buy = source in STABLES
+    asset, stable = (target, source) if buy else (source, target)
+    chain_id, coin_token = CROSS_EVM[asset]
+    if buy:
+        # Keep the exact registered wrapped inventory behind the coin label.
+        # This permits a destination ERC20 swap without a separate unwrap.
+        coin_token=CROSS_COIN_CONTRACTS[asset]
+    route=settlement_route(asset,"BUY" if buy else "SELL",stable)
+    source_decimals,dest_decimals=route["source_decimals"],route["destination_decimals"]
+    with localcontext() as context:
+        context.prec=80
+        exact_amount, units = _quantity(amount, source_decimals)
+    try:
+        user = await fetch_privy_user(did)
+        wallet = verified_addresses(user, did)["ETH"]
+        if not wallet:
+            raise ValueError("Original Privy EVM wallet missing")
+        headers = {"Accept": "application/json"}
+        key = os.getenv("MININEX_LIFI_API_KEY", "").strip()
+        if key:
+            headers["x-lifi-api-key"] = key
+        async with httpx.AsyncClient(timeout=httpx.Timeout(9),
+                                     follow_redirects=False) as client:
+            if buy:
+                # Only the canonical Ethereum token may fund a purchase.
+                if await _eth_rpc_call(client,"eth_chainId",[],1)!=1:
+                    raise ValueError("Wrong Ethereum source chain")
+                calldata="0x70a08231"+wallet[2:].lower().rjust(64,"0")
+                balance=await _eth_rpc_call(client,"eth_call",[
+                    {"to":STABLES[stable],"data":calldata},"latest"],2)
+                if balance<int(units):
+                    raise HTTPException(409,"Verified Ethereum settlement balance insufficient")
+            else:
+                # Read the existing source-chain balances, not all networks.
+                balances = await _read_chain(
+                    client, "ARB_TOKENS" if asset == "ARB" else asset, wallet)
+                coin_token = _source_token(asset, exact_amount, balances, wrapped_only=strategy_sell)
+            source_chain,dest_chain=route["source_chain_id"],route["destination_chain_id"]
+            token_in, token_out = ((STABLES[stable], coin_token) if buy
+                                   else (coin_token, STABLES[stable]))
+            expected,minimum,terms,inspected=await _select_quote(
+                client,headers=headers,wallet=wallet,asset=asset,buy=buy,stable=stable,
+                source_chain=source_chain,dest_chain=dest_chain,token_in=token_in,
+                token_out=token_out,source_decimals=source_decimals,
+                dest_decimals=dest_decimals,units=units,prefer_direct=prefer_direct)
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, ArithmeticError):
+        raise HTTPException(503, "Ethereum settlement route unavailable") from None
+    now=terms["issued_at"]
+    terms["route_sha256"]=inspected["route_sha256"] if inspected else None
+    terms["unsigned_transaction"]=inspected["transaction"] if inspected else None
+    quote_id = await asyncio.to_thread(store_quote, did, terms)
+    return {
+        "quote_id": quote_id,
+        "restricted_calldata_verified": inspected is not None,
+        "mode": "ETHEREUM_SETTLEMENT_CROSS_EVM_QUOTE",
+        "source_asset": source, "destination_asset": target,
+        "source_network": _asset_network(source)["network"],
+        "destination_network": _asset_network(target)["network"],
+        "source_chain_id": source_chain, "destination_chain_id": dest_chain,
+        "input_amount": amount, "estimated_output_amount": expected,
+        "minimum_output_amount": minimum, "quote_provider": "LIFI",
+        "native_bridge_fee_atomic":str(inspected["native_bridge_fee_atomic"]) if inspected else None,
+        "quote_checked_at": now, "quote_expires_at": now + 30,
+        "pool_route_quoted": True, "execution_enabled": False,
+        "can_submit": False, "transaction_built": False,
+        "signing_authorized": False, "deposit_address_provided": False,
+        "fee_breakdown_verified": False, "minimum_received_guaranteed": False,
+    }

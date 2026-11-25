@@ -143,11 +143,15 @@ def test_original_source_proof_committed_with_journal_and_only_once(asset):
         "status","side","chain","source_wallet","source_tx_hash",
         "payload_sha256")}
     original_row["source_proof_sha256"]=None
-    cur=Cursor([original_row,{"status":"SOURCE_FINALIZED"}])
+    fee={"BTC":"2000","SOL":"5000","XRP":"12"}[asset]
+    assert evidence["checkpoint"]["network_fee_atomic"]==fee
+    cur=Cursor([original_row,{"status":"SOURCE_FINALIZED"},{"source_network_fee_atomic":fee}])
     result=finality._persist_source_finality_locked(
         cur,original=row,verified=evidence)
     assert result=="SOURCE_FINALIZED"
-    assert len(cur.queries)==2
+    assert len(cur.queries)==3
+    assert "source_network_fee_atomic" in cur.queries[2][0]
+    assert cur.queries[2][1][0]==fee
     assert "FOR UPDATE" in cur.queries[0][0]
     assert "source_proof_sha256" in cur.queries[1][0]
     assert cur.queries[1][1][0]==evidence["source_proof_sha256"]
@@ -280,12 +284,14 @@ def test_unknown_signed_source_can_finish_only_if_original_hash_is_confirmed(ass
     db_row["source_proof_sha256"]=None
     cur=Cursor([
         {"status":"SUBMITTED"},db_row,{"status":"SOURCE_FINALIZED"},
+        {"source_network_fee_atomic":verified["checkpoint"]["network_fee_atomic"]},
     ])
     actual=finality._persist_unknown_native_finality_locked(
         cur,original=row,verified=verified,
     )
     assert actual=="SOURCE_FINALIZED"
-    assert len(cur.queries)==3
+    assert len(cur.queries)==4
+    assert "source_network_fee_atomic" in cur.queries[3][0]
     assert "AND status=%s" in cur.queries[0][0]
     assert "source_signed_tx_hash=%s" in cur.queries[0][0]
     assert cur.queries[0][1][3]==initial_state

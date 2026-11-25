@@ -64,7 +64,9 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
                 "wallets":{"ETH":"0x"+"a"*40},
                 "balances":{
                     stable:{"balance":"1000","status":"verified",
-                            "network":"ethereum-mainnet"}}}
+                            "network":"ethereum-mainnet"},
+                    "BTC":{"balance":"1","status":"verified","network":"bitcoin-mainnet"}},
+                **{"wallets":{"ETH":"0x"+"a"*40,"BTC":"native-address"}}}
     async def native(client,coin,address):
         calls.append("native")
         assert (coin,address)==(asset,"native-address")
@@ -79,6 +81,9 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
                  "status":"SUBMITTED","input_amount":Decimal(50)}]
     monkeypatch.setattr(m,"fetch_privy_user",user)
     monkeypatch.setattr(m,"verified_native_addresses",native_wallets)
+    monkeypatch.setattr(m,"_exact_owner_wallets",lambda *a:("native-address","0x"+"a"*40))
+    monkeypatch.setattr(m,"read_pending_ethereum_funding",lambda *a,**kw:
+        {"pending_wallet_stable_atomic":"0"})
     monkeypatch.setattr(m,"get_wallet_balances",wallet)
     monkeypatch.setattr(m,"_read_one",native)
     monkeypatch.setattr(m,"fresh_native_usd_prices",prices)
@@ -90,7 +95,8 @@ def test_one_native_coin_source_uses_verified_both_wallets_and_pending(
                 budget_percent=50 if asset=="BTC" else None,
                 budget_usd=500 if asset!="BTC" else None,client=client)
     assert asyncio.run(run())==("425" if asset=="BTC" else "350")
-    assert sorted(calls)==sorted(("owner","eth","native","usd","pending"))
+    assert sorted(calls)==sorted(("owner","eth","usd","pending")+
+                                 (() if asset=="BTC" else ("native",)))
 
 
 def test_missing_native_wallet_prevents_any_network_trade(monkeypatch):
@@ -108,3 +114,25 @@ def test_missing_native_wallet_prevents_any_network_trade(monkeypatch):
     with pytest.raises(HTTPException) as err:
         asyncio.run(run())
     assert err.value.status_code==409
+
+
+def test_native_sell_inventory_uses_native_atomic_credits_not_stable_input():
+    rows=[dict(side="BUY",destination_received_atomic=200000000),
+          dict(side="SELL",input_amount="0.75"),
+          dict(side="BUY",destination_received_atomic=25000000)]
+    position=m.finalized_native_position_atomic(rows,asset="BTC")
+    assert position==150000000
+    assert m.exact_native_sell_amount(asset="BTC",position_atomic=position,
+                                      wallet_balance="1.25")=="1.25"
+    assert m.exact_native_sell_amount(asset="BTC",position_atomic=0,
+                                      wallet_balance="2") is None
+
+
+def test_confirmed_native_fee_and_partial_refund_reduce_inventory():
+    rows=[
+        dict(side="BUY",status="DESTINATION_FINALIZED",destination_received_atomic=10000000),
+        dict(side="SELL",status="DESTINATION_FINALIZED",input_amount="2",source_network_fee_atomic="10000"),
+        dict(side="SELL",status="REFUNDED_VERIFIED",input_amount="3",destination_received_atomic="2900000",source_network_fee_atomic="20000"),
+        dict(side="BUY",status="REFUNDED_VERIFIED",destination_received_atomic="100000000"),
+    ]
+    assert m.finalized_native_position_atomic(rows,asset="TRX")==7870000

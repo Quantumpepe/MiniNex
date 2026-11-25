@@ -39,7 +39,7 @@ from .native_live_buy_destination import get_private_original_native_buy_destina
 from .native_live_sell_refund import get_private_original_native_sell_refund
 from .native_live_order_status import get_owner_native_live_order_status
 from .native_live_auto_sessions import (
-    get_owner_native_auto,pause_owner_native_auto,
+    get_owner_native_auto,pause_owner_native_auto,request_owner_native_exit,
 )
 from .native_live_eth_buy_source import get_original_eth_buy_source
 from .native_thor_transaction_status import get_private_original_protocol_status
@@ -94,7 +94,7 @@ from .shared_evm_privy_policy_publish import publish_user_evm_privy_policy
 from .shared_evm_privy_grant_confirm import confirm_owner_evm_privy_grant
 from .shared_evm_trade_grant_offer import get_owner_trade_grant_offer
 from .shared_evm_auto_sessions import (
-    start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,
+    start_owner_evm_auto, pause_owner_evm_auto, get_owner_evm_auto,request_owner_bridge_exit,
 )
 from .shared_evm_fifo import read_evm_fifo_gross_preview
 from .shared_evm_fee_policy_publish import publish_owner_signed_fee_policy
@@ -157,6 +157,11 @@ from .live_orders import get_live_order_history
 from .live_asset_registry import get_global_live_readiness
 from .manual_swap_routes import build_manual_swap_route
 from .manual_swap_live_quotes import get_native_swap_quote
+from .ethereum_settlement_status import check_ethereum_settlement
+from .ethereum_settlement_manual import prepare_manual_bridge, record_manual_attempt, pending_manual_attempt
+from .ethereum_settlement_quote import (
+    is_ethereum_cross_evm_pair, get_ethereum_cross_evm_quote,
+)
 from .live_trade_router import get_unified_trade_plan
 from .manual_swap_wallet_readiness import get_manual_swap_wallet_readiness
 
@@ -489,14 +494,61 @@ class NativeManualSwapQuoteRequest(BaseModel):
 async def manual_wallet_swap_live_market_quote(
         request: NativeManualSwapQuoteRequest,
         authorization: str | None = Header(default=None)):
-    """Live THORChain quote from verified public provider, no signing."""
-    verify_privy_bearer(authorization)
-    quote = await get_native_swap_quote(request.source, request.target,
-                                        request.amount)
+    """Live quote; all stablecoin endpoints settle on Ethereum, no signing."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    if is_ethereum_cross_evm_pair(request.source, request.target):
+        quote = await get_ethereum_cross_evm_quote(
+            did, request.source, request.target, request.amount)
+    else:
+        quote = await get_native_swap_quote(request.source, request.target,
+                                            request.amount)
     return JSONResponse(quote, headers={
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     })
+
+
+class ManualBridgeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    state: Literal["SUBMITTED", "CANCELLED", "UNCERTAIN"]
+    tx_hash: str | None = None
+
+
+@app.get("/api/wallet/swap/ethereum-settlement/manual/pending/{asset}")
+def recover_owner_manual_ethereum_swap(asset: Literal["BNB","POL","AVAX","ARB"],
+        authorization: str | None = Header(default=None)):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse({"pending":pending_manual_attempt(did,asset)},
+                        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/wallet/swap/ethereum-settlement/manual/{quote_id}/prepare")
+async def prepare_owner_manual_ethereum_swap(quote_id: str,
+        authorization: str | None = Header(default=None)):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(await prepare_manual_bridge(did,quote_id),
+                        headers={"Cache-Control":"private, no-store"})
+
+
+@app.post("/api/wallet/swap/ethereum-settlement/manual/{quote_id}/result")
+def record_owner_manual_ethereum_swap(quote_id: str,request: ManualBridgeResult,
+        authorization: str | None = Header(default=None)):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(record_manual_attempt(did,quote_id,request.state,request.tx_hash),
+                        headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/api/wallet/swap/ethereum-settlement/{asset}/{tx_hash}")
+async def ethereum_cross_chain_settlement_status(
+        asset: Literal["BNB", "POL", "AVAX", "ARB"], tx_hash: str,
+        side: Literal["BUY", "SELL"], stable: Literal["USDC", "USDT"],
+        amount: str, quote_id: str, authorization: str | None = Header(default=None)):
+    """Track original owner transaction against its durable quote; no signing."""
+    did = verify_privy_bearer(authorization)["user_id"]
+    result = await check_ethereum_settlement(
+        did, asset=asset, side=side, stable=stable, amount=amount, tx_hash=tx_hash,
+        quote_id=quote_id)
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/display-currency")
@@ -576,6 +628,16 @@ def pause_owner_native_auto_session(
     })
 
 
+@app.post("/api/live/native/auto-session/{asset}/exit")
+def owner_native_exit_session(
+    asset: Literal["BTC","SOL","XRP","TRX"],
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(request_owner_native_exit(did,asset),
+        headers={"Cache-Control":"private, no-store"})
+
+
 @app.get("/api/live/native/order-status/{asset}")
 async def read_owner_native_live_original_orders(
     asset: Literal["BTC","SOL","XRP","TRX","DOGE"],
@@ -593,7 +655,7 @@ async def read_owner_native_live_original_orders(
 
 @app.get("/api/live/native/authorization/{asset}")
 async def read_original_native_privy_owner_authorization(
-    asset: Literal["BTC","SOL","XRP"],
+    asset: Literal["BTC","SOL","XRP","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Owner-only native Privy signer readback, never trade permission."""
@@ -1112,7 +1174,7 @@ async def owner_apply_one_signed_wallet_scope_change(
 
 @app.post("/api/live/evm/wallet-policy/extend/{asset}/prepare")
 async def owner_prepare_shared_evm_scope_extension(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     did=verify_privy_bearer(authorization)["user_id"]
@@ -1151,7 +1213,7 @@ async def owner_publish_first_central_evm_wallet_policy(
 
 @app.post("/api/live/evm/wallet-policy/prepare/{asset}")
 async def owner_prepare_first_shared_evm_wallet_policy(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit original owner's initial central signer POLICY DRAFT only.
@@ -1166,6 +1228,18 @@ async def owner_prepare_first_shared_evm_wallet_policy(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+@app.get("/api/live/evm/wallet-policy/wrapped/{asset}/audit")
+async def owner_wrapped_spot_grant_audit(
+    asset: Literal["BTC","XRP","SOL","TRX"],
+    authorization: str | None = Header(default=None),
+):
+    """Verify the actual owner-approved, Ethereum-bound grant without a send."""
+    from .shared_evm_central_runtime import audit_original_evm_coin
+    did=verify_privy_bearer(authorization)["user_id"]
+    report=await audit_original_evm_coin(did,asset)
+    return JSONResponse(report,headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/evm/wallet-policy/status")
@@ -1183,6 +1257,28 @@ async def original_owner_one_signer_wallet_policy_status(
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
     })
+
+
+@app.get("/api/live/evm/wallet-policy/permission-status/AVAX")
+async def owner_one_signer_avax_permission_status(
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await read_owner_central_wallet_policy_status(did)
+    approved=(status.get("status")=="REMOTE_VERIFIED_READONLY"
+        and "AVAX" in status.get("current_scope_coins",[])
+        and status.get("settlement_policy_by_asset",{}).get("AVAX")=="ETHEREUM_STARGATE_STAGED_V1"
+        and status.get("one_scoped_signer_verified") is True
+        and status.get("remote_policy_exactly_verified") is True
+        and status.get("backend_quorum_current") is True
+        and status.get("legacy_reconciliation_required") is False)
+    return JSONResponse({"mode":"OWNER_EVM_PRIVY_PERMISSION_STATUS_ONLY",
+        "asset":"AVAX","chain_id":43114,"network":"avalanche-c-mainnet",
+        "status":"GRANT_VERIFIED" if approved else "NOT_PREPARED",
+        "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER",
+        "policy_published":approved,"signer_grant_recorded":approved,
+        "auto_execution_enabled":False,"can_submit":False},
+        headers={"Cache-Control":"private, no-store"})
 
 
 @app.get("/api/live/evm/wallet-policy/permission-status/QNT")
@@ -1216,7 +1312,7 @@ async def owner_one_signer_qnt_permission_status(
 
 @app.get("/api/live/evm/auto-session/{asset}")
 def owner_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only per-coin user LIVE session, never implied by login."""
@@ -1229,7 +1325,7 @@ def owner_evm_auto_session(
 
 @app.post("/api/live/evm/wallet-policy/auto-session/{asset}/start")
 async def owner_start_one_signer_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit owner Start Trade after original one-signer remote audit."""
@@ -1253,7 +1349,7 @@ async def owner_start_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/pause")
 def owner_pause_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Stops future per-coin sends without retrying an in-flight tx."""
@@ -1261,6 +1357,18 @@ def owner_pause_evm_auto_session(
     return JSONResponse(pause_owner_evm_auto(did,asset),headers={
         "Cache-Control":"private, no-store",
         "X-Content-Type-Options":"nosniff",
+    })
+
+
+@app.post("/api/live/evm/auto-session/{asset}/exit")
+def owner_exit_bridge_session(
+    asset: Literal["ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP","SOL","TRX"],
+    authorization: str | None = Header(default=None),
+):
+    """Record a user's explicit exit request; only the worker can settle it."""
+    did=verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(request_owner_bridge_exit(did,asset),headers={
+        "Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
     })
 
 
@@ -1380,7 +1488,7 @@ def owner_evm_permission_status(
 
 @app.get("/api/live/evm/order-status/{asset}")
 def owner_evm_order_status(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -1394,7 +1502,7 @@ def owner_evm_order_status(
 
 @app.get("/api/live/evm/verified-fills/{asset}")
 def owner_finalized_evm_fills(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     limit: int = 30,
     authorization: str | None = Header(default=None),
 ):

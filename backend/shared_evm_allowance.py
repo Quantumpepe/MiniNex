@@ -67,7 +67,9 @@ async def check_evm_source_allowance(
     source=pair["source_token"]
     destination=pair["output_token"]
     router=pair["router"]
-    if asset in _RPC:
+    if asset in ("BTC","XRP","SOL","TRX"):
+        chain,network,fallback,env=_RPC["ETH_TOKENS"]
+    elif asset in _RPC:
         chain,network,fallback,env=_RPC[asset]
     elif asset=="ARB":
         chain,network,fallback,env=_RPC["ARB_TOKENS"]
@@ -179,7 +181,7 @@ def verify_router_approval_transaction(
 
 def bound_owner_router_approval_rpc(
     *, asset: str, side: str, stable: str, wallet_id: str,
-    wallet: str, amount_atomic: int,
+    wallet: str, amount_atomic: int, wrapped_spot: bool = False, reset: bool = False,
 ) -> tuple[str, dict]:
     """Exact registry-derived Privy RPC for a finite, user-authorized approve.
 
@@ -187,6 +189,10 @@ def bound_owner_router_approval_rpc(
     remote owner grant and durable once-only nonce claim before signing/sending.
     """
     from .shared_evm_execution import bound_evm_wallet_rpc
+    if (asset in ("BTC","XRP","SOL","TRX")) != wrapped_spot:
+        raise ValueError("Explicit wrapped spot approval scope required")
+    if reset and (not wrapped_spot or side!="BUY" or stable!="USDT"):
+        raise ValueError("Only original wrapped USDT BUY allowance may reset")
     pair = _pair(asset, stable, side)
     approved = owner_approval_draft(
         token=pair["source_token"], router=pair["router"],
@@ -201,13 +207,15 @@ def bound_owner_router_approval_rpc(
         raise ValueError("Router approval does not match original scoped grant")
     return bound_evm_wallet_rpc(
         asset=asset, wallet_id=wallet_id, wallet=wallet,
-        tx={**approved, "value": "0"},
+        tx={**approved, "value": "0",
+            "data":approved["data"][:-64]+"0"*64 if reset else approved["data"]},
+        **({"wrapped_spot":True} if wrapped_spot else {}),
     )
 
 
 def inspect_combined_grant_router_approval(
     *, record: dict, asset: str, side: str, stable: str,
-    amount_atomic: int, now: int,
+    amount_atomic: int, now: int, reset: bool = False,
 ) -> dict:
     """Require exact fee-inclusive owner grant before preparing auto approval.
 
@@ -229,10 +237,15 @@ def inspect_combined_grant_router_approval(
             record.get("stable") != stable or
             type(amount_atomic) is not int or amount_atomic <= 0):
         raise ValueError("No valid one-signature Privy router approval scope")
+    if asset in ("BTC","XRP","SOL","TRX") and (not central
+            or record.get("scope",{}).get("settlement_policy")!="ETHEREUM_WRAPPED_SPOT_V1"):
+        raise ValueError("Original wrapped trading grant required")
+    if reset and (not central or asset not in ("BTC","XRP","SOL","TRX") or side!="BUY" or stable!="USDT"):
+        raise ValueError("No original wrapped USDT allowance reset scope")
     pair=_pair(asset,stable,side)
     if central:
         rule=central_policy_rule(
-            record,asset=asset,kind="approval",
+            record,asset=asset,kind="approval_reset" if reset else "approval",
             side=side,stable=stable,now=now,
         )
     else:
@@ -253,15 +266,18 @@ def inspect_combined_grant_router_approval(
     cap=int(_lte(rule,"approve.value"))
     if amount_atomic>cap:
         raise ValueError("Router allowance exceeds original owner policy")
+    tx=owner_approval_draft(token=pair["source_token"],router=pair["router"],
+        wallet=record["wallet_address"],chain_id=pair["chain_id"],amount_atomic=amount_atomic)
+    if reset:
+        if checks.get(("ethereum_calldata","approve.value","eq"))!="0":
+            raise ValueError("Owner did not approve exact zero allowance")
+        tx={**tx,"data":tx["data"][:-64]+"0"*64}
     return {
+        **({"approval_mode":"WRAPPED_USDT_ZERO"} if reset else {}),
         "asset":asset,"chain_id":pair["chain_id"],"side":side,
         "amount_atomic":str(amount_atomic),
         "policy_sha256":record["policy_sha256"],
-        "transaction":owner_approval_draft(
-            token=pair["source_token"],router=pair["router"],
-            wallet=record["wallet_address"],chain_id=pair["chain_id"],
-            amount_atomic=amount_atomic,
-        ),
+        "transaction":tx,
         "owner_grant_remotely_verified_by_this_check":False,
         "send_claimed":False,
         "transaction_submitted":False,

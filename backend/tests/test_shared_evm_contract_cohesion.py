@@ -8,6 +8,7 @@ from datetime import datetime,timezone
 import pytest
 
 ALL_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+WRAPPED_RUNTIME=ALL_EVM|{"BTC","XRP","SOL","TRX"}
 EXTRA_RUNTIME=ALL_EVM-{"ETH"}
 EXTRA_LEGACY=EXTRA_RUNTIME-{"QNT"}
 ERC20=frozenset(("LINK","QNT","UNI","ARB"))
@@ -17,8 +18,8 @@ ERC20=frozenset(("LINK","QNT","UNI","ARB"))
   ("shared_evm_trade_cycle_proof","_EVM",ALL_EVM),
   ("shared_evm_permission_status","_ASSETS",EXTRA_LEGACY),
   ("shared_evm_owner_consent","_ADDITIONAL",EXTRA_LEGACY),
-  ("shared_evm_auto_sessions","_ASSETS",ALL_EVM),
-  ("shared_evm_live_worker","_ASSETS",ALL_EVM),
+  ("shared_evm_auto_sessions","_ASSETS",WRAPPED_RUNTIME),
+  ("shared_evm_live_worker","_ASSETS",WRAPPED_RUNTIME),
   ("shared_evm_remote_grant_audit","_ASSETS",EXTRA_LEGACY),
   ("shared_evm_passive_settlement","_SUPPORTED",ALL_EVM),
   ("shared_evm_token_net_reconciliation","_ASSETS",ERC20),

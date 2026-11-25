@@ -75,7 +75,7 @@ def test_live_worker_cost_hwm_fee_execution_order_is_explicit():
     import inspect
     from backend.shared_evm_live_worker import SharedEvmLiveWorker
     source=inspect.getsource(SharedEvmLiveWorker._run)
-    assert source.index("reconcile_verified_erc20_fees_once(client=client)") < source.index(
+    assert source.index("reconcile_verified_erc20_fees_once(client=client,capture_only=True)") < source.index(
         "reconcile_auto_fee_receipts_once()")
     assert source.index("reconcile_auto_fee_receipts_once()") < source.index(
         "run_owner_approved_auto_fee_batch(client=client)")

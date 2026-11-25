@@ -62,6 +62,7 @@ async def _get_fresh_bitcoin_fee_rate() -> int:
 
 async def prepare_original_btc_unsigned_psbt(
     did: str, *, stable: str, amount: str, input_utxos: object = None,
+    _private_quote: dict | None = None, _internal_bundle: bool = False,
 ) -> dict:
     """Owner-only internal readback; never expose as spend authorization."""
     did = _safe_did(did)
@@ -71,9 +72,11 @@ async def prepare_original_btc_unsigned_psbt(
             type(input_utxos) is not list or not input_utxos):
         raise HTTPException(422, "Original Bitcoin source UTXOs invalid")
     # Quote and chain evidence are obtained independently for the same Privy DID.
-    terms = await get_private_native_thornode_terms(
-        did, asset="BTC", side="SELL", stable=stable, amount=amount,
-    )
+    if _private_quote is not None and not _internal_bundle:
+        raise ValueError("Private quote belongs only to internal execution")
+    terms = (_private_quote if _private_quote is not None else
+             await get_private_native_thornode_terms(
+                 did, asset="BTC", side="SELL", stable=stable, amount=amount))
     fee_rate = await _get_fresh_bitcoin_fee_rate()
     selection = None
     if input_utxos is None:
@@ -151,4 +154,5 @@ async def prepare_original_btc_unsigned_psbt(
         "original_order_send_claim_acquired": False,
         "wallet_signed": False, "source_transaction_sent": False,
         "execution_enabled": False, "can_submit": False,
+        **({"_private_quote":terms,"_original_utxos":source_utxos} if _internal_bundle else {}),
     }

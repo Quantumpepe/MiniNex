@@ -83,7 +83,7 @@ def plan_wallet_policy_transition(
         raise ValueError("Empty wallet policy must revoke signer, not publish allowlists")
     target_args = dict(
         wallet=wallet, owner_id=owner_id,
-        executor_id=executor_id, scopes=desired_scopes, now=now,
+        executor_id=executor_id, scopes=desired_scopes, now=now, allow_expired=True,
     )
     target = compose_scoped_evm_wallet_policy(**target_args)
     target_digest = verified_wallet_policy_digest(target, **target_args)
@@ -133,6 +133,12 @@ def plan_wallet_policy_transition(
             f"Requested policy SHA256: {target_digest}",
             f"New or changed coins: {changed}",
             f"Authorized coin scope: {retained}",
+            *(("The changed coin's wallet authorization remains valid until revoked. Pause or Stop disables new MiniNex orders; it does not remove the wallet signer.",)
+              if any(desired[a].get("authorization_lifetime")=="UNTIL_REVOKED" for a in added_or_changed) else ()),
+            *(("BTC/XRP/SOL/TRX trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate." if "TRX" in desired else "BTC/XRP/SOL trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate." if "SOL" in desired else "BTC/XRP trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.",)
+              if any(x.get("settlement_policy")=="ETHEREUM_WRAPPED_SPOT_V1" for x in desired.values()) else ()),
+            *(("5% only on positive realized net profit per sale, after actual trade costs; Ethereum USDC/USDT to the reviewed Treasury. No high-water-mark.",)
+              if any(desired[a].get("net_fee_policy")=="ETHEREUM_REALIZED_NET_V1" for a in added_or_changed) else ()),
             f"Nonce: {nonce}",
             f"Issued Unix: {issued}",
             f"Expires Unix: {expires}",

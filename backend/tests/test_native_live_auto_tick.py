@@ -105,14 +105,18 @@ def test_native_sell_signal_requires_grant_instead_of_hard_block(monkeypatch):
         return grant(row, kwargs["amount"])
     monkeypatch.setattr(m,"verified_live_native_momentum",signal)
     monkeypatch.setattr(m,"verified_owner_native_buy_amount",money)
+    async def prepare(did,**kw):
+        assert kw["asset"]=="TRX" and kw["stable"]=="USDT"
+        return {"asset":"TRX","state":"NATIVE_SELL_QUOTE_PREPARED","can_submit":False}
+    monkeypatch.setattr(m,"prepare_native_sell_candidate",prepare)
     async def run():
         async with httpx.AsyncClient() as client:
             return await m.execute_owner_native_live_tick(
                 row,market=object(),client=client,
                 grant_auditor=auditor,now=1800000000)
     result = asyncio.run(run())
-    assert result["state"]=="SELL_GRANT_VERIFIED"
-    assert result["reason"]=="NATIVE_SELL_GRANT_OK_AWAITING_SIGNED_SOURCE"
+    assert result["state"]=="NATIVE_SELL_QUOTE_PREPARED"
+    assert result["can_submit"] is False
 
 
 def test_btc_uses_only_its_own_market_source():
@@ -156,3 +160,50 @@ def test_grant_does_not_accept_frontend_true_or_policy_without_remote_audit():
         with pytest.raises(ValueError):
             m._independent_native_owner_permission(
                 {**grant(row,"100"),**false},row=row,amount="100")
+
+
+def test_production_auditor_never_manufactures_signed_grant_from_preferences():
+    from backend.native_grant_auditor import audit_native_owner_grant
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(audit_native_owner_grant(DID,asset="BTC",stable="USDC",
+            amount="100",budget_revision=5,signal_event_id="market_123456"))
+    assert exc.value.detail["code"]=="NATIVE_PRIVY_GRANT_NOT_VERIFIED"
+
+
+def test_native_sell_signal_uses_native_source_candidate(monkeypatch):
+    row=session("SOL")
+    monkeypatch.setattr(m,"verified_live_native_momentum",lambda *a,**kw:{"action":"SELL"})
+    async def prepare(did,**kw):
+        assert did==DID and kw["asset"]=="SOL" and kw["stable"]=="USDC"
+        return {"state":"NATIVE_SELL_QUOTE_PREPARED","can_submit":False}
+    async def forbidden(*a,**kw):
+        pytest.fail("SELL is not a BUY or an unaudited send")
+    monkeypatch.setattr(m,"prepare_native_sell_candidate",prepare)
+    monkeypatch.setattr(m,"verified_owner_native_buy_amount",forbidden)
+    monkeypatch.setattr(m,"coordinate_original_native_buy_once",forbidden)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await m.execute_owner_native_live_tick(row,market=object(),
+                client=client,grant_auditor=forbidden,now=1800000000)
+    assert asyncio.run(run())=={"state":"NATIVE_SELL_QUOTE_PREPARED","can_submit":False}
+
+
+def test_native_exit_overrides_market_but_does_not_claim_completion_without_ledger(monkeypatch):
+    from backend import native_live_auto_sessions as sessions
+    row={**session("SOL"),"status":"EXIT_PENDING"}
+    def forbidden(*a,**kw):
+        pytest.fail("Exit must not request a BUY or market decision")
+    async def prepare(*a,**kw):
+        assert kw["_include_private_quote"] is True
+        return {"asset":"SOL","state":"WAIT","reason":"NO_FINALIZED_NATIVE_POSITION",
+                "_exit_wallet":"native","_exit_eth_wallet":"0x"+"a"*40}
+    monkeypatch.setattr(m,"verified_live_native_momentum",forbidden)
+    monkeypatch.setattr(m,"verified_owner_native_buy_amount",forbidden)
+    monkeypatch.setattr(m,"prepare_native_sell_candidate",prepare)
+    monkeypatch.setattr(sessions,"complete_native_exit_if_flat",lambda *a:False)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await m.execute_owner_native_live_tick(row,market=object(),client=client,
+                grant_auditor=forbidden,now=1800000000)
+    assert asyncio.run(run())["reason"]=="EXIT_SETTLEMENT_PENDING"

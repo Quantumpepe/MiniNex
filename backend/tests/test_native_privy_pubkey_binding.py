@@ -97,3 +97,20 @@ def test_verified_pubkey_alone_never_confers_wallet_sign_or_spend():
     for phrase in ("sendrawtransaction", "privy_rpc", "signDigest",
                    "requests.post", "private_key"):
         assert phrase not in src
+
+
+def test_tron_original_public_key_matches_native_address_only():
+    from eth_keys import keys
+    from backend.native_trx_user_signed_send import _tron_address_from_public_key
+    key = keys.PrivateKey(bytes([1])*32).public_key
+    owner = _tron_address_from_public_key(key.to_bytes())
+    result = verify_native_public_key_owner(
+        asset="TRX",owner=owner,public_key=key.to_compressed_bytes().hex())
+    assert result["original_public_key_matches_wallet"] is True
+    assert result["public_key_curve"] == "secp256k1"
+    assert result["privy_remote_policy_verified"] is False
+    assert result["can_submit"] is False
+    other = keys.PrivateKey(bytes([2])*32).public_key
+    with pytest.raises(ValueError):
+        verify_native_public_key_owner(asset="TRX",owner=owner,
+            public_key=other.to_compressed_bytes().hex())

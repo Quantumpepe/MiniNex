@@ -106,7 +106,7 @@ def _persist_original_verified_destination(*, original: dict,
     if (type(original) is not dict or type(proof) is not dict
             or original.get("asset") not in _ASSETS
             or original.get("status") != "SOURCE_FINALIZED"
-            or (original.get("asset") in ("TRX","DOGE") and
+            or (original.get("asset") =="DOGE" and
                 original.get("side")!="BUY")
             or type(original.get("intent_key")) is not str
             or not _KEY.fullmatch(original["intent_key"])
@@ -160,7 +160,7 @@ async def reconcile_original_native_destinations_once(
             if (type(row) is not dict or row.get("asset") not in _ASSETS
                     or row.get("status") != "SOURCE_FINALIZED"
                     or row.get("side") not in ("BUY", "SELL")
-                    or (row.get("asset") in ("TRX","DOGE") and
+                    or (row.get("asset") =="DOGE" and
                         row.get("side")!="BUY")
                     or type(row.get("intent_key")) is not str
                     or not _KEY.fullmatch(row["intent_key"])):

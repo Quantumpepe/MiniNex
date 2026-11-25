@@ -978,7 +978,7 @@ SCHEMA = (
     BEGIN
       FOREACH name IN ARRAY ARRAY['mininex_live_evm_policy_publications','mininex_live_evm_auto_sessions','mininex_live_evm_budget_reservations','mininex_live_evm_consent_challenges','mininex_live_evm_owner_permissions','mininex_live_evm_auto_broadcasts','mininex_live_evm_verified_fills','mininex_evm_fee_auto_permissions','mininex_evm_immutable_fill_usd_prices','mininex_evm_asset_hwm','mininex_evm_fee_events','mininex_evm_verified_fee_payments','mininex_evm_auto_fee_sends'] LOOP
         IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-          conrelid=name::regclass AND conname='mininex_evm_arb_asset_v2') THEN
+          conrelid=name::regclass AND (conname='mininex_evm_arb_asset_v2' OR conname=name||'_central_asset_scope_check')) THEN
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I',
                          name,name||'_asset_check');
           EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_asset_v2 CHECK (asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))$arbcheck$,name);
@@ -994,7 +994,7 @@ SCHEMA = (
       END LOOP;
       name:='mininex_live_evm_budget_reservations';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1008,7 +1008,7 @@ SCHEMA = (
       END IF;
       name:='mininex_live_evm_consent_challenges';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1022,7 +1022,7 @@ SCHEMA = (
       END IF;
       name:='mininex_live_evm_owner_permissions';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1036,7 +1036,7 @@ SCHEMA = (
       END IF;
       name:='mininex_live_evm_auto_broadcasts';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1050,7 +1050,7 @@ SCHEMA = (
       END IF;
       name:='mininex_evm_fee_auto_permissions';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1130,6 +1130,11 @@ SCHEMA += (
        DEFAULT 'ROUTER02_FINITE'
        CHECK(approval_mode IN ('ROUTER02_FINITE','THOR_FINITE','THOR_USDT_ZERO'))""",
     """ALTER TABLE mininex_live_evm_router_approval_sends
+       ADD COLUMN IF NOT EXISTS confirmed_gas_atomic NUMERIC(78,0) CHECK(confirmed_gas_atomic>=0),
+       ADD COLUMN IF NOT EXISTS gas_block_number BIGINT CHECK(gas_block_number>0),
+       ADD COLUMN IF NOT EXISTS gas_block_hash TEXT CHECK(gas_block_hash ~ '^0x[0-9a-f]{64}$'),
+       ADD COLUMN IF NOT EXISTS gas_block_unix BIGINT CHECK(gas_block_unix>0)""",
+    """ALTER TABLE mininex_live_evm_router_approval_sends
        ADD COLUMN IF NOT EXISTS owner_eth_pending_nonce NUMERIC(78,0)
        CHECK (owner_eth_pending_nonce>=0)""",
     """ALTER TABLE mininex_live_evm_router_approval_sends
@@ -1170,6 +1175,29 @@ SCHEMA += (
               );
          END IF;
        END $native_thor_allowance$""",
+    """DO $bridge_allowance$
+       BEGIN
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
+             AND conname IN ('mininex_bridge_approval_route_v3','mininex_approval_route_v4','mininex_approval_route_v5')) THEN
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              DROP CONSTRAINT IF EXISTS mininex_live_evm_router_approval_sends_approval_mode_check,
+              DROP CONSTRAINT IF EXISTS mininex_thor_approval_route_mode_v2;
+           ALTER TABLE mininex_live_evm_router_approval_sends
+              ADD CONSTRAINT mininex_bridge_approval_route_v3 CHECK(
+                (approval_mode='ROUTER02_FINITE' AND asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))
+                OR (approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO') AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
+                    AND side='BUY' AND chain_id=1)
+                OR (approval_mode IN ('BRIDGE_FINITE','BRIDGE_USDT_ZERO') AND asset IN ('BNB','POL','ARB')
+                    AND ((side='BUY' AND chain_id=1) OR
+                         (side='SELL' AND approval_mode='BRIDGE_FINITE'
+                           AND ((asset='BNB' AND chain_id=56) OR (asset='POL' AND chain_id=137)
+                                OR (asset='ARB' AND chain_id=42161))))
+                    AND (approval_mode<>'BRIDGE_USDT_ZERO' OR stable='USDT')
+                    AND router_address='0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae')
+              );
+         END IF;
+       END $bridge_allowance$""",
 )
 
 
@@ -1253,6 +1281,9 @@ SCHEMA += (
                                 'REFUNDED_VERIFIED'))
     )""",
     """ALTER TABLE mininex_live_native_order_intents
+        ADD COLUMN IF NOT EXISTS source_network_fee_atomic NUMERIC(78,0)
+        CHECK (source_network_fee_atomic >= 0)""",
+    """ALTER TABLE mininex_live_native_order_intents
         ADD COLUMN IF NOT EXISTS source_signed_tx_hash TEXT
         CHECK (source_signed_tx_hash IS NULL
           OR source_signed_tx_hash ~ '^[A-Za-z0-9]{64,90}$')""",
@@ -1296,6 +1327,24 @@ SCHEMA += (
                    (side='BUY' AND chain='ethereum-mainnet'));
          END IF;
        END $native_buy_five$""",
+    """DO $native_trx_sell_v3$
+       BEGIN
+         IF NOT EXISTS(
+           SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_native_order_intents'::regclass
+             AND conname='mininex_native_sell_network_v3'
+         ) THEN
+           ALTER TABLE mininex_live_native_order_intents
+             DROP CONSTRAINT IF EXISTS mininex_native_no_unsupported_sell_v2;
+           ALTER TABLE mininex_live_native_order_intents
+             ADD CONSTRAINT mininex_native_sell_network_v3
+             CHECK((asset!='DOGE' OR
+                    (side='BUY' AND chain='ethereum-mainnet'))
+               AND (asset!='TRX' OR
+                    ((side='BUY' AND chain='ethereum-mainnet') OR
+                     (side='SELL' AND chain='tron-mainnet' AND stable='USDT'))));
+         END IF;
+       END $native_trx_sell_v3$""",
     """CREATE UNIQUE INDEX IF NOT EXISTS mininex_native_signed_source_hash_unique
        ON mininex_live_native_order_intents(chain,source_signed_tx_hash)
        WHERE source_signed_tx_hash IS NOT NULL""",
@@ -1345,12 +1394,415 @@ SCHEMA += (
     )""",
 )
 
+# Native exit is a user-requested SELL-only state; existing sessions unchanged.
+SCHEMA += (
+    """DO $native_exit$
+       BEGIN
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+              WHERE conrelid='mininex_live_native_auto_sessions'::regclass
+                AND conname='mininex_native_session_exit_v1') THEN
+           ALTER TABLE mininex_live_native_auto_sessions
+             DROP CONSTRAINT IF EXISTS mininex_live_native_auto_sessions_status_check,
+             ADD CONSTRAINT mininex_native_session_exit_v1 CHECK(
+               status IN ('ACTIVE','PAUSED','STOPPED')
+               OR (status='EXIT_PENDING' AND asset IN ('BTC','SOL')
+                   AND started_by_owner_at IS NOT NULL));
+         END IF;
+       END $native_exit$""",
+)
+
 # New one-signer wallet grant tables do not change legacy grants or enable LIVE.
 from .shared_evm_wallet_policy_schema import WALLET_POLICY_SCHEMA
 from .shared_evm_central_runtime_schema import CENTRAL_EVM_SCHEMA
 SCHEMA += WALLET_POLICY_SCHEMA
 # Expands EXISTING journals in place without altering user grants/holds.
 SCHEMA += CENTRAL_EVM_SCHEMA
+SCHEMA += (
+    """DO $approval_v4$
+       BEGIN
+         ALTER TABLE mininex_live_evm_router_approval_sends
+           DROP CONSTRAINT IF EXISTS mininex_bridge_approval_route_v3,
+           DROP CONSTRAINT IF EXISTS mininex_thor_approval_route_mode_v2,
+           DROP CONSTRAINT IF EXISTS mininex_live_evm_router_approval_sends_approval_mode_check;
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+           WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
+             AND conname='mininex_approval_route_v5') THEN
+           ALTER TABLE mininex_live_evm_router_approval_sends
+             DROP CONSTRAINT IF EXISTS mininex_approval_route_v4;
+           ALTER TABLE mininex_live_evm_router_approval_sends
+             ADD CONSTRAINT mininex_approval_route_v5 CHECK(
+                (approval_mode='ROUTER02_FINITE' AND
+                   ((asset IN ('ETH','LINK','QNT','UNI','BTC','XRP','SOL','TRX') AND chain_id=1)
+                    OR (asset='BNB' AND chain_id=56)
+                    OR (asset='POL' AND chain_id=137)
+                    OR (asset='AVAX' AND chain_id=43114)
+                    OR (asset='ARB' AND chain_id=42161)))
+                OR (approval_mode='WRAPPED_USDT_ZERO' AND asset IN ('BTC','XRP','SOL','TRX')
+                    AND side='BUY' AND stable='USDT' AND chain_id=1)
+                OR (approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO')
+                    AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
+                    AND side='BUY' AND chain_id=1
+                    AND (approval_mode<>'THOR_USDT_ZERO' OR stable='USDT'))
+                OR (approval_mode IN ('BRIDGE_FINITE','BRIDGE_USDT_ZERO')
+                    AND asset IN ('BNB','POL','ARB')
+                    AND ((side='BUY' AND chain_id=1) OR
+                         (side='SELL' AND approval_mode='BRIDGE_FINITE'
+                          AND ((asset='BNB' AND chain_id=56) OR (asset='POL' AND chain_id=137)
+                            OR (asset='ARB' AND chain_id=42161))))
+                    AND (approval_mode<>'BRIDGE_USDT_ZERO' OR stable='USDT')
+                    AND router_address='0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae')
+             );
+         END IF;
+       END $approval_v4$""",
+)
+SCHEMA += (
+    """DO $bridge_exit$
+       BEGIN
+         IF NOT EXISTS(SELECT 1 FROM pg_constraint
+             WHERE conrelid='mininex_live_evm_auto_sessions'::regclass
+               AND conname='mininex_evm_session_exit_status_v1' AND pg_get_constraintdef(oid) LIKE '%TRX%') THEN
+           ALTER TABLE mininex_live_evm_auto_sessions
+             DROP CONSTRAINT IF EXISTS mininex_live_evm_auto_sessions_status_check,
+             DROP CONSTRAINT IF EXISTS mininex_evm_session_exit_status_v1;
+           ALTER TABLE mininex_live_evm_auto_sessions
+             ADD CONSTRAINT mininex_evm_session_exit_status_v1 CHECK(
+               status IN ('ACTIVE','PAUSED','STOPPED') OR
+               (status='EXIT_PENDING' AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL','TRX') AND started_by_owner_at IS NOT NULL));
+         END IF;
+       END $bridge_exit$""",
+)
+
+# Immutable reference quotes for the Ethereum settlement layer. A quote is
+# not consent and cannot authorize an allowance, transaction or accounting entry.
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_quotes (
+        quote_id UUID PRIMARY KEY,
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        wallet_address TEXT NOT NULL CHECK (wallet_address ~ '^0x[0-9a-f]{40}$'),
+        asset TEXT NOT NULL CHECK (asset IN ('BNB','POL','AVAX','ARB')),
+        side TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK (stable IN ('USDC','USDT')),
+        source_chain_id BIGINT NOT NULL,
+        destination_chain_id BIGINT NOT NULL,
+        source_token TEXT NOT NULL CHECK (source_token ~ '^0x[0-9a-f]{40}$'),
+        destination_token TEXT NOT NULL CHECK (destination_token ~ '^0x[0-9a-f]{40}$'),
+        input_atomic NUMERIC(78,0) NOT NULL CHECK (input_atomic > 0),
+        minimum_output_atomic NUMERIC(78,0) NOT NULL CHECK (minimum_output_atomic > 0),
+        issued_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        CHECK (expires_at > issued_at),
+        CHECK (source_chain_id <> destination_chain_id),
+        CHECK ((side='BUY' AND source_chain_id=1) OR
+               (side='SELL' AND destination_chain_id=1))
+    )""",
+    """ALTER TABLE mininex_ethereum_settlement_quotes
+       ADD COLUMN IF NOT EXISTS route_sha256 TEXT
+       CHECK (route_sha256 IS NULL OR route_sha256 ~ '^[0-9a-f]{64}$')""",
+    """ALTER TABLE mininex_ethereum_settlement_quotes
+       ADD COLUMN IF NOT EXISTS unsigned_transaction JSONB""",
+    """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_quotes_owner
+       ON mininex_ethereum_settlement_quotes(privy_did,issued_at DESC)""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_manual_attempts (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        source_chain_id BIGINT NOT NULL,
+        source_tx_hash TEXT CHECK (source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        state TEXT NOT NULL CHECK (state IN ('AWAITING_SIGNATURE','SUBMITTED','CANCELLED','UNCERTAIN')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(source_chain_id,source_tx_hash),
+        CHECK ((state='SUBMITTED') = (source_tx_hash IS NOT NULL))
+    )""",
+    """ALTER TABLE mininex_ethereum_settlement_manual_attempts
+       ADD COLUMN IF NOT EXISTS final_outcome TEXT
+       CHECK (final_outcome IS NULL OR final_outcome IN ('FINALIZED','SOURCE_REVERTED'))""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_submissions (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        intent_key TEXT NOT NULL,
+        source_chain_id BIGINT NOT NULL,
+        request_sha256 TEXT NOT NULL CHECK (request_sha256 ~ '^[0-9a-f]{64}$'),
+        state TEXT NOT NULL CHECK (state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')),
+        source_tx_hash TEXT CHECK (source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (privy_did,intent_key),
+        UNIQUE (source_chain_id,source_tx_hash),
+        CHECK ((state='SUBMITTED') = (source_tx_hash IS NOT NULL))
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_settlement_finality (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        source_chain_id BIGINT NOT NULL,
+        destination_chain_id BIGINT NOT NULL,
+        source_tx_hash TEXT NOT NULL CHECK (source_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        destination_tx_hash TEXT CHECK (destination_tx_hash ~ '^0x[0-9a-f]{64}$'),
+        bridge_deposit_id NUMERIC(78,0),
+        received_atomic NUMERIC(78,0),
+        source_gas_atomic NUMERIC(78,0) NOT NULL CHECK(source_gas_atomic >= 0),
+        outcome TEXT NOT NULL CHECK(outcome IN ('FINALIZED','SOURCE_REVERTED')),
+        verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(source_chain_id,source_tx_hash),
+        UNIQUE(source_chain_id,bridge_deposit_id),
+        CHECK ((outcome='FINALIZED' AND destination_tx_hash IS NOT NULL
+             AND bridge_deposit_id IS NOT NULL AND received_atomic > 0)
+          OR (outcome='SOURCE_REVERTED' AND destination_tx_hash IS NULL
+             AND bridge_deposit_id IS NULL AND received_atomic IS NULL))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_ethereum_settlement_finality_owner
+       ON mininex_ethereum_settlement_finality(privy_did,verified_at DESC)""",
+)
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_avax_staged_orders (
+        order_id UUID PRIMARY KEY,
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL,
+        wallet_id TEXT NOT NULL,
+        budget_revision INTEGER NOT NULL CHECK(budget_revision>0),
+        scope_json JSONB NOT NULL,
+        started_by_owner_at TIMESTAMPTZ NOT NULL,
+        original_input_atomic NUMERIC(78,0) NOT NULL CHECK(original_input_atomic>0),
+        remaining_atomic NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK(remaining_atomic>=0),
+        final_received_atomic NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK(final_received_atomic>=0),
+        final_minimum_atomic NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK(final_minimum_atomic>=0),
+        stage SMALLINT NOT NULL DEFAULT 1 CHECK(stage IN (1,2)),
+        state TEXT NOT NULL DEFAULT 'OPEN' CHECK(state IN ('OPEN','FINALIZED','REVERTED','CANCELLED')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_avax_staged_one_open
+       ON mininex_avax_staged_orders(privy_did) WHERE state='OPEN'""",
+    """CREATE TABLE IF NOT EXISTS mininex_avax_staged_steps (
+        step_id UUID PRIMARY KEY,
+        order_id UUID NOT NULL REFERENCES mininex_avax_staged_orders(order_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        stage SMALLINT NOT NULL CHECK(stage IN (1,2)),
+        kind TEXT NOT NULL CHECK(kind IN ('APPROVAL','BRIDGE','SWAP')),
+        chain_id BIGINT NOT NULL CHECK(chain_id IN (1,43114)),
+        prepared JSONB NOT NULL,
+        request_sha256 TEXT NOT NULL CHECK(request_sha256 ~ '^[0-9a-f]{64}$'),
+        state TEXT NOT NULL CHECK(state IN ('SENDING','SUBMITTED','SOURCE_FINALIZED','UNCERTAIN','FINALIZED','REVERTED')),
+        tx_hash TEXT CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        scan_block BIGINT,
+        proof JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(chain_id,tx_hash)
+    )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_avax_staged_one_unresolved_step
+       ON mininex_avax_staged_steps(order_id)
+       WHERE state IN ('SENDING','SUBMITTED','SOURCE_FINALIZED','UNCERTAIN')""",
+    """CREATE INDEX IF NOT EXISTS mininex_avax_staged_pending
+       ON mininex_avax_staged_steps(state,updated_at)""",
+)
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_across_staged_orders (
+        order_id UUID PRIMARY KEY,
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','ARB')),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_address TEXT NOT NULL,
+        wallet_id TEXT NOT NULL,
+        budget_revision INTEGER NOT NULL CHECK(budget_revision>0),
+        scope_json JSONB NOT NULL,
+        started_by_owner_at TIMESTAMPTZ NOT NULL,
+        original_input_atomic NUMERIC(78,0) NOT NULL CHECK(original_input_atomic>0),
+        remaining_atomic NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK(remaining_atomic>=0),
+        final_received_atomic NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK(final_received_atomic>=0),
+        final_minimum_atomic NUMERIC(78,0) NOT NULL DEFAULT 0 CHECK(final_minimum_atomic>=0),
+        stage SMALLINT NOT NULL DEFAULT 1 CHECK(stage IN (1,2)),
+        state TEXT NOT NULL DEFAULT 'OPEN' CHECK(state IN ('OPEN','FINALIZED','REVERTED','CANCELLED')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_across_staged_one_open
+       ON mininex_across_staged_orders(privy_did,asset) WHERE state='OPEN'""",
+    """CREATE TABLE IF NOT EXISTS mininex_across_staged_steps (
+        step_id UUID PRIMARY KEY,
+        order_id UUID NOT NULL REFERENCES mininex_across_staged_orders(order_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        stage SMALLINT NOT NULL CHECK(stage IN (1,2)),
+        kind TEXT NOT NULL CHECK(kind IN ('APPROVAL','BRIDGE','SWAP')),
+        chain_id BIGINT NOT NULL CHECK(chain_id IN (1,56,137,42161)),
+        prepared JSONB NOT NULL,
+        request_sha256 TEXT NOT NULL CHECK(request_sha256 ~ '^[0-9a-f]{64}$'),
+        state TEXT NOT NULL CHECK(state IN ('SENDING','SUBMITTED','SOURCE_FINALIZED','UNCERTAIN','FINALIZED','REVERTED')),
+        tx_hash TEXT CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        scan_block BIGINT,
+        proof JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(chain_id,tx_hash)
+    )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS mininex_across_staged_one_unresolved_step
+       ON mininex_across_staged_steps(order_id)
+       WHERE state IN ('SENDING','SUBMITTED','SOURCE_FINALIZED','UNCERTAIN')""",
+    """CREATE INDEX IF NOT EXISTS mininex_across_staged_pending
+       ON mininex_across_staged_steps(state,updated_at)""",
+)
+
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_staged_net_valuations (
+        quote_id UUID PRIMARY KEY REFERENCES mininex_ethereum_settlement_quotes(quote_id),
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BNB','POL','AVAX','ARB')),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        evidence JSONB NOT NULL CHECK(jsonb_typeof(evidence)='object'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_staged_net_valuations_owner
+       ON mininex_staged_net_valuations(privy_did,asset)""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                          WHERE tgname='mininex_staged_net_valuation_write_once'
+                            AND tgrelid='mininex_staged_net_valuations'::regclass) THEN
+               CREATE TRIGGER mininex_staged_net_valuation_write_once
+               BEFORE UPDATE OR DELETE ON mininex_staged_net_valuations
+               FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
+)
+
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_net_valuations (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('ETH','LINK','QNT','UNI','BTC','XRP','SOL','TRX')),
+        intent_key TEXT NOT NULL,
+        tx_hash TEXT NOT NULL CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        evidence JSONB NOT NULL CHECK(jsonb_typeof(evidence)='object'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,intent_key),
+        UNIQUE(tx_hash),
+        FOREIGN KEY(privy_did,asset,intent_key)
+            REFERENCES mininex_live_evm_verified_fills(privy_did,asset,intent_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS mininex_ethereum_net_cost_assignments (
+        tx_hash TEXT PRIMARY KEY CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        privy_did TEXT NOT NULL,
+        asset TEXT NOT NULL,
+        intent_key TEXT NOT NULL,
+        FOREIGN KEY(privy_did,asset,intent_key)
+            REFERENCES mininex_ethereum_net_valuations(privy_did,asset,intent_key)
+    )""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                          WHERE tgname='mininex_ethereum_net_valuation_write_once'
+                            AND tgrelid='mininex_ethereum_net_valuations'::regclass) THEN
+               CREATE TRIGGER mininex_ethereum_net_valuation_write_once
+               BEFORE UPDATE OR DELETE ON mininex_ethereum_net_valuations
+               FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+           END IF;
+           IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                          WHERE tgname='mininex_ethereum_net_cost_write_once'
+                            AND tgrelid='mininex_ethereum_net_cost_assignments'::regclass) THEN
+               CREATE TRIGGER mininex_ethereum_net_cost_write_once
+               BEFORE UPDATE OR DELETE ON mininex_ethereum_net_cost_assignments
+               FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
+)
+
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_net_fee_obligations (
+        privy_did TEXT NOT NULL REFERENCES mininex_accounts(privy_did),
+        asset TEXT NOT NULL CHECK(asset IN ('BTC','ETH','BNB','SOL','XRP','TRX','POL','AVAX','LINK','QNT','UNI','ARB')),
+        family TEXT NOT NULL CHECK(family IN ('ETHEREUM','WRAPPED_SPOT','CROSS_EVM')),
+        fill_key TEXT NOT NULL,
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        chain_id INTEGER NOT NULL DEFAULT 1 CHECK(chain_id=1),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(amount_atomic>0),
+        evidence_sha256 TEXT NOT NULL CHECK(evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        evidence JSONB NOT NULL CHECK(jsonb_typeof(evidence)='object'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,family,fill_key)
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_net_fee_obligations_owner
+        ON mininex_net_fee_obligations(privy_did,stable,created_at)""",
+    """DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                WHERE tgname='mininex_net_fee_obligation_write_once'
+                  AND tgrelid='mininex_net_fee_obligations'::regclass) THEN
+                CREATE TRIGGER mininex_net_fee_obligation_write_once
+                  BEFORE UPDATE OR DELETE ON mininex_net_fee_obligations
+                  FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+            END IF;
+        END $$""",
+)
+
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_net_fee_sends (
+        privy_did TEXT NOT NULL, asset TEXT NOT NULL, family TEXT NOT NULL,
+        fill_key TEXT NOT NULL, chain_id INTEGER NOT NULL DEFAULT 1 CHECK(chain_id=1),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL,
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(amount_atomic>0),
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        evidence_sha256 TEXT NOT NULL CHECK(evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK(status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+                                              'PAID_VERIFIED','FINALIZED_REVERTED')),
+        tx_hash TEXT UNIQUE CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,family,fill_key),
+        FOREIGN KEY(privy_did,asset,family,fill_key)
+          REFERENCES mininex_net_fee_obligations(privy_did,asset,family,fill_key),
+        CHECK ((status IN ('SENDING','RECONCILIATION_REQUIRED') AND tx_hash IS NULL)
+          OR (status IN ('SUBMITTED','PAID_VERIFIED','FINALIZED_REVERTED') AND tx_hash IS NOT NULL))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_net_fee_sends_pending
+        ON mininex_net_fee_sends(privy_did,chain_id,status)""",
+    """CREATE OR REPLACE VIEW mininex_evm_auto_fee_sends_all AS
+        SELECT privy_did,chain_id,status FROM mininex_evm_auto_fee_sends
+        UNION ALL SELECT privy_did,chain_id,status FROM mininex_net_fee_sends""",
+)
+
+
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_net_fee_receipts (
+        privy_did TEXT NOT NULL, asset TEXT NOT NULL, family TEXT NOT NULL, fill_key TEXT NOT NULL,
+        tx_hash TEXT NOT NULL UNIQUE CHECK(tx_hash ~ '^0x[0-9a-f]{64}$'),
+        evidence_sha256 TEXT NOT NULL CHECK(evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(amount_atomic>=0),
+        outcome TEXT NOT NULL CHECK(outcome IN ('PAID_VERIFIED','FINALIZED_REVERTED')),
+        proof JSONB NOT NULL CHECK(jsonb_typeof(proof)='object'),
+        verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,family,fill_key),
+        FOREIGN KEY(privy_did,asset,family,fill_key)
+          REFERENCES mininex_net_fee_sends(privy_did,asset,family,fill_key),
+        CHECK ((outcome='PAID_VERIFIED' AND amount_atomic>0)
+          OR (outcome='FINALIZED_REVERTED' AND amount_atomic=0))
+    )""",
+    """DO $$
+       BEGIN
+           IF NOT EXISTS (SELECT 1 FROM pg_trigger
+                          WHERE tgname='mininex_net_fee_receipt_write_once'
+                            AND tgrelid='mininex_net_fee_receipts'::regclass) THEN
+               CREATE TRIGGER mininex_net_fee_receipt_write_once
+               BEFORE UPDATE OR DELETE ON mininex_net_fee_receipts
+               FOR EACH ROW EXECUTE FUNCTION mininex_prevent_historical_rate_mutation();
+           END IF;
+       END $$""",
+)
+
 
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()

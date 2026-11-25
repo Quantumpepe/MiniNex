@@ -64,6 +64,9 @@ def test_native_sell_claim_serializes_owner_and_three_network_journals(
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "mininex_accounts" in cur.sql[1][0]
     assert all("COUNT(*) AS pending" in q for q,a in cur.sql[2:5])
+    assert "mininex_ethereum_settlement_submissions" in cur.sql[2][0]
+    assert "mininex_avax_staged_steps" in cur.sql[2][0]
+    assert "mininex_live_evm_router_approval_sends" in cur.sql[2][0]
     assert "INSERT INTO mininex_live_evm_native_sell_intents" in cur.sql[-1][0]
 
 

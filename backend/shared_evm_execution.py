@@ -96,7 +96,7 @@ CALLDATA = re.compile(r"^0x(?:[0-9a-fA-F]{2})*$")
 
 
 def bound_evm_wallet_rpc(*, asset: str, wallet_id: str, wallet: str,
-                         tx: dict) -> tuple[str, dict]:
+                         tx: dict, wrapped_spot: bool = False) -> tuple[str, dict]:
     """Construct the same Privy RPC envelope for all six EVM assets.
 
     This is only a TRANSPORT serializer, not authorization to execute any
@@ -104,7 +104,12 @@ def bound_evm_wallet_rpc(*, asset: str, wallet_id: str, wallet: str,
     must validate spender, token, exact amounts, slippage, user grant and
     claim its durable once-only order before calling any broadcaster.
     """
-    chain_id, _ = chain_for_asset(asset)
+    if wrapped_spot:
+        if asset not in ("BTC","XRP","SOL","TRX"):
+            raise ValueError("Wrapped trading transport is restricted to its original assets")
+        chain_id=1
+    else:
+        chain_id, _ = chain_for_asset(asset)
     if (type(wallet_id) is not str or not WALLET_ID.fullmatch(wallet_id)
             or type(wallet) is not str or not ADDRESS.fullmatch(wallet)
             or type(tx) is not dict
