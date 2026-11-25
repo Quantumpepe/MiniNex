@@ -257,3 +257,37 @@ test('first BNB bridge grant has no fee authority and needs only one signer prom
   assert.equal(i,6);
   assert.equal(centralWalletHasCoin(final,'BNB'),true);
 });
+
+for(const asset of ['BTC','XRP']){
+  test(asset+' first Ethereum trading grant needs exactly one owner confirmation',async()=>{
+    const policy='ETHEREUM_WRAPPED_SPOT_V1';
+    const states=[scopeStatus([],'NOT_CONFIGURED'),{...draft(),asset},
+      {...published(),asset},{...offer(),asset,settlement_policy:policy,fee_scope:null},
+      confirmed(),{...scopeStatus([asset]),settlement_policy_by_asset:{[asset]:policy}}];
+    let i=0,prompts=0;
+    const final=await authorizeCentralEvmWalletCoin(options(async()=>states[i++],{
+      asset,addSigners:async()=>{prompts++;},
+    }));
+    assert.equal(prompts,1);
+    assert.equal(i,6);
+    assert.equal(centralWalletHasCoin(final,asset),true);
+    assert.equal(centralWalletHasCoin(scopeStatus([asset]),asset),false);
+    assert.equal(final.can_submit,false);
+  });
+  test(asset+' extension retains earlier scopes and asks only once',async()=>{
+    const policy='ETHEREUM_WRAPPED_SPOT_V1';
+    const stage={...challenge(),asset,scope_coins:['LINK',asset],
+      challenge:challenge().challenge.replace('New or changed coins: QNT','New or changed coins: '+asset)
+        +'\nBTC/XRP trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.'};
+    const states=[scopeStatus(['LINK']),stage,extendConfirmed(),
+      {...applied(),new_coin:asset,scope_coins:['LINK',asset]},
+      {...scopeStatus(['LINK',asset]),settlement_policy_by_asset:{[asset]:policy}}];
+    let i=0,prompts=0;
+    const final=await authorizeCentralEvmWalletCoin(options(async()=>states[i++],{
+      asset,signMessage:async()=>{prompts++;return {signature:'0x'+'f'.repeat(130)};},
+    }));
+    assert.equal(prompts,1);
+    assert.equal(i,5);
+    assert.equal(centralWalletHasCoin(final,asset),true);
+  });
+}

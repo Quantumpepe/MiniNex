@@ -4,10 +4,14 @@
 const ADDR=/^0x[0-9a-fA-F]{40}$/;
 const ID=/^[A-Za-z0-9_-]{6,160}$/;
 const SHA=/^[a-f0-9]{64}$/;
-const COINS=Object.freeze(['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB']);
+const COINS=Object.freeze(['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP']);
 const MODE='MININEX_ORIGINAL_EVM_WALLET_POLICY_READONLY_STATUS';
 const DIRECT_POLICY='ETHEREUM_ACROSS_DIRECT_V1';
 const DIRECT_COINS=['BNB','POL','ARB'];
+const WRAPPED_POLICY='ETHEREUM_WRAPPED_SPOT_V1';
+const WRAPPED_COINS=['BTC','XRP'];
+const needsWrapped=asset=>WRAPPED_COINS.includes(asset);
+const hasWrapped=(report,asset)=>report.settlement_policy_by_asset?.[asset]===WRAPPED_POLICY;
 const needsDirect=asset=>DIRECT_COINS.includes(asset);
 const hasDirect=(report,asset)=>report.settlement_policy_by_asset?.[asset]===DIRECT_POLICY;
 
@@ -37,6 +41,7 @@ export function centralWalletHasCoin(report,asset){
     report.status==='REMOTE_VERIFIED_READONLY'&&
     report.scope_coins.includes(asset)&&
     (!needsDirect(asset)||hasDirect(report,asset))&&
+    (!needsWrapped(asset)||hasWrapped(report,asset))&&
     report.one_scoped_signer_verified===true&&
     report.remote_policy_exactly_verified===true&&
     report.current_user_budgets_verified===true&&
@@ -89,7 +94,8 @@ function validateOffer(offer,{address,asset,stable}){
     !((offer.owner_add_signer_required===true&&offer.original_wallet_approved===false)||
       (offer.owner_add_signer_required===false&&offer.original_wallet_approved===true))||
     offer.live_trading_enabled!==false||offer.can_submit!==false||
-    (needsDirect(asset)?(offer.settlement_policy!==DIRECT_POLICY||offer.fee_scope!==null):
+    (needsWrapped(asset)?(offer.settlement_policy!==WRAPPED_POLICY||offer.fee_scope!==null):
+      needsDirect(asset)?(offer.settlement_policy!==DIRECT_POLICY||offer.fee_scope!==null):
       (offer.fee_scope?.performance_fee_percent!==5||
        offer.fee_scope?.fee_basis!=='REALIZED_NET_GAIN_ABOVE_HWM'||
        !ADDR.test(offer.fee_scope?.treasury_wallet||'')))){
@@ -111,6 +117,7 @@ function validateChallenge(stage,{asset,address}){
      stage.policy_updated_in_privy!==false||
      typeof challenge!=='string'||challenge.length>3500||
      !challenge.includes('New or changed coins: '+asset)||
+     (needsWrapped(asset)&&!challenge.includes('BTC/XRP trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.'))||
      !challenge.includes('Wallet: '+address.toLowerCase())||
      !challenge.includes('Requested policy SHA256: '+stage.target_policy_sha256)||
      !challenge.includes('Previous policy SHA256: '+stage.previous_policy_sha256)||
