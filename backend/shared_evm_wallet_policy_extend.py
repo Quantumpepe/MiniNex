@@ -152,6 +152,8 @@ def _stage_wallet_coin_extension_locked(
             raise HTTPException(409,"Legacy ETH signer requires reconciliation")
     proposed=build_selected_wallet_scope(asset=asset,stable=stable,amount=selected_budget,
         snapshot=snapshot,now=now)
+    from .shared_evm_consolidated_wallet_policy import with_net_fee_scope
+    proposed=with_net_fee_scope(proposed)
     if asset in current["scopes_json"] and (
             proposed.get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"
             or current["scopes_json"][asset].get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1"):

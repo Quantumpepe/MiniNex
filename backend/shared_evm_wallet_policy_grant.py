@@ -132,12 +132,15 @@ async def get_original_one_signer_grant_offer(did:str)->dict:
         "scope_coins":[scope["asset"]],
         "settlement_policy":scope.get("settlement_policy"),
         "authorization_lifetime":scope.get("authorization_lifetime"),
-        "fee_scope":None if scope.get("settlement_policy") else {
+        "fee_scope":({
+            "treasury_wallet":scope["treasury"],"fee_max_atomic":scope["net_fee_atomic_cap"],
+            "performance_fee_percent":5,"fee_basis":"POSITIVE_REALIZED_NET_PER_SELL","chain_id":1,
+        } if scope.get("net_fee_policy")=="ETHEREUM_REALIZED_NET_V1" else None if scope.get("settlement_policy") else {
             "treasury_wallet":scope["treasury"],
             "fee_max_atomic":scope["owner_max_fee_atomic"],
             "performance_fee_percent":5,
             "fee_basis":"REALIZED_NET_GAIN_ABOVE_HWM",
-        },
+        }),
         "owner_add_signer_required":not attached,
         "original_wallet_approved":bool(attached),
         "live_trading_enabled":False,"can_submit":False,

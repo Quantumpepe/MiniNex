@@ -54,7 +54,8 @@ function verifiedCoinGrant(report,asset){
 // Starting a new session requires the current route. An independently
 // verified previous direct scope may still finish its original exit.
 export function centralWalletHasCoin(report,asset){
-  return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset));
+  return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset))&&
+    (!Array.isArray(report.net_fee_scope_coins)||report.net_fee_scope_coins.includes(asset));
 }
 export function centralWalletCanExitCoin(report,asset){
   return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset)||
@@ -106,8 +107,13 @@ function validateOffer(offer,{address,asset,stable}){
     !((offer.owner_add_signer_required===true&&offer.original_wallet_approved===false)||
       (offer.owner_add_signer_required===false&&offer.original_wallet_approved===true))||
     offer.live_trading_enabled!==false||offer.can_submit!==false||
-    (needsWrapped(asset)?(offer.settlement_policy!==WRAPPED_POLICY||offer.fee_scope!==null):
-      needsDirect(asset)?(offer.settlement_policy!==directPolicyFor(asset)||offer.fee_scope!==null):
+    (needsWrapped(asset)&&offer.settlement_policy!==WRAPPED_POLICY)||
+    (needsDirect(asset)&&offer.settlement_policy!==directPolicyFor(asset))||
+    (offer.fee_scope?.fee_basis==='POSITIVE_REALIZED_NET_PER_SELL'?
+      (offer.fee_scope.performance_fee_percent!==5||offer.fee_scope.chain_id!==1||
+        !ADDR.test(offer.fee_scope.treasury_wallet||'')||
+        !/^[1-9][0-9]*$/.test(offer.fee_scope.fee_max_atomic||'')):
+      (needsWrapped(asset)||needsDirect(asset))?offer.fee_scope!==null:
       (offer.fee_scope?.performance_fee_percent!==5||
        offer.fee_scope?.fee_basis!=='REALIZED_NET_GAIN_ABOVE_HWM'||
        !ADDR.test(offer.fee_scope?.treasury_wallet||'')))){
@@ -203,7 +209,8 @@ export async function authorizeCentralEvmWalletCoin({
     if(centralWalletHasCoin(report,asset))return report;
     const migrating=report.scope_coins.includes(asset)&&(
       (needsDirect(asset)&&!hasDirect(report,asset))||
-      (Array.isArray(report.renewable_scope_coins)&&report.renewable_scope_coins.includes(asset)));
+      (Array.isArray(report.renewable_scope_coins)&&report.renewable_scope_coins.includes(asset))||
+      (Array.isArray(report.net_fee_scope_coins)&&!report.net_fee_scope_coins.includes(asset)));
     if(report.scope_coins.includes(asset)&&!migrating){
       throw Error('Wallet grant requires independent re-verification');
     }

@@ -231,6 +231,8 @@ def _stage_one_original_wallet_locked(
         raise HTTPException(409,"Legacy ETH signer grants require reconciliation")
     scope=build_selected_wallet_scope(asset=asset,stable=stable,amount=amount,
         snapshot=snapshot,now=now)
+    from .shared_evm_consolidated_wallet_policy import with_net_fee_scope
+    scope=with_net_fee_scope(scope)
     kwargs=dict(
         wallet=owned["address"],owner_id=owner_id,executor_id=signer_id,
         scopes=[scope],now=now,

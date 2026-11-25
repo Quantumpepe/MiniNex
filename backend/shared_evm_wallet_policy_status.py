@@ -167,6 +167,8 @@ async def read_owner_central_wallet_policy_status(did: str) -> dict:
     result["status"]=status
     result["scope_coins"]=sorted(row["asset"] for row in scopes)
     result["settlement_policy_by_asset"]={row["asset"]:row.get("settlement_policy") for row in scopes}
+    result["net_fee_scope_coins"]=sorted(row["asset"] for row in scopes
+        if row.get("net_fee_policy")=="ETHEREUM_REALIZED_NET_V1")
     result["legacy_reconciliation_required"]=(
         record.get("legacy_reconciliation_required") is not False
     )

@@ -47,9 +47,24 @@ def durable_wallet_scope(scope):
             "expires_at":DURABLE_EXPIRY_SENTINEL}
 
 
+NET_FEE_POLICY="ETHEREUM_REALIZED_NET_V1"
+
+def with_net_fee_scope(scope):
+    from .shared_evm_fee_transfer_proof import owner_fee_treasury
+    return {**scope,"net_fee_policy":NET_FEE_POLICY,
+        "net_fee_atomic_cap":scope["buy_source_atomic_cap"],
+        "treasury":owner_fee_treasury(asset="ETH",stable=scope["stable"])}
+
 def valid_scope_fields(scope):
     if type(scope) is not dict:
         return False
+    if "net_fee_policy" in scope or "net_fee_atomic_cap" in scope:
+        cap=scope.get("net_fee_atomic_cap")
+        if (scope.get("net_fee_policy")!=NET_FEE_POLICY or type(cap) is not str
+                or not cap.isascii() or not cap.isdecimal() or not 0<int(cap)<2**256
+                or cap!=scope.get("buy_source_atomic_cap")):
+            return False
+        scope={k:v for k,v in scope.items() if k not in ("net_fee_policy","net_fee_atomic_cap")}
     if "authorization_lifetime" in scope:
         if (scope.get("authorization_lifetime")!=DURABLE_LIFETIME
                 or type(scope.get("expires_at")) is not int
@@ -158,6 +173,8 @@ def compose_scoped_evm_wallet_policy(
         if asset not in selected:
             continue
         args = dict(selected[asset])
+        net_fee=args.pop("net_fee_policy",None)==NET_FEE_POLICY
+        net_fee_cap=args.pop("net_fee_atomic_cap",None)
         durable=args.pop("authorization_lifetime",None)==DURABLE_LIFETIME
         if durable:
             # Compile the existing strict, bounded rule templates; only the
@@ -206,6 +223,13 @@ def compose_scoped_evm_wallet_policy(
                 wallet=wallet, owner_id=owner_id, executor_id=executor_id,
                 now=rule_now, **args,
             )
+        if net_fee:
+            from .shared_evm_fee_privy_policy_draft import build_owner_evm_fee_policy_draft
+            fee=build_owner_evm_fee_policy_draft(asset="ETH",stable=args["stable"],wallet=wallet,
+                treasury=args["treasury"],owner_id=owner_id,executor_id=executor_id,
+                owner_max_fee_atomic=net_fee_cap,expires_at=args["expires_at"],now=rule_now)["rules"][0]
+            fee["name"]=f"MiniNex {asset} {args['stable']} realized net fee Ethereum"
+            per_coin["rules"]=[r for r in per_coin["rules"] if not r["name"].endswith("owner-approved net-profit fee")]+[fee]
         if (per_coin.get("version") != "1.0"
                 or per_coin.get("chain_type") != "ethereum"
                 or per_coin.get("owner_id") != owner_id
