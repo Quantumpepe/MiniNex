@@ -117,7 +117,9 @@ def pending_bridge_order(cur,did,asset):
                 AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')))
         UNION ALL SELECT 1 FROM mininex_avax_staged_orders
           WHERE privy_did=%s AND %s='AVAX' AND state='OPEN'
-        LIMIT 1""",(did,asset,did,asset))
+        UNION ALL SELECT 1 FROM mininex_across_staged_orders
+          WHERE privy_did=%s AND asset=%s AND state='OPEN'
+        LIMIT 1""",(did,asset,did,asset,did,asset))
     return cur.fetchone() is not None
 
 

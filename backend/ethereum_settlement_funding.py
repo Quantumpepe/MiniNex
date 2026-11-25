@@ -93,6 +93,10 @@ _PENDING_SQL="""SELECT asset,stable,reserved_notional_usd AS amount,'USD' AS uni
     FROM mininex_avax_staged_orders
     WHERE privy_did=%(did)s AND stable=%(stable)s AND side='BUY' AND state='OPEN'
     UNION ALL
+    SELECT asset,stable,original_input_atomic,'ATOMIC'
+    FROM mininex_across_staged_orders
+    WHERE privy_did=%(did)s AND stable=%(stable)s AND side='BUY' AND state='OPEN'
+    UNION ALL
     SELECT q.asset,q.stable,q.input_atomic,'ATOMIC'
     FROM mininex_ethereum_settlement_quotes q
     WHERE q.privy_did=%(did)s AND q.stable=%(stable)s AND q.side='BUY'
