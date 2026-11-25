@@ -227,7 +227,8 @@ def central_policy_rule(record:dict,*,asset:str,kind:str,
         raise ValueError("Original combined wallet policy not current")
     if record["scope"].get("settlement_policy")==WRAPPED_SPOT_POLICY:
         if kind=="swap" and side in ("BUY","SELL"):
-            name=f"MiniNex {asset} {side} {stable} wrapped exactInput"
+            from .ethereum_wrapped_spot_policy import wrapped_swap_rule_name
+            name=wrapped_swap_rule_name(asset,side,stable)
         elif kind=="approval" and side in ("BUY","SELL"):
             name=f"MiniNex {asset} {side} {stable} wrapped allowance"
         elif kind=="approval_reset" and side=="BUY" and stable=="USDT":

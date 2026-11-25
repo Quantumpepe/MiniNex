@@ -163,7 +163,7 @@ def test_wrapped_scope_uses_btc_exact_saved_capital_and_distinct_token_precision
         prepare.build_selected_wallet_scope(asset="BTC",stable="USDC",amount=0,snapshot={},now=NOW)
 
 
-@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL","TRX"])
 def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(asset,monkeypatch):
     from backend import shared_evm_central_runtime as runtime
     from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY
@@ -187,7 +187,8 @@ def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(as
     for side in ("BUY","SELL"):
         rule=runtime.central_policy_rule(current,asset=asset,stable="USDT",
                                         kind="swap",side=side,now=NOW)
-        assert rule["name"]==f"MiniNex {asset} {side} USDT wrapped exactInput"
+        from backend.ethereum_wrapped_spot_policy import wrapped_swap_rule_name
+        assert rule["name"]==wrapped_swap_rule_name(asset,side,"USDT")
         assert runtime.central_policy_rule(current,asset=asset,stable="USDT",
                                         kind="approval",side=side,now=NOW)["action"]=="ALLOW"
     assert runtime.central_policy_rule(current,asset=asset,stable="USDT",
@@ -197,7 +198,7 @@ def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(as
                                     kind="native_withdraw",now=NOW)
 
 
-@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL","TRX"])
 def test_wrapped_grant_gate_refuses_changed_recipient_path_and_owner_cap(asset):
     from fastapi import HTTPException
     from backend.shared_evm_policy_swap_gate import check_evm_policy_bound_swap
@@ -267,7 +268,7 @@ def test_wrapped_route_common_transport_and_exact_path_quote(asset,precision):
         decode_wrapped_spot_amounts(tx["data"]+"00",asset=asset,stable="USDC",side="BUY",wallet=WALLET)
 
 
-@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL","TRX"])
 def test_wrapped_usdt_reset_is_exact_and_distinct_from_native_allowance(asset):
     from backend.shared_evm_allowance import inspect_combined_grant_router_approval,bound_owner_router_approval_rpc
     from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY
@@ -290,3 +291,49 @@ def test_wrapped_usdt_reset_is_exact_and_distinct_from_native_allowance(asset):
     with pytest.raises(ValueError):
         bound_owner_router_approval_rpc(asset=asset,stable="USDT",side="BUY",
                   wallet=WALLET,wallet_id="wallet_123456",amount_atomic=1000000)
+
+
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+@pytest.mark.parametrize("side",["BUY","SELL"])
+def test_trx_v2_exact_path_and_policy(stable,side):
+    from eth_abi import encode,decode
+    from backend.ethereum_wrapped_spot_policy import (
+        WRAPPED_SPOT_POLICY,wrapped_spot_route,wrapped_spot_transaction,decode_wrapped_spot_amounts,
+        wrapped_swap_rule_name)
+    from backend.ethereum_wrapped_spot_quote import decode_v2_path_quote
+    from backend.shared_evm_privy_transport import bound_privy_evm_swap_request
+    from backend.shared_evm_policy_swap_gate import check_evm_policy_bound_swap
+    from fastapi import HTTPException
+    route=wrapped_spot_route("TRX",stable,side)
+    assert route["chain_id"]==1 and route["source_decimals"]==route["destination_decimals"]==6
+    assert len(route["path"])==(2 if stable=="USDC" else 3)
+    assert route["path"]==list(reversed(wrapped_spot_route("TRX",stable,"SELL" if side=="BUY" else "BUY")["path"]))
+    selected=dict(scope("TRX",stable),settlement_policy=WRAPPED_SPOT_POLICY,
+                  native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    data=kwargs([selected]); policy=compose_scoped_evm_wallet_policy(**data)
+    rule=next(r for r in policy["rules"] if r["name"]==wrapped_swap_rule_name("TRX",side,stable))
+    assert any(c["field"]=="swapExactTokensForTokens.path" and c["operator"]=="eq" and
+               c["value"]==route["path"] for c in rule["conditions"])
+    record={"asset":"TRX","chain_id":1,"stable":stable,"wallet_address":WALLET,
+            "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER","status":"GRANT_VERIFIED",
+            "revoked_at":None,"scope":selected,"candidate_json":policy,
+            "policy_sha256":verified_wallet_policy_digest(policy,**data)}
+    tx=wrapped_spot_transaction(asset="TRX",stable=stable,side=side,wallet=WALLET,
+                                amount_atomic=1000000,min_out_atomic=42)
+    assert decode_wrapped_spot_amounts(tx["data"],asset="TRX",stable=stable,side=side,wallet=WALLET)==(1000000,42)
+    assert check_evm_policy_bound_swap(record=record,asset="TRX",side=side,stable=stable,wallet=WALLET,
+                tx=tx,input_atomic="1000000",minimum_output_atomic="42",now=NOW)["exact_swap_validated"]
+    _,body=bound_privy_evm_swap_request(asset="TRX",wallet_id="wallet_123456",wallet=WALLET,
+                 tx=tx,side=side,stable=stable,input_atomic="1000000",minimum_output_atomic="42")
+    assert body["caip2"]=="eip155:1"
+    raw="0x"+encode(["uint256[]"],[[1000000]+[500000]*(len(route["path"])-1)]).hex()
+    assert decode_v2_path_quote(raw,input_atomic=1000000,hops=len(route["path"])-1)==500000
+    with pytest.raises(ValueError):
+        decode_v2_path_quote(raw,input_atomic=1000001,hops=len(route["path"])-1)
+    corrupted=tx["data"][:10]+encode(["uint256","uint256","address[]","address"],
+        [1000000,42,list(reversed(route["path"])),WALLET]).hex()
+    with pytest.raises(ValueError):
+        decode_wrapped_spot_amounts(corrupted,asset="TRX",stable=stable,side=side,wallet=WALLET)
+    with pytest.raises(HTTPException):
+        check_evm_policy_bound_swap(record=record,asset="TRX",side=side,stable=stable,wallet=WALLET,
+                tx=dict(tx,data=corrupted),input_atomic="1000000",minimum_output_atomic="42",now=NOW)

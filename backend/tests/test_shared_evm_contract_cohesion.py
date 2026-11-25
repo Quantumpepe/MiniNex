@@ -8,7 +8,7 @@ from datetime import datetime,timezone
 import pytest
 
 ALL_EVM=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
-WRAPPED_RUNTIME=ALL_EVM|{"BTC","XRP","SOL"}
+WRAPPED_RUNTIME=ALL_EVM|{"BTC","XRP","SOL","TRX"}
 EXTRA_RUNTIME=ALL_EVM-{"ETH"}
 EXTRA_LEGACY=EXTRA_RUNTIME-{"QNT"}
 ERC20=frozenset(("LINK","QNT","UNI","ARB"))

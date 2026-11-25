@@ -19,7 +19,7 @@ from .shared_evm_order_finality import reconcile_evm_internal_order
 from .storage import _db_url,_ensure_schema
 
 LOG=logging.getLogger("mininex.evm_passive_order_finality")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 _FINALITY_PAGE_LOCK=Lock()
 _FINALITY_PAGE_OFFSET=0
 
@@ -36,7 +36,7 @@ def original_submitted_evm_orders(limit:int=80)->list[dict]:
                    FROM mininex_live_evm_auto_broadcasts
                    WHERE status='SUBMITTED'
                      AND tx_hash IS NOT NULL
-                     AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL')
+                     AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL','TRX')
                    ORDER BY created_at ASC,privy_did,asset,intent_key
                    LIMIT %s OFFSET %s"""
     # A long-pending receipt cannot prevent later completed transactions

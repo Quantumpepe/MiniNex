@@ -26,7 +26,7 @@ def inspect_evm_exact_swap(
     all those addresses are derived from the canonical on-chain route registry.
     """
     pair=_pair(asset,stable,side)
-    if asset in ("BTC","XRP","SOL"):
+    if asset in ("BTC","XRP","SOL","TRX"):
         from .ethereum_wrapped_spot_policy import inspect_wrapped_spot_transaction
         if (type(input_atomic) is not str or not _ATOMIC.fullmatch(input_atomic)
                 or type(minimum_output_atomic) is not str

@@ -15,7 +15,7 @@ from .live_orders import valid_order_key
 from .shared_evm_swap_receipts import check_user_evm_swap,_pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
-_SUPPORTED=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_SUPPORTED=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _finalize_locked(

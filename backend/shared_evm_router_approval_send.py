@@ -125,14 +125,14 @@ def _claim_once_locked(
     session=cur.fetchone()
     if (type(session) is not dict or not (session.get("status")=="ACTIVE" or
             (session.get("status")=="EXIT_PENDING" and side=="SELL" and
-             (asset in ("LINK","QNT","UNI","BTC","XRP","SOL") or (asset=="ETH" and central))))
+             (asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") or (asset=="ETH" and central))))
             or session.get("chain_id")!=pair["chain_id"]
             or session.get("stable")!=stable
             or session.get("wallet_address")!=record["wallet_address"]
             or session.get("budget_revision")!=revision
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Coin trading is not owner-started and active")
-    if asset in ("BTC","XRP","SOL") and side=="SELL":
+    if asset in ("BTC","XRP","SOL","TRX") and side=="SELL":
         from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
         assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
     if session["status"]=="EXIT_PENDING":
@@ -294,7 +294,7 @@ async def submit_scoped_router_approval_once(
     if balance.get("router_allowance_sufficient"):
         return {"asset":asset,"state":"ALREADY_APPROVED","sent":False}
     reset=False
-    if asset in ("BTC","XRP","SOL"):
+    if asset in ("BTC","XRP","SOL","TRX"):
         if not central or balance.get("wallet_address")!=record["wallet_address"]:
             raise HTTPException(409,"Original wrapped wallet allowance proof changed")
         if side=="BUY" and stable=="USDT":
@@ -307,7 +307,7 @@ async def submit_scoped_router_approval_once(
         asset=asset,side=side,stable=stable,
         wallet_id=record["wallet_id"],wallet=wallet,
         amount_atomic=amount_atomic,
-        **({"wrapped_spot":True,"reset":reset} if asset in ("BTC","XRP","SOL") else {}))
+        **({"wrapped_spot":True,"reset":reset} if asset in ("BTC","XRP","SOL","TRX") else {}))
     if (reviewed["transaction"]["to"].lower()
             !=body["params"]["transaction"]["to"].lower()
             or reviewed["transaction"]["data"]

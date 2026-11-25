@@ -8,7 +8,7 @@ import {validSavedExtraCoinPreferences} from './extraCoinPreferenceRules.js';
 
 const STABLES=['USDC','USDT'], MODES=['LONG','SPOT_SHORT','AUTO'];
 const HORIZONS=['5m','15m','1h','24h'];
-const coins=['BTC','XRP','SOL'];
+const coins=['BTC','XRP','SOL','TRX'];
 const validSettings=x=>x&&STABLES.includes(x.stable)&&MODES.includes(x.mode)&&
   HORIZONS.includes(x.horizon)&&Number.isSafeInteger(x.revision)&&x.revision>=0;
 
@@ -35,7 +35,7 @@ export async function readWrappedOwnerSettings(asset,request){
       mode:coin.mode,horizon:coin.horizon},budgetRevision:limits.revision,
       preferenceRevision:coin.revision};
   }
-  if(!['XRP','SOL'].includes(asset))throw Error('Unsupported coin');
+  if(!['XRP','SOL','TRX'].includes(asset))throw Error('Unsupported coin');
   const prefs=await request('/api/coin-preferences');
   if(!validSavedExtraCoinPreferences(prefs))throw Error(asset+' saved settings unavailable');
   const coin=prefs.settings[asset];
@@ -114,7 +114,7 @@ export async function authorizeWrappedOwnerTrade({asset,address,settings,origina
 }
 
 export function validWrappedLiveSession(data,asset){
-  return ['BTC','XRP','SOL'].includes(asset)&&!!data&&data.asset===asset&&
+  return ['BTC','XRP','SOL','TRX'].includes(asset)&&!!data&&data.asset===asset&&
     data.mode==='OWNER_EVM_LIVE_SESSION_CONTROL'&&
     ['NOT_STARTED','ACTIVE','PAUSED','EXIT_PENDING','STOPPED'].includes(data.status)&&
     (data.chain_id===1||data.chain_id===null)&&typeof data.worker_attached==='boolean'&&

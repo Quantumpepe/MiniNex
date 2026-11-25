@@ -109,7 +109,7 @@ def test_user_endpoints_required_and_no_implicit_auto_start():
     assert "mininex_live_evm_auto_sessions" in "\n".join(SCHEMA)
 
 
-@pytest.mark.parametrize("asset",["DOGE","TRX","ADA"])
+@pytest.mark.parametrize("asset",["DOGE","ADA"])
 def test_unscheduled_assets_never_inherit_other_coin_live_grant(asset):
     with pytest.raises(HTTPException) as e:
         m._require_asset(asset)
@@ -211,7 +211,7 @@ def test_exit_completion_waits_for_original_unresolved_bridge(monkeypatch):
     assert not m.complete_bridge_exit_if_flat(DID,"POL",NOW)
     assert not any("SET status='STOPPED'" in sql for sql,args in cur.queries)
 
-@pytest.mark.parametrize("asset",["BTC","XRP","SOL"])
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL","TRX"])
 def test_wrapped_trade_never_uses_legacy_coin_grant(asset):
     assert m._require_asset(asset)==asset
     with pytest.raises(HTTPException) as exc:

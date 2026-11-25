@@ -38,7 +38,7 @@ from .shared_evm_coin_budget_reserve import (
 from .storage import _safe_did
 
 LOG=logging.getLogger("mininex.evm_approved_signal")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 _SIGNAL_REF=re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$")
 
 
@@ -96,7 +96,7 @@ def verified_evm_quote_usd_notional(
         raise ValueError("Missing verified EVM calldata")
     data=tx["data"]
     try:
-        if asset in ("BTC","XRP","SOL"):
+        if asset in ("BTC","XRP","SOL","TRX"):
             from .ethereum_wrapped_spot_policy import decode_wrapped_spot_amounts
             units,minimum=decode_wrapped_spot_amounts(data,asset=asset,stable=stable,
                                       side=side,wallet=prepared["wallet_address"])
@@ -138,7 +138,7 @@ async def execute_internal_evm_strategy_signal(
     """
     did=_safe_did(did)
     if (asset not in _ASSETS
-            or (asset in ("BTC","XRP","SOL") and not central)
+            or (asset in ("BTC","XRP","SOL","TRX") and not central)
             or side not in ("BUY","SELL")
             or type(amount) is not str
             or type(budget_revision) is not int or budget_revision<1
@@ -156,7 +156,7 @@ async def execute_internal_evm_strategy_signal(
         prepared=prepared,asset=asset,side=side,stable=stable,
         amount=amount,prices=rates,now=int(time.time()))
     funding={}
-    if side=="BUY" and asset in ("ETH","LINK","QNT","UNI","BTC","XRP","SOL"):
+    if side=="BUY" and asset in ("ETH","LINK","QNT","UNI","BTC","XRP","SOL","TRX"):
         try:
             balance=prepared["source_balance_atomic"]
             if type(balance) is not str or not balance.isascii() or not balance.isdecimal():

@@ -20,6 +20,26 @@ from .wallet_balances import verified_addresses
 
 _SELECTOR=keccak(text="quoteExactInput(bytes,uint256)")[:4]
 _RESULT_TYPES=["uint256","uint160[]","uint32[]","uint256"]
+# Canonical Uniswap V2 Router02 used for getAmountsOut only; execution
+# still targets the shared SwapRouter02 and its V2 swap method.
+_V2_QUOTE_ROUTER="0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+_V2_QUOTE_SELECTOR=keccak(text="getAmountsOut(uint256,address[])")[:4]
+
+
+def decode_v2_path_quote(raw,*,input_atomic,hops):
+    if type(raw) is not str or not re.fullmatch(r"0x[0-9a-fA-F]+",raw) or len(raw)>2048:
+        raise ValueError("Unverified V2 quote")
+    try:
+        data=bytes.fromhex(raw[2:])
+        amounts=decode(["uint256[]"],data)[0]
+        if (encode(["uint256[]"],[amounts])!=data
+                or len(amounts)!=hops+1 or amounts[0]!=input_atomic
+                or any(not 0<v<10**45 for v in amounts)):
+            raise ValueError("Invalid V2 path amounts")
+        return amounts[-1]
+    except Exception as exc:
+        raise ValueError("Invalid V2 quote ABI") from exc
+
 
 
 def decode_exact_path_quote(raw,hops):
@@ -45,15 +65,34 @@ async def quote_owner_wrapped_spot(did,*,asset,side,stable,amount):
         wallet=verified_addresses(user,did)["ETH"].lower()
         if not re.fullmatch(r"0x[0-9a-f]{40}",wallet):
             raise ValueError("Original Ethereum wallet unavailable")
-        path=bytes.fromhex(route["path"][2:])
-        calldata="0x"+(_SELECTOR+encode(["bytes","uint256"],[path,int(units)])).hex()
+        if route.get("protocol")=="UNISWAP_V2":
+            path=route["path"]
+            calldata="0x"+(_V2_QUOTE_SELECTOR+encode(["uint256","address[]"],[int(units),path])).hex()
+            quoter=_V2_QUOTE_ROUTER
+        else:
+            path=bytes.fromhex(route["path"][2:])
+            calldata="0x"+(_SELECTOR+encode(["bytes","uint256"],[path,int(units)])).hex()
+            quoter=QUOTER_V2_MAINNET
         async with httpx.AsyncClient(timeout=9,follow_redirects=False) as client:
             chain=await _rpc(client,method="eth_chainId",params=[],req_id=1)
             if chain!="0x1":
                 raise ValueError("Wrong actual Ethereum network")
             raw=await _rpc(client,method="eth_call",req_id=2,
-                params=[{"to":QUOTER_V2_MAINNET,"data":calldata},"latest"])
-        expected,gas=decode_exact_path_quote(raw,(len(path)-20)//23)
+                params=[{"to":quoter,"data":calldata},"latest"])
+            # Verify actual precision for the new bridged tokens before any
+            # amount is used. Do not assume native precision matches ERC20.
+            if asset in ("SOL","TRX"):
+                token=route["destination_token"] if side=="BUY" else route["source_token"]
+                decimals=await _rpc(client,method="eth_call",req_id=3,
+                    params=[{"to":token,"data":"0x313ce567"},"latest"])
+                precision=route["destination_decimals"] if side=="BUY" else route["source_decimals"]
+                if type(decimals) is not str or len(decimals)!=66 or int(decimals,16)!=precision:
+                    raise ValueError("Original Ethereum token precision differs")
+        if route.get("protocol")=="UNISWAP_V2":
+            expected=decode_v2_path_quote(raw,input_atomic=int(units),hops=len(path)-1)
+            gas=None # V2 getAmountsOut does not provide an actual gas estimate.
+        else:
+            expected,gas=decode_exact_path_quote(raw,(len(path)-20)//23)
         minimum=max(1,expected*(10000-_USD_BPS_SLIPPAGE)//10000)
         tx=wrapped_spot_transaction(asset=asset,stable=stable,side=side,wallet=wallet,
                                    amount_atomic=int(units),min_out_atomic=minimum)

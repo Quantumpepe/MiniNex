@@ -94,9 +94,9 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
                "router":row.get("router_address")}
     else:
         if (mode not in ("ROUTER02_FINITE","WRAPPED_USDT_ZERO")
-                or row["asset"] in ("TRX","DOGE")
+                or row["asset"] == "DOGE"
                 or (mode=="WRAPPED_USDT_ZERO" and
-                    (row["asset"] not in ("BTC","XRP","SOL") or row["side"]!="BUY" or row["stable"]!="USDT"))):
+                    (row["asset"] not in ("BTC","XRP","SOL","TRX") or row["side"]!="BUY" or row["stable"]!="USDT"))):
             raise ValueError("Unexpected shared EVM approval mode")
         route=_pair(row["asset"],row["stable"],row["side"])
         if route["chain_id"]!=row["chain_id"] or _num(chain_id)!=row["chain_id"]:

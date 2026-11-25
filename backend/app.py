@@ -1174,7 +1174,7 @@ async def owner_apply_one_signed_wallet_scope_change(
 
 @app.post("/api/live/evm/wallet-policy/extend/{asset}/prepare")
 async def owner_prepare_shared_evm_scope_extension(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     did=verify_privy_bearer(authorization)["user_id"]
@@ -1213,7 +1213,7 @@ async def owner_publish_first_central_evm_wallet_policy(
 
 @app.post("/api/live/evm/wallet-policy/prepare/{asset}")
 async def owner_prepare_first_shared_evm_wallet_policy(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit original owner's initial central signer POLICY DRAFT only.
@@ -1232,7 +1232,7 @@ async def owner_prepare_first_shared_evm_wallet_policy(
 
 @app.get("/api/live/evm/wallet-policy/wrapped/{asset}/audit")
 async def owner_wrapped_spot_grant_audit(
-    asset: Literal["BTC","XRP","SOL"],
+    asset: Literal["BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Verify the actual owner-approved, Ethereum-bound grant without a send."""
@@ -1290,7 +1290,7 @@ async def owner_one_signer_qnt_permission_status(
 
 @app.get("/api/live/evm/auto-session/{asset}")
 def owner_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only per-coin user LIVE session, never implied by login."""
@@ -1303,7 +1303,7 @@ def owner_evm_auto_session(
 
 @app.post("/api/live/evm/wallet-policy/auto-session/{asset}/start")
 async def owner_start_one_signer_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit owner Start Trade after original one-signer remote audit."""
@@ -1327,7 +1327,7 @@ async def owner_start_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/pause")
 def owner_pause_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Stops future per-coin sends without retrying an in-flight tx."""
@@ -1340,7 +1340,7 @@ def owner_pause_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/exit")
 def owner_exit_bridge_session(
-    asset: Literal["ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP","SOL","TRX"],
     authorization: str | None = Header(default=None),
 ):
     """Record a user's explicit exit request; only the worker can settle it."""
@@ -1466,7 +1466,7 @@ def owner_evm_permission_status(
 
 @app.get("/api/live/evm/order-status/{asset}")
 def owner_evm_order_status(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -1480,7 +1480,7 @@ def owner_evm_order_status(
 
 @app.get("/api/live/evm/verified-fills/{asset}")
 def owner_finalized_evm_fills(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"],
     limit: int = 30,
     authorization: str | None = Header(default=None),
 ):

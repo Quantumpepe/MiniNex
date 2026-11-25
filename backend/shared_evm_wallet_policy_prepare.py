@@ -40,7 +40,7 @@ from .shared_evm_consolidated_wallet_policy import (
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
 LOG=logging.getLogger("mininex.one_signer_policy_prepare")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _require_unattached_original_wallet(user:dict, did:str, metadata:dict)->dict:

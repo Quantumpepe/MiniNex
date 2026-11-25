@@ -26,7 +26,7 @@ from .shared_evm_wallet_policy_remote_review import (
 from .storage import _db_url, _ensure_schema, _safe_did
 
 LOG = logging.getLogger("mininex.evm_wallet_one_signer_status")
-_EVM_ASSETS = frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_EVM_ASSETS = frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 _VALID_STATES = frozenset((
     "DRAFT","SUBMITTING","UNCERTAIN","REMOTE_VERIFIED_UNATTACHED",
     "GRANT_VERIFIED","UPDATE_PENDING","UPDATING","UPDATE_UNCERTAIN","REVOKED",

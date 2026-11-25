@@ -23,6 +23,8 @@ WRAPPED_SPOT_TOKENS = {
     "XRP": ("0x39fBBABf11738317a448031930706cd3e612e1B9", 18),
     # Wormhole Ethereum SOL; verified V3 SOL/WETH 0.3% pool.
     "SOL": ("0xD31a59c85aE9D8edEFeC411D448f90841571b89c", 9),
+    # BTTC-bridged TRX (6 decimals), traded through the liquid V2 TRX/USDC pair.
+    "TRX": ("0x50327c6c5a14DCaDE707ABad2E27eB517df87AB5", 6),
 }
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _ID = re.compile(r"^[A-Za-z0-9_-]{6,160}$")
@@ -38,12 +40,43 @@ EXACT_INPUT_ABI = [{
 }]
 _SELECTOR = keccak(text="exactInput((bytes,address,uint256,uint256))")[:4]
 _TUPLE = "(bytes,address,uint256,uint256)"
+V2_EXACT_INPUT_ABI = [{
+    "type": "function", "name": "swapExactTokensForTokens", "stateMutability": "payable",
+    "inputs": [{"name": "amountIn", "type": "uint256"},
+               {"name": "amountOutMin", "type": "uint256"},
+               {"name": "path", "type": "address[]"},
+               {"name": "to", "type": "address"}],
+    "outputs": [{"name": "amountOut", "type": "uint256"}],
+}]
+_V2_TYPES = ["uint256", "uint256", "address[]", "address"]
+_V2_SELECTOR = keccak(text="swapExactTokensForTokens(uint256,uint256,address[],address)")[:4]
+
+
+def wrapped_swap_rule_name(asset, side, stable):
+    return (f"MiniNex {asset} {side} {stable} wrapped V2 exact" if asset == "TRX"
+            else f"MiniNex {asset} {side} {stable} wrapped exactInput")
+
+
+def wrapped_swap_amount_field(asset):
+    return "swapExactTokensForTokens.amountIn" if asset == "TRX" else "exactInput.params.amountIn"
+
 
 
 def wrapped_spot_route(asset, stable, side):
     if asset not in WRAPPED_SPOT_TOKENS or stable not in STABLES or side not in ("BUY", "SELL"):
         raise ValueError("Unsupported Ethereum wrapped spot route")
     token, decimals = WRAPPED_SPOT_TOKENS[asset]
+    if asset=="TRX":
+        # Both directions use the verified V2 TRX/USDC pair. USDT has
+        # an additional V2 USDT/USDC leg; no local Tron stablecoin.
+        tokens=[STABLES[stable],token] if stable=="USDC" else [STABLES[stable],STABLES["USDC"],token]
+        if side=="SELL":
+            tokens.reverse()
+        return {"asset":asset,"stable":stable,"side":side,"chain_id":1,
+                "network":"ethereum-mainnet","router":SWAPROUTER02_MAINNET,
+                "source_token":tokens[0],"destination_token":tokens[-1],
+                "source_decimals":6,"destination_decimals":6,
+                "protocol":"UNISWAP_V2","path":tokens}
     tokens = [STABLES[stable], token] if asset == "BTC" else [STABLES[stable], WETH_MAINNET, token]
     fees = [500] if asset == "BTC" else [500, 3000 if asset == "SOL" else 10000]
     if side == "SELL":
@@ -74,9 +107,13 @@ def wrapped_spot_transaction(*, asset, stable, side, wallet, amount_atomic, min_
     if type(wallet) is not str or not _ADDRESS.fullmatch(wallet):
         raise ValueError("Original Ethereum owner required")
     route = wrapped_spot_route(asset, stable, side)
-    values = (bytes.fromhex(route["path"][2:]), wallet.lower(),
-              _atomic_int(amount_atomic), _atomic_int(min_out_atomic))
-    data = "0x" + (_SELECTOR + encode([_TUPLE], [values])).hex()
+    amount=_atomic_int(amount_atomic)
+    minimum=_atomic_int(min_out_atomic)
+    if asset=="TRX":
+        data="0x"+(_V2_SELECTOR+encode(_V2_TYPES,[amount,minimum,route["path"],wallet.lower()])).hex()
+    else:
+        values=(bytes.fromhex(route["path"][2:]),wallet.lower(),amount,minimum)
+        data="0x"+(_SELECTOR+encode([_TUPLE],[values])).hex()
     return {"from": wallet.lower(), "to": route["router"].lower(),
             "chainId": 1, "value": "0", "data": data}
 
@@ -87,9 +124,8 @@ def inspect_wrapped_spot_transaction(tx, *, asset, stable, side, wallet,
         wallet=wallet, amount_atomic=amount_atomic, min_out_atomic=min_out_atomic)
     if type(tx) is not dict or tx != expected:
         raise ValueError("Wrapped spot transaction differs from original quote")
-    decoded = decode([_TUPLE], bytes.fromhex(tx["data"][10:]))[0]
-    if decoded[0].hex() != wrapped_spot_route(asset, stable, side)["path"][2:]:
-        raise ValueError("Wrapped spot path mismatch")
+    # Canonical re-encoding above binds every byte, including the complete
+    # V2 address array or V3 packed path, recipient and exact atomic amounts.
     return expected
 
 
@@ -99,9 +135,14 @@ def decode_wrapped_spot_amounts(data, *, asset, stable, side, wallet):
         raise ValueError("Unverified wrapped spot calldata")
     try:
         raw=bytes.fromhex(data[2:])
-        if raw[:4]!=_SELECTOR:
-            raise ValueError("Unexpected wrapped spot selector")
-        path,recipient,amount,minimum=decode([_TUPLE],raw[4:])[0]
+        if asset=="TRX":
+            if raw[:4]!=_V2_SELECTOR:
+                raise ValueError("Unexpected V2 wrapped spot selector")
+            amount,minimum,path,recipient=decode(_V2_TYPES,raw[4:])
+        else:
+            if raw[:4]!=_SELECTOR:
+                raise ValueError("Unexpected wrapped spot selector")
+            path,recipient,amount,minimum=decode([_TUPLE],raw[4:])[0]
         expected=wrapped_spot_transaction(asset=asset,stable=stable,side=side,wallet=wallet,
             amount_atomic=amount,min_out_atomic=minimum)
         if expected["data"]!=data.lower():
@@ -126,18 +167,33 @@ def build_wrapped_spot_policy(*, asset, stable, wallet, owner_id, executor_id,
         cap = _positive_atomic(cap)
         router = route["router"]
         common = [_tx("chain_id", "eq", "1"), _expiry(expires_at), _tx("value", "eq", "0")]
+        if asset=="TRX":
+            # Exact array equality, never a loose membership condition.
+            # Privy's documented condition value schema accepts string[].
+            # Publication/readback must preserve this exact condition; no
+            # fallback to a broader router-only grant if Privy rejects it.
+            fn="swapExactTokensForTokens"
+            conditions=[
+                _call("function_name","eq",fn,V2_EXACT_INPUT_ABI),
+                _call(fn+".path","eq",route["path"],V2_EXACT_INPUT_ABI),
+                _call(fn+".to","eq",wallet,V2_EXACT_INPUT_ABI),
+                _call(fn+".amountIn","gt","0",V2_EXACT_INPUT_ABI),
+                _call(fn+".amountIn","lte",cap,V2_EXACT_INPUT_ABI),
+                _call(fn+".amountOutMin","gt","0",V2_EXACT_INPUT_ABI),
+            ]
+        else:
+            conditions=[
+                _call("function_name","eq","exactInput",EXACT_INPUT_ABI),
+                _call("exactInput.params.path","eq",route["path"],EXACT_INPUT_ABI),
+                _call("exactInput.params.recipient","eq",wallet,EXACT_INPUT_ABI),
+                _call("exactInput.params.amountIn","gt","0",EXACT_INPUT_ABI),
+                _call("exactInput.params.amountIn","lte",cap,EXACT_INPUT_ABI),
+                _call("exactInput.params.amountOutMinimum","gt","0",EXACT_INPUT_ABI),
+            ]
         rules.append({
-            "name": f"MiniNex {asset} {side} {stable} wrapped exactInput",
-            "method": "eth_sendTransaction", "action": "ALLOW",
-            "conditions": common + [
-                _tx("to", "eq", router),
-                _call("function_name", "eq", "exactInput", EXACT_INPUT_ABI),
-                _call("exactInput.params.path", "eq", route["path"], EXACT_INPUT_ABI),
-                _call("exactInput.params.recipient", "eq", wallet, EXACT_INPUT_ABI),
-                _call("exactInput.params.amountIn", "gt", "0", EXACT_INPUT_ABI),
-                _call("exactInput.params.amountIn", "lte", cap, EXACT_INPUT_ABI),
-                _call("exactInput.params.amountOutMinimum", "gt", "0", EXACT_INPUT_ABI),
-            ],
+            "name": wrapped_swap_rule_name(asset,side,stable),
+            "method":"eth_sendTransaction","action":"ALLOW",
+            "conditions":common+[_tx("to","eq",router)]+conditions,
         })
         approval = common + [
             _tx("to", "eq", route["source_token"]),

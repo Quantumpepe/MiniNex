@@ -23,7 +23,7 @@ from .ethereum_wrapped_spot_policy import (
 )
 
 # Canonical order; ETH and QNT share the existing exact EVM contract route factory.
-_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB", "BTC", "XRP", "SOL")
+_EVM_ASSETS = ("ETH", "BNB", "POL", "AVAX", "LINK", "QNT", "UNI", "ARB", "BTC", "XRP", "SOL", "TRX")
 _REQUIRED_SCOPE_FIELDS = frozenset((
     "asset", "stable", "treasury", "buy_source_atomic_cap",
     "sell_source_atomic_cap", "native_wrap_atomic_cap",

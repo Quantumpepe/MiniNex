@@ -77,7 +77,7 @@ _PENDING_SQL="""SELECT asset,stable,reserved_notional_usd AS amount,'USD' AS uni
     SELECT asset,stable,amount_usd,'USD'
     FROM mininex_live_evm_budget_reservations
     WHERE privy_did=%(did)s AND stable=%(stable)s AND side='BUY'
-      AND asset IN ('ETH','LINK','QNT','UNI','BTC','XRP','SOL')
+      AND asset IN ('ETH','LINK','QNT','UNI','BTC','XRP','SOL','TRX')
       AND state IN ('RESERVED','SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
     UNION ALL
     SELECT asset,stable,input_amount,'STABLE'

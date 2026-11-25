@@ -12,7 +12,7 @@ from .shared_evm_swap_receipts import _pair
 from .shared_evm_auto_preflight import inspect_evm_exact_swap
 from .shared_evm_central_runtime import central_policy_rule
 from .ethereum_wrapped_spot_policy import (WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS,
-    inspect_wrapped_spot_transaction, wrapped_spot_route)
+    inspect_wrapped_spot_transaction, wrapped_spot_route, wrapped_swap_amount_field)
 
 
 def check_evm_policy_bound_swap(
@@ -42,7 +42,7 @@ def check_evm_policy_bound_swap(
             minimum=int(minimum_output_atomic)
             if (type(input_atomic) is not str or input_atomic!=str(amount)
                     or type(minimum_output_atomic) is not str or minimum_output_atomic!=str(minimum)
-                    or not 0<amount<=int(_lte(rule,"exactInput.params.amountIn"))
+                    or not 0<amount<=int(_lte(rule,wrapped_swap_amount_field(asset)))
                     or minimum<=0):
                 raise ValueError("Exact wrapped swap exceeds owner's scope")
             inspect_wrapped_spot_transaction(tx,asset=asset,stable=stable,side=side,

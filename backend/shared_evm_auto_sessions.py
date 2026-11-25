@@ -21,7 +21,7 @@ from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.evm_live_auto_sessions")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _require_asset(asset:object)->str:
@@ -131,7 +131,7 @@ async def start_owner_evm_auto(
 )->dict:
     did=_safe_did(did)
     asset=_require_asset(asset)
-    if asset in ("BTC","XRP","SOL") and not central:
+    if asset in ("BTC","XRP","SOL","TRX") and not central:
         raise HTTPException(409,"Original central wrapped trading grant required")
     # Must be independent live Privy REST readback, never a cached frontend
     # checkbox or an unverified 'policy ready' database string.

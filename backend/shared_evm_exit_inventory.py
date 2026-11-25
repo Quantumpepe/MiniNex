@@ -5,7 +5,7 @@ import psycopg
 from psycopg.rows import dict_row
 from .storage import _db_url,_ensure_schema,_safe_did
 
-TOKEN_EXIT_ASSETS=frozenset(("LINK","QNT","UNI","BTC","XRP","SOL"))
+TOKEN_EXIT_ASSETS=frozenset(("LINK","QNT","UNI","BTC","XRP","SOL","TRX"))
 ETHEREUM_EXIT_ASSETS=TOKEN_EXIT_ASSETS | {"ETH"}
 
 

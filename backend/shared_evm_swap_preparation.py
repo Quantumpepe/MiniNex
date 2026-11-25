@@ -19,7 +19,7 @@ from .eth_router02_live_quote import make_policy_compatible_eth_quote
 from .eth_erc20_trade_quote import quote_owner_erc20_trade
 from .native_evm_v3_quote import quote_native_evm_trade
 
-_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL"))
+_EVM_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP","SOL","TRX"))
 
 
 def _approved_quote_pair(quote: object, allowance: object, *,
@@ -29,7 +29,7 @@ def _approved_quote_pair(quote: object, allowance: object, *,
     if type(quote) is not dict or type(allowance) is not dict:
         raise ValueError("Missing independent owner wallet proofs")
     tx=quote.get("transaction")
-    wrapped=asset in ("BTC","XRP","SOL")
+    wrapped=asset in ("BTC","XRP","SOL","TRX")
     if (type(tx) is not dict
             or type(tx.get("data")) is not str
             or (not wrapped and (not tx["data"].lower().startswith("0x04e45aaf")
@@ -135,7 +135,7 @@ async def prepare_owner_evm_swap(
         pair=_pair(asset,stable,side)
     except ValueError:
         raise HTTPException(422,"Unsupported EVM swap pair") from None
-    if asset in ("BTC","XRP","SOL"):
+    if asset in ("BTC","XRP","SOL","TRX"):
         from .ethereum_wrapped_spot_quote import quote_owner_wrapped_spot
         quote_fn=quote_owner_wrapped_spot(did,asset=asset,side=side,stable=stable,amount=amount)
     elif asset=="ETH":
