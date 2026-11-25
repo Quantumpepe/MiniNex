@@ -208,6 +208,7 @@ async def verified_owner_native_buy_amount(
 
 
 def finalized_native_position_atomic(rows,*,asset):
+    """Reconstruct native inventory from verified settlements and SELL refunds."""
     if asset not in _NATIVE:
         raise ValueError("Unknown native position")
     with localcontext() as ctx:
@@ -215,7 +216,13 @@ def finalized_native_position_atomic(rows,*,asset):
         position=0
         scale=10**_NATIVE[asset][1]
         for row in rows:
+            status=row.get("status","DESTINATION_FINALIZED")
+            if status not in ("DESTINATION_FINALIZED","REFUNDED_VERIFIED"):
+                raise ValueError("Invalid original settlement status")
             if row["side"]=="BUY":
+                # A refunded BUY returns Ethereum stablecoins, not native coins.
+                if status=="REFUNDED_VERIFIED":
+                    continue
                 amount=Decimal(row["destination_received_atomic"])
                 if not amount.is_finite() or amount<=0 or amount!=amount.to_integral_value():
                     raise ValueError("Invalid original native credit")
@@ -224,7 +231,19 @@ def finalized_native_position_atomic(rows,*,asset):
                 amount=Decimal(row["input_amount"])*scale
                 if not amount.is_finite() or amount<=0 or amount!=amount.to_integral_value():
                     raise ValueError("Invalid original native debit")
-                position=max(0,position-int(amount))
+                # Only actual persisted native network fees are deducted.
+                # Legacy orders without fee evidence retain their old accounting.
+                raw_fee=row.get("source_network_fee_atomic")
+                fee=Decimal(raw_fee) if raw_fee is not None else Decimal(0)
+                if not fee.is_finite() or fee<0 or fee!=fee.to_integral_value():
+                    raise ValueError("Invalid original native network fee")
+                refund=Decimal(0)
+                if status=="REFUNDED_VERIFIED":
+                    refund=Decimal(row["destination_received_atomic"])
+                    if (not refund.is_finite() or refund<=0 or refund>amount
+                            or refund!=refund.to_integral_value()):
+                        raise ValueError("Invalid original native SELL refund")
+                position=max(0,position-int(amount+fee-refund))
             else:
                 raise ValueError("Invalid original order side")
         return position
@@ -241,16 +260,21 @@ def native_position_locked(cur,did,asset,wallet,*,exclude_key=None,require_singl
         return None
     if require_single_wallet:
         cur.execute("""SELECT 1 FROM mininex_live_native_order_intents
-            WHERE privy_did=%s AND asset=%s AND status='DESTINATION_FINALIZED'
+            WHERE privy_did=%s AND asset=%s
+              AND (status='DESTINATION_FINALIZED'
+                   OR (status='REFUNDED_VERIFIED' AND side='SELL'))
               AND (source_proof_sha256 IS NULL OR destination_proof_sha256 IS NULL
                 OR (side='BUY' AND destination_wallet<>%s)
                 OR (side='SELL' AND source_wallet<>%s)) LIMIT 1""",
             (did,asset,wallet,wallet))
         if cur.fetchone() is not None:
             return None
-    cur.execute("""SELECT side,input_amount,destination_received_atomic
+    cur.execute("""SELECT side,status,input_amount,destination_received_atomic,
+               source_network_fee_atomic
         FROM mininex_live_native_order_intents
-        WHERE privy_did=%s AND asset=%s AND status='DESTINATION_FINALIZED'
+        WHERE privy_did=%s AND asset=%s
+          AND (status='DESTINATION_FINALIZED'
+               OR (status='REFUNDED_VERIFIED' AND side='SELL'))
           AND source_proof_sha256 IS NOT NULL
           AND destination_proof_sha256 IS NOT NULL
           AND ((side='BUY' AND destination_wallet=%s)
