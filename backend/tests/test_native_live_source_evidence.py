@@ -126,3 +126,13 @@ def test_native_sell_inventory_uses_native_atomic_credits_not_stable_input():
                                       wallet_balance="1.25")=="1.25"
     assert m.exact_native_sell_amount(asset="BTC",position_atomic=0,
                                       wallet_balance="2") is None
+
+
+def test_confirmed_native_fee_and_partial_refund_reduce_inventory():
+    rows=[
+        dict(side="BUY",status="DESTINATION_FINALIZED",destination_received_atomic=10000000),
+        dict(side="SELL",status="DESTINATION_FINALIZED",input_amount="2",source_network_fee_atomic="10000"),
+        dict(side="SELL",status="REFUNDED_VERIFIED",input_amount="3",destination_received_atomic="2900000",source_network_fee_atomic="20000"),
+        dict(side="BUY",status="REFUNDED_VERIFIED",destination_received_atomic="100000000"),
+    ]
+    assert m.finalized_native_position_atomic(rows,asset="TRX")==7870000

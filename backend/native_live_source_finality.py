@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from decimal import Decimal, InvalidOperation, localcontext
 import hashlib
 import json
 import logging
@@ -102,7 +103,22 @@ def _confirmed_original_source(record:dict,proof:dict,owner_wallet:str)->dict:
                 or proof.get("wallet_signed") is not False
                 or proof.get("can_submit") is not False):
             raise ValueError("Bitcoin source transaction is not finalized")
+        raw_fee=proof.get("transaction_fee_btc")
+        if type(raw_fee) is not str or len(raw_fee)>40:
+            raise ValueError("Original Bitcoin network fee unavailable")
+        try:
+            with localcontext() as ctx:
+                ctx.prec=100
+                atomic_fee=Decimal(raw_fee)*10**8
+                if (not atomic_fee.is_finite() or atomic_fee<0
+                        or atomic_fee!=atomic_fee.to_integral_value()
+                        or atomic_fee>=2**63):
+                    raise ValueError("Original Bitcoin fee not exact satoshis")
+                atomic_fee=str(int(atomic_fee))
+        except (InvalidOperation,ValueError):
+            raise ValueError("Original Bitcoin network fee unavailable") from None
         checkpoint={"confirmations":proof["confirmations_observed"],
+                    "network_fee_atomic":atomic_fee,
                     "wallet_input_sats":proof.get("wallet_input_sats"),
                     "wallet_output_sats":proof.get("wallet_output_sats"),
                     "network_fee_btc":proof.get("transaction_fee_btc")}
@@ -327,10 +343,11 @@ def _persist_source_finality_locked(
     result=cur.fetchone()
     if type(result) is not dict or result.get("status")!="SOURCE_FINALIZED":
         raise HTTPException(409,"Native original receipt persistence conflict")
-    if asset=="TRX" and side=="SELL":
+    if side=="SELL" and asset in ("BTC","SOL","XRP","TRX"):
         fee=verified.get("checkpoint",{}).get("network_fee_atomic")
-        if type(fee) is not str or not fee.isdigit() or int(fee)>=2**63:
-            raise ValueError("Original TRX actual fee unavailable")
+        if (type(fee) is not str or not fee.isascii() or not fee.isdigit()
+                or len(fee)>19 or int(fee)>=2**63):
+            raise ValueError("Original native actual source fee unavailable")
         cur.execute("""UPDATE mininex_live_native_order_intents
             SET source_network_fee_atomic=%s
             WHERE privy_did=%s AND asset=%s AND intent_key=%s
@@ -338,7 +355,7 @@ def _persist_source_finality_locked(
             RETURNING source_network_fee_atomic""",(fee,did,asset,key,digest))
         saved=cur.fetchone()
         if type(saved) is not dict or str(saved.get("source_network_fee_atomic"))!=fee:
-            raise HTTPException(409,"Original TRX actual fee persistence conflict")
+            raise HTTPException(409,"Original native actual fee persistence conflict")
     return "SOURCE_FINALIZED"
 
 
