@@ -56,6 +56,12 @@ export function validEvmAutoSession(data,asset) {
     data.new_transactions_sent===0;
 }
 
+function validTradeSourceChain(row,asset,cross){
+  if(!cross)return row.chain_id===NETWORKS[asset];
+  return ['BNB','POL','AVAX','ARB'].includes(asset)&&
+    row.chain_id===(row.side==='BUY'?1:NETWORKS[asset]);
+}
+
 export function validEvmOrderHistory(data,asset){
   if(!data||data.mode!=='OWNER_DURABLE_EVM_ORDER_STATUS_ONLY'||
      data.asset!==asset||!LIVE_EVM_ASSETS.includes(asset)||
@@ -66,7 +72,7 @@ export function validEvmOrderHistory(data,asset){
      typeof data.history_truncated!=='boolean')return false;
   const seen=new Set();
   for(const order of data.orders){
-    if(!order||order.asset!==asset||order.chain_id!==NETWORKS[asset]||
+    if(!order||order.asset!==asset||!validTradeSourceChain(order,asset,order.ethereum_settlement_order===true)||
        !['BUY','SELL'].includes(order.side)||
        !['SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
          'FINALIZED_SUCCESS','FINALIZED_REVERTED'].includes(order.status)||
@@ -101,7 +107,10 @@ export function validEvmFinalizedFills(data,asset){
      !Array.isArray(data.fills)||data.fills.length>20)return false;
   const seen=new Set();
   for(const fill of data.fills){
-    if(!fill||fill.asset!==asset||fill.chain_id!==NETWORKS[asset]||
+    if(!fill||fill.asset!==asset||!validTradeSourceChain(fill,asset,fill.ethereum_settlement_verified===true)||
+       (fill.ethereum_settlement_verified===true&&
+        (fill.destination_chain_id!==(fill.side==='BUY'?NETWORKS[asset]:1)||
+         !/^0x[0-9a-f]{64}$/.test(fill.destination_tx_hash||'')))||
        !['BUY','SELL'].includes(fill.side)||
        !['USDC','USDT'].includes(fill.stable)||
        !/^[A-Za-z0-9_.:-]{8,128}$/.test(fill.intent_key||'')||

@@ -154,3 +154,17 @@ def test_unassessed_or_fake_fee_payment_rejected(asset):
         status._verified_order_row(row(
             asset,stage="FINALIZED_SUCCESS",side="SELL",
             fee=False,paid=True),asset)
+
+
+@pytest.mark.parametrize("asset",["BNB","POL","AVAX","ARB"])
+@pytest.mark.parametrize("side",["BUY","SELL"])
+def test_cross_chain_order_uses_actual_source_chain_and_parent_id(asset,side):
+    r=row(asset,stage="FINALIZED_SUCCESS",side=side)
+    r.update(ethereum_settlement_order=True,chain_id=1 if side=="BUY" else CHAIN[asset],
+             intent_key="original-parent")
+    parsed=status._verified_order_row(r,asset)
+    assert parsed["ethereum_settlement_order"] is True
+    assert parsed["intent_key"]=="original-parent"
+    assert parsed["chain_id"]==r["chain_id"]
+    with pytest.raises(ValueError):
+        status._verified_order_row(dict(r,chain_id=CHAIN[asset] if side=="BUY" else 1),asset)

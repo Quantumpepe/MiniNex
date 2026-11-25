@@ -11,6 +11,8 @@ import {
   validEvmFinalizedFills,
 } from './evmLiveOwnerRules.js';
 
+const EXPLORERS={1:'https://etherscan.io/tx/',56:'https://bscscan.com/tx/',
+  137:'https://polygonscan.com/tx/',43114:'https://snowtrace.io/tx/',42161:'https://arbiscan.io/tx/'};
 const WORDS={
   de:{
     title:'LIVE Handel',open:'Start Trade',
@@ -374,9 +376,17 @@ export default function EvmLiveOwnerControls({
           fill.tx_hash===order.tx_hash))}
         <span>{t.recorded}: {new Date(order.created_at).toLocaleString(
           lang==='de'?'de-CH':'en-GB')}</span>
-        {order.tx_hash&&<code style={{overflowWrap:'anywhere'}}>
-          {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
-        </code>}
+        {order.tx_hash&&EXPLORERS[order.chain_id]&&
+          <a href={EXPLORERS[order.chain_id]+order.tx_hash} target="_blank" rel="noreferrer"
+             style={{overflowWrap:'anywhere'}}>
+            {order.tx_hash.slice(0,14)}…{order.tx_hash.slice(-8)}
+          </a>}
+        {fills?.fills?.filter(fill=>fill.intent_key===order.intent_key&&
+          fill.ethereum_settlement_verified===true&&EXPLORERS[fill.destination_chain_id]).map(fill=>
+          <a key={fill.destination_tx_hash} href={EXPLORERS[fill.destination_chain_id]+fill.destination_tx_hash}
+             target="_blank" rel="noreferrer">
+            {lang==='de'?'Zieltransaktion':'Destination transaction'} · {fill.destination_tx_hash.slice(0,10)}…
+          </a>)}
       </div>)}
     </div>}
     {offeredFeeScope&&
