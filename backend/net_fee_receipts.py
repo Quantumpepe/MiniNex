@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import re
-from decimal import Decimal
+from threading import Lock
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -14,6 +14,8 @@ LOG=logging.getLogger("mininex.net_fee_receipts")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
 _TRANSFER="0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+_PAGE_LOCK=Lock()
+_OFFSET=0
 
 def verify_fee_receipt(row,tx,receipt):
     """Caller first independently verifies the canonical finalized block."""
@@ -60,12 +62,19 @@ def verify_fee_receipt(row,tx,receipt):
         "evidence_sha256":row["evidence_sha256"],"request_digest":row["request_digest"]}
 
 def read_pending_receipts(limit=20):
+    global _OFFSET
     db=_db_url();_ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("""SELECT * FROM mininex_net_fee_sends WHERE status='SUBMITTED'
-                ORDER BY updated_at,tx_hash LIMIT %s""",(limit,))
-            return cur.fetchall()
+    sql="""SELECT * FROM mininex_net_fee_sends WHERE status='SUBMITTED'
+        ORDER BY created_at,tx_hash LIMIT %s OFFSET %s"""
+    with _PAGE_LOCK:
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(limit,_OFFSET));rows=cur.fetchall()
+                if not rows and _OFFSET:
+                    _OFFSET=0
+                    cur.execute(sql,(limit,0));rows=cur.fetchall()
+        _OFFSET+=len(rows)
+    return rows
 
 def persist_receipt(original,proof):
     db=_db_url();_ensure_schema(db)

@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import time
+from threading import Lock
 import psycopg
 from psycopg.rows import dict_row
 from fastapi import HTTPException
@@ -34,6 +35,8 @@ from .net_fee_obligations import obligation_evidence,_legacy_fee_exists
 LOG=logging.getLogger("mininex.net_fee_send")
 _HASH=re.compile(r"^0x[0-9a-f]{64}$")
 _ADDR=re.compile(r"^0x[0-9a-f]{40}$")
+_PAGE_LOCK=Lock()
+_OFFSET=0
 
 def net_fee_worker_enabled():
     # The owner consent and live database are required; no separate per-coin
@@ -106,7 +109,7 @@ def claim_fee(did,asset,family,fill_key,record,identity,balance,*,now):
             cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
             if not cur.fetchone():raise ValueError("Original account missing")
             current=_locked_original_evm_coin(cur,did=did,asset=asset,stable=record["stable"],now=now)
-            if any(current[k]!=record[k] for k in ("wallet_id","wallet_address","policy_id","policy_sha256","scope")):
+            if any(current[k]!=record[k] for k in ("wallet_id","wallet_address","policy_id","policy_sha256","signer_id","scope")):
                 raise ValueError("Original remote consent changed")
             # A separate legacy fee revocation may never be bypassed.
             cur.execute("""SELECT 1 FROM mininex_evm_fee_auto_permissions
@@ -165,6 +168,7 @@ async def submit_net_fee_once(client,obligation):
     if (audit.get("grant_source")!="PRIVY_CENTRAL_ONE_SIGNER"
             or audit.get("remote_verified_policy_sha256")!=record["policy_sha256"]
             or audit.get("remote_verified_wallet_id")!=record["wallet_id"]
+            or audit.get("remote_verified_signer_id")!=record["signer_id"]
             or record["stable"]!=obligation["stable"]):
         raise ValueError("Original independent Privy fee proof differs")
     now=int(time.time());identity=fee_identity(obligation,record,now=now)
@@ -186,14 +190,22 @@ async def submit_net_fee_once(client,obligation):
     return {"state":"SUBMITTED","tx_hash":tx,"paid_verified":False}
 
 def pending_net_fee_sends():
+    global _OFFSET
     db=_db_url();_ensure_schema(db)
-    with psycopg.connect(db,connect_timeout=6) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("""SELECT o.* FROM mininex_net_fee_obligations o
-                LEFT JOIN mininex_net_fee_sends s ON s.privy_did=o.privy_did AND s.asset=o.asset
-                  AND s.family=o.family AND s.fill_key=o.fill_key
-                WHERE s.fill_key IS NULL ORDER BY o.created_at,o.fill_key LIMIT 20""")
-            return cur.fetchall()
+    sql="""SELECT o.* FROM mininex_net_fee_obligations o
+        LEFT JOIN mininex_net_fee_sends s ON s.privy_did=o.privy_did AND s.asset=o.asset
+          AND s.family=o.family AND s.fill_key=o.fill_key
+        WHERE s.fill_key IS NULL
+        ORDER BY o.created_at,o.privy_did,o.asset,o.family,o.fill_key LIMIT 20 OFFSET %s"""
+    with _PAGE_LOCK:
+        with psycopg.connect(db,connect_timeout=6) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql,(_OFFSET,));rows=cur.fetchall()
+                if not rows and _OFFSET:
+                    _OFFSET=0
+                    cur.execute(sql,(0,));rows=cur.fetchall()
+        _OFFSET+=len(rows)
+    return rows
 
 async def reconcile_net_fee_sends_once(client):
     from .net_fee_receipts import reconcile_net_fee_receipts_once
