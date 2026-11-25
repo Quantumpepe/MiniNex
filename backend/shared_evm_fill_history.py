@@ -126,13 +126,14 @@ def get_owner_evm_fill_history(did:str,*,asset:str,limit:int=30)->dict:
         parsed=parsed[:limit]
         # Attach a separate read-only valuation. Do not change the legacy
         # fee-paid flags or infer custody/fee authorization from a quote.
-        if cross:
+        if any(fill["side"]=="SELL" for fill in parsed):
             from .staged_net_valuation import read_owner_realized_net
             try:
                 valuations={v["fill_key"]:v for v in read_owner_realized_net(did,asset)}
                 for fill in parsed:
-                    if fill.get("ethereum_settlement_verified") is True and fill["side"]=="SELL":
-                        value=valuations.get(fill["intent_key"])
+                    if fill["side"]=="SELL":
+                        key=fill["intent_key"] if fill.get("ethereum_settlement_verified") is True else fill["tx_hash"]
+                        value=valuations.get(key)
                         if value is not None:
                             fill["net_valuation"]=value
             except (psycopg.Error,HTTPException,ValueError,KeyError,TypeError):

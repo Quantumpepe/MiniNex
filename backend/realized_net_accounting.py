@@ -100,11 +100,14 @@ def calculate_realized_net(rows):
         q=lots[(asset,family,wallet)]
         if side=="BUY":
             if row["automatic"]:
-                q.append([destination,None if rate is None or cost is None else source*rate+cost])
+                q.append([destination,None if rate is None or cost is None else source*rate+cost,source,stable])
             continue
-        remaining=source;basis=Fraction(0);priced=True
+        remaining=source;basis=Fraction(0);gross_basis=Fraction(0);priced=True;cross_stable=False
         while remaining and q:
             lot=q[0];take=min(remaining,lot[0])
+            used_gross=lot[2]*take/lot[0]
+            gross_basis+=used_gross;lot[2]-=used_gross
+            cross_stable=cross_stable or lot[3]!=stable
             if lot[1] is None:
                 priced=False
             else:
@@ -121,11 +124,24 @@ def calculate_realized_net(rows):
         # Canonical ETH USDC/USDT settlement, 6 decimals. A sub-atomic fee
         # remains zero rather than rounding above the agreed 5 percent.
         fee_atomic=int(fee/rate*10**6) if verified else None
+        # Exact net cash in the sale settlement token, including unpaid fee.
+        # Never reinvest the saved net profit implicitly. Pending same-token
+        # sales keep their legacy gross hold. A matched cross-token sale
+        # without historical rates cannot safely release a guessed spread.
+        from math import ceil
+        gross_hold=(0 if remaining else ceil(max(Fraction(0),destination-gross_basis)*10**6)
+                    if not cross_stable else ceil(destination*10**6))
+        net_hold=ceil(max(Fraction(0),net)/rate*10**6) if verified else None
+        retained=net_hold if verified else gross_hold
         results.append({"asset":asset,"family":family,"fill_key":row["fill_key"],
             "stable":stable,"net_verified":verified,
             "realized_net_usd":decimal_text(net) if verified else None,
             "fee_due_usd":decimal_text(fee) if verified else None,
             "fee_due_stable_atomic":str(fee_atomic) if verified else None,
+            "protected_net_stable_atomic":str(net_hold) if verified else None,
+            "protected_saved_stable_atomic":str(net_hold-fee_atomic) if verified else None,
+            "provisional_gross_hold_atomic":str(gross_hold),
+            "retained_profit_atomic":str(retained),
             "unmatched_inventory":bool(remaining),
             "reason":None if verified else ("UNMATCHED_INVENTORY" if remaining else "HISTORICAL_COST_EVIDENCE_REQUIRED"),
             "payment_authorized":False})

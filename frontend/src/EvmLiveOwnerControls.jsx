@@ -374,6 +374,14 @@ export default function EvmLiveOwnerControls({
             {' · '}{t.received}: {formatAssetQuantity(fill.received_amount,fill.received_asset,lang)} {fill.received_asset}
           </span>)(fills.fills.find(fill=>fill.intent_key===order.intent_key&&
           fill.tx_hash===order.tx_hash))}
+        {fills?.fills?.filter(fill=>fill.intent_key===order.intent_key&&fill.tx_hash===order.tx_hash&&
+          fill.net_valuation?.net_verified===true).map(fill=>
+          <span key={fill.tx_hash+'-net'}>
+            {lang==='de'?'Nettoergebnis':'Net result'}: {Number(fill.net_valuation.realized_net_usd).toLocaleString(
+              lang==='de'?'de-CH':'en-GB',{minimumFractionDigits:2,maximumFractionDigits:2})} USD
+            {' · '}{lang==='de'?'5%-Gebühr (offen)':'5% fee (due)'}: {formatAssetQuantity(
+              String(Number(fill.net_valuation.fee_due_stable_atomic)/1000000),fill.stable,lang)} {fill.stable}
+          </span>)}
         <span>{t.recorded}: {new Date(order.created_at).toLocaleString(
           lang==='de'?'de-CH':'en-GB')}</span>
         {order.tx_hash&&EXPLORERS[order.chain_id]&&

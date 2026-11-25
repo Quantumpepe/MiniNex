@@ -129,3 +129,26 @@ def test_profit_sql_uses_wrapped_spot_family_and_unique_cross_parent():
     from backend.realized_profit_reserve import PROFIT_FILLS_SQL
     assert "THEN 'WRAPPED_SPOT'" in PROFIT_FILLS_SQL
     assert "'CROSS_EVM',q.quote_id::text" in PROFIT_FILLS_SQL
+
+
+def test_verified_net_reserve_includes_fee_without_double_counting():
+    def fill(key,side,source,dest,stable="USDC",cost="2"):
+        amount=int(source if side=="BUY" else dest)*10**6
+        return dict(asset="LINK",stable=stable,unit="FINALIZED_PROFIT_INPUT",
+            family="ETHEREUM",coin_wallet="original",fill_key=key,side=side,
+            source_amount=source,destination_amount=dest,automatic=True,
+            evidence={"version":1,"side":side,"stable":stable,"stable_atomic":str(amount),
+                      "stable_usd":["1","1"],"network_cost_usd":[cost,"1"]})
+    rows=[fill("a","BUY","100","1","USDT"),fill("b","SELL","1","120","USDC")]
+    r=summarize_pending_funding(rows,asset="LINK",stable="USDC",stable_usd="1")
+    assert r["protected_profit_net_atomic"]=="16000000"
+    assert r["protected_fee_due_atomic"]=="800000"
+    assert r["protected_saved_net_atomic"]=="15200000"
+    assert r["pending_wallet_stable_atomic"]=="16000000"
+    assert r["profit_reserve_net_verified"]
+    assert summarize_pending_funding(rows,asset="LINK",stable="USDT",stable_usd="1")["pending_wallet_stable_atomic"]=="0"
+    rows[0]["evidence"]=None
+    r=summarize_pending_funding(rows,asset="LINK",stable="USDC",stable_usd="1")
+    assert r["protected_profit_provisional_atomic"]=="120000000"
+    assert r["protected_fee_due_atomic"]=="0"
+    assert not r["profit_reserve_net_verified"]

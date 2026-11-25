@@ -13,7 +13,8 @@ from fastapi import HTTPException
 
 from .storage import _db_url,_ensure_schema,_safe_did
 from .ethereum_settlement_plan import ETHEREUM_STABLES,COIN_NETWORKS
-from .realized_profit_reserve import PROFIT_FILLS_SQL,protected_profit_atomic
+from .realized_net_accounting import calculate_realized_net
+from .realized_net_snapshot import NET_FILLS_SQL,hydrate_net_rows
 
 
 def summarize_pending_funding(rows,*,asset,stable,stable_usd):
@@ -28,7 +29,21 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
         coin_usd=Decimal(0)
         finalized=[row for row in rows if row["unit"]=="FINALIZED_PROFIT_INPUT"]
         pending=[row for row in rows if row["unit"]!="FINALIZED_PROFIT_INPUT"]
-        reserve=protected_profit_atomic(finalized,stable=stable)
+        valuations=[v for v in calculate_realized_net(hydrate_net_rows(finalized)) if v["stable"]==stable]
+        reserve_by_asset={}
+        gross=net=fee=provisional=unmatched=0
+        for v in valuations:
+            gross+=int(v["provisional_gross_hold_atomic"])
+            unmatched+=int(v["unmatched_inventory"])
+            held=int(v["retained_profit_atomic"])
+            if held:
+                reserve_by_asset[v["asset"]]=reserve_by_asset.get(v["asset"],0)+held
+            if v["net_verified"]:
+                net+=int(v["protected_net_stable_atomic"])
+                fee+=int(v["fee_due_stable_atomic"])
+            else:
+                provisional+=held
+        retained=sum(reserve_by_asset.values())
         for row in pending:
             if row["stable"]!=stable or row["asset"] not in (*COIN_NETWORKS,"DOGE"):
                 raise ValueError("Funding journal scope differs")
@@ -56,12 +71,17 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
                 coin_usd+=usd
         # Existing sizing callers subtract the combined unavailable cash;
         # the protected surplus is NOT an in-flight order or coin exposure.
-        return {"pending_wallet_stable_atomic":str(wallet_atomic+reserve["protected_gross_atomic"]),
+        return {"pending_wallet_stable_atomic":str(wallet_atomic+retained),
                 "pending_order_stable_atomic":str(wallet_atomic),
-                "protected_profit_gross_atomic":str(reserve["protected_gross_atomic"]),
-                "protected_profit_by_asset_atomic":{a:str(v) for a,v in reserve["protected_gross_by_asset_atomic"].items()},
-                "profit_reserve_net_verified":False,
-                "unmatched_profit_sells":reserve["unmatched_automatic_sells"],
+                "protected_profit_gross_atomic":str(gross),
+                "protected_profit_by_asset_atomic":{a:str(v) for a,v in reserve_by_asset.items()},
+                "protected_profit_retained_atomic":str(retained),
+                "protected_profit_net_atomic":str(net),
+                "protected_fee_due_atomic":str(fee),
+                "protected_saved_net_atomic":str(net-fee),
+                "protected_profit_provisional_atomic":str(provisional),
+                "profit_reserve_net_verified":bool(valuations) and all(v["net_verified"] for v in valuations),
+                "unmatched_profit_sells":unmatched,
                 "pending_coin_usd":format(coin_usd,"f"),
                 "pending_entries":len(pending),"atomic_claimed":False}
 
@@ -116,14 +136,14 @@ _PENDING_SQL="""SELECT asset,stable,reserved_notional_usd AS amount,'USD' AS uni
 # One database statement/snapshot for pending funding and finalized profit:
 # no gap in which a newly settled SELL is treated as free automatic cash.
 _PROTECTED_FUNDING_SQL="""WITH pending AS ("""+_PENDING_SQL+"""),
-    finalized AS ("""+PROFIT_FILLS_SQL+""")
+    finalized AS ("""+NET_FILLS_SQL+""")
     SELECT asset,stable,amount,unit,NULL::text AS side,
       NULL::numeric AS source_amount,NULL::numeric AS destination_amount,
       NULL::text AS coin_wallet,NULL::text AS family,NULL::text AS fill_key,
-      NULL::boolean AS automatic,NULL::timestamptz AS settled_at FROM pending
+      NULL::boolean AS automatic,NULL::timestamptz AS settled_at,NULL::jsonb AS evidence FROM pending
     UNION ALL
     SELECT asset,stable,0::numeric,'FINALIZED_PROFIT_INPUT',side,
-      source_amount,destination_amount,coin_wallet,family,fill_key,automatic,settled_at
+      source_amount,destination_amount,coin_wallet,family,fill_key,automatic,settled_at,evidence
     FROM finalized ORDER BY settled_at NULLS FIRST,fill_key NULLS FIRST"""
 
 

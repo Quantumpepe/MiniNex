@@ -20,7 +20,7 @@ from .ethereum_settlement_status import _finalized_receipt,_rpc_url,_eq,_num
 from .shared_evm_swap_receipts import _receipt_rpc
 from .shared_evm_historical_usd import fetch_recent_historical_usd_observation
 from .realized_net_accounting import exact,historical_cost_usd,calculate_realized_net
-from .realized_profit_reserve import PROFIT_FILLS_SQL
+from .realized_net_snapshot import NET_FILLS_SQL,hydrate_net_rows,read_ratio
 from .staged_fee_evidence import read_staged_accounting_order
 
 LOG=logging.getLogger("mininex.staged_net_valuation")
@@ -30,17 +30,6 @@ _OFFSET=0
 
 def ratio(value):
     return [str(value.numerator),str(value.denominator)]
-
-def read_ratio(value,*,positive=False):
-    if (type(value) is not list or len(value)!=2 or
-            any(type(x) is not str or not x.isascii() or not x.isdecimal() or len(x)>256 for x in value)):
-        raise ValueError("Invalid historical valuation ratio")
-    if int(value[1])<=0:
-        raise ValueError("Invalid historical valuation denominator")
-    result=Fraction(int(value[0]),int(value[1]))
-    if positive and not result:
-        raise ValueError("Missing historical settlement rate")
-    return result
 
 def stable_legs(order,steps):
     """One original stable debit on BUY; every verified ETH credit on SELL."""
@@ -209,24 +198,8 @@ def read_owner_realized_net(did,asset):
     if asset not in COIN_NETWORKS:
         raise ValueError("Realized net valuation not supported for coin")
     db=_db_url();_ensure_schema(db)
-    sql=PROFIT_FILLS_SQL.replace("=%(stable)s"," IN ('USDC','USDT')")
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("""WITH fills AS ("""+sql+""")
-                SELECT f.*,COALESCE(v.evidence,e.evidence) AS evidence FROM fills f
-                LEFT JOIN mininex_staged_net_valuations v ON f.family='CROSS_EVM'
-                    AND v.quote_id::text=f.fill_key AND v.privy_did=%(did)s AND v.asset=f.asset AND v.stable=f.stable
-                LEFT JOIN mininex_ethereum_net_valuations e ON f.family IN ('ETHEREUM','WRAPPED_SPOT')
-                    AND e.tx_hash=f.fill_key AND e.privy_did=%(did)s AND e.asset=f.asset AND e.stable=f.stable
-                WHERE f.asset=%(asset)s ORDER BY f.settled_at,f.fill_key""",{"did":did,"asset":asset})
+            cur.execute("WITH fills AS ("+NET_FILLS_SQL+") SELECT * FROM fills WHERE asset=%(asset)s ORDER BY settled_at,fill_key",{"did":did,"asset":asset})
             rows=cur.fetchall()
-    for row in rows:
-        value=row.pop("evidence")
-        if value is not None:
-            amount=exact(row["source_amount"] if row["side"]=="BUY" else row["destination_amount"])*10**6
-            if (value["version"]!=1 or value["side"]!=row["side"] or value["stable"]!=row["stable"]
-                    or amount!=int(value["stable_atomic"])):
-                raise ValueError("Stored historical valuation no longer matches original fill")
-            row["stable_usd"]=read_ratio(value["stable_usd"],positive=True)
-            row["network_cost_usd"]=read_ratio(value["network_cost_usd"])
-    return calculate_realized_net(rows)
+    return calculate_realized_net(hydrate_net_rows(rows))

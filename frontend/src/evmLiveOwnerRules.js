@@ -95,6 +95,15 @@ export function validEvmOrderHistory(data,asset){
   return true;
 }
 
+export function validNetValuation(value,fill){
+  if(!value||value.asset!==fill.asset||value.stable!==fill.stable||fill.side!=='SELL'||
+     value.fill_key!==(fill.ethereum_settlement_verified===true?fill.intent_key:fill.tx_hash)||
+     value.payment_authorized!==false||typeof value.net_verified!=='boolean')return false;
+  if(!value.net_verified)return value.realized_net_usd===null&&value.fee_due_stable_atomic===null;
+  return typeof value.realized_net_usd==='string'&&/^-?[0-9]+\.[0-9]{12}$/.test(value.realized_net_usd)&&
+    typeof value.fee_due_stable_atomic==='string'&&/^[0-9]+$/.test(value.fee_due_stable_atomic);
+}
+
 export function validEvmFinalizedFills(data,asset){
   if(!data||data.mode!=='FINALIZED_EVM_REAL_FILLS_ONLY'||
      data.asset!==asset||!LIVE_EVM_ASSETS.includes(asset)||
@@ -120,6 +129,7 @@ export function validEvmFinalizedFills(data,asset){
        fill.native_coin_cycle_complete!==false||
        fill.realized_net_usd!==null||
        fill.performance_fee_paid!==false||
+       (fill.net_valuation!==undefined&&!validNetValuation(fill.net_valuation,fill))||
        fill.spent_asset!==(fill.side==='BUY'?fill.stable:asset)||
        fill.received_asset!==(fill.side==='BUY'?asset:fill.stable)||
        ![fill.spent_amount,fill.received_amount].every(v=>
