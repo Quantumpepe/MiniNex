@@ -19,6 +19,7 @@ import json
 
 from .shared_evm_single_grant_policy import build_single_grant_evm_policy
 from .ethereum_stargate_staged_policy import STARGATE_STAGED_POLICY,build_stargate_staged_policy
+from .ethereum_across_staged_plan import STAGED_ACROSS_POLICY,STAGED_ACROSS_ASSETS,build_staged_across_policy
 from .ethereum_wrapped_spot_policy import (
     WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, build_wrapped_spot_policy,
 )
@@ -59,6 +60,13 @@ def valid_scope_fields(scope):
         return False
     if set(scope)==_REQUIRED_SCOPE_FIELDS:
         return scope.get("asset") not in WRAPPED_SPOT_TOKENS
+    if scope.get("settlement_policy")==STAGED_ACROSS_POLICY:
+        cap=scope.get("transit_atomic_cap")
+        return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy","transit_atomic_cap"}
+                and scope.get("asset") in STAGED_ACROSS_ASSETS
+                and scope.get("native_wrap_atomic_cap") is None
+                and scope.get("owner_max_fee_atomic")=="0"
+                and type(cap) is str and cap.isascii() and cap.isdecimal() and 0<int(cap)<2**256)
     if scope.get("settlement_policy")==STARGATE_STAGED_POLICY:
         caps=scope.get("bridge_fee_caps_atomic")
         return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy","bridge_fee_caps_atomic"}
@@ -156,7 +164,13 @@ def compose_scoped_evm_wallet_policy(
         rule_now=now
         if allow_expired and type(args.get("expires_at")) is int:
             rule_now=min(now,args["expires_at"]-1)
-        if args.get("settlement_policy")==STARGATE_STAGED_POLICY:
+        if args.get("settlement_policy")==STAGED_ACROSS_POLICY:
+            per_coin=build_staged_across_policy(asset=asset,stable=args["stable"],wallet=wallet,
+                owner_id=owner_id,executor_id=executor_id,now=rule_now,
+                eth_buy_atomic_cap=args["buy_source_atomic_cap"],
+                coin_sell_atomic_cap=args["sell_source_atomic_cap"],
+                transit_atomic_cap=args["transit_atomic_cap"],expires_at=args["expires_at"])["policy"]
+        elif args.get("settlement_policy")==STARGATE_STAGED_POLICY:
             per_coin=build_stargate_staged_policy(stable=args["stable"],wallet=wallet,
                 owner_id=owner_id,executor_id=executor_id,now=rule_now,
                 buy_source_atomic_cap=args["buy_source_atomic_cap"],

@@ -53,7 +53,8 @@ async def prepare_staged_across_bridge(client,*,asset,side,stable,wallet,wallet_
            "unsigned_transaction":review["transaction"]}
     # The shared preflight is read-only, including gas estimate and finite
     # allowance candidate. This ID is only an ephemeral stage quote ID.
-    preflight=await prepare_bridge_privy_request(client,terms,wallet_id=wallet_id,now=int(time.time()),manual=True)
+    preflight=await prepare_bridge_privy_request(client,terms,wallet_id=wallet_id,
+        now=int(time.time()),manual=True,staged_reset=(stable if side=="BUY" else route["transit_symbol"])=="USDT")
     target_url=_rpc_url(dst[0])
     chain,height=await asyncio.gather(
         _receipt_rpc(client,target_url,"eth_chainId",[],80),

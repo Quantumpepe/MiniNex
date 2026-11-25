@@ -20,7 +20,7 @@ from .shared_evm_wallet_policy_prepare import _locked_selected_budget
 from .shared_evm_wallet_policy_status import read_owner_central_wallet_policy_status
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy,verified_wallet_policy_digest,
-    valid_scope_fields,DIRECT_SETTLEMENT_POLICY,STARGATE_STAGED_POLICY,
+    valid_scope_fields,DIRECT_SETTLEMENT_POLICY,STARGATE_STAGED_POLICY,STAGED_ACROSS_POLICY,
 )
 from .shared_evm_swap_receipts import _pair
 from .ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, wrapped_spot_route
@@ -97,7 +97,7 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
         raise HTTPException(409,"Selected original wallet coin scope changed")
     if selected.get("settlement_policy")==WRAPPED_SPOT_POLICY:
         pair=wrapped_spot_route(asset,selected["stable"],"BUY")
-    elif selected.get("settlement_policy") in (DIRECT_SETTLEMENT_POLICY,STARGATE_STAGED_POLICY):
+    elif selected.get("settlement_policy") in (DIRECT_SETTLEMENT_POLICY,STARGATE_STAGED_POLICY,STAGED_ACROSS_POLICY):
         from .ethereum_settlement_plan import settlement_route
         pair={"chain_id":settlement_route(asset,"BUY",selected["stable"])["destination_chain_id"]}
     else:

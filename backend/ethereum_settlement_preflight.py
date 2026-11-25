@@ -13,7 +13,7 @@ from .shared_evm_swap_receipts import _receipt_rpc
 from .live_eth_quotes import ETH_NATIVE
 from .shared_evm_execution import WALLET_ID
 
-async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False):
+async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False,staged_reset=False):
     if not WALLET_ID.fullmatch(wallet_id) or not quote["issued_at"]<=now<quote["expires_at"]:
         raise HTTPException(409,"Original bridge quote or wallet unavailable")
     if not quote.get("unsigned_transaction"):
@@ -70,7 +70,8 @@ async def prepare_bridge_privy_request(client,quote,*,wallet_id,now,manual=False
                 raise HTTPException(409,"Exact bridge allowance unavailable")
             # USDT on Ethereum requires zero before a nonzero change.
             from .live_eth_quotes import STABLES
-            approval_amount=0 if chain==1 and source.lower()==STABLES["USDT"].lower() and allowance>0 else amount
+            approval_amount=0 if allowance>0 and (staged_reset or
+                (chain==1 and source.lower()==STABLES["USDT"].lower())) else amount
             data="0x095ea7b3"+DIAMOND[2:].rjust(64,"0")+format(approval_amount,"064x")
             approval={"from":tx["from"],"to":source,"data":data,"value":"0x0"}
             gas=int(await rpc("eth_estimateGas",[approval],8),16)

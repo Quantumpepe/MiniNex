@@ -73,7 +73,7 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
     if asset=="AVAX" and (not central or record.get("scope",{}).get("settlement_policy")!="ETHEREUM_STARGATE_STAGED_V1"):
         raise HTTPException(409,"AVAX requires its Ethereum-settled owner grant")
     if central and record.get("scope",{}).get("settlement_policy") in (
-            "ETHEREUM_ACROSS_DIRECT_V1","ETHEREUM_STARGATE_STAGED_V1"):
+            "ETHEREUM_ACROSS_DIRECT_V1","ETHEREUM_STARGATE_STAGED_V1","ETHEREUM_ACROSS_STAGED_V1"):
         from .ethereum_settlement_plan import settlement_route
         pair={"chain_id":settlement_route(asset,"BUY",record["stable"])["destination_chain_id"]}
     else:
