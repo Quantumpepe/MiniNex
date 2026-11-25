@@ -83,7 +83,7 @@ def plan_wallet_policy_transition(
         raise ValueError("Empty wallet policy must revoke signer, not publish allowlists")
     target_args = dict(
         wallet=wallet, owner_id=owner_id,
-        executor_id=executor_id, scopes=desired_scopes, now=now,
+        executor_id=executor_id, scopes=desired_scopes, now=now, allow_expired=True,
     )
     target = compose_scoped_evm_wallet_policy(**target_args)
     target_digest = verified_wallet_policy_digest(target, **target_args)

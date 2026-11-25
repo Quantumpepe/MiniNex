@@ -291,3 +291,21 @@ for(const asset of ['BTC','XRP']){
     assert.equal(centralWalletHasCoin(final,asset),true);
   });
 }
+
+
+test('renew only changed coin with one signature; other current coin still works',async()=>{
+  const stale={...scopeStatus(['LINK','QNT']),current_user_budgets_verified:false,
+    current_scope_coins:['LINK'],renewable_scope_coins:['QNT']};
+  assert.equal(centralWalletHasCoin(stale,'LINK'),true);
+  assert.equal(centralWalletHasCoin(stale,'QNT'),false);
+  const ready={...scopeStatus(['LINK','QNT']),current_scope_coins:['LINK','QNT'],
+    renewable_scope_coins:[]};
+  const states=[stale,challenge(),extendConfirmed(),applied(),ready];
+  let i=0,prompts=0;
+  const result=await authorizeCentralEvmWalletCoin(options(async()=>states[i++],{
+    signMessage:async()=>{prompts++;return {signature:'0x'+'f'.repeat(130)};},
+  }));
+  assert.equal(prompts,1);
+  assert.equal(i,5);
+  assert.equal(centralWalletHasCoin(result,'QNT'),true);
+});

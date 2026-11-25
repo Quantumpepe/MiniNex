@@ -112,18 +112,18 @@ def _locked_original_evm_coin(cur,*,did:str,asset:str,
                 or scope.get("asset")!=coin
                 or scope.get("stable") not in ("USDC","USDT")
                 or type(v) is not int or v<=0
-                or type(scope.get("expires_at")) is not int
-                or scope["expires_at"]<=now):
+                or type(scope.get("expires_at")) is not int):
             raise HTTPException(409,"Sibling original wallet scope changed")
         # Exact original selected capital and revision, never a platform cap.
-        _locked_selected_budget(
-            cur,did=did,asset=coin,stable=scope["stable"],
-            expected_revision=v,
-        )
+        if coin==asset:
+            _locked_selected_budget(
+                cur,did=did,asset=coin,stable=scope["stable"],
+                expected_revision=v,
+            )
         ordered.append(scope)
     kwargs=dict(
         wallet=grant["wallet_address"],owner_id=grant["owner_id"],
-        executor_id=grant["signer_id"],scopes=ordered,now=now,
+        executor_id=grant["signer_id"],scopes=ordered,now=now,allow_expired=True,
     )
     try:
         policy=compose_scoped_evm_wallet_policy(**kwargs)
@@ -172,13 +172,13 @@ async def audit_original_evm_coin(did:str,asset:str)->dict:
         raise HTTPException(404,"Unsupported central EVM coin")
     status=await read_owner_central_wallet_policy_status(did)
     if (status.get("status")!="REMOTE_VERIFIED_READONLY"
-            or asset not in status.get("scope_coins",[])
+            or asset not in status.get("current_scope_coins",
+                 status.get("scope_coins",[]) if status.get("current_user_budgets_verified") is True else [])
             or status.get("legacy_reconciliation_required") is not False
             or any(status.get(k) is not True for k in (
                 "one_scoped_signer_verified",
                 "remote_policy_exactly_verified",
-                "current_user_budgets_verified",
-                # The distinct policy OWNER must sign any future scope PATCH;
+                 # The distinct policy OWNER must sign any future scope PATCH;
                 # it is not the already user-approved transaction signer.
                 "backend_quorum_current",
             ))):

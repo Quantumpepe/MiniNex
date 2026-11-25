@@ -73,23 +73,29 @@ def changed_wallet_coin(original,target,original_revisions=None,target_revisions
     asset=changed[0]
     if asset in original:
         before,after=original[asset],target[asset]
-        if (not is_direct_settlement_upgrade(asset,before)
-                or not valid_scope_fields(after)
-                or after.get("settlement_policy")!=DIRECT_SETTLEMENT_POLICY
-                or after.get("asset")!=asset or after.get("stable")!=before.get("stable")):
-            raise ValueError("Only original Ethereum settlement upgrade is allowed")
+        migration=(is_direct_settlement_upgrade(asset,before)
+                   and after.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+                   and after.get("stable")==before.get("stable"))
+        renewal=(valid_scope_fields(before)
+                 and before.get("settlement_policy")==after.get("settlement_policy")
+                 and (before.get("stable")!=after.get("stable") or
+                      before.get("treasury")==after.get("treasury")))
+        if (not valid_scope_fields(after) or after.get("asset")!=asset
+                or not (migration or renewal)):
+            raise ValueError("Only a signed original coin scope update is allowed")
     if original_revisions is not None or target_revisions is not None:
         if (type(original_revisions) is not dict or type(target_revisions) is not dict
                 or set(original_revisions)!=set(original)
                 or set(target_revisions)!=set(target)
-                or any(target_revisions.get(a)!=v for a,v in original_revisions.items())):
+                or any(target_revisions.get(a)!=v for a,v in original_revisions.items()
+                       if a!=asset or asset not in original or migration)):
             raise ValueError("Original approved budget revision changed")
     return asset
 
 
 def compose_scoped_evm_wallet_policy(
     *, wallet: str, owner_id: str, executor_id: str,
-    scopes: list[dict], now: int,
+    scopes: list[dict], now: int, allow_expired: bool = False,
 ) -> dict:
     """Create one DENY-by-default wallet policy from explicit coin budgets.
 
@@ -114,10 +120,15 @@ def compose_scoped_evm_wallet_policy(
         if asset not in selected:
             continue
         args = selected[asset]
+        # Read back historical rules without renewing their actual timestamp.
+        # Runtime still rejects an expired SELECTED coin before any send.
+        rule_now=now
+        if allow_expired and type(args.get("expires_at")) is int:
+            rule_now=min(now,args["expires_at"]-1)
         if args.get("settlement_policy")==WRAPPED_SPOT_POLICY:
             per_coin=build_wrapped_spot_policy(
                 asset=asset,stable=args["stable"],wallet=wallet,
-                owner_id=owner_id,executor_id=executor_id,now=now,
+                owner_id=owner_id,executor_id=executor_id,now=rule_now,
                 buy_source_atomic_cap=args["buy_source_atomic_cap"],
                 sell_source_atomic_cap=args["sell_source_atomic_cap"],
                 expires_at=args["expires_at"])
@@ -127,7 +138,7 @@ def compose_scoped_evm_wallet_policy(
                 wallet=wallet,owner_id=owner_id,executor_id=executor_id,
                 buy_cap_micro=args["buy_source_atomic_cap"],
                 sell_cap_atomic=args["sell_source_atomic_cap"],
-                expires_at=args["expires_at"],now=now)
+                expires_at=args["expires_at"],now=rule_now)
             per_coin=draft["policy"]
             # This version authorizes only existing ERC20/wrapped inventory,
             # never unrelated native gas holdings, arbitrary nested calls
@@ -137,7 +148,7 @@ def compose_scoped_evm_wallet_policy(
         else:
             per_coin = build_single_grant_evm_policy(
                 wallet=wallet, owner_id=owner_id, executor_id=executor_id,
-                now=now, **args,
+                now=rule_now, **args,
             )
         if (per_coin.get("version") != "1.0"
                 or per_coin.get("chain_type") != "ethereum"

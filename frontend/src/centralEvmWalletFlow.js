@@ -44,7 +44,8 @@ export function centralWalletHasCoin(report,asset){
     (!needsWrapped(asset)||hasWrapped(report,asset))&&
     report.one_scoped_signer_verified===true&&
     report.remote_policy_exactly_verified===true&&
-    report.current_user_budgets_verified===true&&
+    (Array.isArray(report.current_scope_coins)?report.current_scope_coins.includes(asset):
+      report.current_user_budgets_verified===true)&&
     report.backend_quorum_current===true&&
     report.legacy_reconciliation_required===false;
 }
@@ -189,7 +190,9 @@ export async function authorizeCentralEvmWalletCoin({
   }
   if(report.status==='REMOTE_VERIFIED_READONLY'){
     if(centralWalletHasCoin(report,asset))return report;
-    const migrating=report.scope_coins.includes(asset)&&needsDirect(asset)&&!hasDirect(report,asset);
+    const migrating=report.scope_coins.includes(asset)&&(
+      (needsDirect(asset)&&!hasDirect(report,asset))||
+      (Array.isArray(report.renewable_scope_coins)&&report.renewable_scope_coins.includes(asset)));
     if(report.scope_coins.includes(asset)&&!migrating){
       throw Error('Wallet grant requires independent re-verification');
     }

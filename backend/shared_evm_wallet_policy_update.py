@@ -128,12 +128,13 @@ def _claim_locked(cur,*,did,nonce,observed,old_scopes,now):
         rev=revised[asset]
         if type(scope) is not dict or type(rev) is not int or rev<=0:
             raise HTTPException(409,"Requested coin budget revision invalid")
-        _locked_selected_budget(
-            cur,did=did,asset=asset,stable=scope["stable"],
-            expected_revision=rev,
-        )
+        if asset==changed:
+            _locked_selected_budget(
+                cur,did=did,asset=asset,stable=scope["stable"],
+                expected_revision=rev,
+            )
     args=dict(wallet=g["wallet_address"],owner_id=g["owner_id"],
-              executor_id=g["signer_id"],scopes=list(target.values()),now=now)
+              executor_id=g["signer_id"],scopes=list(target.values()),now=now,allow_expired=True)
     policy=compose_scoped_evm_wallet_policy(**args)
     digest=verified_wallet_policy_digest(policy,**args)
     if digest!=intent.get("target_policy_sha256"):
@@ -259,10 +260,11 @@ def _finish_locked(cur,*,did,claim,remote):
         try:
             for asset in sorted(claim["target_scopes_json"]):
                 scope=claim["target_scopes_json"][asset]
-                _locked_selected_budget(
-                    cur,did=did,asset=asset,stable=scope["stable"],
-                    expected_revision=claim["target_revisions_json"][asset],
-                )
+                if asset==claim["new_coin"]:
+                    _locked_selected_budget(
+                        cur,did=did,asset=asset,stable=scope["stable"],
+                        expected_revision=claim["target_revisions_json"][asset],
+                    )
         except (HTTPException,ValueError,KeyError,TypeError):
             verified=False
     if not verified and grant["status"]=="UPDATE_UNCERTAIN":

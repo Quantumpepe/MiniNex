@@ -247,3 +247,22 @@ def test_new_intent_columns_and_routes_are_owner_authenticated():
         assert route.methods=={method}
         import inspect
         assert "verify_privy_bearer" in inspect.getsource(route.endpoint)
+
+
+def test_renew_one_changed_budget_uses_same_wallet_and_one_signed_intent(monkeypatch):
+    current=grant()
+    current["stale_budget_coins"]=["LINK"]
+    checks=[]
+    def locked(cur,*,did,asset,stable,expected_revision):
+        checks.append((asset,stable,expected_revision))
+        assert expected_revision==6
+        return 1000,6
+    monkeypatch.setattr(ext,"_locked_selected_budget",locked)
+    monkeypatch.setattr(prepare,"owner_fee_treasury",lambda **_:TREASURY)
+    cur=Cur([{"privy_did":DID},current,None,current,{"status":"PENDING"},{"status":"PENDING"}])
+    out=ext._stage_wallet_coin_extension_locked(cur,did=DID,asset="LINK",stable="USDC",
+        revision=6,record=current,scopes=[scope()],snapshot=quotes(),now=NOW,nonce=NONCE)
+    assert out["scope_coins"]==["LINK"]
+    assert out["one_user_message_signature_required"]
+    assert checks==[("LINK","USDC",6)]
+    assert cur.calls[-1][1][1].obj=={"LINK":6}

@@ -337,3 +337,45 @@ def test_trx_v2_exact_path_and_policy(stable,side):
     with pytest.raises(HTTPException):
         check_evm_policy_bound_swap(record=record,asset="TRX",side=side,stable=stable,wallet=WALLET,
                 tx=dict(tx,data=corrupted),input_atomic="1000000",minimum_output_atomic="42",now=NOW)
+
+
+def test_expired_sibling_rule_reconstructed_without_extending_its_expiry():
+    from backend.shared_evm_consolidated_wallet_policy import changed_wallet_coin
+    old={"LINK":scope("LINK"),"QNT":scope("QNT")}
+    old["LINK"]["expires_at"]=NOW+10
+    original=compose_scoped_evm_wallet_policy(**kwargs(list(old.values())))
+    later=dict(kwargs(list(old.values())),now=NOW+20)
+    with pytest.raises(ValueError):
+        compose_scoped_evm_wallet_policy(**later)
+    assert compose_scoped_evm_wallet_policy(**later,allow_expired=True)==original
+    new={**old,"LINK":dict(old["LINK"],expires_at=NOW+86400,buy_source_atomic_cap="200000000")}
+    assert changed_wallet_coin(old,new,{"LINK":1,"QNT":2},{"LINK":3,"QNT":2})=="LINK"
+    with pytest.raises(ValueError):
+        changed_wallet_coin(old,new,{"LINK":1,"QNT":2},{"LINK":3,"QNT":4})
+    with pytest.raises(ValueError):
+        changed_wallet_coin(old,{**new,"QNT":dict(old["QNT"],buy_source_atomic_cap="200000000")})
+
+
+def test_active_coin_runtime_never_uses_expired_or_changed_sibling_budget(monkeypatch):
+    from backend import shared_evm_central_runtime as runtime
+    from fastapi import HTTPException
+    old=[dict(scope("LINK"),expires_at=NOW+10),scope("QNT")]
+    args=kwargs(old)
+    policy=compose_scoped_evm_wallet_policy(**args)
+    record={"wallet_id":"wallet_123456","wallet_address":WALLET,
+            "owner_id":OWNER,"signer_id":SIGNER,"policy_id":"policy_123456",
+            "policy_sha256":verified_wallet_policy_digest(policy,**args),
+            "status":"GRANT_VERIFIED","scopes_json":{x["asset"]:x for x in old},
+            "revisions_json":{"LINK":1,"QNT":2},"legacy_reconciliation_required":False,
+            "original_owner_granted_at":NOW,"remote_verified_at":NOW,"revoked_at":None}
+    class Cursor:
+        def execute(self,*args): pass
+        def fetchone(self): return record
+    def locked(cur,*,did,asset,stable,expected_revision):
+        assert asset=="QNT" and expected_revision==2
+        return 100,2
+    monkeypatch.setattr(runtime,"_locked_selected_budget",locked)
+    proof=runtime._locked_original_evm_coin(Cursor(),did="did:privy:wrappedtest",asset="QNT",now=NOW+20)
+    assert proof["candidate_json"]==policy
+    with pytest.raises(HTTPException):
+        runtime._locked_original_evm_coin(Cursor(),did="did:privy:wrappedtest",asset="LINK",now=NOW+20)

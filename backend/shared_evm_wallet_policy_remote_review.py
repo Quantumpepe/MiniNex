@@ -84,7 +84,7 @@ def review_original_one_signer_wallet(
         raise ValueError("Original wallet's single scoped signer differs")
     expected_args = dict(
         wallet=original["address"], owner_id=saved_grant["owner_id"],
-        executor_id=signer, scopes=scopes, now=now,
+        executor_id=signer, scopes=scopes, now=now, allow_expired=True,
     )
     expected = compose_scoped_evm_wallet_policy(**expected_args)
     digest = verified_wallet_policy_digest(expected, **expected_args)

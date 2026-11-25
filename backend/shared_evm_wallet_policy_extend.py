@@ -67,9 +67,7 @@ async def _verified_previous_grant(did,asset):
     record,scopes=await asyncio.to_thread(_read_saved_and_current_preferences,did)
     if (type(record) is not dict or record.get("status")!="GRANT_VERIFIED"
             or record.get("legacy_reconciliation_required") is not False
-            or type(scopes) is not list or not scopes
-            or any(x["asset"]==asset and not is_direct_settlement_upgrade(asset,x)
-                   for x in scopes)):
+            or type(scopes) is not list or not scopes):
         raise HTTPException(409,"Existing verified wallet and a new or migratable coin required")
     owner,signer=_require_policy_roles()
     if record.get("owner_id")!=owner or record.get("signer_id")!=signer:
@@ -122,9 +120,7 @@ def _stage_wallet_coin_extension_locked(
             or type(current.get("scopes_json")) is not dict
             or type(current.get("revisions_json")) is not dict
             or current["scopes_json"]!={s["asset"]:s for s in scopes}
-            or set(current["scopes_json"])!=set(current["revisions_json"])
-            or (asset in current["scopes_json"] and not is_direct_settlement_upgrade(
-                asset,current["scopes_json"][asset]))):
+            or set(current["scopes_json"])!=set(current["revisions_json"])):
         raise HTTPException(409,"Original wallet grant changed during preparation")
     original=[]
     for coin in sorted(current["scopes_json"]):
@@ -132,10 +128,11 @@ def _stage_wallet_coin_extension_locked(
         prior_revision=current["revisions_json"][coin]
         if type(original_scope) is not dict or type(prior_revision) is not int:
             raise HTTPException(409,"Original coin scope snapshot invalid")
-        _locked_selected_budget(
-            cur,did=did,asset=coin,stable=original_scope["stable"],
-            expected_revision=prior_revision,
-        )
+        if coin!=asset and coin not in record.get("stale_budget_coins",[]):
+            _locked_selected_budget(
+                cur,did=did,asset=coin,stable=original_scope["stable"],
+                expected_revision=prior_revision,
+            )
         original.append(original_scope)
     selected_budget,_=_locked_selected_budget(
         cur,did=did,asset=asset,stable=stable,expected_revision=revision,
@@ -163,7 +160,7 @@ def _stage_wallet_coin_extension_locked(
         raise HTTPException(409,str(exc)) from None
     old_candidate=compose_scoped_evm_wallet_policy(
         wallet=current["wallet_address"],owner_id=current["owner_id"],
-        executor_id=current["signer_id"],scopes=original,now=now,
+        executor_id=current["signer_id"],scopes=original,now=now,allow_expired=True,
     )
     plan=plan_wallet_policy_transition(
         did=did,wallet=current["wallet_address"],wallet_id=current["wallet_id"],
@@ -261,7 +258,7 @@ def _confirm_wallet_coin_extension_locked(cur,*,did,nonce,signature,now):
             or set(consent["target_scopes_json"])!=set(consent["target_revisions_json"])):
         raise HTTPException(409,"User intent expired or original wallet scope changed")
     try:
-        changed_wallet_coin(grant["scopes_json"],consent["target_scopes_json"],
+        changed=changed_wallet_coin(grant["scopes_json"],consent["target_scopes_json"],
             grant["revisions_json"],consent["target_revisions_json"])
     except ValueError as exc:
         raise HTTPException(409,str(exc)) from None
@@ -270,16 +267,17 @@ def _confirm_wallet_coin_extension_locked(cur,*,did,nonce,signature,now):
         revision=consent["target_revisions_json"][coin]
         if type(scope) is not dict or type(revision) is not int or revision<1:
             raise HTTPException(409,"Signed user coin budget is invalid")
-        _locked_selected_budget(
-            cur,did=did,asset=coin,stable=scope["stable"],
-            expected_revision=revision,
-        )
+        if coin==changed:
+            _locked_selected_budget(
+                cur,did=did,asset=coin,stable=scope["stable"],
+                expected_revision=revision,
+            )
     issued=consent["expires_at_unix"]-300
     original=list(grant["scopes_json"].values())
     desired=list(consent["target_scopes_json"].values())
     old_policy=compose_scoped_evm_wallet_policy(
         wallet=grant["wallet_address"],owner_id=grant["owner_id"],
-        executor_id=grant["signer_id"],scopes=original,now=issued,
+        executor_id=grant["signer_id"],scopes=original,now=issued,allow_expired=True,
     )
     plan=plan_wallet_policy_transition(
         did=did,wallet=grant["wallet_address"],wallet_id=grant["wallet_id"],
