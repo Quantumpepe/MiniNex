@@ -112,3 +112,25 @@ export async function authorizeWrappedOwnerTrade({asset,address,settings,origina
     throw Error('Current Privy authorization differs from saved capital');
   return {saved,grant,audit};
 }
+
+export function validWrappedLiveSession(data,asset){
+  return ['BTC','XRP'].includes(asset)&&!!data&&data.asset===asset&&
+    data.mode==='OWNER_EVM_LIVE_SESSION_CONTROL'&&
+    ['NOT_STARTED','ACTIVE','PAUSED','EXIT_PENDING','STOPPED'].includes(data.status)&&
+    (data.chain_id===1||data.chain_id===null)&&typeof data.worker_attached==='boolean'&&
+    Number.isSafeInteger(data.original_blockchain_swaps_sent)&&data.original_blockchain_swaps_sent>=0&&
+    Number.isSafeInteger(data.original_blockchain_swaps_finalized)&&
+    data.original_blockchain_swaps_finalized>=0&&
+    data.original_blockchain_swaps_finalized<=data.original_blockchain_swaps_sent;
+}
+export async function startWrappedOwnerTrade(options){
+  const grant=await authorizeWrappedOwnerTrade(options);
+  const started=await options.request('/api/live/evm/wallet-policy/auto-session/'+options.asset+'/start','POST');
+  if(started?.mode!=='OWNER_EVM_LIVE_SESSION_CONTROL'||started.asset!==options.asset||
+     started.chain_id!==1||started.status!=='ACTIVE'||started.started_by_owner!==true||
+     started.new_transactions_sent!==0)throw Error('Original trading session not confirmed');
+  const session=await options.request('/api/live/evm/auto-session/'+options.asset);
+  if(!validWrappedLiveSession(session,options.asset)||session.status!=='ACTIVE')
+    throw Error('Original trading session status unavailable');
+  return {...grant,session};
+}

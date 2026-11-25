@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readWrappedOwnerSettings,saveWrappedOwnerSettings,validWrappedSettings,
-  validWrappedGrantAudit} from '../src/wrappedSpotOwnerFlow.js';
+  validWrappedGrantAudit,validWrappedLiveSession} from '../src/wrappedSpotOwnerFlow.js';
 
 const limits=(budget,revision)=>({asset:'BTC',network:'bitcoin-mainnet',
   mode:'BTC_LIVE_LIMITS_PREPARATION_ONLY',planned_capital_usd:budget,
@@ -56,4 +56,15 @@ test('grant audit cannot be mistaken for a live session',()=>{
   assert.equal(validWrappedGrantAudit(report,'BTC',2),true);
   assert.equal(validWrappedGrantAudit({...report,live_session_verified:true},'BTC',2),false);
   assert.equal(validWrappedGrantAudit(report,'BTC',3),false);
+});
+
+test('BTC and XRP use real Ethereum session status, never native status or a grant as a session',()=>{
+  for(const asset of ['BTC','XRP']){
+    const session={asset,mode:'OWNER_EVM_LIVE_SESSION_CONTROL',chain_id:1,status:'ACTIVE',
+      worker_attached:true,original_blockchain_swaps_sent:2,original_blockchain_swaps_finalized:1};
+    assert.equal(validWrappedLiveSession(session,asset),true);
+    assert.equal(validWrappedLiveSession({...session,chain_id:56},asset),false);
+    assert.equal(validWrappedLiveSession({...session,mode:'OWNER_NATIVE_LIVE_SESSION_CONTROL'},asset),false);
+    assert.equal(validWrappedLiveSession({...session,original_blockchain_swaps_finalized:3},asset),false);
+  }
 });

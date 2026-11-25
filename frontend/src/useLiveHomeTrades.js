@@ -36,8 +36,7 @@ export default function useLiveHomeTrades(liveVisible,homeVisible,refreshNonce,a
       if(pending)return;pending=true;
       try{
         const token=await tokenRef.current();if(!active||!token)return;
-        const read=async coin=>{
-          const native=NATIVE_ASSETS.includes(coin);
+        const readRoute=async (coin,native)=>{
           const response=await fetch(API_BASE+(native?'/api/live/native/order-status/':'/api/live/evm/verified-fills/')+encodeURIComponent(coin)+'?limit=20',{
             method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token,Accept:'application/json'}
           });
@@ -53,6 +52,15 @@ export default function useLiveHomeTrades(liveVisible,homeVisible,refreshNonce,a
           }
           if(data?.asset!==coin||data.mode!=='FINALIZED_EVM_REAL_FILLS_ONLY'||!Array.isArray(data.fills))throw Error('unverified journal');
           return data.fills.map(row=>entry(row,coin)).filter(Boolean);
+        };
+        const read=async coin=>{
+          if(!['BTC','XRP'].includes(coin))return readRoute(coin,NATIVE_ASSETS.includes(coin));
+          // Preserve native historical transactions and also show the exact
+          // newly finalized Ethereum trading inventory, without duplication.
+          const both=await Promise.allSettled([readRoute(coin,true),readRoute(coin,false)]);
+          const ok=both.filter(r=>r.status==='fulfilled');
+          if(!ok.length)throw Error('live fills unavailable');
+          return [...new Map(ok.flatMap(r=>r.value).map(row=>[row.id,row])).values()];
         };
         const results=await Promise.allSettled(scope.map(read));
         if(!active)return;
