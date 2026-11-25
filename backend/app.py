@@ -1174,7 +1174,7 @@ async def owner_apply_one_signed_wallet_scope_change(
 
 @app.post("/api/live/evm/wallet-policy/extend/{asset}/prepare")
 async def owner_prepare_shared_evm_scope_extension(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     authorization: str | None = Header(default=None),
 ):
     did=verify_privy_bearer(authorization)["user_id"]
@@ -1213,7 +1213,7 @@ async def owner_publish_first_central_evm_wallet_policy(
 
 @app.post("/api/live/evm/wallet-policy/prepare/{asset}")
 async def owner_prepare_first_shared_evm_wallet_policy(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit original owner's initial central signer POLICY DRAFT only.

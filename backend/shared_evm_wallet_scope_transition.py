@@ -133,6 +133,8 @@ def plan_wallet_policy_transition(
             f"Requested policy SHA256: {target_digest}",
             f"New or changed coins: {changed}",
             f"Authorized coin scope: {retained}",
+            *(("BTC/XRP trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.",)
+              if any(x.get("settlement_policy")=="ETHEREUM_WRAPPED_SPOT_V1" for x in desired.values()) else ()),
             f"Nonce: {nonce}",
             f"Issued Unix: {issued}",
             f"Expires Unix: {expires}",

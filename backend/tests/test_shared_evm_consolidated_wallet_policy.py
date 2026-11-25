@@ -143,3 +143,21 @@ def test_wrapped_trade_scope_is_distinct_and_exact(asset,decimals,stable):
         with pytest.raises(ValueError):
             inspect_wrapped_spot_transaction(dict(tx,value="1"),asset=asset,stable=stable,
                  side=side,wallet=WALLET,amount_atomic=100000,min_out_atomic=42)
+
+
+def test_wrapped_scope_uses_btc_owner_percent_and_distinct_token_precision(monkeypatch):
+    from decimal import Decimal
+    from backend import shared_evm_wallet_policy_prepare as prepare
+    from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY
+    monkeypatch.setattr(prepare,"owner_fee_treasury",lambda **kw:TREASURY)
+    monkeypatch.setattr(prepare,"_price",lambda snapshot,asset,now:
+                        {"BTC":Decimal("100000"),"XRP":Decimal("2"),"USDC":Decimal("1")}[asset])
+    prices={"_mininex_verified_btc_wrapped_capital_usd":Decimal("2000")}
+    btc=prepare.build_selected_wallet_scope(asset="BTC",stable="USDC",amount=50,snapshot=prices,now=NOW)
+    assert btc["settlement_policy"]==WRAPPED_SPOT_POLICY
+    assert btc["buy_source_atomic_cap"]=="1000000000"
+    assert btc["sell_source_atomic_cap"]=="1000000"
+    xrp=prepare.build_selected_wallet_scope(asset="XRP",stable="USDC",amount=1000,snapshot=prices,now=NOW)
+    assert xrp["sell_source_atomic_cap"]=="500000000000000000000"
+    with pytest.raises(ValueError):
+        prepare.build_selected_wallet_scope(asset="BTC",stable="USDC",amount=50,snapshot={},now=NOW)

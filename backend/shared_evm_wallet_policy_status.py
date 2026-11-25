@@ -26,7 +26,7 @@ from .shared_evm_wallet_policy_remote_review import (
 from .storage import _db_url, _ensure_schema, _safe_did
 
 LOG = logging.getLogger("mininex.evm_wallet_one_signer_status")
-_EVM_ASSETS = frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_EVM_ASSETS = frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
 _VALID_STATES = frozenset((
     "DRAFT","SUBMITTING","UNCERTAIN","REMOTE_VERIFIED_UNATTACHED",
     "GRANT_VERIFIED","UPDATE_PENDING","UPDATING","UPDATE_UNCERTAIN","REVOKED",
@@ -92,7 +92,7 @@ def _read_saved_and_current_preferences(did: str):
             # Every stored revision must still match actual user configuration.
             # ETH has a separate original LIVE-capital table; it cannot be
             # inferred from generic per-coin preferences.
-            coins = [row["asset"] for row in ordered if row["asset"] != "ETH"]
+            coins = [row["asset"] for row in ordered if row["asset"] not in ("ETH","BTC")]
             if coins:
                 cur.execute(
                     """SELECT asset,stable,budget_usd,revision
@@ -115,6 +115,17 @@ def _read_saved_and_current_preferences(did: str):
                         or type(current.get("budget_usd")) is not int
                         or current["budget_usd"] <= 0):
                     raise ValueError("Original user coin budget changed")
+            if "BTC" in scopes:
+                cur.execute("""SELECT b.percent,b.revision,t.stable
+                    FROM mininex_budget_preferences b JOIN mininex_trade_preferences t
+                      ON t.privy_did=b.privy_did AND t.asset=b.asset
+                    WHERE b.privy_did=%s AND b.asset='BTC'""",(did,))
+                btc=cur.fetchone()
+                if (type(btc) is not dict or type(btc.get("percent")) is not int
+                        or not 0<btc["percent"]<=100
+                        or btc.get("revision")!=revisions["BTC"]
+                        or btc.get("stable")!=scopes["BTC"].get("stable")):
+                    raise ValueError("Original BTC user budget changed")
             if "ETH" in scopes:
                 cur.execute(
                     """SELECT planned_capital_usd,revision

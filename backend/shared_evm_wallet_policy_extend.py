@@ -22,6 +22,7 @@ from .eth_user_consent import _require_policy_roles
 from .eth_privy_remote_quorum import check_privy_backend_quorum
 from .eth_privy_user_grant import _fetch_policy
 from .extra_coin_preferences import get_coin_preferences
+from .budgets import get_budget_preferences
 from .trade_preferences import get_trade_preferences
 from .live_eth_controls import get_live_eth_limits
 from .privy_wallet_verification import fetch_privy_user
@@ -32,7 +33,9 @@ from .shared_evm_consolidated_wallet_policy import (
 from .shared_evm_policy_reference_rates import fetch_evm_policy_reference_rates
 from .shared_evm_wallet_policy_status import _read_saved_and_current_preferences
 from .shared_evm_wallet_policy_remote_review import review_original_one_signer_wallet
-from .shared_evm_wallet_policy_prepare import _ASSETS, _locked_selected_budget, build_selected_wallet_scope
+from .shared_evm_wallet_policy_prepare import (
+    _ASSETS, _locked_selected_budget, build_selected_wallet_scope, policy_reference_snapshot,
+)
 from .shared_evm_wallet_scope_transition import plan_wallet_policy_transition
 from .shared_evm_wallet_policy_intent_ledger import (
     begin_locked_user_policy_update_intent, confirm_locked_user_policy_update_intent,
@@ -48,6 +51,9 @@ def _desired_user_settings(did,asset):
     if asset=="ETH":
         stable=get_trade_preferences(did)["settings"]["ETH"]["stable"]
         revision=get_live_eth_limits(did)["revision"]
+    elif asset=="BTC":
+        stable=get_trade_preferences(did)["settings"]["BTC"]["stable"]
+        revision=get_budget_preferences(did)["budgets"]["BTC"]["revision"]
     else:
         item=get_coin_preferences(did)["settings"][asset]
         stable=item["stable"]
@@ -202,7 +208,8 @@ async def prepare_existing_wallet_coin_extension(did,asset):
         raise HTTPException(404,"Unsupported EVM asset")
     record,scopes=await _verified_previous_grant(did,asset)
     stable,revision=_desired_user_settings(did,asset)
-    prices=await fetch_evm_policy_reference_rates(asset,stable)
+    prices=(await policy_reference_snapshot(did,asset,stable,record["wallet_address"])
+            if asset=="BTC" else await fetch_evm_policy_reference_rates(asset,stable))
     now=int(time.time())
     nonce=secrets.token_hex(32)
     try:
