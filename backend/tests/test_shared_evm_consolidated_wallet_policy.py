@@ -265,3 +265,28 @@ def test_wrapped_route_common_transport_and_exact_path_quote(asset,precision):
         decode_exact_path_quote(raw,hops+1)
     with pytest.raises(ValueError):
         decode_wrapped_spot_amounts(tx["data"]+"00",asset=asset,stable="USDC",side="BUY",wallet=WALLET)
+
+
+@pytest.mark.parametrize("asset",["BTC","XRP"])
+def test_wrapped_usdt_reset_is_exact_and_distinct_from_native_allowance(asset):
+    from backend.shared_evm_allowance import inspect_combined_grant_router_approval,bound_owner_router_approval_rpc
+    from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY
+    selected=dict(scope(asset,"USDT"),settlement_policy=WRAPPED_SPOT_POLICY,
+                  native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    data=kwargs([selected])
+    candidate=compose_scoped_evm_wallet_policy(**data)
+    record={"asset":asset,"stable":"USDT","wallet_address":WALLET,
+            "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER","status":"GRANT_VERIFIED",
+            "revoked_at":None,"scope":selected,"candidate_json":candidate,
+            "policy_sha256":verified_wallet_policy_digest(candidate,**data)}
+    for reset in (False,True):
+        reviewed=inspect_combined_grant_router_approval(record=record,asset=asset,
+                    side="BUY",stable="USDT",amount_atomic=1000000,now=NOW,reset=reset)
+        _,body=bound_owner_router_approval_rpc(asset=asset,stable="USDT",side="BUY",
+              wallet=WALLET,wallet_id="wallet_123456",amount_atomic=1000000,
+              wrapped_spot=True,reset=reset)
+        assert body["params"]["transaction"]["data"]==reviewed["transaction"]["data"]
+        assert int(reviewed["transaction"]["data"][-64:],16)==(0 if reset else 1000000)
+    with pytest.raises(ValueError):
+        bound_owner_router_approval_rpc(asset=asset,stable="USDT",side="BUY",
+                  wallet=WALLET,wallet_id="wallet_123456",amount_atomic=1000000)

@@ -81,7 +81,7 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
             raise ValueError("Invalid bridge approval source chain")
         route={"source_token":pair["settlement_contract"] if row["side"]=="BUY" else CROSS_COIN_CONTRACTS[row["asset"]],
                "router":DIAMOND}
-    elif native:
+    elif mode in ("THOR_FINITE","THOR_USDT_ZERO") and native:
         if (mode not in ("THOR_FINITE","THOR_USDT_ZERO")
                 or row.get("side")!="BUY" or row.get("stable") not in STABLES
                 or (row["asset"]=="XRP" and row["stable"]!="USDC")
@@ -93,7 +93,10 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
         route={"chain_id":1,"source_token":STABLES[row["stable"]],
                "router":row.get("router_address")}
     else:
-        if mode!="ROUTER02_FINITE":
+        if (mode not in ("ROUTER02_FINITE","WRAPPED_USDT_ZERO")
+                or row["asset"] in ("SOL","TRX","DOGE")
+                or (mode=="WRAPPED_USDT_ZERO" and
+                    (row["asset"] not in ("BTC","XRP") or row["side"]!="BUY" or row["stable"]!="USDT"))):
             raise ValueError("Unexpected shared EVM approval mode")
         route=_pair(row["asset"],row["stable"],row["side"])
         if route["chain_id"]!=row["chain_id"] or _num(chain_id)!=row["chain_id"]:
@@ -118,7 +121,7 @@ def _verify_approval_finality(row:dict,*,chain_id:object,
         raise ValueError("Original approved amount not finite")
     if not re.fullmatch(r"0x[0-9a-f]{40}",spender):
         raise ValueError("Invalid original approved spender")
-    approved_value=0 if mode in ("THOR_USDT_ZERO","BRIDGE_USDT_ZERO") else amount
+    approved_value=0 if mode in ("THOR_USDT_ZERO","BRIDGE_USDT_ZERO","WRAPPED_USDT_ZERO") else amount
     expected="0x095ea7b3"+f"{int(spender,16):064x}"+f"{approved_value:064x}"
     if (str(tx.get("hash","")).lower()!=hash_
             or str(receipt.get("transactionHash","")).lower()!=hash_
