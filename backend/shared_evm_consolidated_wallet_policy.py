@@ -18,6 +18,7 @@ import hashlib
 import json
 
 from .shared_evm_single_grant_policy import build_single_grant_evm_policy
+from .ethereum_stargate_staged_policy import STARGATE_STAGED_POLICY,build_stargate_staged_policy
 from .ethereum_wrapped_spot_policy import (
     WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, build_wrapped_spot_policy,
 )
@@ -58,6 +59,12 @@ def valid_scope_fields(scope):
         return False
     if set(scope)==_REQUIRED_SCOPE_FIELDS:
         return scope.get("asset") not in WRAPPED_SPOT_TOKENS
+    if scope.get("settlement_policy")==STARGATE_STAGED_POLICY:
+        caps=scope.get("bridge_fee_caps_atomic")
+        return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy","bridge_fee_caps_atomic"}
+                and scope.get("asset")=="AVAX" and scope.get("native_wrap_atomic_cap") is None
+                and scope.get("owner_max_fee_atomic")=="0" and type(caps) is dict
+                and set(caps)=={"1","43114"})
     if scope.get("settlement_policy")==WRAPPED_SPOT_POLICY:
         return (set(scope)==_REQUIRED_SCOPE_FIELDS|{"settlement_policy"}
                 and scope.get("asset") in WRAPPED_SPOT_TOKENS
@@ -71,7 +78,7 @@ def valid_scope_fields(scope):
 
 
 def is_direct_settlement_upgrade(asset,old):
-    return (asset in DIRECT_SETTLEMENT_ASSETS and valid_scope_fields(old)
+    return (asset in DIRECT_SETTLEMENT_ASSETS|{"AVAX"} and valid_scope_fields(old)
             and old.get("asset")==asset and "settlement_policy" not in old)
 
 
@@ -92,7 +99,7 @@ def changed_wallet_coin(original,target,original_revisions=None,target_revisions
     if asset in original:
         before,after=original[asset],target[asset]
         migration=(is_direct_settlement_upgrade(asset,before)
-                   and after.get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
+                   and after.get("settlement_policy")==(STARGATE_STAGED_POLICY if asset=="AVAX" else DIRECT_SETTLEMENT_POLICY)
                    and after.get("stable")==before.get("stable"))
         renewal=(valid_scope_fields(before)
                  and before.get("settlement_policy")==after.get("settlement_policy")
@@ -149,7 +156,13 @@ def compose_scoped_evm_wallet_policy(
         rule_now=now
         if allow_expired and type(args.get("expires_at")) is int:
             rule_now=min(now,args["expires_at"]-1)
-        if args.get("settlement_policy")==WRAPPED_SPOT_POLICY:
+        if args.get("settlement_policy")==STARGATE_STAGED_POLICY:
+            per_coin=build_stargate_staged_policy(stable=args["stable"],wallet=wallet,
+                owner_id=owner_id,executor_id=executor_id,now=rule_now,
+                buy_source_atomic_cap=args["buy_source_atomic_cap"],
+                sell_source_atomic_cap=args["sell_source_atomic_cap"],
+                bridge_fee_caps_atomic=args["bridge_fee_caps_atomic"],expires_at=args["expires_at"])
+        elif args.get("settlement_policy")==WRAPPED_SPOT_POLICY:
             per_coin=build_wrapped_spot_policy(
                 asset=asset,stable=args["stable"],wallet=wallet,
                 owner_id=owner_id,executor_id=executor_id,now=rule_now,

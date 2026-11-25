@@ -139,6 +139,12 @@ def test_first_original_wallet_draft_one_signer_per_user_budget(
         assert scope["settlement_policy"]=="ETHEREUM_ACROSS_DIRECT_V1"
         assert scope["native_wrap_atomic_cap"] is None
         assert scope["owner_max_fee_atomic"]=="0"
+    elif asset=="AVAX":
+        assert result["scope_rules_count"]==8
+        assert scope["settlement_policy"]=="ETHEREUM_STARGATE_STAGED_V1"
+        assert scope["native_wrap_atomic_cap"] is None
+        assert scope["bridge_fee_caps_atomic"]=={"1":"480000000000000000","43114":"24000000000000000000"}
+        assert scope["owner_max_fee_atomic"]=="0"
     else:
         assert (result["scope_rules_count"]==7)==native
         assert (scope["native_wrap_atomic_cap"] is not None)==native

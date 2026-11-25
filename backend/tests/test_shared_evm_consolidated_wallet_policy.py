@@ -408,3 +408,35 @@ def test_explicit_durable_scope_preserves_every_non_time_condition(asset):
         assert new["conditions"]==expected
         assert new["conditions"]
     assert verified_wallet_policy_digest(result,**args)!=verified_wallet_policy_digest(base,**kwargs([original]))
+
+
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+def test_avax_staged_policy_preserves_sibling_and_binds_both_legs(stable):
+    from backend.ethereum_stargate_staged_policy import (
+        STARGATE_STAGED_POLICY, bridge_transaction, inspect_staged_bridge_transaction, CONFIG)
+    from backend.shared_evm_consolidated_wallet_policy import (
+        durable_wallet_scope, changed_wallet_coin, valid_scope_fields)
+    original=scope("AVAX",stable,native=True)
+    sibling=scope("LINK")
+    staged=durable_wallet_scope(dict(original,settlement_policy=STARGATE_STAGED_POLICY,
+                native_wrap_atomic_cap=None,owner_max_fee_atomic="0",
+                bridge_fee_caps_atomic={"1":"10000000000000000","43114":"100000000000000000"}))
+    assert valid_scope_fields(staged)
+    assert changed_wallet_coin({"AVAX":original,"LINK":sibling},
+            {"AVAX":staged,"LINK":sibling},{"AVAX":1,"LINK":2},{"AVAX":1,"LINK":2})=="AVAX"
+    policy=compose_scoped_evm_wallet_policy(**kwargs([staged,sibling]))
+    assert [r for r in policy["rules"] if r["name"].startswith("MiniNex LINK ")]==(
+        compose_scoped_evm_wallet_policy(**kwargs([sibling]))["rules"])
+    assert verified_wallet_policy_digest(policy,**kwargs([staged,sibling]))
+    for side,chain in (("BUY",1),("SELL",43114)):
+        args=dict(stable=stable,side=side,wallet=WALLET,
+                  amount_atomic=1000000,min_out_atomic=990000,native_fee_atomic=1000)
+        tx=bridge_transaction(**args)
+        assert tx["chainId"]==chain
+        assert tx["to"].lower()==CONFIG[chain]["pools"][stable].lower()
+        assert inspect_staged_bridge_transaction(tx,scope=staged,**args)==tx
+        for bad in (dict(tx,data=tx["data"]+"00"),dict(tx,to=TREASURY),dict(tx,value="1001")):
+            with pytest.raises(ValueError):
+                inspect_staged_bridge_transaction(bad,scope=staged,**args)
+        with pytest.raises(ValueError):
+            inspect_staged_bridge_transaction(tx,scope=staged,**dict(args,amount_atomic=100000001))

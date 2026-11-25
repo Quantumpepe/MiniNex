@@ -413,7 +413,7 @@ def _load_reconcilable_claim(did,nonce):
     args=dict(
         wallet=saved["wallet_address"],owner_id=saved["owner_id"],
         executor_id=saved["signer_id"],
-        scopes=list(saved["target_scopes_json"].values()),now=int(time.time()),
+        scopes=list(saved["target_scopes_json"].values()),now=int(time.time()),allow_expired=True,
     )
     try:
         policy=compose_scoped_evm_wallet_policy(**args)

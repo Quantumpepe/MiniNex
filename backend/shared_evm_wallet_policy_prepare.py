@@ -35,7 +35,7 @@ from .shared_evm_policy_reference_rates import (
 from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy, verified_wallet_policy_digest,
-    DIRECT_SETTLEMENT_ASSETS,DIRECT_SETTLEMENT_POLICY,durable_wallet_scope,
+    DIRECT_SETTLEMENT_ASSETS,DIRECT_SETTLEMENT_POLICY,durable_wallet_scope,STARGATE_STAGED_POLICY,
 )
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
@@ -148,6 +148,22 @@ def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
                 "buy_source_atomic_cap":str(buy),"sell_source_atomic_cap":str(sell),
                 "native_wrap_atomic_cap":None,"owner_max_fee_atomic":"0",
                 "settlement_policy":WRAPPED_SPOT_POLICY})
+    if asset=="AVAX":
+        caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
+            budget_usd=amount,snapshot=snapshot,now=now)
+        with localcontext() as ctx:
+            ctx.prec=100
+            budget=Decimal(str(amount))
+            fees={chain:str(int((budget/_price(snapshot,coin,now)*10**18)
+                 .to_integral_value(rounding=ROUND_FLOOR))) for chain,coin in (("1","ETH"),("43114","AVAX"))}
+            if any(not 0<int(v)<10**45 for v in fees.values()):
+                raise ValueError("Selected AVAX budget cannot cover bridge fee scope")
+        return durable_wallet_scope({"asset":asset,"stable":stable,
+            "treasury":owner_fee_treasury(asset="ETH",stable=stable),
+            "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
+            "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
+            "native_wrap_atomic_cap":None,"owner_max_fee_atomic":"0",
+            "settlement_policy":STARGATE_STAGED_POLICY,"bridge_fee_caps_atomic":fees})
     if asset in DIRECT_SETTLEMENT_ASSETS:
         caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
             budget_usd=amount,snapshot=snapshot,now=now)

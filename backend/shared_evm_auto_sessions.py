@@ -70,6 +70,11 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
                FROM mininex_extra_coin_preferences
                WHERE privy_did=%s AND asset=%s FOR UPDATE""",(did,asset))
         settings=cur.fetchone()
+    if central and asset=="AVAX":
+        # This policy is now publishable through the same Start Trade grant
+        # lifecycle. Do not claim ACTIVE until the staged bridge/swap worker
+        # can durably reconcile both legs and final Ethereum settlement.
+        raise HTTPException(409,"AVAX staged Ethereum settlement executor not connected")
     if central and record.get("scope",{}).get("settlement_policy")=="ETHEREUM_ACROSS_DIRECT_V1":
         from .ethereum_settlement_plan import settlement_route
         pair={"chain_id":settlement_route(asset,"BUY",record["stable"])["destination_chain_id"]}
