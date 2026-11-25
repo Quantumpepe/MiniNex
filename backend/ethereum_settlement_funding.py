@@ -30,10 +30,13 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
         finalized=[row for row in rows if row["unit"]=="FINALIZED_PROFIT_INPUT"]
         pending=[row for row in rows if row["unit"]!="FINALIZED_PROFIT_INPUT"]
         valuations=[v for v in calculate_realized_net(hydrate_net_rows(finalized)) if v["stable"]==stable]
-        reserve_by_asset={}
+        reserve_by_asset={};gross_by_asset={}
         gross=net=fee=provisional=unmatched=0
         for v in valuations:
-            gross+=int(v["provisional_gross_hold_atomic"])
+            original_gross=int(v["provisional_gross_hold_atomic"])
+            gross+=original_gross
+            if original_gross:
+                gross_by_asset[v["asset"]]=gross_by_asset.get(v["asset"],0)+original_gross
             unmatched+=int(v["unmatched_inventory"])
             held=int(v["retained_profit_atomic"])
             if held:
@@ -74,7 +77,8 @@ def summarize_pending_funding(rows,*,asset,stable,stable_usd):
         return {"pending_wallet_stable_atomic":str(wallet_atomic+retained),
                 "pending_order_stable_atomic":str(wallet_atomic),
                 "protected_profit_gross_atomic":str(gross),
-                "protected_profit_by_asset_atomic":{a:str(v) for a,v in reserve_by_asset.items()},
+                "protected_profit_by_asset_atomic":{a:str(v) for a,v in gross_by_asset.items()},
+                "protected_profit_retained_by_asset_atomic":{a:str(v) for a,v in reserve_by_asset.items()},
                 "protected_profit_retained_atomic":str(retained),
                 "protected_profit_net_atomic":str(net),
                 "protected_fee_due_atomic":str(fee),

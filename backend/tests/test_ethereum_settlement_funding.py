@@ -142,6 +142,7 @@ def test_verified_net_reserve_includes_fee_without_double_counting():
     rows=[fill("a","BUY","100","1","USDT"),fill("b","SELL","1","120","USDC")]
     r=summarize_pending_funding(rows,asset="LINK",stable="USDC",stable_usd="1")
     assert r["protected_profit_net_atomic"]=="16000000"
+    assert r["protected_profit_retained_by_asset_atomic"]=={"LINK":"16000000"}
     assert r["protected_fee_due_atomic"]=="800000"
     assert r["protected_saved_net_atomic"]=="15200000"
     assert r["pending_wallet_stable_atomic"]=="16000000"

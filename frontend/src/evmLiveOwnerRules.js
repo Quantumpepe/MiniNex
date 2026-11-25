@@ -100,8 +100,11 @@ export function validNetValuation(value,fill){
      value.fill_key!==(fill.ethereum_settlement_verified===true?fill.intent_key:fill.tx_hash)||
      value.payment_authorized!==false||typeof value.net_verified!=='boolean')return false;
   if(!value.net_verified)return value.realized_net_usd===null&&value.fee_due_stable_atomic===null;
-  return typeof value.realized_net_usd==='string'&&/^-?[0-9]+\.[0-9]{12}$/.test(value.realized_net_usd)&&
-    typeof value.fee_due_stable_atomic==='string'&&/^[0-9]+$/.test(value.fee_due_stable_atomic);
+  return typeof value.realized_net_usd==='string'&&value.realized_net_usd.length<=96&&
+    /^-?[0-9]+\.[0-9]{12}$/.test(value.realized_net_usd)&&
+    typeof value.fee_due_stable_atomic==='string'&&value.fee_due_stable_atomic.length<=78&&
+    /^(?:0|[1-9][0-9]*)$/.test(value.fee_due_stable_atomic)&&
+    (!value.realized_net_usd.startsWith('-')||value.fee_due_stable_atomic==='0');
 }
 
 export function validEvmFinalizedFills(data,asset){
