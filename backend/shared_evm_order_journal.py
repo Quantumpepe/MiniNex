@@ -103,9 +103,14 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
              + (SELECT COUNT(*) FROM mininex_avax_staged_steps
                 WHERE privy_did=%s AND chain_id=%s
                   AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))
+             + (SELECT COUNT(*) FROM mininex_ethereum_settlement_submissions s
+                WHERE s.privy_did=%s AND s.source_chain_id=%s
+                  AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                  AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f
+                                  WHERE f.quote_id=s.quote_id))
              AS pending""",
         (did,pair["chain_id"],did,pair["chain_id"],
-         did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
+         did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
     row=cur.fetchone()
     if type(row) is not dict or type(row.get("pending")) is not int:
         raise HTTPException(503,"Cannot verify pending EVM submissions")
