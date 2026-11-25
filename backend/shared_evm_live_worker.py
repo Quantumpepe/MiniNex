@@ -108,6 +108,7 @@ def owner_started_evm_sessions(limit:int=20)->list[dict]:
                            AND c.scopes_json ? s.asset
                            AND c.revisions_json->>s.asset=s.budget_revision::text)
                              AS central,
+                          c.scopes_json->s.asset->>'settlement_policy' AS settlement_policy,
                           COALESCE((
                               SELECT SUM(r.amount_usd)
                               FROM mininex_live_evm_budget_reservations r
@@ -284,6 +285,11 @@ async def execute_owner_evm_live_tick(
     if asset=="AVAX":
         from .ethereum_stargate_staged_worker import advance_avax_order
         existing=await advance_avax_order(did,row=row,client=client)
+        if existing is not None:
+            return existing
+    if asset in ("BNB","POL","ARB") and row.get("settlement_policy")=="ETHEREUM_ACROSS_STAGED_V1":
+        from .ethereum_across_staged_worker import advance_across_order
+        existing=await advance_across_order(did,row=row,client=client)
         if existing is not None:
             return existing
     if exiting:
@@ -557,6 +563,14 @@ class SharedEvmLiveWorker:
                 raise
             except Exception:
                 LOG.exception("Original AVAX staged finality unavailable")
+            try:
+                from .ethereum_across_staged_worker import reconcile_across_staged_steps_once
+                async with httpx.AsyncClient(timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                    await reconcile_across_staged_steps_once(client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("Original Across staged finality unavailable")
 
     async def _run(self)->None:
         while True:

@@ -90,6 +90,14 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
         return await start_avax_staged_order(did=did,side=side,stable=stable,
             budget_revision=budget_revision,amount=amount,client=client,budget_usd=budget_usd,record=record,
             session_started_at=session_started_at,signal_time=now)
+    from .ethereum_across_staged_plan import STAGED_ACROSS_POLICY,STAGED_ACROSS_ASSETS
+    if asset in STAGED_ACROSS_ASSETS and record.get("scope",{}).get("settlement_policy")==STAGED_ACROSS_POLICY:
+        if session_started_at is None:
+            return {"asset":asset,"state":"STAGED_SESSION_REQUIRED","can_submit":False}
+        from .ethereum_across_staged_worker import start_across_staged_order
+        return await start_across_staged_order(did=did,asset=asset,side=side,stable=stable,
+            budget_revision=budget_revision,amount=amount,client=client,budget_usd=budget_usd,
+            session_started_at=session_started_at,signal_time=now)
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
     direct_scope=record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
     quote=await get_ethereum_cross_evm_quote(did,route["source_asset"],route["destination_asset"],amount,

@@ -173,6 +173,9 @@ def _post_buy_claim_locked(
              + (SELECT COUNT(*) FROM mininex_avax_staged_steps
                WHERE privy_did=%s AND chain_id=%s AND state IN
                  ('SENDING','SUBMITTED','UNCERTAIN'))
+             + (SELECT COUNT(*) FROM mininex_across_staged_steps
+               WHERE privy_did=%s AND chain_id=%s AND state IN
+                 ('SENDING','SUBMITTED','UNCERTAIN'))
              + (SELECT COUNT(*) FROM mininex_ethereum_settlement_submissions s
                WHERE s.privy_did=%s AND s.source_chain_id=%s AND s.state IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
@@ -181,7 +184,7 @@ def _post_buy_claim_locked(
                WHERE privy_did=%s AND chain_id=%s AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              AS pending""",
-        (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
+        (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
     other=cur.fetchone()
     if type(other) is not dict or other.get("pending")!=0:
         raise HTTPException(409,"Same-network wallet transaction unresolved")

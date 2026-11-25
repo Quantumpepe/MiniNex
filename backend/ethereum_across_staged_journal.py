@@ -53,8 +53,8 @@ def exact_stage_amount(order):
         amount=int(order["original_input_atomic"])
         cap=int(scope["buy_source_atomic_cap" if side=="BUY" else "sell_source_atomic_cap"])
     elif stage==2:
-        amount=int(order["remaining_atomic"])
         cap=int(scope["transit_atomic_cap"])
+        amount=min(int(order["remaining_atomic"]),cap)
     else:
         raise ValueError("Invalid original stage")
     if not 0<amount<=cap:
@@ -289,6 +289,8 @@ def claim_step(did,order_id,record,prepared,*,expected_updated_at):
                 cur.execute("UPDATE mininex_across_staged_orders SET state='CANCELLED',updated_at=now() WHERE order_id=%s",(order_id,))
                 return None
             kind,tx=check_stage_prepared(order,prepared,int(time.time()))
+            if kind=="APPROVAL":
+                prepared={**prepared,"approval":tx}
             _lock_chain(cur,did,tx["chainId"])
             url="https://api.privy.io/v1/wallets/"+record["wallet_id"]+"/rpc"
             body={"method":"eth_sendTransaction","caip2":"eip155:"+str(tx["chainId"]),
@@ -337,7 +339,10 @@ def _complete_parent_locked(cur,order):
         AND kind IN ('SWAP','BRIDGE') AND state='FINALIZED'
         ORDER BY stage,created_at,step_id""",(order["order_id"],))
     steps=cur.fetchall()
-    if len(steps)!=2 or steps[0]["stage"]!=1 or steps[1]["stage"]!=2:
+    if (len(steps)<2 or steps[0]["stage"]!=1 or any(s["stage"]!=2 for s in steps[1:])
+            or sum(int(stage_evidence(s["prepared"])["input_atomic"]) for s in steps[1:])
+               !=int(steps[0]["proof"]["received_atomic"])
+            or sum(int(s["proof"]["received_atomic"]) for s in steps[1:])!=int(order["final_received_atomic"])):
         raise ValueError("Original two-leg Across fills missing")
     first,last=steps[0],steps[-1]
     bridge=next(s for s in steps if s["kind"]=="BRIDGE")

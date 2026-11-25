@@ -254,12 +254,16 @@ def _claim_native_sell_locked(
                       WHERE privy_did=%s AND chain_id=%s AND state IN
                        ('SENDING','SUBMITTED','UNCERTAIN')
                      UNION ALL
+                     SELECT 1 FROM mininex_across_staged_steps
+                      WHERE privy_did=%s AND chain_id=%s AND state IN
+                       ('SENDING','SUBMITTED','UNCERTAIN')
+                     UNION ALL
                      SELECT 1 FROM mininex_ethereum_settlement_submissions s
                       WHERE s.privy_did=%s AND s.source_chain_id=%s AND s.state IN
                        ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
                       AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=s.quote_id)
                    ) AS shared_wallet_nonce""",
-                (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
+                (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
         else:
             cur.execute(
                 f"""SELECT COUNT(*) AS pending FROM {table}

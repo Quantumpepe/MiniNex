@@ -147,6 +147,8 @@ def _claim_once_locked(
     ):
         staged=(" + (SELECT COUNT(*) FROM mininex_avax_staged_steps"
                 " WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))"
+                " + (SELECT COUNT(*) FROM mininex_across_staged_steps"
+                " WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))"
                 " + (SELECT COUNT(*) FROM mininex_ethereum_settlement_submissions s"
                 " WHERE s.privy_did=%s AND s.source_chain_id=%s"
                 " AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')"
@@ -156,7 +158,7 @@ def _claim_once_locked(
             f"""SELECT (SELECT COUNT(*) FROM {table}
                 WHERE privy_did=%s AND chain_id=%s AND status IN
                 ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))"""+staged+" AS pending",
-            (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]) if staged else (did,pair["chain_id"]))
+            (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]) if staged else (did,pair["chain_id"]))
         pending=cur.fetchone()
         if type(pending) is not dict or pending.get("pending")!=0:
             raise HTTPException(409,"Earlier same-chain wallet send unresolved")

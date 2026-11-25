@@ -59,7 +59,8 @@ def test_five_evm_assets_have_independent_bound_durable_send_identity(
     assert len(cur.sql)==(5 if chain==1 else 7)
     assert "FOR UPDATE" in cur.sql[0][0]
     assert "chain_id=%s" in cur.sql[1][0]
-    assert cur.sql[1][1]==(DID,chain,DID,chain,DID,chain,DID,chain,DID,chain,DID,chain)
+    assert cur.sql[1][1]==(DID,chain,DID,chain,DID,chain,DID,chain,DID,chain,DID,chain,DID,chain)
+    assert "mininex_across_staged_steps" in cur.sql[1][0]
     assert "mininex_avax_staged_steps" in cur.sql[1][0]
     assert "mininex_ethereum_settlement_submissions" in cur.sql[1][0]
     assert "mininex_ethereum_settlement_finality" in cur.sql[1][0]

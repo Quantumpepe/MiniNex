@@ -144,7 +144,9 @@ def _lock_chain(cur,did,chain):
         WHERE s.privy_did=%s AND s.source_chain_id=%s
           AND s.state IN ('SENDING','RECONCILIATION_REQUIRED','SUBMITTED')
           AND NOT EXISTS(SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=s.quote_id)
-        LIMIT 1""",(did,chain,did,chain))
+        UNION ALL SELECT 1 FROM mininex_across_staged_steps
+        WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN')
+        LIMIT 1""",(did,chain,did,chain,did,chain))
     if cur.fetchone():
         raise HTTPException(409,"Earlier owner bridge send unresolved")
     if chain==1:

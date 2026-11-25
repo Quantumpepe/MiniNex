@@ -134,6 +134,8 @@ def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd
                           "mininex_live_evm_native_sell_intents"):
                 staged=(" UNION ALL SELECT 1 FROM mininex_avax_staged_steps "
                         "WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN')"
+                        " UNION ALL SELECT 1 FROM mininex_across_staged_steps"
+                        " WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN')"
                         " UNION ALL SELECT 1 FROM mininex_ethereum_settlement_submissions s"
                         " WHERE s.privy_did=%s AND s.source_chain_id=%s"
                         " AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')"
@@ -141,7 +143,7 @@ def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd
                         if table=="mininex_live_evm_router_approval_sends" else "")
                 cur.execute(f"""SELECT 1 FROM {table} WHERE privy_did=%s AND chain_id=%s
                     AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')"""+staged+" LIMIT 1",
-                    (did,chain,did,chain,did,chain) if staged else (did,chain))
+                    (did,chain,did,chain,did,chain,did,chain) if staged else (did,chain))
                 if cur.fetchone() is not None:
                     raise HTTPException(409,"Earlier same-chain wallet send unresolved")
             if chain==1:
