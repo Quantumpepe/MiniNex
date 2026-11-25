@@ -43,8 +43,9 @@ def protected_profit_atomic(rows,*,stable):
         if (asset not in COIN_NETWORKS or row["stable"]!=stable
                 or side not in ("BUY","SELL") or type(wallet) is not str or not wallet
                 or type(row["automatic"]) is not bool
-                or row["family"] not in ("ETHEREUM","CROSS_EVM","NATIVE")
-                or row["family"]!=COIN_NETWORKS[asset][3]
+                or row["family"] not in (
+                    (COIN_NETWORKS[asset][3],"WRAPPED_SPOT")
+                    if asset in ("BTC","XRP","SOL","TRX") else (COIN_NETWORKS[asset][3],))
                 or not row["fill_key"]):
             raise ValueError("Original confirmed profit scope differs")
         key=(row["family"],asset,row["fill_key"])
@@ -52,7 +53,9 @@ def protected_profit_atomic(rows,*,stable):
             raise ValueError("Duplicate original profit fill")
         seen.add(key)
         source=_exact(row["source_amount"]);dest=_exact(row["destination_amount"])
-        q=lots[(asset,wallet)]
+        # A native-chain position and an Ethereum token position are
+        # independent inventories even if a wallet string happens to match.
+        q=lots[(asset,row["family"],wallet)]
         if side=="BUY":
             if row["automatic"]:
                 q.append([dest,source])
@@ -84,7 +87,9 @@ PROFIT_FILLS_SQL="""SELECT asset,stable,side,source_amount,destination_amount,
         coin_wallet,family,fill_key,automatic,settled_at
     FROM (
       SELECT f.asset,f.stable,f.side,f.source_amount,f.destination_amount,
-        lower(f.wallet_address) AS coin_wallet,'ETHEREUM' AS family,
+        lower(f.wallet_address) AS coin_wallet,
+        CASE WHEN f.asset IN ('BTC','XRP','SOL','TRX') THEN 'WRAPPED_SPOT'
+          ELSE 'ETHEREUM' END AS family,
         f.tx_hash AS fill_key,TRUE AS automatic,f.created_at AS settled_at
       FROM mininex_live_evm_verified_fills f
       WHERE f.privy_did=%(did)s AND f.stable=%(stable)s AND f.chain_id=1
@@ -106,7 +111,7 @@ PROFIT_FILLS_SQL="""SELECT asset,stable,side,source_amount,destination_amount,
       SELECT q.asset,q.stable,q.side,
         q.input_atomic * CASE WHEN q.side='BUY' THEN 0.000001::numeric ELSE 0.000000000000000001::numeric END,
         f.received_atomic * CASE WHEN q.side='BUY' THEN 0.000000000000000001::numeric ELSE 0.000001::numeric END,
-        lower(q.wallet_address),'CROSS_EVM',f.source_tx_hash,
+        lower(q.wallet_address),'CROSS_EVM',q.quote_id::text,
         EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
           WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
             AND s.state='SUBMITTED' AND s.source_tx_hash=f.source_tx_hash),

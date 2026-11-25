@@ -103,3 +103,29 @@ def test_existing_across_buy_reservation_is_rechecked_not_double_counted():
     assert "mininex_across_staged_orders" in cur.sql
     with pytest.raises(HTTPException):
         assert_reserved_ethereum_funds_locked(cur,**kw,balance_atomic=9_999_999)
+
+
+@pytest.mark.parametrize("asset",["BTC","XRP","SOL","TRX"])
+def test_wrapped_spot_profit_does_not_block_shared_funding(asset):
+    def fill(key,side,source,dest,family="WRAPPED_SPOT"):
+        return dict(asset=asset,stable="USDC",unit="FINALIZED_PROFIT_INPUT",
+            family=family,coin_wallet="same-owner",fill_key=key,side=side,
+            source_amount=source,destination_amount=dest,automatic=True)
+    rows=[fill("native-buy","BUY","1000","1","NATIVE"),
+          fill("wrapped-buy","BUY","100","1"),
+          fill("wrapped-sell","SELL","1","150"),
+          fill("native-sell","SELL","1","1200","NATIVE")]
+    report=summarize_pending_funding(rows,asset="ETH",stable="USDC",stable_usd="1")
+    assert report["protected_profit_gross_atomic"]=="250000000"
+    assert report["pending_wallet_stable_atomic"]=="250000000"
+    assert report["unmatched_profit_sells"]==0
+    # The same wallet text does not make native units available for a token SELL.
+    report=summarize_pending_funding([rows[0],rows[2]],asset="ETH",stable="USDC",stable_usd="1")
+    assert report["protected_profit_gross_atomic"]=="0"
+    assert report["unmatched_profit_sells"]==1
+
+
+def test_profit_sql_uses_wrapped_spot_family_and_unique_cross_parent():
+    from backend.realized_profit_reserve import PROFIT_FILLS_SQL
+    assert "THEN 'WRAPPED_SPOT'" in PROFIT_FILLS_SQL
+    assert "'CROSS_EVM',q.quote_id::text" in PROFIT_FILLS_SQL

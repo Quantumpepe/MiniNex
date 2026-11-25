@@ -209,14 +209,14 @@ async def reconcile_direct_taxi(client,*,prepared,source_hash,destination_hash=N
     gas=_num(receipt["gasUsed"])*_num(receipt["effectiveGasPrice"])
     status=_num(receipt["status"])
     if status==0:
-        return {"state":"SOURCE_REVERTED","source_gas_atomic":str(gas)}
+        return {"state":"SOURCE_REVERTED","source_hash":source_hash.lower(),"source_gas_atomic":str(gas)}
     if status!=1:
         raise ValueError("Unexpected source receipt status")
     guid,credited=_source_event(receipt["logs"],side=side,stable=stable,
                           wallet=wallet,amount=amount,minimum=minimum)
     pending={"state":"DESTINATION_PENDING","guid":"0x"+guid.hex(),
              "source_gas_atomic":str(gas),"source_hash":source_hash.lower(),
-             "expected_credit_atomic":str(credited)}
+             "native_bridge_fee_atomic":str(fee),"expected_credit_atomic":str(credited)}
     if destination_hash is None:
         return pending
     if not isinstance(destination_hash,str) or not _HASH.fullmatch(destination_hash):
@@ -358,7 +358,7 @@ async def reconcile_staged_swap(client,*,prepared,tx_hash):
     gas=_num(receipt["gasUsed"])*_num(receipt["effectiveGasPrice"])
     status=_num(receipt["status"])
     if status==0:
-        return {"state":"SOURCE_REVERTED","source_gas_atomic":str(gas)}
+        return {"state":"SOURCE_REVERTED","source_hash":tx_hash.lower(),"source_gas_atomic":str(gas)}
     if status!=1:
         raise ValueError("Invalid staged swap receipt")
     spent=-_net_token_credit(receipt["logs"],source,wallet)

@@ -315,7 +315,9 @@ def _complete_parent_locked(cur,order):
         AND kind IN ('SWAP','BRIDGE') AND state='FINALIZED'
         ORDER BY stage,created_at,step_id""",(order["order_id"],))
     steps=cur.fetchall()
-    if not steps or steps[0]["stage"]!=1 or steps[-1]["stage"]!=2:
+    if (len(steps)<2 or steps[0]["stage"]!=1 or any(s["stage"]!=2 for s in steps[1:])
+            or sum(int(s["prepared"]["input_atomic"]) for s in steps[1:])!=int(steps[0]["proof"]["received_atomic"])
+            or sum(int(s["proof"]["received_atomic"]) for s in steps[1:])!=int(order["final_received_atomic"])):
         raise ValueError("Original two-leg AVAX fills missing")
     first,last=steps[0],steps[-1]
     bridge=next(s for s in steps if s["kind"]=="BRIDGE")
@@ -344,7 +346,10 @@ def _complete_parent_locked(cur,order):
          first["request_sha256"],first["tx_hash"]))
     # The parent source gas is only in the source chain's native units.
     # Never sum ETH and AVAX gas atomics into a fictitious single fee.
-    source_gas=sum(int(s["proof"]["source_gas_atomic"]) for s in steps if s["chain_id"]==route["source_chain_id"])
+    cur.execute("""SELECT chain_id,proof FROM mininex_avax_staged_steps
+        WHERE order_id=%s AND state IN ('FINALIZED','REVERTED') AND proof IS NOT NULL""",(order["order_id"],))
+    source_gas=sum(int(s["proof"]["source_gas_atomic"]) for s in cur.fetchall()
+                   if s["chain_id"]==route["source_chain_id"])
     cur.execute("""INSERT INTO mininex_ethereum_settlement_finality
         (quote_id,privy_did,source_chain_id,destination_chain_id,source_tx_hash,destination_tx_hash,
          bridge_deposit_id,received_atomic,source_gas_atomic,outcome)
@@ -364,17 +369,26 @@ def record_step_proof(step,proof,scan_block=None):
             cur.execute("SELECT * FROM mininex_avax_staged_steps WHERE step_id=%s FOR UPDATE",(step["step_id"],))
             current=cur.fetchone()
             if (not order or order["state"]!="OPEN" or not current or current["state"] not in ("SUBMITTED","SOURCE_FINALIZED")
-                    or current["tx_hash"]!=step["tx_hash"] or order["stage"]!=current["stage"]):
+                    or current["tx_hash"]!=step["tx_hash"] or order["stage"]!=current["stage"]
+                    or current["privy_did"]!=did or order["privy_did"]!=did
+                    or current["order_id"]!=order["order_id"] or current["kind"]!=step["kind"]):
                 return False
             status=proof["state"]
             if status in ("SOURCE_PENDING","DESTINATION_PENDING"):
                 if status=="DESTINATION_PENDING" and current["kind"]=="BRIDGE":
+                    if proof.get("source_hash")!=current["tx_hash"]:
+                        raise ValueError("Original AVAX bridge source hash differs")
+                    previous=current.get("proof") or {}
+                    if previous.get("guid") is not None and previous["guid"]!=proof.get("guid"):
+                        raise ValueError("Original AVAX bridge GUID changed")
                     cur.execute("""UPDATE mininex_avax_staged_steps SET state='SOURCE_FINALIZED',
-                        proof=%s,scan_block=COALESCE(%s,scan_block),updated_at=now() WHERE step_id=%s""",
+                        proof=%s,scan_block=GREATEST(scan_block,%s),updated_at=now() WHERE step_id=%s""",
                         (Jsonb(proof),scan_block,step["step_id"]))
                 else:
                     cur.execute("UPDATE mininex_avax_staged_steps SET updated_at=now() WHERE step_id=%s",(step["step_id"],))
                 return True
+            if proof.get("source_hash")!=current["tx_hash"]:
+                raise ValueError("Original AVAX stage source hash differs")
             if status=="SOURCE_REVERTED":
                 cur.execute("UPDATE mininex_avax_staged_steps SET state='REVERTED',proof=%s,updated_at=now() WHERE step_id=%s",
                             (Jsonb(proof),step["step_id"]))
