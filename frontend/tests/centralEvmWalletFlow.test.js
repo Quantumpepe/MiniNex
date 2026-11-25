@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  authorizeCentralEvmWalletCoin,centralWalletHasCoin,validCentralWalletStatus,
+  authorizeCentralEvmWalletCoin,centralWalletHasCoin,centralWalletCanExitCoin,validCentralWalletStatus,
 } from '../src/centralEvmWalletFlow.js';
 
 const wallet='0x'+'a'.repeat(40);
@@ -229,7 +229,7 @@ test('refuse to count an EVM wallet policy as LIVE trading permission',()=>{
 
 test('legacy POL policy migrates with one signature and preserves existing coin scopes',async()=>{
   const old=scopeStatus(['LINK','POL']);
-  const current={...old,settlement_policy_by_asset:{LINK:null,POL:'ETHEREUM_ACROSS_DIRECT_V1'}};
+  const current={...old,settlement_policy_by_asset:{LINK:null,POL:'ETHEREUM_ACROSS_STAGED_V1'}};
   const stage={...challenge(),asset:'POL',scope_coins:['LINK','POL'],
     challenge:challenge().challenge.replace('New or changed coins: QNT','New or changed coins: POL')};
   const result={...applied(),new_coin:'POL',scope_coins:['LINK','POL']};
@@ -245,7 +245,7 @@ test('legacy POL policy migrates with one signature and preserves existing coin 
 });
 
 test('first BNB bridge grant has no fee authority and needs only one signer prompt',async()=>{
-  const policy='ETHEREUM_ACROSS_DIRECT_V1';
+  const policy='ETHEREUM_ACROSS_STAGED_V1';
   const states=[scopeStatus([],'NOT_CONFIGURED'),{...draft(),asset:'BNB'},
     {...published(),asset:'BNB'},{...offer(),asset:'BNB',settlement_policy:policy,fee_scope:null},
     confirmed(),{...scopeStatus(['BNB']),settlement_policy_by_asset:{BNB:policy}}];
@@ -309,3 +309,25 @@ test('renew only changed coin with one signature; other current coin still works
   assert.equal(i,5);
   assert.equal(centralWalletHasCoin(result,'QNT'),true);
 });
+
+
+for(const asset of ['BNB','POL','ARB']){
+  test(asset+' previous direct grant can exit but new Start needs staged consent',async()=>{
+    const old={...scopeStatus(['LINK',asset]),settlement_policy_by_asset:{[asset]:'ETHEREUM_ACROSS_DIRECT_V1'}};
+    const current={...old,settlement_policy_by_asset:{[asset]:'ETHEREUM_ACROSS_STAGED_V1'}};
+    assert.equal(centralWalletHasCoin(old,asset),false);
+    assert.equal(centralWalletCanExitCoin(old,asset),true);
+    assert.equal(centralWalletCanExitCoin({...old,remote_policy_exactly_verified:false},asset),false);
+    assert.equal(centralWalletHasCoin(current,asset),true);
+    const stage={...challenge(),asset,scope_coins:['LINK',asset],
+      challenge:challenge().challenge.replace('New or changed coins: QNT','New or changed coins: '+asset)};
+    const states=[old,stage,extendConfirmed(),{...applied(),new_coin:asset,scope_coins:['LINK',asset]},current];
+    let i=0,prompts=0;
+    const result=await authorizeCentralEvmWalletCoin(options(async()=>states[i++],{
+      asset,signMessage:async()=>{prompts++;return {signature:'0x'+'f'.repeat(130)};},
+    }));
+    assert.equal(prompts,1);
+    assert.equal(i,5);
+    assert.equal(centralWalletHasCoin(result,asset),true);
+  });
+}

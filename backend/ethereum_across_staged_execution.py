@@ -204,7 +204,7 @@ async def reconcile_staged_across_bridge(client,*,terms,source_hash,destination_
     received=_net_token_credit(target["logs"],terms["destination_token"],wallet)
     proof=prove_across_pair(receipt["logs"],target["logs"],src=src,dst=dst,wallet=wallet,
         route=review,received=received)
-    if not proof or received!=review["direct_output_atomic"]:
+    if not proof or received!=review["direct_output_atomic"] or received<int(terms["minimum_output_atomic"]):
         raise ValueError("No original direct bridge fill proved")
     return {**pending,**proof,"state":"BRIDGE_CREDIT_VERIFIED","destination_hash":destination_hash.lower(),
             "received_atomic":str(received),"destination_credit_verified":True}

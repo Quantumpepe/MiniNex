@@ -2,7 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {useSigners,useSignMessage} from '@privy-io/react-auth';
 import {
   authorizeCentralEvmWalletCoin,validCentralWalletStatus,
-  centralWalletHasCoin,
+  centralWalletHasCoin,centralWalletCanExitCoin,
 } from './centralEvmWalletFlow.js';
 import {API_BASE,formatAssetQuantity} from './data.js';
 import {
@@ -343,7 +343,7 @@ export default function EvmLiveOwnerControls({
           {t.open} · {asset}
         </button>}
     {['ACTIVE','PAUSED'].includes(sessionStatus)&&['BNB','POL','AVAX','ARB','LINK','QNT','UNI'].includes(asset)&&
-      centralWalletHasCoin(centralStatus,asset)&&
+      centralWalletCanExitCoin(centralStatus,asset)&&
       <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
         disabled={busy} onClick={exitTrade}>{t.exit}</button>}
     {!['ACTIVE','EXIT_PENDING'].includes(sessionStatus)&&

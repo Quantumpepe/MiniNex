@@ -6,7 +6,8 @@ const ID=/^[A-Za-z0-9_-]{6,160}$/;
 const SHA=/^[a-f0-9]{64}$/;
 const COINS=Object.freeze(['ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP','SOL','TRX']);
 const MODE='MININEX_ORIGINAL_EVM_WALLET_POLICY_READONLY_STATUS';
-const DIRECT_POLICY='ETHEREUM_ACROSS_DIRECT_V1';
+const DIRECT_POLICY='ETHEREUM_ACROSS_STAGED_V1';
+const PREVIOUS_DIRECT_POLICY='ETHEREUM_ACROSS_DIRECT_V1';
 const DIRECT_COINS=['BNB','POL','ARB','AVAX'];
 const directPolicyFor=asset=>asset==='AVAX'?'ETHEREUM_STARGATE_STAGED_V1':DIRECT_POLICY;
 const WRAPPED_POLICY='ETHEREUM_WRAPPED_SPOT_V1';
@@ -37,11 +38,10 @@ export function validCentralWalletStatus(report){
     report.new_policy_created===false;
 }
 
-export function centralWalletHasCoin(report,asset){
+function verifiedCoinGrant(report,asset){
   return validCentralWalletStatus(report)&&
     report.status==='REMOTE_VERIFIED_READONLY'&&
     report.scope_coins.includes(asset)&&
-    (!needsDirect(asset)||hasDirect(report,asset))&&
     (!needsWrapped(asset)||hasWrapped(report,asset))&&
     report.one_scoped_signer_verified===true&&
     report.remote_policy_exactly_verified===true&&
@@ -49,6 +49,16 @@ export function centralWalletHasCoin(report,asset){
       report.current_user_budgets_verified===true)&&
     report.backend_quorum_current===true&&
     report.legacy_reconciliation_required===false;
+}
+
+// Starting a new session requires the current route. An independently
+// verified previous direct scope may still finish its original exit.
+export function centralWalletHasCoin(report,asset){
+  return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset));
+}
+export function centralWalletCanExitCoin(report,asset){
+  return verifiedCoinGrant(report,asset)&&(!needsDirect(asset)||hasDirect(report,asset)||
+    (asset!=='AVAX'&&report.settlement_policy_by_asset?.[asset]===PREVIOUS_DIRECT_POLICY));
 }
 
 const requireStatus=status=>{

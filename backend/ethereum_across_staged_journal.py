@@ -374,7 +374,10 @@ def _complete_parent_locked(cur,order):
          first["request_sha256"],first["tx_hash"]))
     # The parent source gas is only in the source chain's native units.
     # Never sum ETH and Across gas atomics into a fictitious single fee.
-    source_gas=sum(int(s["proof"]["source_gas_atomic"]) for s in steps if s["chain_id"]==route["source_chain_id"])
+    cur.execute("""SELECT chain_id,proof FROM mininex_across_staged_steps
+        WHERE order_id=%s AND state IN ('FINALIZED','REVERTED') AND proof IS NOT NULL""",(order["order_id"],))
+    source_gas=sum(int(s["proof"]["source_gas_atomic"]) for s in cur.fetchall()
+                   if s["chain_id"]==route["source_chain_id"])
     cur.execute("""INSERT INTO mininex_ethereum_settlement_finality
         (quote_id,privy_did,source_chain_id,destination_chain_id,source_tx_hash,destination_tx_hash,
          bridge_deposit_id,received_atomic,source_gas_atomic,outcome)
