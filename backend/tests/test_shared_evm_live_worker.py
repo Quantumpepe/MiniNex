@@ -330,6 +330,8 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
     monkeypatch.setenv("MININEX_EVM_PASSIVE_SETTLEMENT_ENABLED","explicit-readonly")
     monkeypatch.setenv("DATABASE_URL","postgresql://example.invalid/test")
     actions=use_tick_mocks(monkeypatch,asset=asset,action="SELL")
+    from backend import shared_evm_exit_inventory as inventory
+    monkeypatch.setattr(inventory,"read_token_exit_position",lambda *args:Decimal("0.5"))
     async def zero_wrapped(did,**kw):
         actions.append("native_wallet_probe")
         return evidence(asset,"SELL",source="0",allowance="0")
@@ -341,8 +343,9 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
         actions.append("single_native_deposit")
         assert kw["strategy_run_id"].startswith("owner_20261117")
         assert kw["signal_event_id"]=="market_166"
-        assert kw["native_amount_wei"]==10**18
+        assert kw["native_amount_wei"]==5*10**17
         assert kw["budget_revision"]==7
+        assert kw["central"] is True
         return {"state":"SUBMITTED","operation":"DEPOSIT"}
     monkeypatch.setattr(worker,"check_evm_source_allowance",zero_wrapped)
     monkeypatch.setattr(worker,"prepare_original_native_sell_amount",amount)
@@ -350,7 +353,7 @@ def test_native_sell_starts_one_owner_deposit_from_actual_native_wallet(
     async def tick():
         async with httpx.AsyncClient() as client:
             return await worker.execute_owner_evm_live_tick(
-                session(asset),market=object(),client=client,now=10000)
+                dict(session(asset),central=True),market=object(),client=client,now=10000)
     result=asyncio.run(tick())
     assert result["state"]=="SUBMITTED"
     assert actions==["verified_market","native_wallet_probe",

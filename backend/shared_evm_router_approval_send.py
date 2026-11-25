@@ -135,7 +135,7 @@ def _claim_once_locked(
     if asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") and side=="SELL":
         from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
         assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
-    if session["status"]=="EXIT_PENDING" and asset=="ETH":
+    if central and asset=="ETH" and side=="SELL":
         from .shared_evm_exit_inventory import assert_eth_exit_deposit_locked
         assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_atomic)
     # Same-wallet, same-chain nonce conflicts. Every participating sender

@@ -228,7 +228,7 @@ def _claim_native_sell_locked(
     owner=cur.fetchone()
     if type(owner) is not dict or owner.get("privy_did")!=did:
         raise HTTPException(409,"Native owner wallet account lock missing")
-    if session["status"]=="EXIT_PENDING":
+    if central and asset=="ETH":
         from .shared_evm_exit_inventory import assert_eth_exit_deposit_locked
         assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_wei)
     for table in ("mininex_live_evm_auto_broadcasts",
@@ -245,8 +245,21 @@ def _claim_native_sell_locked(
                      SELECT 1 FROM mininex_evm_auto_fee_sends
                       WHERE privy_did=%s AND chain_id=%s AND status IN
                        ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     UNION ALL
+                     SELECT 1 FROM mininex_live_evm_router_approval_sends
+                      WHERE privy_did=%s AND chain_id=%s AND status IN
+                       ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                     UNION ALL
+                     SELECT 1 FROM mininex_avax_staged_steps
+                      WHERE privy_did=%s AND chain_id=%s AND state IN
+                       ('SENDING','SUBMITTED','UNCERTAIN')
+                     UNION ALL
+                     SELECT 1 FROM mininex_ethereum_settlement_submissions s
+                      WHERE s.privy_did=%s AND s.source_chain_id=%s AND s.state IN
+                       ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
+                      AND NOT EXISTS (SELECT 1 FROM mininex_ethereum_settlement_finality f WHERE f.quote_id=s.quote_id)
                    ) AS shared_wallet_nonce""",
-                (did,pair["chain_id"],did,pair["chain_id"]))
+                (did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"],did,pair["chain_id"]))
         else:
             cur.execute(
                 f"""SELECT COUNT(*) AS pending FROM {table}

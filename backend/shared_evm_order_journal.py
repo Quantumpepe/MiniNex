@@ -373,7 +373,7 @@ def _claim_authorized_evm_order_locked(
     if asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") and identity["side"]=="SELL":
         from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
         assert_token_exit_quantity_locked(cur,did,asset,identity["wallet_address"],identity.get("input_atomic"))
-    if session["status"]=="EXIT_PENDING" and asset=="ETH":
+    if central and asset=="ETH" and identity["side"]=="SELL":
         from .shared_evm_exit_inventory import assert_eth_exit_swap_locked
         assert_eth_exit_swap_locked(cur,did,identity["wallet_address"],key,identity.get("input_atomic"))
     # This helper also atomically guards all unresolved same-wallet network

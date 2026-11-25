@@ -338,16 +338,17 @@ async def execute_owner_evm_live_tick(
     event="market_"+str(int(current//60))
     if asset in _NATIVE and side=="SELL":
         exit_wei=None
-        if exiting:
+        if exiting or (asset=="ETH" and row.get("central") is True):
             from .shared_evm_exit_inventory import read_token_exit_position
             from .shared_evm_auto_sessions import complete_bridge_exit_if_flat
             if row.get("central") is not True or evidence.get("wallet_identity_verified") is not True:
                 return {"asset":asset,"state":"WAIT","reason":"EXIT_WALLET_UNVERIFIED"}
             held=await asyncio.to_thread(read_token_exit_position,did,asset,evidence["wallet_address"])
             if held==0:
-                if await asyncio.to_thread(complete_bridge_exit_if_flat,did,asset,row["started_by_owner_at"]):
+                if exiting and await asyncio.to_thread(complete_bridge_exit_if_flat,did,asset,row["started_by_owner_at"]):
                     return {"asset":asset,"state":"STOPPED","reason":"VERIFIED_POSITION_FLAT"}
-                return {"asset":asset,"state":"WAIT","reason":"EXIT_SETTLEMENT_PENDING"}
+                return {"asset":asset,"state":"WAIT","reason":(
+                    "EXIT_SETTLEMENT_PENDING" if exiting else "NO_VERIFIED_STRATEGY_COIN_BALANCE")}
             from decimal import localcontext
             with localcontext() as ctx:
                 ctx.prec=100
@@ -372,6 +373,8 @@ async def execute_owner_evm_live_tick(
                 **({"central":True} if row.get("central") is True else {}))
             if exit_wei is not None:
                 amount_wei=min(amount_wei,exit_wei)
+            if amount_wei<=0:
+                return {"asset":asset,"state":"WAIT","reason":"NO_VERIFIED_STRATEGY_COIN_BALANCE"}
             return await submit_internal_native_evm_sell_deposit(
                 did=did,asset=asset,strategy_run_id=run,
                 signal_event_id=event,
