@@ -116,13 +116,13 @@ def _read_saved_and_current_preferences(did: str):
                         or current["budget_usd"] <= 0):
                     raise ValueError("Original user coin budget changed")
             if "BTC" in scopes:
-                cur.execute("""SELECT b.percent,b.revision,t.stable
-                    FROM mininex_budget_preferences b JOIN mininex_trade_preferences t
-                      ON t.privy_did=b.privy_did AND t.asset=b.asset
-                    WHERE b.privy_did=%s AND b.asset='BTC'""",(did,))
+                cur.execute("""SELECT b.planned_capital_usd,b.revision,t.stable
+                    FROM mininex_live_btc_limits b JOIN mininex_trade_preferences t
+                      ON t.privy_did=b.privy_did
+                    WHERE b.privy_did=%s AND t.asset='BTC'""",(did,))
                 btc=cur.fetchone()
-                if (type(btc) is not dict or type(btc.get("percent")) is not int
-                        or not 0<btc["percent"]<=100
+                if (type(btc) is not dict or btc.get("planned_capital_usd") is None
+                        or btc["planned_capital_usd"]<=0
                         or btc.get("revision")!=revisions["BTC"]
                         or btc.get("stable")!=scopes["BTC"].get("stable")):
                     raise ValueError("Original BTC user budget changed")

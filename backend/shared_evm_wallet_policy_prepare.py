@@ -9,10 +9,7 @@ signers/consents are NOT silently overwritten; they need explicit migration.
 """
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal, ROUND_FLOOR, localcontext
-import re
-import httpx
 import logging
 import os
 import time
@@ -23,10 +20,8 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .extra_coin_preferences import get_coin_preferences
-from .budgets import get_budget_preferences
+from .live_btc_controls import get_live_btc_limits
 from .ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY, WRAPPED_SPOT_TOKENS, wrapped_spot_route
-from .ethereum_settlement_funding import read_pending_ethereum_funding
-from .eth_router02_live_quote import _rpc
 from .trade_preferences import get_trade_preferences
 from .eth_user_consent import _require_policy_roles
 from .privy_wallet_verification import fetch_privy_user
@@ -74,18 +69,22 @@ def _locked_selected_budget(cur,*,did:str,asset:str,stable:str,
                             expected_revision:int)->tuple[object,int]:
     """Read the exact saved settings under the original database row lock."""
     if asset=="BTC":
-        cur.execute("""SELECT b.percent,b.revision,t.stable
-            FROM mininex_budget_preferences b
-            JOIN mininex_trade_preferences t
-            ON t.privy_did=b.privy_did AND t.asset=b.asset
-            WHERE b.privy_did=%s AND b.asset='BTC' FOR UPDATE OF b,t""",(did,))
+        cur.execute("""SELECT b.planned_capital_usd,b.revision,t.stable
+            FROM mininex_live_btc_limits b
+            JOIN mininex_trade_preferences t ON t.privy_did=b.privy_did
+            WHERE b.privy_did=%s AND t.asset='BTC' FOR UPDATE OF b,t""",(did,))
         row=cur.fetchone()
-        if (type(row) is not dict or type(row.get("percent")) is not int
-                or not 0<row["percent"]<=100 or row.get("stable")!=stable
+        if (type(row) is not dict or row.get("stable")!=stable
                 or type(row.get("revision")) is not int
                 or row["revision"]!=expected_revision or expected_revision<=0):
-            raise HTTPException(409,"Original BTC budget percentage changed")
-        return row["percent"],row["revision"]
+            raise HTTPException(409,"Original BTC capital or settlement changed")
+        try:
+            amount=Decimal(str(row["planned_capital_usd"]))
+        except (ValueError,TypeError,ArithmeticError,KeyError):
+            raise HTTPException(409,"Original BTC capital unavailable") from None
+        if not amount.is_finite() or amount<=0:
+            raise HTTPException(409,"Save selected BTC trading capital before Start Trade")
+        return amount,row["revision"]
     if asset=="ETH":
         cur.execute(
             """SELECT planned_capital_usd,revision FROM mininex_live_eth_limits
@@ -127,57 +126,17 @@ def _locked_selected_budget(cur,*,did:str,asset:str,stable:str,
     return row["budget_usd"],row["revision"]
 
 
-async def policy_reference_snapshot(did,asset,stable,wallet):
-    """BTC percentage uses verified Ethereum trading inventory, not native wallet funds."""
-    prices=await fetch_evm_policy_reference_rates(asset,stable)
-    if asset!="BTC":
-        return prices
-    try:
-        if type(wallet) is not str or not re.fullmatch(r"0x[0-9a-fA-F]{40}",wallet):
-            raise ValueError("Original owner wallet unavailable")
-        route=wrapped_spot_route("BTC",stable,"BUY")
-        word="0x70a08231"+wallet[2:].lower().rjust(64,"0")
-        async with httpx.AsyncClient(timeout=9,follow_redirects=False) as client:
-            chain=await _rpc(client,method="eth_chainId",params=[],req_id=1)
-            if int(chain,16)!=1:
-                raise ValueError("Wrong Ethereum network")
-            height=await _rpc(client,method="eth_blockNumber",params=[],req_id=2)
-            if int(height,16)<=0:
-                raise ValueError("Ethereum block unavailable")
-            cash,held=await asyncio.gather(*(
-                _rpc(client,method="eth_call",params=[{"to":token,"data":word},height],req_id=i)
-                for i,token in enumerate((route["source_token"],route["destination_token"]),3)))
-        if any(type(x) is not str or not re.fullmatch(r"0x[0-9a-fA-F]{64}",x)
-               for x in (cash,held)):
-            raise ValueError("Unverified trading inventory")
-        now=int(time.time())
-        stable_rate=_price(prices,stable,now)
-        btc_rate=_price(prices,"BTC",now)
-        pending=await asyncio.to_thread(read_pending_ethereum_funding,did,
-            asset="BTC",stable=stable,stable_usd=stable_rate)
-        with localcontext() as ctx:
-            ctx.prec=100
-            available=max(0,int(cash,16)-int(pending["pending_wallet_stable_atomic"]))
-            capital=Decimal(available).scaleb(-6)*stable_rate+Decimal(int(held,16)).scaleb(-8)*btc_rate
-        return {**prices,"_mininex_verified_btc_wrapped_capital_usd":capital}
-    except (ValueError,TypeError,KeyError,ArithmeticError,httpx.HTTPError):
-        raise HTTPException(409,"Verified BTC Ethereum trading capital unavailable") from None
-
-
 def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
     """Persist the route version inside owner-consented scope JSON."""
     if asset in WRAPPED_SPOT_TOKENS:
         route=wrapped_spot_route(asset,stable,"BUY")
         with localcontext() as ctx:
             ctx.prec=100
-            if asset=="BTC":
-                total=snapshot.get("_mininex_verified_btc_wrapped_capital_usd")
-                if (type(amount) is not int or not 0<amount<=100
-                        or type(total) is not Decimal or not total.is_finite() or total<=0):
-                    raise ValueError("Verified BTC percentage capital unavailable")
-                budget=total*Decimal(amount)/100
-            else:
-                budget=Decimal(amount)
+            if type(amount) not in (int,str,Decimal):
+                raise ValueError("Original exact selected trading capital required")
+            budget=Decimal(str(amount))
+            if not budget.is_finite() or budget<=0:
+                raise ValueError("Original exact selected trading capital required")
             buy=int((budget/_price(snapshot,stable,now)*10**route["source_decimals"])
                     .to_integral_value(rounding=ROUND_FLOOR))
             sell=int((budget/_price(snapshot,asset,now)*10**route["destination_decimals"])
@@ -303,15 +262,14 @@ async def prepare_owner_central_evm_wallet_policy(did:str,asset:str)->dict:
         revision=limits["revision"]
     elif asset=="BTC":
         settings=get_trade_preferences(did)["settings"]["BTC"]
-        revision=get_budget_preferences(did)["budgets"]["BTC"]["revision"]
+        revision=get_live_btc_limits(did)["revision"]
     else:
         settings=get_coin_preferences(did)["settings"][asset]
         revision=settings["revision"]
     stable=settings["stable"]
     if stable not in ("USDC","USDT") or type(revision) is not int or revision<1:
         raise HTTPException(409,"Save your coin capital and settlement first")
-    snapshot=(await policy_reference_snapshot(did,asset,stable,owned["address"])
-              if asset=="BTC" else await fetch_evm_policy_reference_rates(asset,stable))
+    snapshot=await fetch_evm_policy_reference_rates(asset,stable)
     now=int(time.time())
     try:
         url=_db_url()
