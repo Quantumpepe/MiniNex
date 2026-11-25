@@ -33,10 +33,28 @@ _REQUIRED_SCOPE_FIELDS = frozenset((
 
 DIRECT_SETTLEMENT_POLICY="ETHEREUM_ACROSS_DIRECT_V1"
 DIRECT_SETTLEMENT_ASSETS=frozenset(("BNB","POL","ARB"))
+# A marker for a non-expiring owner-consented permission. The sentinel keeps
+# existing local session/DB timestamp checks compatible; no expiry predicate
+# is published for these explicit scopes. Existing timed grants are unchanged.
+DURABLE_LIFETIME="UNTIL_REVOKED"
+DURABLE_EXPIRY_SENTINEL=253402300799
+
+
+def durable_wallet_scope(scope):
+    return {**scope,"authorization_lifetime":DURABLE_LIFETIME,
+            "expires_at":DURABLE_EXPIRY_SENTINEL}
 
 
 def valid_scope_fields(scope):
     if type(scope) is not dict:
+        return False
+    if "authorization_lifetime" in scope:
+        if (scope.get("authorization_lifetime")!=DURABLE_LIFETIME
+                or type(scope.get("expires_at")) is not int
+                or scope["expires_at"]!=DURABLE_EXPIRY_SENTINEL):
+            return False
+        scope={k:v for k,v in scope.items() if k!="authorization_lifetime"}
+    elif scope.get("expires_at")==DURABLE_EXPIRY_SENTINEL:
         return False
     if set(scope)==_REQUIRED_SCOPE_FIELDS:
         return scope.get("asset") not in WRAPPED_SPOT_TOKENS
@@ -119,7 +137,13 @@ def compose_scoped_evm_wallet_policy(
     for asset in _EVM_ASSETS:
         if asset not in selected:
             continue
-        args = selected[asset]
+        args = dict(selected[asset])
+        durable=args.pop("authorization_lifetime",None)==DURABLE_LIFETIME
+        if durable:
+            # Compile the existing strict, bounded rule templates; only the
+            # time predicate is omitted from the explicitly durable version.
+            # No token, cap, recipient, method or chain predicate changes.
+            args["expires_at"]=now+86400
         # Read back historical rules without renewing their actual timestamp.
         # Runtime still rejects an expired SELECTED coin before any send.
         rule_now=now
@@ -162,7 +186,14 @@ def compose_scoped_evm_wallet_policy(
                     or type(rule.get("conditions")) is not list
                     or not rule["conditions"]):
                 raise ValueError("Unscoped or malformed Privy permission")
-            rules.append(deepcopy(rule))
+            copied=deepcopy(rule)
+            if durable:
+                conditions=copied["conditions"]
+                copied["conditions"]=[x for x in conditions if not (
+                    x.get("field_source")=="system" and x.get("field")=="current_unix_timestamp")]
+                if len(copied["conditions"])!=len(conditions)-1 or not copied["conditions"]:
+                    raise ValueError("Unexpected durable policy time condition")
+            rules.append(copied)
     if len({rule["name"] for rule in rules}) != len(rules):
         raise ValueError("Duplicate wallet policy rule")
     return {

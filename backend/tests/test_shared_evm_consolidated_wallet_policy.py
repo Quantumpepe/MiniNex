@@ -379,3 +379,32 @@ def test_active_coin_runtime_never_uses_expired_or_changed_sibling_budget(monkey
     assert proof["candidate_json"]==policy
     with pytest.raises(HTTPException):
         runtime._locked_original_evm_coin(Cursor(),did="did:privy:wrappedtest",asset="LINK",now=NOW+20)
+
+
+@pytest.mark.parametrize("asset",["ETH","LINK","QNT","UNI","BNB","POL","ARB","AVAX","BTC","XRP","SOL","TRX"])
+def test_explicit_durable_scope_preserves_every_non_time_condition(asset):
+    from backend.shared_evm_consolidated_wallet_policy import (
+        durable_wallet_scope,valid_scope_fields,DURABLE_EXPIRY_SENTINEL,DIRECT_SETTLEMENT_POLICY,
+        DIRECT_SETTLEMENT_ASSETS)
+    from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_TOKENS,WRAPPED_SPOT_POLICY
+    stable="USDT" if asset=="BNB" else "USDC"
+    original=scope(asset,stable,native=asset in ("ETH","BNB","POL","AVAX"))
+    if asset in WRAPPED_SPOT_TOKENS or asset in DIRECT_SETTLEMENT_ASSETS:
+        original.update(settlement_policy=WRAPPED_SPOT_POLICY if asset in WRAPPED_SPOT_TOKENS
+                        else DIRECT_SETTLEMENT_POLICY,native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    base=compose_scoped_evm_wallet_policy(**kwargs([original]))
+    durable=durable_wallet_scope(original)
+    assert valid_scope_fields(durable)
+    assert not valid_scope_fields(dict(durable,expires_at=NOW+86400))
+    assert not valid_scope_fields(dict(original,expires_at=DURABLE_EXPIRY_SENTINEL))
+    args=kwargs([durable])
+    result=compose_scoped_evm_wallet_policy(**args)
+    assert result==compose_scoped_evm_wallet_policy(**dict(args,now=NOW+86400*100))
+    assert len(result["rules"])==len(base["rules"])
+    for old,new in zip(base["rules"],result["rules"]):
+        assert old["name"]==new["name"]
+        expected=[c for c in old["conditions"] if not (
+            c["field_source"]=="system" and c["field"]=="current_unix_timestamp")]
+        assert new["conditions"]==expected
+        assert new["conditions"]
+    assert verified_wallet_policy_digest(result,**args)!=verified_wallet_policy_digest(base,**kwargs([original]))

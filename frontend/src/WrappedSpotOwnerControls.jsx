@@ -107,8 +107,8 @@ export default function WrappedSpotOwnerControls({asset,address,userId,enabled,g
         </select></label>
       </div>
       <p className="privy-wallet-description">{german?
-        'Handel über Ethereum mit gedeckten Token. Native Ein- und Auszahlungen bleiben separat.':
-        'Trading on Ethereum uses backed tokens. Native deposits and withdrawals remain separate.'}</p>
+        'Handel über Ethereum mit gedeckten Token. Native Ein- und Auszahlungen bleiben separat. Die Wallet-Freigabe gilt bis zum Widerruf; Pause/Stop stoppt neue Aufträge.':
+        'Trading on Ethereum uses backed tokens. Native deposits and withdrawals remain separate. Wallet authorization lasts until revoked; Pause/Stop prevents new orders.'}</p>
       {session&&!['ACTIVE','EXIT_PENDING'].includes(session.status)&&
         <button type="button" className="privy-wallet-action" onClick={start}
           disabled={busy||!validWrappedSettings(asset,settings)}>

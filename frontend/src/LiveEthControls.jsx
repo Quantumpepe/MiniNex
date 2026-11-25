@@ -527,6 +527,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
               !validatedLiveEthDraft(draft)||
               usdUnits(draft?.planned_capital_usd)<=0n}
             onClick={startTradeOnce}>Start Trade · ETH</button>}
+      {!["ACTIVE","EXIT_PENDING"].includes(ethAuto?.status)&&<p className="privy-wallet-description">{lang==='de'?'Wallet-Freigabe gilt bis Widerruf. Pause/Stop stoppt neue Aufträge.':'Wallet authorization lasts until revoked. Pause/Stop prevents new orders.'}</p>}
       {ethAuto?.central===true&&['ACTIVE','PAUSED'].includes(ethAuto?.status)&&
         <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
           disabled={busy} onClick={exitEthAuto}>Stop / Exit</button>}
@@ -550,6 +551,7 @@ export default function LiveEthControls({t,user,address,getAccessToken,enabled,c
               changes||!ownAddress||
               !limits.trading_paused}
             onClick={startTradeOnce}>Start Trade · ETH</button>}
+      {!["ACTIVE","EXIT_PENDING"].includes(ethAuto?.status)&&<p className="privy-wallet-description">{lang==='de'?'Wallet-Freigabe gilt bis Widerruf. Pause/Stop stoppt neue Aufträge.':'Wallet authorization lasts until revoked. Pause/Stop prevents new orders.'}</p>}
       {ethAuto?.central===true&&['ACTIVE','PAUSED'].includes(ethAuto?.status)&&
         <button type="button" className="privy-wallet-action privy-wallet-action--secondary"
           disabled={busy} onClick={exitEthAuto}>Stop / Exit</button>}

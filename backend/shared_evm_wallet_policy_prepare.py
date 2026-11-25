@@ -35,7 +35,7 @@ from .shared_evm_policy_reference_rates import (
 from .shared_evm_fee_transfer_proof import owner_fee_treasury
 from .shared_evm_consolidated_wallet_policy import (
     compose_scoped_evm_wallet_policy, verified_wallet_policy_digest,
-    DIRECT_SETTLEMENT_ASSETS,DIRECT_SETTLEMENT_POLICY,
+    DIRECT_SETTLEMENT_ASSETS,DIRECT_SETTLEMENT_POLICY,durable_wallet_scope,
 )
 from .storage import _db_url, _ensure_schema, _prepare_rows, _safe_did
 
@@ -143,22 +143,21 @@ def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
                      .to_integral_value(rounding=ROUND_FLOOR))
             if not 0<buy<10**45 or not 0<sell<10**45:
                 raise ValueError("Selected wrapped spot budget not representable")
-        return {"asset":asset,"stable":stable,
+        return durable_wallet_scope({"asset":asset,"stable":stable,
                 "treasury":owner_fee_treasury(asset="ETH",stable=stable),
                 "buy_source_atomic_cap":str(buy),"sell_source_atomic_cap":str(sell),
                 "native_wrap_atomic_cap":None,"owner_max_fee_atomic":"0",
-                "expires_at":now+86400,"settlement_policy":WRAPPED_SPOT_POLICY}
+                "settlement_policy":WRAPPED_SPOT_POLICY})
     if asset in DIRECT_SETTLEMENT_ASSETS:
         caps=derive_ethereum_settlement_atomic_caps(asset=asset,stable=stable,
             budget_usd=amount,snapshot=snapshot,now=now)
-        return {"asset":asset,"stable":stable,
+        return durable_wallet_scope({"asset":asset,"stable":stable,
             "treasury":owner_fee_treasury(asset="ETH",stable=stable),
             "buy_source_atomic_cap":caps["buy_source_atomic_cap"],
             "sell_source_atomic_cap":caps["sell_source_atomic_cap"],
             "native_wrap_atomic_cap":None,
             "owner_max_fee_atomic":"0",
-            "expires_at":now+86400,
-            "settlement_policy":DIRECT_SETTLEMENT_POLICY}
+            "settlement_policy":DIRECT_SETTLEMENT_POLICY})
     caps=derive_user_budget_evm_atomic_caps(
         asset=asset,stable=stable,budget_usd=amount,
         snapshot=snapshot,now=now,
@@ -174,7 +173,7 @@ def build_selected_wallet_scope(*,asset,stable,amount,snapshot,now):
         "owner_max_fee_atomic":caps["buy_source_atomic_cap"],
         "expires_at":now+24*3600,
     }
-    return scope
+    return durable_wallet_scope(scope)
 
 
 def _stage_one_original_wallet_locked(
@@ -233,6 +232,7 @@ def _stage_one_original_wallet_locked(
         "budget_revision":revision,
         "scope_coins":[asset],
         "scope_rules_count":len(policy["rules"]),
+        "authorization_lifetime":scope.get("authorization_lifetime"),
         "policy_sha256":digest,
         "wallet_address":owned["address"],
         "shared_signer_id":signer_id,

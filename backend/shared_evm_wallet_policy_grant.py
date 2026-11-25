@@ -131,6 +131,7 @@ async def get_original_one_signer_grant_offer(did:str)->dict:
         "policy_sha256":proof["digest"],
         "scope_coins":[scope["asset"]],
         "settlement_policy":scope.get("settlement_policy"),
+        "authorization_lifetime":scope.get("authorization_lifetime"),
         "fee_scope":None if scope.get("settlement_policy") else {
             "treasury_wallet":scope["treasury"],
             "fee_max_atomic":scope["owner_max_fee_atomic"],

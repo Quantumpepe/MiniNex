@@ -14,7 +14,7 @@ import {
 const WORDS={
   de:{
     title:'LIVE Handel',open:'Start Trade',
-    desc:'Coin und Kapital einstellen, dann Start Trade drücken. MiniNex erledigt die technischen Schritte im Hintergrund. Die Wallet-Freigabe ist an dein Coin-Budget gebunden.',
+    desc:'Coin und Kapital einstellen, dann Start Trade drücken. MiniNex erledigt die technischen Schritte im Hintergrund. Die Wallet-Freigabe ist an dein Coin-Budget gebunden und gilt bis zum Widerruf. Pause/Stop stoppt neue Aufträge, nicht die Wallet-Freigabe.',
     status:'LIVE-Sitzung',setup:'Handel mit Privy verbinden',
     grant:'Privy-Handelsberechtigung freigeben',
     start:'LIVE starten',pause:'Handel pausieren',exit:'Stop & Exit',exiting:'Position wird geschlossen',stopped:'Beendet',
@@ -43,7 +43,7 @@ const WORDS={
   },
   en:{
     title:'LIVE trading',open:'Start Trade',
-    desc:'Set your coin and capital, then tap Start Trade. MiniNex handles the technical setup. Wallet authority is scoped to the selected coin budget.',
+    desc:'Set your coin and capital, then tap Start Trade. MiniNex handles the technical setup. Wallet authority is scoped to the selected coin budget until revoked. Pause/Stop prevents new orders; it does not revoke the wallet signer.',
     status:'LIVE session',setup:'Connect trading with Privy',
     grant:'Approve Privy trading signer',
     start:'Start LIVE',pause:'Pause trading',exit:'Stop & Exit',exiting:'Closing position',stopped:'Stopped',

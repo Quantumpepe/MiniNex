@@ -133,6 +133,8 @@ def plan_wallet_policy_transition(
             f"Requested policy SHA256: {target_digest}",
             f"New or changed coins: {changed}",
             f"Authorized coin scope: {retained}",
+            *(("The changed coin's wallet authorization remains valid until revoked. Pause or Stop disables new MiniNex orders; it does not remove the wallet signer.",)
+              if any(desired[a].get("authorization_lifetime")=="UNTIL_REVOKED" for a in added_or_changed) else ()),
             *(("BTC/XRP/SOL/TRX trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate." if "TRX" in desired else "BTC/XRP/SOL trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate." if "SOL" in desired else "BTC/XRP trading uses wrapped ERC-20 inventory on Ethereum; native wallets are separate.",)
               if any(x.get("settlement_policy")=="ETHEREUM_WRAPPED_SPOT_V1" for x in desired.values()) else ()),
             f"Nonce: {nonce}",
