@@ -43,15 +43,32 @@ def rows(asset):
 
 
 @pytest.mark.parametrize("asset",["BNB","POL","AVAX","LINK","UNI","ARB"])
-def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset):
-    cur=Cursor(rows(asset))
-    result=m._start_locked(cur,did=DID,asset=asset)
+def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset,monkeypatch):
+    if asset=="AVAX":
+        from backend import shared_evm_central_runtime as central
+        original=rows(asset)
+        legacy=Cursor(original)
+        with pytest.raises(HTTPException) as exc:
+            m._start_locked(legacy,did=DID,asset=asset)
+        assert exc.value.status_code==409
+        assert not any("INSERT INTO mininex_live_evm_auto_sessions" in q for q,_ in legacy.queries)
+        record={**original[0],"scope":{"settlement_policy":"ETHEREUM_STARGATE_STAGED_V1"}}
+        def verified_grant(cur,*,did,asset):
+            assert did==DID and asset=="AVAX"
+            cur.execute("SELECT original grant FOR UPDATE",(did,))
+            return cur.fetchone()
+        monkeypatch.setattr(central,"_locked_original_evm_coin",verified_grant)
+        cur=Cursor([record,*original[2:]])
+        result=m._start_locked(cur,did=DID,asset=asset,central=True)
+    else:
+        cur=Cursor(rows(asset))
+        result=m._start_locked(cur,did=DID,asset=asset)
     assert result["asset"]==asset
     assert result["status"]=="ACTIVE"
     assert result["started_by_owner"] is True
     assert result["worker_attached"] is False
     assert result["new_transactions_sent"]==0
-    assert len(cur.queries)==4
+    assert len(cur.queries)==(3 if asset=="AVAX" else 4)
     assert "mininex_live_evm_auto_sessions" in cur.queries[-1][0]
 
 
@@ -64,11 +81,11 @@ def test_each_coin_starts_only_from_owner_approved_privy_wallet(asset):
     lambda r:r[2].update(budget_usd=0),
 ])
 def test_no_owner_start_without_signed_current_budget_consent(change):
-    data=rows("AVAX")
+    data=rows("BNB")
     change(data)
     cur=Cursor(data)
     with pytest.raises(HTTPException):
-        m._start_locked(cur,did=DID,asset="AVAX")
+        m._start_locked(cur,did=DID,asset="BNB")
     assert not any("INSERT INTO mininex_live_evm_auto_sessions" in q
                    for q,args in cur.queries)
 

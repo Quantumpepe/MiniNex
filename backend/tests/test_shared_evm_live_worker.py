@@ -538,6 +538,13 @@ def test_cross_evm_session_uses_ethereum_settlement_never_legacy_local_send(
     row=session(asset)
     row["stable"]=stable
     actions=use_tick_mocks(monkeypatch,asset=asset,action=action)
+    if asset=="AVAX":
+        from backend import ethereum_stargate_staged_worker as staged
+        async def no_existing_order(did,*,row,client):
+            assert did==row["privy_did"]
+            actions.append("staged_order_checked")
+            return None
+        monkeypatch.setattr(staged,"advance_avax_order",no_existing_order)
     async def forbidden(*args,**kwargs):
         pytest.fail("Legacy local allowance, swap, or wrap must not run")
     monkeypatch.setattr(worker,"check_evm_source_allowance",forbidden)
@@ -568,12 +575,11 @@ def test_cross_evm_session_uses_ethereum_settlement_never_legacy_local_send(
             return await worker.execute_owner_evm_live_tick(
                 row,market=object(),client=client,now=10000)
     result=asyncio.run(tick())
-    if action=="BUY":
-        assert result["can_submit"] is False
-        assert actions==["verified_market","ethereum_funding","bridge_candidate"]
-    else:
-        assert result["can_submit"] is False
-        assert actions==["verified_market","strategy_coin_position","bridge_candidate"]
+    expected=["staged_order_checked"] if asset=="AVAX" else []
+    assert result["can_submit"] is False
+    assert actions==expected+["verified_market",
+        "ethereum_funding" if action=="BUY" else "strategy_coin_position",
+        "bridge_candidate"]
 
 
 def test_pending_bridge_buy_reports_pending_not_empty_funds(monkeypatch):
