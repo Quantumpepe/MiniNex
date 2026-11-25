@@ -131,22 +131,6 @@ def get_owner_live_evm_order_status(
                     (did,asset,limit+1))
                 rows=list(cur.fetchall())
                 if asset in ("BNB","POL","AVAX","ARB"):
-                    # Completed staged parents and direct automatic submissions
-                    # share the same canonical parent ID as verified fill history.
-                    cur.execute("""SELECT q.asset,q.source_chain_id AS chain_id,q.quote_id::text AS intent_key,
-                        q.side,q.stable,
-                        CASE WHEN f.outcome='FINALIZED' THEN 'FINALIZED_SUCCESS'
-                             WHEN f.outcome='SOURCE_REVERTED' THEN 'FINALIZED_REVERTED'
-                             ELSE s.state END AS status,
-                        s.source_tx_hash AS tx_hash,s.created_at,COALESCE(f.verified_at,s.updated_at) AS updated_at,
-                        FALSE AS native_cycle_verified,FALSE AS hwm_fee_recorded,
-                        FALSE AS fee_payment_verified,TRUE AS ethereum_settlement_order
-                        FROM mininex_ethereum_settlement_submissions s
-                        JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=s.quote_id AND q.privy_did=s.privy_did
-                        LEFT JOIN mininex_ethereum_settlement_finality f ON f.quote_id=q.quote_id AND f.privy_did=q.privy_did
-                        WHERE s.privy_did=%s AND q.asset=%s
-                        ORDER BY s.created_at DESC,q.quote_id DESC LIMIT %s""",(did,asset,limit+1))
-                    rows.extend(cur.fetchall())
                     # Until the original parent is finalized, show the durable
                     # staged order once, not every approval or bridge leg.
                     table="mininex_avax_staged" if asset=="AVAX" else "mininex_across_staged"
@@ -175,17 +159,38 @@ def get_owner_live_evm_order_status(
                           AND (o.state<>'REVERTED' OR first.tx_hash IS NOT NULL)
                         ORDER BY o.created_at DESC,o.order_id DESC LIMIT %s""",(did,asset,limit+1))
                     rows.extend(cur.fetchall())
+                    # Completed staged parents and direct automatic submissions
+                    # share the same canonical parent ID as verified fill history.
+                    cur.execute("""SELECT q.asset,q.source_chain_id AS chain_id,q.quote_id::text AS intent_key,
+                        q.side,q.stable,
+                        CASE WHEN f.outcome='FINALIZED' THEN 'FINALIZED_SUCCESS'
+                             WHEN f.outcome='SOURCE_REVERTED' THEN 'FINALIZED_REVERTED'
+                             ELSE s.state END AS status,
+                        s.source_tx_hash AS tx_hash,s.created_at,COALESCE(f.verified_at,s.updated_at) AS updated_at,
+                        FALSE AS native_cycle_verified,FALSE AS hwm_fee_recorded,
+                        FALSE AS fee_payment_verified,TRUE AS ethereum_settlement_order
+                        FROM mininex_ethereum_settlement_submissions s
+                        JOIN mininex_ethereum_settlement_quotes q ON q.quote_id=s.quote_id AND q.privy_did=s.privy_did
+                        LEFT JOIN mininex_ethereum_settlement_finality f ON f.quote_id=q.quote_id AND f.privy_did=q.privy_did
+                        WHERE s.privy_did=%s AND q.asset=%s
+                        ORDER BY s.created_at DESC,q.quote_id DESC LIMIT %s""",(did,asset,limit+1))
+                    rows.extend(cur.fetchall())
     except psycopg.Error:
         raise HTTPException(503,"LIVE EVM journal unavailable") from None
     rows.sort(key=lambda row:(row["created_at"],row["intent_key"]),reverse=True)
     # A concurrent parent completion between read statements cannot create
     # two copies of the same original trade in the display.
-    unique={}
+    cross={}
+    legacy=[]
     for row in rows:
+        if row.get("ethereum_settlement_order") is not True:
+            legacy.append(row)
+            continue
         key=row["intent_key"]
-        if key not in unique or row["status"]=="FINALIZED_SUCCESS":
-            unique[key]=row
-    rows=list(unique.values())
+        if key not in cross or row["status"] in ("FINALIZED_SUCCESS","FINALIZED_REVERTED"):
+            cross[key]=row
+    rows=legacy+list(cross.values())
+    rows.sort(key=lambda row:(row["created_at"],row["intent_key"]),reverse=True)
     verified=[_verified_order_row(row,asset) for row in rows[:limit]]
     return {
         "mode":"OWNER_DURABLE_EVM_ORDER_STATUS_ONLY",
