@@ -978,7 +978,7 @@ SCHEMA = (
     BEGIN
       FOREACH name IN ARRAY ARRAY['mininex_live_evm_policy_publications','mininex_live_evm_auto_sessions','mininex_live_evm_budget_reservations','mininex_live_evm_consent_challenges','mininex_live_evm_owner_permissions','mininex_live_evm_auto_broadcasts','mininex_live_evm_verified_fills','mininex_evm_fee_auto_permissions','mininex_evm_immutable_fill_usd_prices','mininex_evm_asset_hwm','mininex_evm_fee_events','mininex_evm_verified_fee_payments','mininex_evm_auto_fee_sends'] LOOP
         IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-          conrelid=name::regclass AND conname='mininex_evm_arb_asset_v2') THEN
+          conrelid=name::regclass AND (conname='mininex_evm_arb_asset_v2' OR conname=name||'_central_asset_scope_check')) THEN
           EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I',
                          name,name||'_asset_check');
           EXECUTE format($arbcheck$ALTER TABLE %I ADD CONSTRAINT mininex_evm_arb_asset_v2 CHECK (asset IN ('BNB','POL','AVAX','LINK','UNI','ARB'))$arbcheck$,name);
@@ -994,7 +994,7 @@ SCHEMA = (
       END LOOP;
       name:='mininex_live_evm_budget_reservations';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1008,7 +1008,7 @@ SCHEMA = (
       END IF;
       name:='mininex_live_evm_consent_challenges';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1022,7 +1022,7 @@ SCHEMA = (
       END IF;
       name:='mininex_live_evm_owner_permissions';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1036,7 +1036,7 @@ SCHEMA = (
       END IF;
       name:='mininex_live_evm_auto_broadcasts';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1050,7 +1050,7 @@ SCHEMA = (
       END IF;
       name:='mininex_evm_fee_auto_permissions';
       IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE
-        conrelid=name::regclass AND conname='mininex_evm_arb_route_v2') THEN
+        conrelid=name::regclass AND (conname='mininex_evm_arb_route_v2' OR conname=name||'_central_asset_scope_check')) THEN
         FOR oldcheck IN SELECT conname FROM pg_constraint c
           WHERE c.conrelid=name::regclass AND c.contype='c'
             AND pg_get_constraintdef(c.oid) LIKE '%LINK%'
@@ -1426,15 +1426,19 @@ SCHEMA += (
            DROP CONSTRAINT IF EXISTS mininex_live_evm_router_approval_sends_approval_mode_check;
          IF NOT EXISTS(SELECT 1 FROM pg_constraint
            WHERE conrelid='mininex_live_evm_router_approval_sends'::regclass
-             AND conname='mininex_approval_route_v4') THEN
+             AND conname='mininex_approval_route_v4' AND pg_get_constraintdef(oid) LIKE '%WRAPPED_USDT_ZERO%') THEN
+           ALTER TABLE mininex_live_evm_router_approval_sends
+             DROP CONSTRAINT IF EXISTS mininex_approval_route_v4;
            ALTER TABLE mininex_live_evm_router_approval_sends
              ADD CONSTRAINT mininex_approval_route_v4 CHECK(
                 (approval_mode='ROUTER02_FINITE' AND
-                   ((asset IN ('ETH','LINK','QNT','UNI') AND chain_id=1)
+                   ((asset IN ('ETH','LINK','QNT','UNI','BTC','XRP') AND chain_id=1)
                     OR (asset='BNB' AND chain_id=56)
                     OR (asset='POL' AND chain_id=137)
                     OR (asset='AVAX' AND chain_id=43114)
                     OR (asset='ARB' AND chain_id=42161)))
+                OR (approval_mode='WRAPPED_USDT_ZERO' AND asset IN ('BTC','XRP')
+                    AND side='BUY' AND stable='USDT' AND chain_id=1)
                 OR (approval_mode IN ('THOR_FINITE','THOR_USDT_ZERO')
                     AND asset IN ('BTC','SOL','XRP','TRX','DOGE')
                     AND side='BUY' AND chain_id=1
@@ -1456,13 +1460,14 @@ SCHEMA += (
        BEGIN
          IF NOT EXISTS(SELECT 1 FROM pg_constraint
              WHERE conrelid='mininex_live_evm_auto_sessions'::regclass
-               AND conname='mininex_evm_session_exit_status_v1') THEN
+               AND conname='mininex_evm_session_exit_status_v1' AND pg_get_constraintdef(oid) LIKE '%BTC%') THEN
            ALTER TABLE mininex_live_evm_auto_sessions
-             DROP CONSTRAINT IF EXISTS mininex_live_evm_auto_sessions_status_check;
+             DROP CONSTRAINT IF EXISTS mininex_live_evm_auto_sessions_status_check,
+             DROP CONSTRAINT IF EXISTS mininex_evm_session_exit_status_v1;
            ALTER TABLE mininex_live_evm_auto_sessions
              ADD CONSTRAINT mininex_evm_session_exit_status_v1 CHECK(
                status IN ('ACTIVE','PAUSED','STOPPED') OR
-               (status='EXIT_PENDING' AND asset IN ('BNB','POL','ARB') AND started_by_owner_at IS NOT NULL));
+               (status='EXIT_PENDING' AND asset IN ('ETH','BNB','POL','AVAX','LINK','QNT','UNI','ARB','BTC','XRP') AND started_by_owner_at IS NOT NULL));
          END IF;
        END $bridge_exit$""",
 )

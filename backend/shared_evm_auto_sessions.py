@@ -21,7 +21,7 @@ from .shared_evm_swap_receipts import _pair
 from .storage import _db_url,_ensure_schema,_safe_did
 
 LOG=logging.getLogger("mininex.evm_live_auto_sessions")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
 
 
 def _require_asset(asset:object)->str:
@@ -48,7 +48,12 @@ def _start_locked(cur,*,did:str,asset:str,central:bool=False)->dict:
         record=_locked_original_evm_coin(cur,did=did,asset=asset)
     else:
         record=_read_grant_evidence_locked(cur,did=did,asset=asset)
-    if central and asset=="ETH":
+    if central and asset=="BTC":
+        from .shared_evm_wallet_policy_prepare import _locked_selected_budget
+        amount,revision=_locked_selected_budget(cur,did=did,asset=asset,
+                             stable=record["stable"],expected_revision=record["budget_revision"])
+        settings={"budget_usd":amount,"revision":revision,"stable":record["stable"]}
+    elif central and asset=="ETH":
         from .shared_evm_central_eth_settings import locked_original_eth_settings
         settings=locked_original_eth_settings(
             cur,did=did,stable=record["stable"],
@@ -126,6 +131,8 @@ async def start_owner_evm_auto(
 )->dict:
     did=_safe_did(did)
     asset=_require_asset(asset)
+    if asset in ("BTC","XRP") and not central:
+        raise HTTPException(409,"Original central wrapped trading grant required")
     # Must be independent live Privy REST readback, never a cached frontend
     # checkbox or an unverified 'policy ready' database string.
     report=(await get_owner_evm_remote_grant_audit(

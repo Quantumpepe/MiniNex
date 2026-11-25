@@ -1290,7 +1290,7 @@ async def owner_one_signer_qnt_permission_status(
 
 @app.get("/api/live/evm/auto-session/{asset}")
 def owner_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     authorization: str | None = Header(default=None),
 ):
     """Read-only per-coin user LIVE session, never implied by login."""
@@ -1303,7 +1303,7 @@ def owner_evm_auto_session(
 
 @app.post("/api/live/evm/wallet-policy/auto-session/{asset}/start")
 async def owner_start_one_signer_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     authorization: str | None = Header(default=None),
 ):
     """Explicit owner Start Trade after original one-signer remote audit."""
@@ -1327,7 +1327,7 @@ async def owner_start_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/pause")
 def owner_pause_evm_auto_session(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     authorization: str | None = Header(default=None),
 ):
     """Stops future per-coin sends without retrying an in-flight tx."""
@@ -1340,7 +1340,7 @@ def owner_pause_evm_auto_session(
 
 @app.post("/api/live/evm/auto-session/{asset}/exit")
 def owner_exit_bridge_session(
-    asset: Literal["ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI"],
+    asset: Literal["ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP"],
     authorization: str | None = Header(default=None),
 ):
     """Record a user's explicit exit request; only the worker can settle it."""
@@ -1466,7 +1466,7 @@ def owner_evm_permission_status(
 
 @app.get("/api/live/evm/order-status/{asset}")
 def owner_evm_order_status(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     limit: int = 20,
     authorization: str | None = Header(default=None),
 ):
@@ -1480,7 +1480,7 @@ def owner_evm_order_status(
 
 @app.get("/api/live/evm/verified-fills/{asset}")
 def owner_finalized_evm_fills(
-    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"],
+    asset: Literal["ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"],
     limit: int = 30,
     authorization: str | None = Header(default=None),
 ):
