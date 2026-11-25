@@ -141,14 +141,19 @@ def test_owner_started_live_token_tick_uses_real_wallet_and_single_signaling(
     monkeypatch,asset,action
 ):
     actions=use_tick_mocks(monkeypatch,asset=asset,action=action)
+    from backend import shared_evm_exit_inventory as inventory
+    if action=="SELL":
+        monkeypatch.setattr(inventory,"read_token_exit_position",lambda *args:Decimal("2"))
     async def tick():
         async with httpx.AsyncClient() as client:
             return await worker.execute_owner_evm_live_tick(
                 session(asset),market=object(),client=client,now=10000)
     assert asyncio.run(tick())["state"]=="SUBMITTED"
     assert actions[0]=="verified_market"
-    assert len([a for a in actions if isinstance(a,tuple) and
-                a[0]=="original_single_execution"])==1
+    sends=[a for a in actions if isinstance(a,tuple) and a[0]=="original_single_execution"]
+    assert len(sends)==1
+    if action=="SELL":
+        assert Decimal(sends[0][1])==2
     assert len([a for a in actions if isinstance(a,tuple) and
                 a[0]=="onchain_source"])==1
 

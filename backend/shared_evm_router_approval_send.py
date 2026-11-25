@@ -132,15 +132,12 @@ def _claim_once_locked(
             or session.get("budget_revision")!=revision
             or session.get("started_by_owner_at") is None):
         raise HTTPException(409,"Coin trading is not owner-started and active")
-    if asset in ("BTC","XRP","SOL","TRX") and side=="SELL":
+    if asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX") and side=="SELL":
         from .shared_evm_exit_inventory import assert_token_exit_quantity_locked
         assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
-    if session["status"]=="EXIT_PENDING":
-        from .shared_evm_exit_inventory import assert_token_exit_quantity_locked,assert_eth_exit_deposit_locked
-        if asset=="ETH":
-            assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_atomic)
-        else:
-            assert_token_exit_quantity_locked(cur,did,asset,record["wallet_address"],amount_atomic)
+    if session["status"]=="EXIT_PENDING" and asset=="ETH":
+        from .shared_evm_exit_inventory import assert_eth_exit_deposit_locked
+        assert_eth_exit_deposit_locked(cur,did,record["wallet_address"],amount_atomic)
     # Same-wallet, same-chain nonce conflicts. Every participating sender
     # must also check this approval journal before claiming a new nonce.
     for table in (

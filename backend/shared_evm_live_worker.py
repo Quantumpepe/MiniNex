@@ -381,7 +381,7 @@ async def execute_owner_evm_live_tick(
         except (ValueError,KeyError,ArithmeticError):
             return {"asset":asset,"state":"WAIT",
                     "reason":"NATIVE_WALLET_BALANCE_OR_GAS_UNVERIFIED"}
-    if exiting or (asset in ("BTC","XRP","SOL","TRX") and side=="SELL"):
+    if side=="SELL" and asset in ("LINK","QNT","UNI","BTC","XRP","SOL","TRX"):
         from .shared_evm_exit_inventory import read_token_exit_position
         from .shared_evm_auto_sessions import complete_bridge_exit_if_flat
         if evidence.get("wallet_identity_verified") is not True:
@@ -390,7 +390,8 @@ async def execute_owner_evm_live_tick(
         if held==0:
             if exiting and await asyncio.to_thread(complete_bridge_exit_if_flat,did,asset,row["started_by_owner_at"]):
                 return {"asset":asset,"state":"STOPPED","reason":"VERIFIED_POSITION_FLAT"}
-            return {"asset":asset,"state":"WAIT","reason":"EXIT_SETTLEMENT_PENDING"}
+            return {"asset":asset,"state":"WAIT","reason":(
+                "EXIT_SETTLEMENT_PENDING" if exiting else "NO_VERIFIED_STRATEGY_COIN_BALANCE")}
         evidence={**evidence,"source_balance":format(min(held,Decimal(evidence["source_balance"])),"f")}
     # The BUY allowance inspection already includes the current target
     # token inventory from the same onchain RPC batch. No extra wallet
