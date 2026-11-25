@@ -195,3 +195,30 @@ def test_wrapped_owner_runtime_pins_remote_scope_and_selects_only_exact_rules(as
     with pytest.raises(ValueError):
         runtime.central_policy_rule(current,asset=asset,stable="USDT",
                                     kind="native_withdraw",now=NOW)
+
+
+@pytest.mark.parametrize("asset",["BTC","XRP"])
+def test_wrapped_grant_gate_refuses_changed_recipient_path_and_owner_cap(asset):
+    from fastapi import HTTPException
+    from backend.shared_evm_policy_swap_gate import check_evm_policy_bound_swap
+    from backend.ethereum_wrapped_spot_policy import WRAPPED_SPOT_POLICY,wrapped_spot_transaction
+    selected=dict(scope(asset),settlement_policy=WRAPPED_SPOT_POLICY,
+                  native_wrap_atomic_cap=None,owner_max_fee_atomic="0")
+    data=kwargs([selected])
+    candidate=compose_scoped_evm_wallet_policy(**data)
+    record={"asset":asset,"chain_id":1,"stable":"USDC","wallet_address":WALLET,
+            "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER","status":"GRANT_VERIFIED",
+            "revoked_at":None,"scope":selected,"candidate_json":candidate,
+            "policy_sha256":verified_wallet_policy_digest(candidate,**data)}
+    tx=wrapped_spot_transaction(asset=asset,stable="USDC",side="BUY",wallet=WALLET,
+                                 amount_atomic=1000000,min_out_atomic=42)
+    args=dict(record=record,asset=asset,side="BUY",stable="USDC",wallet=WALLET,
+              tx=tx,input_atomic="1000000",minimum_output_atomic="42",now=NOW)
+    assert check_evm_policy_bound_swap(**args)["exact_swap_validated"] is True
+    for modified in (
+        dict(args,input_atomic="100000001"),
+        dict(args,tx=dict(tx,data=tx["data"][:-2]+"01")),
+        dict(args,record=dict(record,scope=dict(selected,settlement_policy=None))),
+    ):
+        with pytest.raises(HTTPException):
+            check_evm_policy_bound_swap(**modified)
