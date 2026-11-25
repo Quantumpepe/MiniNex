@@ -47,3 +47,19 @@ def test_direct_guid_credit_rejects_wrong_recipient_debit_or_amount(stable,side,
                 dest+[dest[1]]):
         with pytest.raises(ValueError):prove_direct_taxi_credit(source,bad,**kwargs)
     with pytest.raises(ValueError):prove_direct_taxi_credit(source[1:],dest,**kwargs)
+
+
+@pytest.mark.parametrize("side",["BUY","SELL"])
+@pytest.mark.parametrize("stable",["USDC","USDT"])
+def test_local_swap_leg_is_exactly_bound_to_stargate_stable_and_owner(side,stable):
+    from backend.ethereum_stargate_staged_execution import staged_swap_transaction,staged_swap_route
+    from eth_abi import decode
+    from backend.ethereum_settlement_plan import CROSS_COIN_CONTRACTS
+    source,target,router,_=staged_swap_route(side,stable)
+    coin=CROSS_COIN_CONTRACTS["AVAX"];local=CONFIG[43114]["tokens"][stable]
+    assert (source,target)==((local,coin) if side=="BUY" else (coin,local))
+    tx=staged_swap_transaction(side=side,stable=stable,wallet=WALLET,
+                              amount_atomic=1000000,min_out_atomic=42,fee=3000)
+    assert tx["chainId"]==43114 and tx["to"]==router and tx["value"]=="0"
+    assert decode(["address","address","uint24","address","uint256","uint256","uint160"],
+                  bytes.fromhex(tx["data"][10:]))==(source,target,3000,WALLET,1000000,42,0)
