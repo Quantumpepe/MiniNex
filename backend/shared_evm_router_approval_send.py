@@ -143,7 +143,7 @@ def _claim_once_locked(
     for table in (
         "mininex_live_evm_router_approval_sends",
         "mininex_live_evm_auto_broadcasts",
-        "mininex_evm_auto_fee_sends",
+        "mininex_evm_auto_fee_sends_all",
     ):
         staged=(" + (SELECT COUNT(*) FROM mininex_avax_staged_steps"
                 " WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN'))"

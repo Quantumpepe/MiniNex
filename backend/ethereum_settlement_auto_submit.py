@@ -130,7 +130,7 @@ def _claim(did,quote,record,started,key,digest,plan,funding,position_usd,gas_usd
                 if mode!=approval_mode:
                     raise HTTPException(409,"Bridge approval changed")
             for table in ("mininex_live_evm_router_approval_sends","mininex_live_evm_auto_broadcasts",
-                          "mininex_evm_auto_fee_sends","mininex_live_evm_native_auto_steps",
+                          "mininex_evm_auto_fee_sends_all","mininex_live_evm_native_auto_steps",
                           "mininex_live_evm_native_sell_intents"):
                 staged=(" UNION ALL SELECT 1 FROM mininex_avax_staged_steps "
                         "WHERE privy_did=%s AND chain_id=%s AND state IN ('SENDING','SUBMITTED','UNCERTAIN')"

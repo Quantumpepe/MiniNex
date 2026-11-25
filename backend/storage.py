@@ -1742,6 +1742,39 @@ SCHEMA += (
 )
 
 
+SCHEMA += (
+    """CREATE TABLE IF NOT EXISTS mininex_net_fee_sends (
+        privy_did TEXT NOT NULL, asset TEXT NOT NULL, family TEXT NOT NULL,
+        fill_key TEXT NOT NULL, chain_id INTEGER NOT NULL DEFAULT 1 CHECK(chain_id=1),
+        stable TEXT NOT NULL CHECK(stable IN ('USDC','USDT')),
+        wallet_id TEXT NOT NULL,
+        wallet_address TEXT NOT NULL CHECK(wallet_address ~ '^0x[0-9a-f]{40}$'),
+        treasury_wallet TEXT NOT NULL CHECK(treasury_wallet ~ '^0x[0-9a-f]{40}$'),
+        token_address TEXT NOT NULL CHECK(token_address ~ '^0x[0-9a-f]{40}$'),
+        amount_atomic NUMERIC(78,0) NOT NULL CHECK(amount_atomic>0),
+        policy_sha256 TEXT NOT NULL CHECK(policy_sha256 ~ '^[0-9a-f]{64}$'),
+        evidence_sha256 TEXT NOT NULL CHECK(evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        request_digest TEXT NOT NULL CHECK(request_digest ~ '^[0-9a-f]{64}$'),
+        idempotency_key TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK(status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED',
+                                              'PAID_VERIFIED','FINALIZED_REVERTED')),
+        tx_hash TEXT UNIQUE CHECK(tx_hash IS NULL OR tx_hash ~ '^0x[0-9a-f]{64}$'),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY(privy_did,asset,family,fill_key),
+        FOREIGN KEY(privy_did,asset,family,fill_key)
+          REFERENCES mininex_net_fee_obligations(privy_did,asset,family,fill_key),
+        CHECK ((status IN ('SENDING','RECONCILIATION_REQUIRED') AND tx_hash IS NULL)
+          OR (status IN ('SUBMITTED','PAID_VERIFIED','FINALIZED_REVERTED') AND tx_hash IS NOT NULL))
+    )""",
+    """CREATE INDEX IF NOT EXISTS mininex_net_fee_sends_pending
+        ON mininex_net_fee_sends(privy_did,chain_id,status)""",
+    """CREATE OR REPLACE VIEW mininex_evm_auto_fee_sends_all AS
+        SELECT privy_did,chain_id,status FROM mininex_evm_auto_fee_sends
+        UNION ALL SELECT privy_did,chain_id,status FROM mininex_net_fee_sends""",
+)
+
+
 def _db_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

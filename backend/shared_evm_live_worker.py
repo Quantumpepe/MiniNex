@@ -551,6 +551,7 @@ class SharedEvmLiveWorker:
         from .staged_net_valuation import reconcile_staged_net_valuations_once
         from .ethereum_net_valuation import reconcile_ethereum_net_valuations_once
         from .net_fee_obligations import reconcile_net_fee_obligations_once
+        from .net_fee_send import reconcile_net_fee_sends_once
         while True:
             await asyncio.sleep(60)
             if not evm_auto_worker_enabled():
@@ -575,6 +576,13 @@ class SharedEvmLiveWorker:
                 raise
             except Exception:
                 LOG.exception("Original net fee ledger unavailable")
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                    await reconcile_net_fee_sends_once(client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("Original net fee send unavailable")
 
     async def _run_bridge_receipts(self):
         # Separate passive polling task: a slow bridge cannot delay new

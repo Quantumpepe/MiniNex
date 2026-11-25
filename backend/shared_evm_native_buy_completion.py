@@ -164,7 +164,7 @@ def _post_buy_claim_locked(
         """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
                WHERE privy_did=%s AND chain_id=%s AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
-             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends_all
                WHERE privy_did=%s AND chain_id=%s AND status IN
                  ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends

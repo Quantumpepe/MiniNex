@@ -133,7 +133,7 @@ def _lock_chain(cur,did,chain):
     # Account lock serializes claims. Keep all already-claimed network
     # transactions visible, including older native and direct bridge paths.
     for table in ("mininex_live_evm_router_approval_sends","mininex_live_evm_auto_broadcasts",
-                  "mininex_evm_auto_fee_sends","mininex_live_evm_native_auto_steps",
+                  "mininex_evm_auto_fee_sends_all","mininex_live_evm_native_auto_steps",
                   "mininex_live_evm_native_sell_intents"):
         cur.execute(f"""SELECT 1 FROM {table} WHERE privy_did=%s AND chain_id=%s
             AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED') LIMIT 1""",(did,chain))

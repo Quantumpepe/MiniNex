@@ -242,7 +242,7 @@ def _claim_native_sell_locked(
                       WHERE privy_did=%s AND chain_id=%s AND status IN
                        ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
                      UNION ALL
-                     SELECT 1 FROM mininex_evm_auto_fee_sends
+                     SELECT 1 FROM mininex_evm_auto_fee_sends_all
                       WHERE privy_did=%s AND chain_id=%s AND status IN
                        ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')
                      UNION ALL

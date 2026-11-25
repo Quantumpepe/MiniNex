@@ -90,7 +90,7 @@ def _claim_locked(cur,*,did:str,key:str,identity:dict,
         """SELECT (SELECT COUNT(*) FROM mininex_live_evm_auto_broadcasts
               WHERE privy_did=%s AND chain_id=%s
                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
-             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends
+             + (SELECT COUNT(*) FROM mininex_evm_auto_fee_sends_all
               WHERE privy_did=%s AND chain_id=%s
                 AND status IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED'))
              + (SELECT COUNT(*) FROM mininex_live_evm_router_approval_sends
