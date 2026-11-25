@@ -24,7 +24,7 @@ from .ethereum_settlement_funding import assert_ethereum_funds_locked
 
 LOG=logging.getLogger("mininex.evm_budget_reserve")
 _SHA=re.compile(r"^[0-9a-f]{64}$")
-_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB"))
+_ASSETS=frozenset(("ETH","BNB","POL","AVAX","LINK","QNT","UNI","ARB","BTC","XRP"))
 
 
 def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
@@ -36,7 +36,7 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
     Other coins are entirely independent; their selected budgets never
     become spendable by this one. Missing live per-coin permission fails.
     """
-    if asset not in _ASSETS or side not in ("BUY","SELL"):
+    if asset not in _ASSETS or side not in ("BUY","SELL") or (asset in ("BTC","XRP") and not central):
         raise ValueError("Unverified EVM coin or trade direction")
     _pair(asset,stable,side)
     key=valid_order_key(key)
@@ -46,7 +46,7 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
         raise ValueError("User budget revision required")
     amount=valid_notional(amount_usd)
     if ethereum_funding is not None:
-        if side!="BUY" or asset not in ("ETH","LINK","QNT","UNI"):
+        if side!="BUY" or asset not in ("ETH","LINK","QNT","UNI","BTC","XRP"):
             raise ValueError("Unexpected Ethereum funding evidence")
         cur.execute("SELECT privy_did FROM mininex_accounts WHERE privy_did=%s FOR UPDATE",(did,))
         if cur.fetchone()!={"privy_did":did}:
@@ -59,7 +59,12 @@ def _reserve_locked(cur,*,did:str,asset:str,key:str,side:str,stable:str,
             cur,did=did,asset=asset,stable=stable,
             revision=expected_revision,
         )
-    if central and asset=="ETH":
+    if central and asset=="BTC":
+        from .shared_evm_wallet_policy_prepare import _locked_selected_budget
+        amount_selected,revision=_locked_selected_budget(cur,did=did,asset=asset,
+                                   stable=stable,expected_revision=expected_revision)
+        settings={"budget_usd":amount_selected,"revision":revision,"stable":stable}
+    elif central and asset=="ETH":
         from .shared_evm_central_eth_settings import locked_original_eth_settings
         settings=locked_original_eth_settings(
             cur,did=did,stable=stable,revision=expected_revision)

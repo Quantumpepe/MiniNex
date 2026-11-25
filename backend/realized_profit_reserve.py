@@ -88,7 +88,7 @@ PROFIT_FILLS_SQL="""SELECT asset,stable,side,source_amount,destination_amount,
         f.tx_hash AS fill_key,TRUE AS automatic,f.created_at AS settled_at
       FROM mininex_live_evm_verified_fills f
       WHERE f.privy_did=%(did)s AND f.stable=%(stable)s AND f.chain_id=1
-        AND f.asset IN ('ETH','LINK','QNT','UNI')
+        AND f.asset IN ('ETH','LINK','QNT','UNI','BTC','XRP')
       UNION ALL
       SELECT 'ETH',l.stable,l.side,l.source_amount,l.destination_amount,
         lower(b.wallet_address),'ETHEREUM',l.tx_hash,TRUE,o.finalized_at
