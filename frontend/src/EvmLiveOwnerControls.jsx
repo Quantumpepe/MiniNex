@@ -106,8 +106,8 @@ export default function EvmLiveOwnerControls({
   };
   const refresh=async()=>{
     const [p,s,c]=await Promise.all([
-      request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+      request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
       request(path+'/wallet-policy/status'),
@@ -134,8 +134,8 @@ export default function EvmLiveOwnerControls({
     const poll=async()=>{
       try{
         const [p,s,c]=await Promise.all([
-          request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+          request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset),
           request(path+'/auto-session/'+asset),
           request(path+'/wallet-policy/status'),
@@ -176,8 +176,8 @@ export default function EvmLiveOwnerControls({
   // Never run on login, render, retry, or a background effect.
   const startTrade=()=>command(async()=>{
     const [freshPermission,freshSession,central]=await Promise.all([
-      request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+      request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset),
       request(path+'/auto-session/'+asset),
       request(path+'/wallet-policy/status'),
@@ -266,8 +266,8 @@ export default function EvmLiveOwnerControls({
     if(state!=='GRANT_VERIFIED')
       throw Error('Trading authorization is not yet available');
     // An old UI state, stale budget or unrelated signer can never start.
-    const beforeStart=await request(asset==='QNT'
-        ?path+'/wallet-policy/permission-status/QNT'
+    const beforeStart=await request(['QNT','AVAX'].includes(asset)
+        ?path+'/wallet-policy/permission-status/'+asset
         :path+'/permission-status/'+asset);
     if(!validEvmTradePermission(beforeStart,asset)||
        beforeStart.status!=='GRANT_VERIFIED'||

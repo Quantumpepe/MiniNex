@@ -281,6 +281,11 @@ async def execute_owner_evm_live_tick(
         raise ValueError("Internal HTTP client required")
     current=time.time() if now is None else now
     exiting=row.get("session_status")=="EXIT_PENDING"
+    if asset=="AVAX":
+        from .ethereum_stargate_staged_worker import advance_avax_order
+        existing=await advance_avax_order(did,row=row,client=client)
+        if existing is not None:
+            return existing
     if exiting:
         if asset not in ("ETH","BNB","POL","AVAX","ARB","LINK","QNT","UNI","BTC","XRP","SOL","TRX"):
             raise ValueError("No automatic exit route for this coin")
@@ -540,6 +545,14 @@ class SharedEvmLiveWorker:
                 raise
             except Exception:
                 LOG.exception("Original Ethereum bridge finality unavailable")
+            try:
+                from .ethereum_stargate_staged_worker import reconcile_avax_staged_steps_once
+                async with httpx.AsyncClient(timeout=httpx.Timeout(12),follow_redirects=False) as client:
+                    await reconcile_avax_staged_steps_once(client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.exception("Original AVAX staged finality unavailable")
 
     async def _run(self)->None:
         while True:

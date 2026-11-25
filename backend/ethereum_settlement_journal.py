@@ -115,7 +115,9 @@ def pending_bridge_order(cur,did,asset):
           OR EXISTS(SELECT 1 FROM mininex_ethereum_settlement_submissions s
               WHERE s.quote_id=q.quote_id AND s.privy_did=q.privy_did
                 AND s.state IN ('SENDING','SUBMITTED','RECONCILIATION_REQUIRED')))
-        LIMIT 1""",(did,asset))
+        UNION ALL SELECT 1 FROM mininex_avax_staged_orders
+          WHERE privy_did=%s AND %s='AVAX' AND state='OPEN'
+        LIMIT 1""",(did,asset,did,asset))
     return cur.fetchone() is not None
 
 

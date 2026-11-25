@@ -82,6 +82,13 @@ async def prepare_cross_evm_auto_candidate(*,did,asset,side,stable,budget_revisi
         or record["wallet_id"]!=audit["remote_verified_wallet_id"]
         or record["signer_id"]!=audit["remote_verified_signer_id"]):
         raise HTTPException(409,"Owner-approved coin budget changed")
+    if asset=="AVAX":
+        from .ethereum_stargate_staged_policy import STARGATE_STAGED_POLICY
+        if record.get("scope",{}).get("settlement_policy")!=STARGATE_STAGED_POLICY or session_started_at is None:
+            return {"asset":asset,"state":"AVAX_STAGED_OWNER_GRANT_REQUIRED","can_submit":False}
+        from .ethereum_stargate_staged_worker import start_avax_staged_order
+        return await start_avax_staged_order(did=did,side=side,stable=stable,
+            budget_revision=budget_revision,amount=amount,client=client,budget_usd=budget_usd,record=record)
     from .shared_evm_consolidated_wallet_policy import DIRECT_SETTLEMENT_POLICY
     direct_scope=record.get("scope",{}).get("settlement_policy")==DIRECT_SETTLEMENT_POLICY
     quote=await get_ethereum_cross_evm_quote(did,route["source_asset"],route["destination_asset"],amount,

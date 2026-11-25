@@ -1259,6 +1259,28 @@ async def original_owner_one_signer_wallet_policy_status(
     })
 
 
+@app.get("/api/live/evm/wallet-policy/permission-status/AVAX")
+async def owner_one_signer_avax_permission_status(
+    authorization: str | None = Header(default=None),
+):
+    did=verify_privy_bearer(authorization)["user_id"]
+    status=await read_owner_central_wallet_policy_status(did)
+    approved=(status.get("status")=="REMOTE_VERIFIED_READONLY"
+        and "AVAX" in status.get("current_scope_coins",[])
+        and status.get("settlement_policy_by_asset",{}).get("AVAX")=="ETHEREUM_STARGATE_STAGED_V1"
+        and status.get("one_scoped_signer_verified") is True
+        and status.get("remote_policy_exactly_verified") is True
+        and status.get("backend_quorum_current") is True
+        and status.get("legacy_reconciliation_required") is False)
+    return JSONResponse({"mode":"OWNER_EVM_PRIVY_PERMISSION_STATUS_ONLY",
+        "asset":"AVAX","chain_id":43114,"network":"avalanche-c-mainnet",
+        "status":"GRANT_VERIFIED" if approved else "NOT_PREPARED",
+        "authorization_method":"PRIVY_CENTRAL_ONE_SIGNER",
+        "policy_published":approved,"signer_grant_recorded":approved,
+        "auto_execution_enabled":False,"can_submit":False},
+        headers={"Cache-Control":"private, no-store"})
+
+
 @app.get("/api/live/evm/wallet-policy/permission-status/QNT")
 async def owner_one_signer_qnt_permission_status(
     authorization: str | None = Header(default=None),
