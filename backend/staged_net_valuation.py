@@ -201,20 +201,23 @@ async def reconcile_staged_net_valuations_once(client):
 def read_owner_realized_net(did,asset):
     """Read-only actual FIFO net; all prior canonical fills, both stables.
 
-    Only staged valuations currently have complete evidence. Other or
-    unpriced histories remain pending; no partial cost estimate is charged.
+    Staged and central Ethereum valuations use independently verified
+    evidence. Older and unpriced histories remain pending.
     """
     did=_safe_did(did)
-    if asset not in ("BNB","POL","AVAX","ARB"):
-        raise ValueError("Staged realized net valuation not supported for coin")
+    from .ethereum_settlement_plan import COIN_NETWORKS
+    if asset not in COIN_NETWORKS:
+        raise ValueError("Realized net valuation not supported for coin")
     db=_db_url();_ensure_schema(db)
     sql=PROFIT_FILLS_SQL.replace("=%(stable)s"," IN ('USDC','USDT')")
     with psycopg.connect(db,connect_timeout=6) as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("""WITH fills AS ("""+sql+""")
-                SELECT f.*,v.evidence FROM fills f
+                SELECT f.*,COALESCE(v.evidence,e.evidence) AS evidence FROM fills f
                 LEFT JOIN mininex_staged_net_valuations v ON f.family='CROSS_EVM'
                     AND v.quote_id::text=f.fill_key AND v.privy_did=%(did)s AND v.asset=f.asset AND v.stable=f.stable
+                LEFT JOIN mininex_ethereum_net_valuations e ON f.family IN ('ETHEREUM','WRAPPED_SPOT')
+                    AND e.tx_hash=f.fill_key AND e.privy_did=%(did)s AND e.asset=f.asset AND e.stable=f.stable
                 WHERE f.asset=%(asset)s ORDER BY f.settled_at,f.fill_key""",{"did":did,"asset":asset})
             rows=cur.fetchall()
     for row in rows:

@@ -25,7 +25,7 @@ def test_passive_price_capture_then_owner_verified_hwm(monkeypatch):
     monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",hwm)
     async def run():
         async with httpx.AsyncClient() as client:
-            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=True)
+            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=False)
     result=asyncio.run(run())
     assert result=={
         "prices_recorded":1,"token_accounts_reconciled":1,
@@ -46,7 +46,7 @@ def test_missing_onchain_price_does_not_create_fee_or_block_other_coin(monkeypat
     monkeypatch.setattr(worker,"independently_price_stored_evm_fill",prices)
     async def run():
         async with httpx.AsyncClient() as client:
-            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=True)
+            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=False)
     r=asyncio.run(run())
     assert r["prices_recorded"]==1
     assert r["accounts_needing_manual_evidence"]==1
@@ -80,7 +80,7 @@ def test_arb_uses_the_same_verified_hwm_worker_without_fee_send(monkeypatch):
     monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",account)
     async def run():
         async with httpx.AsyncClient() as client:
-            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=True)
+            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=False)
     result=asyncio.run(run())
     assert events==[("rate","ARB"),("fifo","ARB")]
     assert result["token_accounts_reconciled"]==1
@@ -194,7 +194,7 @@ def test_historical_erc20_prices_parallelize_other_owners_but_serialize_same_coi
     monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",hwm)
     async def run():
         async with httpx.AsyncClient() as client:
-            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=True)
+            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=False)
     outcome=asyncio.run(run())
     assert started[:2]==[
         ("did:privy:alpha","one"),("did:privy:beta","three")]
@@ -224,10 +224,29 @@ def test_one_failed_erc20_price_does_not_block_unrelated_owner_hwm(monkeypatch):
     monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",hwm)
     async def run():
         async with httpx.AsyncClient() as client:
-            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=True)
+            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=False)
     report=asyncio.run(run())
     assert report["prices_recorded"]==1
     assert report["token_accounts_reconciled"]==1
     assert report["accounts_needing_manual_evidence"]==1
     assert report["wallet_transactions_sent"]==0
     assert hwm_calls==["did:privy:good"]
+
+
+def test_live_capture_only_never_creates_hwm_obligations(monkeypatch):
+    monkeypatch.setattr(worker,"_read_pending_original_usd_fills",lambda:[
+        {"did":"did:privy:owner","fill":{"asset":"LINK"}}])
+    def forbidden(*args,**kwargs):
+        raise AssertionError("Retired HWM ledger must not run in live capture")
+    async def priced(**kwargs):
+        return {"historic_usd_priced":True}
+    monkeypatch.setattr(worker,"independently_price_stored_evm_fill",priced)
+    monkeypatch.setattr(worker,"_read_unaccounted_token_sell_owners",forbidden)
+    monkeypatch.setattr(worker,"reconcile_owner_erc20_hwm_after_verified_sell",forbidden)
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await worker.reconcile_verified_erc20_fees_once(client=client,capture_only=True)
+    result=asyncio.run(run())
+    assert result["prices_recorded"]==1
+    assert result["token_accounts_reconciled"]==0
+    assert result["wallet_transactions_sent"]==0
