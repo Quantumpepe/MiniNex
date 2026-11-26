@@ -3,7 +3,9 @@ import {usePrivy, useWallets} from '@privy-io/react-auth';
 import {useCreateWallet as useCreateExtendedWallet} from '@privy-io/react-auth/extended-chains';
 import {Copy, LockKeyhole, ShieldCheck, Wallet} from 'lucide-react';
 import {PRIVY_APP_ID} from './privyConfig.js';
-import {API_BASE,formatAssetQuantity} from './data.js';
+import {API_BASE,formatAssetQuantity,formatAssetMoney} from './data.js';
+import {coinMarketSnapshot} from './coins.js';
+import {combineVerifiedNativeAndWrapped} from './walletPortfolio.js';
 import TradingSetupPreview from './TradingSetupPreview.jsx';
 import AssetPaperControl from './AssetPaperControl.jsx';
 import WalletBalances from './WalletBalances.jsx';
@@ -452,6 +454,14 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
     const wrapped=token&&verifiedCoinHoldings?.[token];
     const prepared=wrapped?.status==='verified'&&
       typeof wrapped.balance==='string'&&Number(wrapped.balance)>0;
+    const holding=token?combineVerifiedNativeAndWrapped(record,wrapped):record;
+    const quote=coinMarketSnapshot(asset,marketSnapshot,syncedAt);
+    const quantity=holding?.status==='verified'?Number(holding.balance):NaN;
+    const amount=Number.isFinite(quantity)&&quantity>=0
+      ?(quantity===0&&!holding.incomplete?0:quote?quantity*Number(quote.price_usdt):null)
+      :null;
+    const value=amount!==null&&Number.isFinite(amount)
+      ?formatAssetMoney(amount,asset,lang):'—';
     return <span className="mininex-coin-header-balance" role="status"
       aria-label={t.privyBalancesTitle+' '+asset}>
       {record?.status==='verified' ? formatAssetQuantity(record.balance,asset,lang)+' '+asset :
@@ -462,6 +472,10 @@ function ConnectedPrivyWallet({t,lang,marketSnapshot,syncedAt,paperAvailable=tru
         {' · '}{lang==='de'?'für Handel vorbereitet, nicht verkauft':
           'prepared for trading, not sold'}
       </small>}
+      <small style={{display:'block'}}>
+        {lang==='de'?'Wert':'Value'}: {value}
+        {holding?.incomplete&&value!=='—'?(lang==='de'?' (Teilbestand)':' (partial balance)'):null}
+      </small>
     </span>;
   };
 
