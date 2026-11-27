@@ -389,7 +389,10 @@ export const DICTIONARY = {
 
     coinBalanceSummaryHint: 'Tap to show real wallet holdings from each supported blockchain',
     coinOtherBalancesPending: 'Native holdings need a linked Privy wallet on that blockchain. QNT is an ERC-20 token on Ethereum. These balances do not enable real trades.',
-    privySetupTitle: 'Trading settings · 11 coins',
+    privySetupTitle: 'Trading settings · 12 coins',
+    solWalletCreating: 'Creating SOL wallet…',
+    solWalletConnecting: 'Connecting SOL wallet…',
+    solWalletUnavailable: 'SOL wallet not connected',
     privySetupPreview: 'LOCAL PREVIEW',
     privySetupMode: 'Market mode',
     privySetupLong: 'Long · buy and hold for uptrend',
@@ -1047,7 +1050,10 @@ export const DICTIONARY = {
 
     coinBalanceSummaryHint: 'Antippen: echte Wallet-Bestände der unterstützten Blockchains anzeigen',
     coinOtherBalancesPending: 'Native Bestände erscheinen nur mit verknüpfter Privy-Wallet der jeweiligen Blockchain. QNT ist ein ERC-20-Token auf Ethereum. Die Anzeige aktiviert keinen Echtgeldhandel.',
-    privySetupTitle: 'Handelseinstellungen · 11 Coins',
+    privySetupTitle: 'Handelseinstellungen · 12 Coins',
+    solWalletCreating: 'SOL-Wallet wird erstellt…',
+    solWalletConnecting: 'SOL-Wallet wird verbunden…',
+    solWalletUnavailable: 'SOL-Wallet nicht verbunden',
     privySetupPreview: 'LOKALE VORSCHAU',
     privySetupMode: 'Marktmodus',
     privySetupLong: 'Long · Aufwärtstrend handeln',

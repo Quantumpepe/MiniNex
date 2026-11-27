@@ -1,4 +1,7 @@
 import React,{useState} from 'react';
+import {usePrivy} from '@privy-io/react-auth';
+import {ownedSolanaWallet} from './nativeCoinAddresses.js';
+export {ownedSolanaWallet} from './nativeCoinAddresses.js';
 import {useSignAndSendTransaction,useWallets} from '@privy-io/react-auth/solana';
 import {Send} from 'lucide-react';
 import {address,createSolanaRpc,pipe,createTransactionMessage,setTransactionMessageFeePayer,setTransactionMessageLifetimeUsingBlockhash,appendTransactionMessageInstructions,compileTransaction,createNoopSigner,getTransactionEncoder} from '@solana/kit';
@@ -12,14 +15,9 @@ export function exactSolLamports(raw) {
   return result>0n && result<=18446744073709551615n?result:null;
 }
 
-export function ownedSolanaWallet(wallets,expectedAddress) {
-  if(!Array.isArray(wallets)||!expectedAddress)return null;
-  const matches=wallets.filter(w=>w?.walletClientType==='privy'&&w?.address===expectedAddress);
-  return matches.length===1?matches[0]:null;
-}
-
 export default function SolanaSend({t,enabled,userId,expectedAddress,getAccessToken}) {
-  const {wallets}=useWallets();
+  const {wallets,ready}=useWallets();
+  const {user,authenticated}=usePrivy();
   const {signAndSendTransaction}=useSignAndSendTransaction();
   const [open,setOpen]=useState(false);
   const [destination,setDestination]=useState('');
@@ -28,7 +26,8 @@ export default function SolanaSend({t,enabled,userId,expectedAddress,getAccessTo
   const [error,setError]=useState('');
   const [txSig,setTxSig]=useState('');
 
-  const wallet=ownedSolanaWallet(wallets,expectedAddress);
+  const wallet=enabled&&authenticated&&ready&&user?.id===userId
+    ?ownedSolanaWallet(wallets,expectedAddress,user):null;
 
   async function send() {
     if(!enabled||!wallet||!destination||!amount||busy)return;
@@ -52,7 +51,7 @@ export default function SolanaSend({t,enabled,userId,expectedAddress,getAccessTo
         tx=>compileTransaction(tx),
         tx=>new Uint8Array(getTransactionEncoder().encode(tx)),
       );
-      const result=await signAndSendTransaction({transaction,wallet});
+      const result=await signAndSendTransaction({transaction,wallet,chain:'solana:mainnet'});
       const signature=result?.signature;
       const sig=solanaSignatureBase58(signature);
       if(!sig)throw new Error('SOL submission outcome not confirmed; check wallet history before retrying');
@@ -62,7 +61,7 @@ export default function SolanaSend({t,enabled,userId,expectedAddress,getAccessTo
     }finally{setBusy(false);}
   }
 
-  if(!wallet)return <section className="mininex-wallet-send"><button type="button" className="privy-wallet-action" disabled><Send size={16}/> {t.solWalletCreating||'SOL-Wallet wird erstellt…'}</button></section>;
+  if(!wallet)return <section className="mininex-wallet-send"><button type="button" className="privy-wallet-action" disabled><Send size={16}/> {expectedAddress?(ready?t.solWalletUnavailable:t.solWalletConnecting):t.solWalletCreating}</button></section>;
   return <section className="mininex-wallet-send">
     <button type="button" className="privy-wallet-action" onClick={()=>setOpen(v=>!v)}>
       <Send size={16}/> {t.walletSendTitle||'Senden'} SOL

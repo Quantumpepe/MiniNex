@@ -47,3 +47,19 @@ export function evmNetworkAddress(network, embeddedAddress) {
   if (!['bsc-mainnet','polygon-pos-mainnet','avalanche-c-mainnet','arbitrum-one-mainnet'].includes(network)) return null;
   return validEvmAddress(embeddedAddress) ? embeddedAddress : null;
 }
+
+// Solana useWallets returns Wallet Standard connections, not EVM wallet records.
+// Bind the signing wallet to the exact address of the current authenticated account.
+export function ownedSolanaWallet(wallets,expectedAddress,owner){
+  if(!Array.isArray(wallets)||!validNativePreviewAddress('solana',expectedAddress)||!owner?.id)return null;
+  const linked=findPrivyNativeWallet(owner,'solana');
+  if(linked?.address!==expectedAddress)return null;
+  const matches=wallets.filter(w=>w?.address===expectedAddress);
+  if(matches.length!==1)return null;
+  const w=matches[0],standard=w.standardWallet||w.wallet;
+  if(w.walletClientType!=null&&w.walletClientType!=='privy')return null;
+  if(standard?.isPrivyWallet===false||w.isPrivyWallet===false)return null;
+  const embedded=w.walletClientType==='privy'||w.isPrivyWallet===true||
+    standard?.isPrivyWallet===true||linked.walletClientType==='privy';
+  return embedded?w:null;
+}

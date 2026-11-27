@@ -88,7 +88,7 @@ export default function WrappedSpotOwnerControls({asset,address,userId,enabled,g
     <strong>{german?'LIVE-Handel':'LIVE trading'}</strong>
     {settings&&<>
       <div className="mininex-extra-replay-form">
-        <label><span>{t.extraReplayBudget} (USD)</span>
+        <label><span>{t.extraReplayBudget}</span>
           <input inputMode="decimal" type="text" value={settings.budget} disabled={locked}
             onChange={e=>change('budget',e.target.value)}/></label>
         <label><span>{t.privySetupMode}</span><select value={settings.mode}
