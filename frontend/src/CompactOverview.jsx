@@ -40,7 +40,7 @@ function MarketChart({history,period,valid,t,asset}) {
 }
 
 
-function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
+function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true,realizedReturn=null}) {
   const chart=useMemo(()=>paperMode
     ?paperSparkline(samples,{recentMs:15*60*1000,allowSingle:true})
     :livePortfolioSparkline(samples),[samples,paperMode]);
@@ -68,6 +68,13 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
               {formatSigned(summary.pnl,lang)} ({summary.pnlPct>=0?'+':''}{formatNumber(summary.pnlPct,lang,2)}%)
             </span>
           : null}
+        {!paperMode&&authenticated&&<span className={realizedReturn?.pnl==null?'':realizedReturn.pnl>=0?'text-positive':'text-negative'}>
+          {lang==='de'?'Realisiert: ':'Realized: '}
+          {realizedReturn?.pnl==null?'—':formatSigned(realizedReturn.pnl,lang)}
+          {realizedReturn?.pct!=null?' ('+(realizedReturn.pct>0?'+':'')+formatNumber(realizedReturn.pct,lang,2)+'%)':''}
+          {realizedReturn?.pending>0?' · '+(lang==='de'?'offene Abrechnung':'pending accounting'):''}
+          {realizedReturn?.stale?' · '+(lang==='de'?'Letzter Stand':'Last known'):''}
+        </span>}
         {!paperMode&&summary?.holdings?.length>0&&<small className="compact-wallet-holdings">
           {summary.holdings.map(h=>h.asset+' '+formatAssetQuantity(h.balance,h.asset,lang)).join(' · ')}
         </small>}
@@ -122,7 +129,7 @@ export default function CompactOverview({t,lang,chooseLang,asset,setAsset,period
       samples={showSimulatedTrades?portfolioSamples:(walletPortfolio?.samples||[])}
       authenticated={showSimulatedTrades?portfolioAuthenticated:walletPortfolio?.authenticated}
       status={showSimulatedTrades?portfolioStatus:walletPortfolio?.status}
-      paperMode={showSimulatedTrades}
+      paperMode={showSimulatedTrades} realizedReturn={walletPortfolio?.realizedReturn}
       scope="ALL" goTo={goTo}/>
     <CoinGrid t={t} lang={lang} selected={asset}
       markets={marketSnapshot} syncedAt={syncedAt} kind="home"

@@ -25,6 +25,43 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   const [state,setState]=useState({did:null,sources:null,status:'idle'});
   const [samples,setSamples]=useState({did:null,points:[]});
   const [lastValued,setLastValued]=useState({did:null,summary:null});
+  const [realized,setRealized]=useState({did:null,data:null});
+  useEffect(()=>{
+    if(!ready||!authenticated||!did||!visible)return;
+    let active=true,inFlight=false;
+    const controller=new AbortController();
+    const syncReturn=async()=>{
+      if(inFlight||!active||document.hidden)return;
+      inFlight=true;
+      try{
+        const token=await tokenRef.current();
+        if(!token)return;
+        const response=await fetch(API_BASE+'/api/portfolio/realized-return',{
+          headers:{Authorization:'Bearer '+token,Accept:'application/json'},
+          cache:'no-store',signal:controller.signal
+        });
+        if(!response.ok)throw Error('Return unavailable');
+        const data=await response.json();
+        if(data?.mode!=='REALIZED_AUTO_NET_READ_ONLY'||data.paper_excluded!==true||
+          !Number.isSafeInteger(data.pending_closes)||data.pending_closes<0||
+          !Number.isSafeInteger(data.verified_closes)||data.verified_closes<0)
+          throw Error('Invalid return');
+        const pnl=data.pnl_usd===null?null:Number(data.pnl_usd);
+        const pct=data.pnl_pct===null?null:Number(data.pnl_pct);
+        if((pnl!==null&&!Number.isFinite(pnl))||(pct!==null&&!Number.isFinite(pct)))
+          throw Error('Invalid return amounts');
+        if(active)setRealized({did,data:{pnl,pct,pending:data.pending_closes,stale:false}});
+      }catch{
+        if(active)setRealized(previous=>previous.did===did&&previous.data
+          ?{did,data:{...previous.data,stale:true}}:{did,data:null});
+      }finally{inFlight=false;}
+    };
+    void syncReturn();
+    const timer=window.setInterval(syncReturn,60000);
+    window.addEventListener('mininex-activity-updated',syncReturn);
+    return ()=>{active=false;controller.abort();window.clearInterval(timer);
+      window.removeEventListener('mininex-activity-updated',syncReturn);};
+  },[ready,authenticated,did,visible,refreshNonce]);
   useEffect(()=>{
     if(!ready||!authenticated||!did)
       setLastValued(previous=>previous.did===null?previous:
@@ -169,6 +206,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   },[matched,did,samples]);
   return {
     summary:displayedSummary,samples:matched&&samples.did===did?samples.points:[],
+    realizedReturn:matched&&realized.did===did?realized.data:null,
     status:matched?state.status:'loading',
     authenticated:ready&&authenticated,
   };

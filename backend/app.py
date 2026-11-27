@@ -2462,6 +2462,14 @@ def trade_preferences_update(
     )
 
 
+@app.get("/api/portfolio/realized-return")
+def owner_realized_portfolio_return(authorization: str | None = Header(default=None)):
+    from .portfolio_return import read_owner_realized_return
+    did = verify_privy_bearer(authorization)["user_id"]
+    return JSONResponse(read_owner_realized_return(did),
+                        headers={"Cache-Control": "private, no-store"})
+
+
 @app.get("/api/activity/{year}")
 def annual_verified_activity(year: int, authorization: str | None = Header(default=None)):
     """Read only confirmed account-bound activity; never paper trading history."""
