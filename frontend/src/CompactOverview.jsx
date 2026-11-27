@@ -3,6 +3,7 @@ import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import {ArrowDownLeft, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
 import {paperSparkline} from './paperPortfolio.js';
+import {livePortfolioSparkline} from './livePortfolioHistory.js';
 import {formatMoney,formatAssetMoney,formatAssetQuantity,formatNumber,formatSigned,formatTimestamp,validMarket} from './data.js';
 import CoinGrid from './CoinGrid.jsx';
 import HomeAccount from './HomeAccount.jsx';
@@ -40,7 +41,9 @@ function MarketChart({history,period,valid,t,asset}) {
 
 
 function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,status,paperMode=true}) {
-  const chart=useMemo(()=>paperSparkline(samples,{recentMs:15*60*1000,allowSingle:true}),[samples]);
+  const chart=useMemo(()=>paperMode
+    ?paperSparkline(samples,{recentMs:15*60*1000,allowSingle:true})
+    :livePortfolioSparkline(samples),[samples,paperMode]);
   const positive=summary?.pnl!=null&&summary.pnl>=0;
   // PAPER color is based on TOTAL cumulative PnL, not the first/last
   // short-window sample. LIVE wallet holdings have no verified cost basis,

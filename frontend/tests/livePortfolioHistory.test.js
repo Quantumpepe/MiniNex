@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readLiveEquity,appendLiveEquity,saveLiveEquity} from '../src/livePortfolioHistory.js';
+import {readLiveEquity,appendLiveEquity,saveLiveEquity,livePortfolioSparkline} from '../src/livePortfolioHistory.js';
 import {paperSparkline} from '../src/paperPortfolio.js';
 
 test('live history persists exact valuation observations separately per owner',()=>{
@@ -25,4 +25,27 @@ test('live history persists exact valuation observations separately per owner',(
   const chart=paperSparkline(points);
   assert.ok(chart.line.includes('L'));
   assert.equal(chart.positive,false);
+});
+
+test('LIVE chart keeps cent changes small and uses a fixed time range',()=>{
+  const points=[{at:0,value:12,coverage:'XRP:full'},
+    {at:30000,value:12.01,coverage:'XRP:full'}];
+  const chart=livePortfolioSparkline(points);
+  const coords=[...chart.line.matchAll(/[ML]([\d.]+) ([\d.]+)/g)].map(m=>m.slice(1).map(Number));
+  assert.equal(chart.count,2);
+  assert.equal(coords[1][0],192);
+  assert.ok(coords[1][0]-coords[0][0]<7);
+  assert.ok(Math.abs(coords[1][1]-coords[0][1])<1.1);
+  assert.ok(livePortfolioSparkline([{at:0,value:12,coverage:'XRP:full'},
+    {at:30000,value:15,coverage:'XRP:full'}]).lastY<chart.lastY);
+});
+
+test('LIVE chart never connects different wallet coverage or observation gaps',()=>{
+  const p=(at,value,coverage='XRP:full')=>({at,value,coverage});
+  const chart=livePortfolioSparkline([p(0,12),p(30000,12.01),p(60000,7,'XRP:unknown'),
+    p(90000,12),p(120000,12.01),p(300000,12.02)]);
+  assert.equal(chart.count,5);
+  assert.equal((chart.line.match(/M/g)||[]).length,3);
+  assert.equal((chart.line.match(/L/g)||[]).length,2);
+  assert.equal(livePortfolioSparkline([p(0,12),p(30000,7,'XRP:unknown')]).count,1);
 });
