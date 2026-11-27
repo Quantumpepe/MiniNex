@@ -81,7 +81,8 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
               <circle cx="192" cy={chart.lastY} r="3.5" fill={color}/>
             </svg>
           : summary?.valuationAvailable?<small className="compact-wallet-chart-empty">{collecting}</small>:null}
-        {partial&&chart&&<small className="compact-wallet-chart-empty">{lang==='de'?'Teilwert':'Partial value'}</small>}
+        {!paperMode&&summary?.cached&&<small className="compact-wallet-chart-empty">{lang==='de'?'Letzter Stand':'Last known value'}</small>}
+        {partial&&<small className="compact-wallet-chart-empty">{lang==='de'?'Teilwert':'Partial value'}</small>}
       </div>
     </div>
     <div className="compact-wallet-foot">

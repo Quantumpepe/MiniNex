@@ -19,6 +19,9 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   const did=user?.id||null;
   const tokenRef=useRef(getAccessToken);
   tokenRef.current=getAccessToken;
+  const visibleRef=useRef(visible);
+  visibleRef.current=visible;
+  const syncRef=useRef(null);
   const [state,setState]=useState({did:null,sources:null,status:'idle'});
   const [samples,setSamples]=useState({did:null,points:[]});
   const [lastValued,setLastValued]=useState({did:null,summary:null});
@@ -45,10 +48,10 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
     });
     setSamples(previous=>
       owned&&previous.did===did?previous:{did:owned?did:null,points:owned?readLiveEquity(did):[]});
-    if(!visible||!owned)
+    if(!owned)
       return ()=>{active=false;};
     const sync=async()=>{
-      if(!active||inFlight||document.hidden)return;
+      if(!active||inFlight||document.hidden||!visibleRef.current)return;
       inFlight=true;
       const controller=new AbortController();
       controllers.add(controller);
@@ -63,7 +66,15 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
             });
             if(!response.ok)throw new Error('Wallet source unavailable');
             const data=await response.json();
-            return [key,validate(data)?data:null];
+            if(!validate(data))return [key,null];
+            // Publish verified initial sources immediately; do not wait for
+            // the slowest network. Keep the last complete batch on refresh
+            // until all sources have settled, avoiding mixed-time totals.
+            if(active&&!controller.signal.aborted)setState(previous=>{
+              if(previous.did!==did||previous.sources?.[key])return previous;
+              return {did,sources:{...previous.sources,[key]:data},status:'refreshing'};
+            });
+            return [key,data];
           }catch{return [key,null];}
         }));
         if(!active||controller.signal.aborted)return;
@@ -87,6 +98,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
         if(active&&refreshQueued){refreshQueued=false;void sync();}
       }
     };
+    syncRef.current=sync;
     sync();
     // An outgoing transfer may finish while the overview is open. Update
     // the total portfolio immediately rather than waiting for the next poll.
@@ -99,12 +111,15 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
     document.addEventListener('visibilitychange',refreshWhenVisible);
     const interval=window.setInterval(sync,20000);
     return ()=>{
-      active=false;unsubscribe();window.clearInterval(interval);
+      active=false;syncRef.current=null;unsubscribe();window.clearInterval(interval);
       window.removeEventListener('focus',refreshWhenVisible);
       document.removeEventListener('visibilitychange',refreshWhenVisible);
       for(const c of controllers)c.abort();
     };
-  },[visible,ready,authenticated,did,refreshNonce]);
+  },[ready,authenticated,did,refreshNonce]);
+  // Navigation must not abort an existing network request. Poll only when
+  // the overview is visible, and resume immediately on return.
+  useEffect(()=>{if(visible)void syncRef.current?.();},[visible]);
   const matched=state.did===did&&ready&&authenticated;
   const summary=useMemo(()=>matched? summarizeVerifiedWalletPortfolio(
     state.sources,markets,syncedAt):null,
@@ -118,14 +133,30 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
        summary.equity!==null)
       setLastValued({did,summary});
   },[matched,did,state.status,summary]);
-  const displayedSummary=summary?.valuationAvailable?summary:
-    matched&&lastValued.did===did&&lastValued.summary
-      ?{...lastValued.summary,incomplete:true}:summary;
+  const savedPoint=matched&&samples.did===did?samples.points.at(-1):null;
+  const remembered=matched&&lastValued.did===did?lastValued.summary:null;
+  // Persisted observations are aggregate USD values only. Never invent
+  // quantities or treat a previous observation as a fresh wallet read.
+  const historical=savedPoint?{
+    equity:Math.round(savedPoint.value*100)/100,valuationAvailable:true,
+    incomplete:!savedPoint.coverage.split('|').every(part=>/:(full|absent)$/.test(part)),
+    holdings:[],cached:true,mode:'LIVE_WALLET',currency:'USD',
+  }:null;
+  const fallback=remembered?{...remembered,cached:true}:historical;
+  const currentComplete=summary?.valuationAvailable&&!summary.incomplete;
+  const displayedSummary=currentComplete
+    ?{...summary,cached:state.status==='stale'||state.status==='partial'}
+    :fallback&&!fallback.incomplete?fallback:
+      summary?.valuationAvailable?{...summary,cached:state.status==='stale'||state.status==='partial'}:
+      fallback||summary;
   useEffect(()=>{
-    if(!visible||!matched||!['ready','partial'].includes(state.status)||
+    if(!visible||!matched||state.status!=='ready'||
        !summary?.valuationAvailable||summary.equity===null)return;
     setSamples(prev=>{
       const points=prev.did===did?prev.points:readLiveEquity(did);
+      // Preserve the last comparable complete history through temporary
+      // RPC/quote gaps; never chart a progressive or failed refresh.
+      if(summary.incomplete&&points.length&&points.at(-1).coverage.split('|').every(part=>/:(full|absent)$/.test(part)))return prev;
       const next=appendLiveEquity(points,summary);
       return next===points?prev:{did,points:next};
     });
