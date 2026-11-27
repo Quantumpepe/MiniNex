@@ -42,6 +42,8 @@ class TestOtaCache(unittest.IsolatedAsyncioTestCase):
         with patch.object(httpx.AsyncClient, "get", new_callable=AsyncMock, return_value=response) as get:
             result = await asyncio.gather(*(cache.latest() for _ in range(25)))
             self.assertEqual(get.await_count, 1)
+            self.assertEqual(get.await_args.kwargs['headers']['Cache-Control'], 'no-cache')
+            self.assertIn('mininex_refresh', get.await_args.kwargs['params'])
             self.assertTrue(all(not stale for _, stale in result))
             self.assertNotIn("secret_field", result[0][0])
             self.assertEqual(result[0][0]["assets"][0]["digest"], "sha256:" + CHECKSUM)

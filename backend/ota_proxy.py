@@ -1,18 +1,20 @@
 """Public, bounded, server-side cache for the MiniNex OTA GitHub Release.
 
-One Render process checks GitHub at most once per 5 minutes, regardless of the
+One Render process checks GitHub at most once per 2 minutes, regardless of the
 number of phones. No GitHub token, wallet secret or trading endpoint is exposed.
 """
 import asyncio
+import logging
 import os
 import time
 
 import httpx
 
 RELEASE_URL = "https://api.github.com/repos/Quantumpepe/MiniNex/releases/latest"
-CACHE_SECONDS = 5 * 60
+CACHE_SECONDS = 2 * 60
 ERROR_RETRY_SECONDS = 2 * 60
 MAX_RESPONSE_BYTES = 1024 * 1024
+logger = logging.getLogger('uvicorn.error')
 
 
 class ReleaseUnavailable(Exception):
@@ -40,14 +42,19 @@ class OtaReleaseCache:
                     return self._release, self._last_error is not None
                 raise ReleaseUnavailable()
             try:
-                headers = {"Accept": "application/vnd.github+json", "User-Agent": "MiniNex-OTA-Render"}
+                headers = {"Accept": "application/vnd.github+json", "User-Agent": "MiniNex-OTA-Render",
+                           "Cache-Control": "no-cache", "Pragma": "no-cache"}
                 # Optional backend-only token. Never return it to Android or store in Git.
                 token = os.getenv("MININEX_GITHUB_RELEASE_TOKEN", "").strip()
                 if token:
                     headers["Authorization"] = "Bearer " + token
                 async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
-                    resp = await client.get(RELEASE_URL, headers=headers)
+                    # A bounded cache-busting key prevents an intermediary from
+                    # reusing a previous /latest response after our own TTL.
+                    resp = await client.get(RELEASE_URL, headers=headers,
+                                            params={"mininex_refresh": str(int(time.time() // CACHE_SECONDS))})
                 if resp.status_code != 200:
+                    logger.warning('OTA upstream HTTP %s', resp.status_code)
                     raise ReleaseUnavailable()
                 if len(resp.content) > MAX_RESPONSE_BYTES:
                     raise ReleaseUnavailable()
@@ -71,11 +78,14 @@ class OtaReleaseCache:
                 }
                 if not isinstance(release["tag_name"], str) or not release["assets"]:
                     raise ReleaseUnavailable()
+                logger.info('OTA upstream release metadata: %s', release['tag_name'])
                 self._release = release
                 self._last_error = None
                 self._next_check = self._clock() + CACHE_SECONDS
                 return release, False
             except (httpx.HTTPError, ValueError, TypeError, ReleaseUnavailable):
+                logger.warning("OTA upstream unavailable; cached release: %s",
+                               self._release.get("tag_name") if self._release else "none")
                 self._last_error = "upstream"
                 self._next_check = self._clock() + ERROR_RETRY_SECONDS
                 # Serve the last successfully obtained release during API

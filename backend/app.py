@@ -255,10 +255,18 @@ async def latest_verified_ota_release():
         return JSONResponse({"detail": "Update service temporarily unavailable"},
                             status_code=503, headers={"Cache-Control": "no-store",
                                                       "X-Content-Type-Options": "nosniff"})
+    # A cached old release must never be presented as the current release
+    # when GitHub could not be reached. Existing clients retry HTTP 503.
+    if stale:
+        return JSONResponse({"detail": "Update service temporarily unavailable"},
+                            status_code=503, headers={"Cache-Control": "no-store",
+                                                      "X-Content-Type-Options": "nosniff",
+                                                      "X-MiniNex-OTA-Cache": "stale"})
     return JSONResponse(release, headers={
-        "Cache-Control": "public, max-age=60",
+        "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
-        "X-MiniNex-OTA-Cache": "stale" if stale else "fresh",
+        "X-MiniNex-OTA-Cache": "fresh",
+        "X-MiniNex-OTA-Version": release["tag_name"],
     })
 
 
