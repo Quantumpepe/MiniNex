@@ -153,18 +153,16 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       summary?.valuationAvailable?{...summary,cached:state.status==='stale'||state.status==='partial'}:
       fallback||summary;
   useEffect(()=>{
-    if(!visible||!matched||state.status!=='ready'||
-       !summary?.valuationAvailable||summary.equity===null)return;
+    // The chart consumes the same settled USD total as the portfolio card.
+    // Do not fabricate observations when the card shows a cached amount.
+    if(!visible||!matched||state.status!=='ready'||displayedSummary?.cached||
+       !displayedSummary?.valuationAvailable||!Number.isFinite(displayedSummary.equity))return;
     setSamples(prev=>{
       const points=prev.did===did?prev.points:readLiveEquity(did);
-      // Preserve the last comparable complete history through temporary
-      // RPC/quote gaps; never chart a progressive or failed refresh.
-      if(summary.incomplete&&points.length&&points.at(-1).coverage.split('|').every(part=>/:(full|absent)$/.test(part)))return prev;
-      if(points.length&&losesWalletCoverage(points.at(-1).coverage,summary.coverage))return prev;
-      const next=appendLiveEquity(points,summary);
+      const next=appendLiveEquity(points,{...displayedSummary,observedEquityUsd:displayedSummary.equity});
       return next===points?prev:{did,points:next};
     });
-  },[visible,matched,did,state.status,summary?.observedEquityUsd,summary?.valuationAvailable,summary?.coverage,syncedAt]);
+  },[visible,matched,did,state.status,displayedSummary?.equity,displayedSummary?.valuationAvailable,displayedSummary?.cached,syncedAt]);
   useEffect(()=>{
     if(matched&&samples.did===did&&samples.points.length)
       saveLiveEquity(did,samples.points);

@@ -34,7 +34,7 @@ export function appendLiveEquity(points,summary,now=Date.now()){
   const sample={at:now,value:summary.observedEquityUsd,coverage:summary.coverage};
   const last=next.at(-1);
   if(last&&last.at>=now)return next;
-  if(last&&last.coverage===sample.coverage&&Math.floor(last.at/BUCKET)===Math.floor(now/BUCKET))
+  if(last&&Math.floor(last.at/BUCKET)===Math.floor(now/BUCKET))
     return [...next.slice(0,-1),sample].slice(-MAX);
   return [...next,sample].slice(-MAX);
 }
@@ -47,39 +47,22 @@ export function saveLiveEquity(did,points,storage){
   }catch{return false;}
 }
 
-// LIVE-only chart. The time axis always spans the same interval, and a
-// minimum 2% vertical range keeps fractional-cent movements proportional.
-// Coverage changes and observation gaps are breaks, never fabricated trades.
+// LIVE chart plots only recorded total portfolio amounts and timestamps.
+ // Wallet coverage metadata belongs to valuation diagnostics, not the graph.
 export function livePortfolioSparkline(samples,{recentMs=15*60*1000}={}){
   if(!Array.isArray(samples)||!Number.isFinite(recentMs)||recentMs<=0)return null;
-  const ordered=samples.filter(p=>p&&Number.isFinite(p.at)&&Number.isFinite(p.value)&&
-    p.value>=0&&typeof p.coverage==='string'&&p.coverage.length>0).sort((a,b)=>a.at-b.at);
+  const ordered=samples.filter(p=>p&&Number.isFinite(p.at)&&Number.isFinite(p.value)&&p.value>=0)
+    .sort((a,b)=>a.at-b.at);
   const last=ordered.at(-1);
   if(!last)return null;
   const start=last.at-recentMs;
-  const points=ordered.filter(p=>p.at>=start&&p.coverage===last.coverage);
+  const points=ordered.filter(p=>p.at>=start);
   const values=points.map(p=>p.value),lo=Math.min(...values),hi=Math.max(...values);
   const spread=Math.max(hi-lo,Math.max(0.01,hi*0.02));
   const x=p=>8+(p.at-start)/recentMs*184;
   const y=p=>36-((p.value-lo+(spread-(hi-lo))/2)/spread)*24;
-  const segments=[];
-  let segment=[],previous=null;
-  for(const point of ordered){
-    if(point.at<start)continue;
-    if(point.coverage!==last.coverage||previous&&point.at-previous.at>120000){
-      if(segment.length)segments.push(segment);
-      segment=[];
-    }
-    if(point.coverage===last.coverage)segment.push(point);
-    previous=point;
-  }
-  if(segment.length)segments.push(segment);
-  const path=group=>group.map((p,i)=>(i?'L':'M')+x(p).toFixed(1)+' '+y(p).toFixed(1)).join(' ');
-  // Connect comparable observations across missing intervals with a dashed
-  // guide only; never fill the missing interval or imply recorded values.
-  const gapLine=segments.slice(1).map((group,i)=>path([segments[i].at(-1),group[0]])).join(' ');
-  return {line:segments.map(path).join(' '),gapLine,
-    area:segments.filter(group=>group.length>1).map(group=>path(group)+' L'+x(group.at(-1)).toFixed(1)+' 45 L'+x(group[0]).toFixed(1)+' 45 Z').join(' '),
+  const line=points.map((p,i)=>(i?'L':'M')+x(p).toFixed(1)+' '+y(p).toFixed(1)).join(' ');
+  return {line,area:points.length>1?line+' L192 45 L'+x(points[0]).toFixed(1)+' 45 Z':'',
     lastY:y(last),count:points.length,positive:last.value>=values[0]};
 }
 

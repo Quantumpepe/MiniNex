@@ -40,18 +40,16 @@ test('LIVE chart keeps cent changes small and uses a fixed time range',()=>{
     {at:30000,value:15,coverage:'XRP:full'}]).lastY<chart.lastY);
 });
 
-test('LIVE chart never connects different wallet coverage or observation gaps',()=>{
+test('LIVE chart plots the same total amounts regardless of wallet composition',()=>{
   const p=(at,value,coverage='XRP:full')=>({at,value,coverage});
-  const chart=livePortfolioSparkline([p(0,12),p(30000,12.01),p(60000,7,'XRP:unknown'),
-    p(90000,12),p(120000,12.01),p(300000,12.02)]);
-  assert.equal(chart.count,5);
-  assert.equal((chart.line.match(/M/g)||[]).length,3);
-  assert.equal((chart.line.match(/L/g)||[]).length,2);
-  assert.equal((chart.gapLine.match(/M/g)||[]).length,2);
-  assert.equal((chart.gapLine.match(/L/g)||[]).length,2);
-  const changed=livePortfolioSparkline([p(0,12),p(30000,7,'XRP:unknown')]);
-  assert.equal(changed.count,1);
-  assert.equal(changed.gapLine,'');
+  const samples=[p(0,12),p(30000,12.01),p(60000,12.01,'POL:full'),
+    p(90000,12),p(120000,12.01),p(300000,12.02)];
+  const chart=livePortfolioSparkline(samples);
+  assert.equal(chart.count,6);
+  assert.equal((chart.line.match(/M/g)||[]).length,1);
+  assert.equal((chart.line.match(/L/g)||[]).length,5);
+  assert.deepEqual(chart,livePortfolioSparkline(samples.map(({at,value})=>({at,value}))));
+  assert.equal(chart.gapLine,undefined);
 });
 
 test('a lost verified wallet component does not supersede an earlier observation',()=>{

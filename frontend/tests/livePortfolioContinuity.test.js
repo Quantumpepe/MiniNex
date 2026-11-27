@@ -66,7 +66,9 @@ test('portfolio does not reset verified values or curve on tab switches',()=>{
   // Only settled batches may contribute new chart points; intermediate
   // progressive balance responses must not create artificial losses.
   assert.match(hook,/!visible\|\|!matched\|\|state\.status!=='ready'/);
-  assert.match(hook,/if\(summary\.incomplete&&points\.length/);
+  assert.match(hook,/displayedSummary\?\.cached/);
+  assert.match(hook,/observedEquityUsd:displayedSummary\.equity/);
+  assert.doesNotMatch(hook,/losesWalletCoverage\(points\.at/);
   assert.match(hook,/savedPoint=matched&&samples\.did===did/);
   assert.match(hook,/\},\[ready,authenticated,did,refreshNonce\]\);/);
   assert.match(hook,/if\(visible\)void syncRef\.current\?\.\(\)/);
