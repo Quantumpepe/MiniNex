@@ -63,7 +63,13 @@ test('portfolio does not reset verified values or curve on tab switches',()=>{
   assert.match(hook,/previous.did===did/);
   assert.match(hook,/status:previous.sources\?'refreshing':'loading'/);
   assert.match(hook,/status:previous.sources\?'stale':'error'/);
-  assert.match(hook,/!visible\|\|!matched\|\|!\['ready','partial'\]\.includes\(state.status\)/);
+  // Only settled batches may contribute new chart points; intermediate
+  // progressive balance responses must not create artificial losses.
+  assert.match(hook,/!visible\|\|!matched\|\|state\.status!=='ready'/);
+  assert.match(hook,/if\(summary\.incomplete&&points\.length/);
+  assert.match(hook,/savedPoint=matched&&samples\.did===did/);
+  assert.match(hook,/\},\[ready,authenticated,did,refreshNonce\]\);/);
+  assert.match(hook,/if\(visible\)void syncRef\.current\?\.\(\)/);
   assert.match(hook,/lastValued\.did===did/);
   assert.match(hook,/summary:displayedSummary/);
   assert.match(hook,/setLastValued\(\{did,summary\}\)/);
