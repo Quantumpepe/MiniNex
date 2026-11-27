@@ -75,7 +75,24 @@ export function livePortfolioSparkline(samples,{recentMs=15*60*1000}={}){
   }
   if(segment.length)segments.push(segment);
   const path=group=>group.map((p,i)=>(i?'L':'M')+x(p).toFixed(1)+' '+y(p).toFixed(1)).join(' ');
-  return {line:segments.map(path).join(' '),
+  // Connect comparable observations across missing intervals with a dashed
+  // guide only; never fill the missing interval or imply recorded values.
+  const gapLine=segments.slice(1).map((group,i)=>path([segments[i].at(-1),group[0]])).join(' ');
+  return {line:segments.map(path).join(' '),gapLine,
     area:segments.filter(group=>group.length>1).map(group=>path(group)+' L'+x(group.at(-1)).toFixed(1)+' 45 L'+x(group[0]).toFixed(1)+' 45 Z').join(' '),
     lastY:y(last),count:points.length,positive:last.value>=values[0]};
+}
+
+// Compare available wallet components, not the value of the portfolio.
+// A previous partial observation may still contain more verified data than
+// a new response. Keep that observation explicitly stale when coverage drops.
+export function losesWalletCoverage(previous,current){
+  if(typeof previous!=='string'||typeof current!=='string')return false;
+  const currentMap=new Map(current.split('|').map(part=>part.split(':')));
+  const known=part=>part==='full'?3:part==='native'?1:part==='wrapped'?2:part==='absent'?3:0;
+  return previous.split('|').some(part=>{
+    const [asset,status]=part.split(':');
+    const before=known(status),after=known(currentMap.get(asset));
+    return (before&after)!==before;
+  });
 }

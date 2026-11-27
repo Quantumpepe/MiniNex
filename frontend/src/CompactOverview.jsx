@@ -1,4 +1,4 @@
-import React, {useMemo} from 'react';
+import React, {useMemo,useState} from 'react';
 import miniNexLogoData from '../branding/mininex-logo.webp.b64?raw';
 import {ArrowDownLeft, ArrowUpRight, BarChart3, Bitcoin, Settings2, Wallet} from 'lucide-react';
 import {compactChartData} from './compact.js';
@@ -54,7 +54,11 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
     ?(lang==='de'?'Beobachteter Gesamtportfolio-Verlauf':'Observed total portfolio equity')
     :(lang==='de'?'Beobachteter Wallet-Verlauf':'Observed wallet value history');
   const collecting=lang==='de'?'Verlauf wird erfasst':'Collecting history';
-  const partial=!paperMode&&summary?.incomplete===true;
+  const partial=!paperMode&&(summary?.incomplete===true||!!summary?.missingCoverage);
+  const [showCoverage,setShowCoverage]=useState(false);
+  const coverage=summary?.missingCoverage||summary?.coverage;
+  const missingAssets=typeof coverage==='string'?coverage.split('|')
+    .filter(part=>!/:(full|absent)$/.test(part)).map(part=>part.split(':')[0]).join(', '):'';
   return <section className="compact-wallet-portfolio" aria-label={label}>
     <div className="compact-wallet-top">
       <span>{label}</span>
@@ -80,14 +84,20 @@ function PaperPortfolioCard({t,lang,summary,samples,authenticated,goTo,scope,sta
                 <stop offset="100%" stopColor={color} stopOpacity="0"/>
               </linearGradient></defs>
               {chart.area&&<path d={chart.area} fill="url(#paper-equity-fill)"/>}
+              {!paperMode&&chart.gapLine&&<path d={chart.gapLine} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="3 4" opacity=".65"/>}
               <path d={chart.line} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="192" cy={chart.lastY} r="3.5" fill={color}/>
             </svg>
           : summary?.valuationAvailable?<small className="compact-wallet-chart-empty">{collecting}</small>:null}
         {!paperMode&&summary?.cached&&<small className="compact-wallet-chart-empty">{lang==='de'?'Letzter Stand':'Last known value'}</small>}
-        {partial&&<small className="compact-wallet-chart-empty">{lang==='de'?'Teilwert':'Partial value'}</small>}
+        {partial&&<button type="button" className="compact-wallet-chart-empty" style={{background:'none',border:0,color:'inherit',padding:0,textDecoration:'underline'}}
+          aria-expanded={showCoverage} onClick={()=>setShowCoverage(v=>!v)}>{lang==='de'?'Teilwert':'Partial value'}</button>}
       </div>
     </div>
+    {partial&&showCoverage&&<small role="status" className="compact-wallet-chart-empty">
+      {lang==='de'?'Nicht vollständig bestätigt: ':'Not fully verified: '}{missingAssets||(lang==='de'?'Wallet-Daten':'Wallet data')}
+    </small>}
+    {!paperMode&&chart?.gapLine&&<small className="compact-wallet-chart-empty">{lang==='de'?'Gestrichelt: Datenlücke':'Dashed: data gap'}</small>}
     <div className="compact-wallet-foot">
       <span>{paperMode?'PAPER':'LIVE'}</span>
     </div>

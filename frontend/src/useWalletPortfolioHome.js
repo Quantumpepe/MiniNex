@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {readLiveEquity,appendLiveEquity,saveLiveEquity} from './livePortfolioHistory.js';
+import {readLiveEquity,appendLiveEquity,saveLiveEquity,losesWalletCoverage} from './livePortfolioHistory.js';
 import {usePrivy} from '@privy-io/react-auth';
 import {API_BASE} from './data.js';
 import {onConfirmedWalletTransfer} from './walletBalanceRefresh.js';
@@ -130,8 +130,10 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   // holdings supersede it only after independent verification.
   useEffect(()=>{
     if(matched&&state.status==='ready'&&summary?.valuationAvailable&&
-       summary.equity!==null)
-      setLastValued({did,summary});
+       summary.equity!==null){
+      if(lastValued.did!==did||!losesWalletCoverage(lastValued.summary?.coverage,summary.coverage))
+        setLastValued({did,summary});
+    }
   },[matched,did,state.status,summary]);
   const savedPoint=matched&&samples.did===did?samples.points.at(-1):null;
   const remembered=matched&&lastValued.did===did?lastValued.summary:null;
@@ -140,13 +142,14 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
   const historical=savedPoint?{
     equity:Math.round(savedPoint.value*100)/100,valuationAvailable:true,
     incomplete:!savedPoint.coverage.split('|').every(part=>/:(full|absent)$/.test(part)),
-    holdings:[],cached:true,mode:'LIVE_WALLET',currency:'USD',
+    holdings:[],cached:true,mode:'LIVE_WALLET',currency:'USD',coverage:savedPoint.coverage,
   }:null;
   const fallback=remembered?{...remembered,cached:true}:historical;
   const currentComplete=summary?.valuationAvailable&&!summary.incomplete;
   const displayedSummary=currentComplete
     ?{...summary,cached:state.status==='stale'||state.status==='partial'}
-    :fallback&&!fallback.incomplete?fallback:
+    :fallback&&(!fallback.incomplete||losesWalletCoverage(fallback.coverage,summary?.coverage))
+      ?{...fallback,missingCoverage:summary?.incomplete?summary.coverage:null}:
       summary?.valuationAvailable?{...summary,cached:state.status==='stale'||state.status==='partial'}:
       fallback||summary;
   useEffect(()=>{
@@ -157,6 +160,7 @@ export default function useWalletPortfolioHome(visible,refreshNonce,markets,sync
       // Preserve the last comparable complete history through temporary
       // RPC/quote gaps; never chart a progressive or failed refresh.
       if(summary.incomplete&&points.length&&points.at(-1).coverage.split('|').every(part=>/:(full|absent)$/.test(part)))return prev;
+      if(points.length&&losesWalletCoverage(points.at(-1).coverage,summary.coverage))return prev;
       const next=appendLiveEquity(points,summary);
       return next===points?prev:{did,points:next};
     });

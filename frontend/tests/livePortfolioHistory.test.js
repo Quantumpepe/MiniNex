@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readLiveEquity,appendLiveEquity,saveLiveEquity,livePortfolioSparkline} from '../src/livePortfolioHistory.js';
+import {readLiveEquity,appendLiveEquity,saveLiveEquity,livePortfolioSparkline,losesWalletCoverage} from '../src/livePortfolioHistory.js';
 import {paperSparkline} from '../src/paperPortfolio.js';
 
 test('live history persists exact valuation observations separately per owner',()=>{
@@ -47,5 +47,17 @@ test('LIVE chart never connects different wallet coverage or observation gaps',(
   assert.equal(chart.count,5);
   assert.equal((chart.line.match(/M/g)||[]).length,3);
   assert.equal((chart.line.match(/L/g)||[]).length,2);
-  assert.equal(livePortfolioSparkline([p(0,12),p(30000,7,'XRP:unknown')]).count,1);
+  assert.equal((chart.gapLine.match(/M/g)||[]).length,2);
+  assert.equal((chart.gapLine.match(/L/g)||[]).length,2);
+  const changed=livePortfolioSparkline([p(0,12),p(30000,7,'XRP:unknown')]);
+  assert.equal(changed.count,1);
+  assert.equal(changed.gapLine,'');
+});
+
+test('a lost verified wallet component does not supersede an earlier observation',()=>{
+  assert.equal(losesWalletCoverage('XRP:full|POL:native','XRP:unknown|POL:full'),true);
+  assert.equal(losesWalletCoverage('XRP:full|POL:native','XRP:full|POL:full'),false);
+  assert.equal(losesWalletCoverage('POL:native','POL:wrapped'),true);
+  assert.equal(losesWalletCoverage('POL:unknown','POL:full'),false);
+  assert.equal(losesWalletCoverage('POL:full','POL:unpriced'),true);
 });
